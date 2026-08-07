@@ -3,3 +3,6 @@ dist/
 *.log
 .facet-runtime/
 coverage/
+
+# Private build context — internal design/plan/spike provenance. NEVER public.
+.facet-build/
