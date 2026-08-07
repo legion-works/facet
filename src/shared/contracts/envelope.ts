@@ -26,19 +26,31 @@ export const FacetErrorBodySchema = z.object({
 });
 export type FacetErrorBody = z.infer<typeof FacetErrorBodySchema>;
 
-const EnvelopeOkSchema = z.object({
-  schemaVersion: SchemaVersionSchema,
-  requestId: z.string().min(1),
-  ok: z.literal(true),
-  data: z.unknown(),
-});
+/**
+ * Both arms use `.strict()` so an envelope can carry ONLY the fields
+ * its discriminator allows. `ok:true` may not smuggle an `error` key
+ * (and vice versa), and no arm accepts extra top-level keys. Without
+ * this, a forged envelope with `ok:true` plus an `error` body would
+ * parse cleanly and confuse every downstream consumer that branches on
+ * the discriminator.
+ */
+const EnvelopeOkSchema = z
+  .object({
+    schemaVersion: SchemaVersionSchema,
+    requestId: z.string().min(1),
+    ok: z.literal(true),
+    data: z.unknown(),
+  })
+  .strict();
 
-const EnvelopeErrSchema = z.object({
-  schemaVersion: SchemaVersionSchema,
-  requestId: z.string().min(1),
-  ok: z.literal(false),
-  error: FacetErrorBodySchema,
-});
+const EnvelopeErrSchema = z
+  .object({
+    schemaVersion: SchemaVersionSchema,
+    requestId: z.string().min(1),
+    ok: z.literal(false),
+    error: FacetErrorBodySchema,
+  })
+  .strict();
 
 export const FacetEnvelopeSchema = z.discriminatedUnion("ok", [
   EnvelopeOkSchema,

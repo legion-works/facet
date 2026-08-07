@@ -27,14 +27,6 @@ export const RenderStatusSchema = z.enum([
 ]);
 export type RenderStatus = z.infer<typeof RenderStatusSchema>;
 
-/** Required of every Verdict to match the acceptance-gate contract. */
-export const VerdictObservedSchema = z.object({
-  rendererRootSvgCount: z.number().int().nonnegative(),
-  graphCount: z.number().int().nonnegative(),
-  errorCount: z.number().int().nonnegative(),
-});
-export type VerdictObserved = z.infer<typeof VerdictObservedSchema>;
-
 /** Discriminative errors the verifier chooses to surface beyond the count. */
 export const DiscriminativeErrorSchema = z.object({
   code: z.string().min(1),
@@ -57,14 +49,35 @@ export const LexicalCountersSchema = z.object({
 });
 export type LexicalCounters = z.infer<typeof LexicalCountersSchema>;
 
-/** Verifier-side observations of the rendered page. */
-export const ObservedCountersSchema = LexicalCountersSchema.extend({
+/**
+ * The ONE canonical verdict-observed shape. Every read-back result and
+ * every Tier 0/1 result derives from this. The optional fields
+ * (`viewBoxes`, `discriminativeErrors`) are filled by Tier 1 when the
+ * layout pass succeeds.
+ *
+ * `graphCount` is included alongside `mermaidNodeCount` for parity with
+ * the acceptance-gate verdict contract — the acceptance tests assert
+ * `observed.graphCount` for nested-SVG forgery probes, so a verifier
+ * that does not surface it would fail those gates regardless of the
+ * status.
+ */
+export const VerdictObservedSchema = z.object({
+  rendererRootSvgCount: z.number().int().nonnegative(),
+  graphCount: z.number().int().nonnegative(),
+  mermaidNodeCount: z.number().int().nonnegative(),
+  visibleSvgCount: z.number().int().nonnegative(),
   viewBoxes: z.array(z.string()).optional(),
   errorCount: z.number().int().nonnegative(),
   discriminativeErrors: z.array(DiscriminativeErrorSchema).optional(),
 });
-export type ObservedCounters = z.infer<typeof ObservedCountersSchema>;
+export type VerdictObserved = z.infer<typeof VerdictObservedSchema>;
 
+/**
+ * Canonical verdict: every read-back response, every Tier 0/1 result,
+ * and the acceptance-gate verdict are all structurally compatible with
+ * this shape. Tier results extend it (with `expected` for the
+ * expected-vs-observed comparison); read-back uses it directly.
+ */
 export const VerdictSchema = z.object({
   status: RenderStatusSchema,
   tier: ValidationTierSchema,
@@ -83,14 +96,10 @@ export const Tier0InputSchema = z.object({
 });
 export type Tier0Input = z.infer<typeof Tier0InputSchema>;
 
-/** Tier 0 result: lexical vs. observed, with optional discriminative errors. */
-export const Tier0ResultSchema = z.object({
-  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
+/** Tier 0 result: extends the canonical verdict with the expected counters. */
+export const Tier0ResultSchema = VerdictSchema.extend({
   tier: z.literal(0),
-  status: RenderStatusSchema,
   expected: LexicalCountersSchema,
-  observed: ObservedCountersSchema,
-  discriminativeErrors: z.array(DiscriminativeErrorSchema).optional(),
 });
 export type Tier0Result = z.infer<typeof Tier0ResultSchema>;
 
@@ -103,7 +112,7 @@ export const Tier1InputSchema = Tier0InputSchema.extend({
 });
 export type Tier1Input = z.infer<typeof Tier1InputSchema>;
 
-/** Tier 1 result: full-page render with layout checks. */
+/** Tier 1 result: extends Tier 0 with screenshot/console paths. */
 export const Tier1ResultSchema = Tier0ResultSchema.extend({
   tier: z.literal(1),
   screenshotPath: z.string().nullable(),

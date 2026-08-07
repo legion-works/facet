@@ -64,33 +64,54 @@ interface FenceSpan {
   readonly char: "`" | "~";
 }
 
+interface FenceCandidate {
+  readonly index: number;
+  readonly length: number;
+  readonly char: "`" | "~";
+  /** Trimmed info string after the fence chars; "" when only whitespace. */
+  readonly info: string;
+}
+
+/**
+ * A closing code fence must use the same character as the opening
+ * fence, be at least as long, and carry NO info string (only whitespace
+ * after the fence chars). Without the info-string check, an inner fence
+ * with a language tag (e.g. ```mermaid inside a ```mermaid body)
+ * would silently close its enclosing fence and split one block into two.
+ */
+function isValidCloser(candidate: FenceCandidate, open: FenceCandidate): boolean {
+  return candidate.char === open.char && candidate.length >= open.length && candidate.info === "";
+}
+
 function findFenceSpans(text: string): FenceSpan[] {
   const spans: FenceSpan[] = [];
-  const matches: Array<{ index: number; length: number; char: "`" | "~"; info: string }> = [];
+  const candidates: FenceCandidate[] = [];
   for (const match of text.matchAll(FENCE_OPENER_RE)) {
     const index = match.index ?? 0;
     const fence = match[1] ?? "";
     const info = (match[2] ?? "").trim();
     const char: "`" | "~" = fence.startsWith("`") ? "`" : "~";
-    matches.push({ index, length: fence.length, char, info });
+    candidates.push({ index, length: fence.length, char, info });
   }
-  let open: ((typeof matches)[number] & { consumed: number }) | null = null;
-  for (const candidate of matches) {
+  let open: FenceCandidate | null = null;
+  for (const candidate of candidates) {
     if (open === null) {
-      open = { ...candidate, consumed: candidate.index + candidate.length };
+      open = candidate;
       continue;
     }
-    if (candidate.char !== open.char) continue;
-    // Closing fence must be at least the opener's run length and may
-    // carry no info string.
-    if (candidate.length < open.length) continue;
-    spans.push({
-      start: open.index,
-      end: candidate.index + candidate.length,
-      info: open.info,
-      char: open.char,
-    });
-    open = null;
+    if (isValidCloser(candidate, open)) {
+      spans.push({
+        start: open.index,
+        end: candidate.index + candidate.length,
+        info: open.info,
+        char: open.char,
+      });
+      open = null;
+      continue;
+    }
+    // Not a valid closer (different char, shorter run, or carries an
+    // info string). The candidate is body content of the open fence;
+    // keep looking for the real closer.
   }
   return spans;
 }

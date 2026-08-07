@@ -146,12 +146,54 @@ describe("countFencedBlocks — non-fence edge cases", () => {
         "```",
       ].join("\n"),
     );
-    // Per CommonMark, the FIRST matching closer that ends the block — but our regex
-    // chooses the first line that matches the closing-fence shape. Document that we
-    // close on the first opener-length-matching closer line.
+    // The inner ``` is bare (no info string), so it is body content of
+    // the outer fence (not a closer) and the outer fence is closed by
+    // the final bare ```.
     const { total, byLanguage } = countFencedBlocks(bytes);
     expect(total).toBe(1);
     expect(byLanguage.get("markdown")).toBe(1);
+  });
+});
+
+describe("countFencedBlocks — CommonMark closer semantics", () => {
+  test("fence-in-fence: an inner ```mermaid line inside an outer ```mermaid body does NOT close the outer fence (one block, not two)", () => {
+    const bytes = new TextEncoder().encode(
+      ["```mermaid", "graph TD", "  A --> B", "```mermaid", "graph TD", "  C --> D", "```"].join(
+        "\n",
+      ),
+    );
+    // The inner ```mermaid carries an info string, so it is not a
+    // valid closer per CommonMark. The outer fence stays open and is
+    // closed by the final bare ```. Exactly one closed mermaid block.
+    expect(countFencedBlocks(bytes).total).toBe(1);
+    expect(countMermaidBlocks(bytes)).toBe(1);
+  });
+
+  test("a closer that carries an info string is treated as content, not as a closer", () => {
+    const bytes = new TextEncoder().encode(
+      ["```mermaid", "graph TD", "  A --> B", "```mermaid"].join("\n"),
+    );
+    // The only ```mermaid line after the opener is the closer — but
+    // it has an info string and is not a valid closer per CommonMark.
+    // No closer exists, so the fence is unterminated and counts as 0.
+    expect(countFencedBlocks(bytes).total).toBe(0);
+    expect(countMermaidBlocks(bytes)).toBe(0);
+  });
+
+  test("a bare ``` line inside a ```mermaid body DOES close the outer fence (closer is whitespace-only)", () => {
+    const bytes = new TextEncoder().encode(
+      ["```mermaid", "graph TD", "  A --> B", "```"].join("\n"),
+    );
+    expect(countFencedBlocks(bytes).total).toBe(1);
+    expect(countMermaidBlocks(bytes)).toBe(1);
+  });
+
+  test("a closer with trailing whitespace (no info string) IS a valid closer", () => {
+    const bytes = new TextEncoder().encode(
+      ["```mermaid", "graph TD", "  A --> B", "```   "].join("\n"),
+    );
+    expect(countFencedBlocks(bytes).total).toBe(1);
+    expect(countMermaidBlocks(bytes)).toBe(1);
   });
 });
 
