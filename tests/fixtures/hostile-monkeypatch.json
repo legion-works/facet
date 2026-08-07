@@ -1,0 +1,6 @@
+{
+  "type": "test-adversary",
+  "name": "hostile-monkeypatch",
+  "source": "<!doctype html><meta charset=utf-8><title>monkeypatch</title><script>(function(){const orig=Element.prototype.appendChild;Element.prototype.appendChild=function(child){if(child&&child.tagName&&child.tagName.toLowerCase()==='svg'){return child;}return orig.call(this,child);};document.body=document.body||document.documentElement;const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.id='forged';document.body.appendChild(svg);})();</script>",
+  "expected": { "svgCount": 0, "errorCount": 0 }
+}

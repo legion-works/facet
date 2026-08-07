@@ -1,0 +1,17 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
+      run: oxlint --deny-warnings {staged_files}
+    format:
+      glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,md,yaml,yml,toml}"
+      run: oxfmt --check {staged_files}
+    typecheck:
+      run: bun run typecheck
+    secrets:
+      run: gitleaks protect --staged --redact --no-banner
+pre-push:
+  commands:
+    unit-tests:
+      run: bun test tests/unit

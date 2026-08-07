@@ -1,0 +1,10 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "External data reference must be rejected at Tier 0",
+  "data": { "url": "https://example.com/data.csv" },
+  "mark": "bar",
+  "encoding": {
+    "x": { "field": "category", "type": "nominal" },
+    "y": { "field": "value", "type": "quantitative" }
+  }
+}

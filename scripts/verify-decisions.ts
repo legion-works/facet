@@ -26,12 +26,12 @@ function parseDoc(text: string): ParseResult {
   const lines = text.split("\n");
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]!;
     const lineNo = i + 1;
 
     const heading = line.match(/^##\s+(D\d+)\s*:/);
     if (heading) {
-      const id = heading[1];
+      const id = heading[1]!;
       headingCounts.set(id, (headingCounts.get(id) ?? 0) + 1);
       if (headingCounts.get(id) === 2) duplicateHeadings.push(id);
       currentHeading = id;
@@ -41,7 +41,7 @@ function parseDoc(text: string): ParseResult {
     if (currentHeading && (REQUIRED_IDS as readonly string[]).includes(currentHeading)) {
       const decisionLine = line.match(/^Decision:\s*(.*)$/);
       if (decisionLine) {
-        const value = decisionLine[1].trim();
+        const value = decisionLine[1]?.trim() ?? "";
         if (value === "OPEN") {
           return { ids, duplicateHeadings, openLine: lineNo };
         }
