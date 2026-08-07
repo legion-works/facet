@@ -13,5 +13,6 @@ pre-commit:
       run: gitleaks protect --staged --redact --no-banner
 pre-push:
   commands:
+    # unit suite activates once tests/unit exists
     unit-tests:
-      run: bun test tests/unit
+      run: sh -c 'test ! -d tests/unit || bun test tests/unit'
