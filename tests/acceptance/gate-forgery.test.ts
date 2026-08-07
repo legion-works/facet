@@ -11,11 +11,11 @@ test("monkeypatched in-page shim cannot forge the verdict: protocol authority wi
     artifactType: "markdown",
     slug: "hostile-monkeypatch",
   });
-  const verdict = (await readBackFixture({
+  const verdict = await readBackFixture({
     artifactId: published.artifactId,
     revisionSha: published.revisionSha,
     tier: 1,
-  })) as { readonly status: string };
+  });
   expect(verdict.status).toBe("tampered");
 });
 

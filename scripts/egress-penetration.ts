@@ -1,15 +1,16 @@
 #!/usr/bin/env bun
 //
-// Egress penetration harness. Task 10 wires this to the production netns
-// launcher (`launch-netns.sh`) and an externally-observed sink. Today the
-// function is a typed stub: any call fails by design so the acceptance gate
-// stays RED on the production dependency until the real implementation lands.
+// Egress penetration harness. The penetration probe ships with the Tier-1
+// validation stage and binds to the production netns launcher
+// (`launch-netns.sh`) plus an externally-observed sink. This placeholder
+// fails loudly until the real implementation lands.
 
 export interface EgressPenetrationOptions {
   readonly launcher: "production";
 }
 
 export interface EgressPenetrationResult {
+  readonly attemptedChannels: readonly string[];
   readonly sinkHits: readonly string[];
   readonly udpPackets: number;
 }

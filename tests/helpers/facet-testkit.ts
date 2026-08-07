@@ -19,14 +19,35 @@ export type ArtifactType = "markdown" | "mermaid" | "svg" | "chart";
 export type Tier = 0 | 1;
 export type Launcher = "production";
 
+// Acceptance-level verdict contract. This is the surface the acceptance gates
+// assert against; the full product schema supersedes it once the shared
+// contracts land.
+export interface AcceptanceVerdictObserved {
+  readonly rendererRootSvgCount: number;
+  readonly graphCount: number;
+  readonly errorCount: number;
+}
+
+export interface AcceptanceVerdict {
+  readonly status: string;
+  readonly tier: Tier;
+  readonly artifactId: string;
+  readonly revisionSha: string;
+  readonly observed: AcceptanceVerdictObserved;
+}
+
+// Externally-observed channels the production penetration harness must
+// attempt during a run. An empty or subset harness now fails the gate because
+// the assertion uses Set equality against this shape.
+export interface EgressPenetrationSummary {
+  readonly attemptedChannels: readonly string[];
+  readonly sinkHits: readonly string[];
+  readonly udpPackets: number;
+}
+
 export interface PublishedArtifact {
   readonly artifactId: string;
   readonly revisionSha: string;
-}
-
-export interface EgressPenetrationSummary {
-  readonly sinkHits: readonly string[];
-  readonly udpPackets: number;
 }
 
 export interface PublishFixtureOptions {
@@ -55,7 +76,7 @@ export async function publishFixture(opts: PublishFixtureOptions): Promise<Publi
   return { artifactId: result.artifactId, revisionSha: result.revisionSha };
 }
 
-export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<unknown> {
+export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<AcceptanceVerdict> {
   const result = await readBack({
     artifactId: opts.artifactId,
     revisionSha: opts.revisionSha,
@@ -72,5 +93,9 @@ export async function runEgressPenetration(
   }
   const harnessOptions: EgressPenetrationOptions = { launcher: "production" };
   const result: EgressPenetrationResult = await runEgressPenetrationHarness(harnessOptions);
-  return { sinkHits: result.sinkHits, udpPackets: result.udpPackets };
+  return {
+    attemptedChannels: result.attemptedChannels,
+    sinkHits: result.sinkHits,
+    udpPackets: result.udpPackets,
+  };
 }
