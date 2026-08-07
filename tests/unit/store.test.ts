@@ -81,6 +81,39 @@ describe("artifact store", () => {
     ).toEqual(Array.from(source));
   });
 
+  test("onCommitted fires once only after a successful commit", () => {
+    const { db, artifact } = makeStore();
+    let calls = 0;
+    const failing = new ArtifactRepository(db, {
+      onCommitted: () => {
+        calls += 1;
+      },
+      writeHook: ({ phase }) => {
+        if (phase === "before_commit") throw new Error("forced commit failure");
+      },
+    });
+    expect(() =>
+      failing.publishRevision({
+        artifactId: artifact.id,
+        artifactType: "svg",
+        source: new Uint8Array([9]),
+      }),
+    ).toThrow();
+    expect(calls).toBe(0);
+    const successful = new ArtifactRepository(db, {
+      onCommitted: () => {
+        calls += 1;
+        expect(db.query("SELECT COUNT(*) AS count FROM revisions").get()).toEqual({ count: 1 });
+      },
+    });
+    successful.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "svg",
+      source: new Uint8Array([10]),
+    });
+    expect(calls).toBe(1);
+  });
+
   test("enforces foreign keys", () => {
     const { repository } = makeStore();
     expect(() =>

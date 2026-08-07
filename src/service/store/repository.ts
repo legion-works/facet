@@ -6,7 +6,6 @@ import {
   ProjectSchema,
   RenderRunSchema,
   RevisionSchema,
-  TemplateSchema,
   type Artifact,
   type ArtifactType,
   type Project,
@@ -14,7 +13,15 @@ import {
   type Revision,
   type Template,
 } from "../../shared/contracts/artifact";
-import { asStoreError, FacetStoreError } from "./database";
+import { asStoreError, FacetStoreError, hardenDatabaseFiles } from "./database";
+import {
+  evictRevisions,
+  instantiateTemplate as instantiateLifecycleTemplate,
+  pinRevision as pinLifecycleRevision,
+  promoteRevision as promoteLifecycleRevision,
+  type PromoteRevisionInput,
+  type TemplateInput,
+} from "./repository-lifecycle";
 
 interface ProjectInput {
   readonly projectRoot: string;
@@ -43,14 +50,7 @@ interface RenderRunInput {
   readonly startedAt?: string;
   readonly finishedAt?: string;
 }
-interface TemplateInput {
-  readonly artifactId: string;
-  readonly revisionId: string;
-  readonly name: string;
-  readonly description?: string | null;
-  readonly promotedBy: string;
-  readonly promotedAt?: string;
-}
+
 interface WriteHookContext {
   readonly phase: "after_insert" | "before_commit";
 }
@@ -194,37 +194,21 @@ export class ArtifactRepository {
           createdAt: timestamp,
         });
         this.options.writeHook?.({ phase: "after_insert" });
-        this.evict(input.artifactId);
-        this.options.onCommitted?.(revision);
+        evictRevisions(this.db, input.artifactId);
+
         this.options.writeHook?.({ phase: "before_commit" });
         return revision;
       });
-      return transact.immediate();
+      const revision = transact.immediate();
+      hardenDatabaseFiles(this.db.filename);
+      this.options.onCommitted?.(revision);
+      return revision;
     } catch (error) {
       const mapped = asStoreError(error);
       if (mapped.code === "constraint" && mapped.message.toLowerCase().includes("unique")) {
         throw new FacetStoreError("duplicate_revision", mapped.message, { cause: error });
       }
       throw mapped;
-    }
-  }
-
-  private evict(artifactId: string): void {
-    while (true) {
-      const count = this.db
-        .query("SELECT COUNT(*) AS count FROM revisions WHERE artifact_id = ?")
-        .get(artifactId) as { count: number };
-      if (count.count <= 50) return;
-      const candidate = this.db
-        .query(
-          "SELECT id FROM revisions WHERE artifact_id = ? AND pinned = 0 AND NOT EXISTS (SELECT 1 FROM templates WHERE templates.revision_id = revisions.id) ORDER BY revision_number ASC LIMIT 1",
-        )
-        .get(artifactId) as { id: string } | null;
-      if (!candidate) return;
-      this.db
-        .query("UPDATE revisions SET parent_revision_id = NULL WHERE parent_revision_id = ?")
-        .run(candidate.id);
-      this.db.query("DELETE FROM revisions WHERE id = ?").run(candidate.id);
     }
   }
 
@@ -277,56 +261,16 @@ export class ArtifactRepository {
     }
   }
 
-  promoteRevision(input: Omit<TemplateInput, "artifactId"> & { artifactId?: string }): Template {
-    const artifactId =
-      input.artifactId ??
-      (
-        this.db.query("SELECT artifact_id FROM revisions WHERE id = ?").get(input.revisionId) as {
-          artifact_id: string;
-        } | null
-      )?.artifact_id;
-    if (!artifactId)
-      throw new FacetStoreError("foreign_key", `Revision not found: ${input.revisionId}`);
-    return this.instantiateTemplate({ ...input, artifactId });
+  promoteRevision(input: PromoteRevisionInput): Template {
+    return promoteLifecycleRevision(this.db, input);
   }
 
   instantiateTemplate(input: TemplateInput): Template {
-    const promotedAt = input.promotedAt ?? now();
-    const value = {
-      id: crypto.randomUUID(),
-      artifactId: input.artifactId,
-      revisionId: input.revisionId,
-      name: input.name,
-      description: input.description ?? null,
-      promotedBy: input.promotedBy,
-      promotedAt,
-    };
-    try {
-      this.db
-        .query(
-          "INSERT INTO templates(id, artifact_id, revision_id, name, description, promoted_by, promoted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run(
-          value.id,
-          value.artifactId,
-          value.revisionId,
-          value.name,
-          value.description,
-          value.promotedBy,
-          value.promotedAt,
-        );
-      return TemplateSchema.parse(value);
-    } catch (error) {
-      throw asStoreError(error);
-    }
+    return instantiateLifecycleTemplate(this.db, input);
   }
 
   pinRevision(revisionId: string): void {
-    try {
-      this.db.query("UPDATE revisions SET pinned = 1 WHERE id = ?").run(revisionId);
-    } catch (error) {
-      throw asStoreError(error);
-    }
+    pinLifecycleRevision(this.db, revisionId);
   }
 
   updateRevisionSource(_revisionId: string, _source: Uint8Array): never {

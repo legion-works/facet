@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
 
@@ -64,7 +64,6 @@ export function openDatabase(paths: DatabasePaths | string): FacetDatabase {
   const config = typeof paths === "string" ? { databasePath: paths } : paths;
   const databasePath = config.databasePath ?? config.dbPath ?? config.path;
   if (!databasePath) throw new FacetStoreError("constraint", "A database path is required");
-  const existed = databasePath !== ":memory:" && existsSync(databasePath);
   if (databasePath !== ":memory:") mkdirSync(dirname(databasePath), { recursive: true });
   let db: Database;
   try {
@@ -73,6 +72,7 @@ export function openDatabase(paths: DatabasePaths | string): FacetDatabase {
       `PRAGMA journal_mode = WAL; PRAGMA busy_timeout = ${Math.max(1, config.busyTimeoutMs ?? 1_000)}; PRAGMA foreign_keys = ON;`,
     );
     db.query("PRAGMA quick_check").get();
+    hardenDatabaseFiles(databasePath);
   } catch (error) {
     throw new FacetStoreError(
       "database_corrupt",
@@ -80,6 +80,17 @@ export function openDatabase(paths: DatabasePaths | string): FacetDatabase {
       { cause: error },
     );
   }
-  if (!existed && databasePath !== ":memory:") chmodSync(databasePath, 0o600);
   return db;
+}
+
+/** SQLite can recreate WAL sidecars with the process umask; chmod is repeated after writes where paths exist. */
+export function hardenDatabaseFiles(databasePath: string): void {
+  if (databasePath === ":memory:") return;
+  for (const suffix of ["", "-wal", "-shm"]) {
+    try {
+      chmodSync(`${databasePath}${suffix}`, 0o600);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
 }

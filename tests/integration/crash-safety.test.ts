@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
@@ -106,6 +106,29 @@ test("locked database honors busy_timeout and returns a typed timeout", () => {
   db.exec("ROLLBACK");
   expect(elapsed).toBeGreaterThanOrEqual(100);
   expect(elapsed).toBeLessThan(2_000);
+});
+
+test("enforces 0600 on an existing database opened with wider permissions", () => {
+  const databasePath = pathFor("permissions");
+  const initial = openDatabase({ databasePath });
+  initial.close();
+  chmodSync(databasePath, 0o644);
+  const reopened = openDatabase({ databasePath });
+  connections.push(reopened);
+  expect(statSync(databasePath).mode & 0o777).toBe(0o600);
+});
+
+test("hardened WAL sidecars are 0600 after a write when SQLite creates them", () => {
+  const { databasePath, repository, artifact } = openStore("sidecars");
+  repository.publishRevision({
+    artifactId: artifact.id,
+    artifactType: "markdown",
+    source: new Uint8Array([8]),
+  });
+  for (const suffix of ["-wal", "-shm"]) {
+    if (existsSync(`${databasePath}${suffix}`))
+      expect(statSync(`${databasePath}${suffix}`).mode & 0o777).toBe(0o600);
+  }
 });
 
 test("corrupt database raises database_corrupt without changing the file", () => {

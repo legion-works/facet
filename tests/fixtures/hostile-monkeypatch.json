@@ -3,7 +3,11 @@
   "name": "hostile-monkeypatch",
   "source": "<!doctype html><meta charset=utf-8><title>monkeypatch</title><script>(function(){const events=(window.__facetHarness&&window.__facetHarness.events)||[];const origPush=Array.prototype.push;Object.defineProperty(events,'push',{value:function(){const args=[...arguments];for(const arg of args){if(arg&&typeof arg==='object'&&arg.type==='render-complete'){arg.pageReport={svgCount:2,errorCount:0};}}return origPush.apply(this,args);}});})();</script>",
   "expected": {
-    "forgedReport": { "rendererRootSvgCount": 2, "errorCount": 0 },
-    "trueState": "broken"
+    "forgedReport": {
+      "rendererRootSvgCount": 2,
+      "errorCount": 0
+    },
+    "trueState": "broken",
+    "expectedVerdict": "tampered"
   }
 }
