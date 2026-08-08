@@ -14,6 +14,7 @@
 
 import { compile } from "vega-lite";
 import { View, loader, parse, type Loader } from "vega";
+import { expressionInterpreter } from "vega-interpreter";
 
 import { FacetRenderError, type RenderContext, decodeArtifactBytes } from "./registry";
 import { importSanitizedSvgText } from "./svg";
@@ -110,8 +111,16 @@ export async function renderChart(ctx: RenderContext, bytes: Uint8Array): Promis
     throw new FacetRenderError("external chart data is not permitted", "chart_external_data");
   }
   let svgText: string;
-  const runtime = parse(compiled.spec as never);
-  const view = new View(runtime, { loader: createBlockedLoader(), renderer: "none" });
+  // `ast: true` + the expression INTERPRETER is Vega's CSP-safe path.
+  // The default compiles expressions with `Function`/eval, which the
+  // frame's nonce-only CSP blocks outright — every chart rendered as an
+  // "unsafe-eval" error instead of a plot.
+  const runtime = parse(compiled.spec as never, {}, { ast: true });
+  const view = new View(runtime, {
+    loader: createBlockedLoader(),
+    renderer: "none",
+    expr: expressionInterpreter,
+  });
   try {
     await view.runAsync();
     if (countDataTuples(view, compiled.spec) === 0) {

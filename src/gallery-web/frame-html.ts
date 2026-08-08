@@ -75,7 +75,26 @@ export function buildFrameDocument(options: { nonce: string; bootstrapUrl: strin
   return (
     "<!doctype html><html><head>" +
     `<meta charset="utf-8">` +
-    `<style>html,body,#artifact{margin:0;min-height:100%;background:transparent}</style>` +
+    // The frame is the artifact's whole viewport. Without these the
+    // renderers inherit UA defaults — black text on the dark stage, and
+    // an SVG at natural size that overflows instead of fitting.
+    `<style>` +
+    `html,body{margin:0;height:100%;background:transparent;` +
+    `color:#c8d3f5;font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}` +
+    // height (not min-height): a percentage max-height on the artifact
+    // only resolves against a DEFINITE parent height, so min-height let
+    // an oversized SVG overflow and crop instead of fitting.
+    `#artifact{margin:0;height:100%;box-sizing:border-box;padding:16px;` +
+    `display:flex;align-items:center;justify-content:center;overflow:auto}` +
+    `#artifact>svg{max-width:100%;max-height:100%;height:auto;width:auto}` +
+    `#artifact a{color:#82aaff}` +
+    `#artifact code,#artifact pre{background:#1e2030;color:#c3e88d;border-radius:4px}` +
+    `#artifact code{padding:1px 4px}#artifact pre{padding:10px;overflow:auto}` +
+    `#artifact table{border-collapse:collapse}` +
+    `#artifact th,#artifact td{border:1px solid #2f334d;padding:4px 8px}` +
+    `#artifact blockquote{border-left:3px solid #444a73;margin:0 0 0 8px;padding-left:12px;color:#a9b8e8}` +
+    `#artifact hr{border:0;border-top:1px solid #2f334d}` +
+    `</style>` +
     "</head><body>" +
     `<main id="artifact"></main>` +
     `<script type="module" nonce="${nonce}" src="${escapedBootstrapUrl}"></script>` +

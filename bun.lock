@@ -11,6 +11,7 @@
         "mermaid": "11.16.1",
         "puppeteer-core": "25.5.0",
         "vega": "6.3.1",
+        "vega-interpreter": "^2.3.1",
         "vega-lite": "6.4.3",
         "zod": "3.24.1",
       },
@@ -453,6 +454,8 @@
     "vega-geo": ["vega-geo@5.1.2", "", { "dependencies": { "d3-array": "^3.2.4", "d3-color": "^3.1.0", "d3-geo": "^3.1.1", "vega-canvas": "^2.0.0", "vega-dataflow": "^6.1.2", "vega-projection": "^2.1.2", "vega-statistics": "^2.0.0", "vega-util": "^2.1.0" } }, "sha512-tls2+IVuKaIOxEqdshuSk2Til8qcF7SUNaWkATKu5hwWqQEY3cp7tfdXosuTMaDTkLp+Nw84iWfe5BzfoxDYMA=="],
 
     "vega-hierarchy": ["vega-hierarchy@5.1.2", "", { "dependencies": { "d3-hierarchy": "^3.1.2", "vega-dataflow": "^6.1.2", "vega-util": "^2.1.0" } }, "sha512-7a72/lA6j50HU6PQe5ChbomftHi29V1oCcibaQpDozZncHuAnsQummqfiPyTMPpNMrSRtyZy18do0IEoOvrbMg=="],
+
+    "vega-interpreter": ["vega-interpreter@2.3.1", "", { "dependencies": { "vega-util": "^2.1.0" } }, "sha512-IYleUp+lXVIGjJUQg+5WJ/xUdteMxEGEnSyWtRhagVuUDiXD0JnERKWffIrQSCUypA86UOuyjzVDtb7oNOsaxw=="],
 
     "vega-label": ["vega-label@2.1.2", "", { "dependencies": { "vega-canvas": "^2.0.0", "vega-dataflow": "^6.1.2", "vega-scenegraph": "^5.2.1", "vega-util": "^2.1.0" } }, "sha512-MFsOKOCG6a5QwP5atoFFi+R58IP/Q7//65UvgrSeankX2QrDcWjBtzIqS6JlYBOAdyjoiAAghx7pnIAj5nAO6A=="],
 

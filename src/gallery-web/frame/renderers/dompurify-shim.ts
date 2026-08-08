@@ -45,8 +45,20 @@ function bindDocumentMethods(realDocument: Document): void {
     if (existing !== undefined) continue;
     const method = (realDocument as unknown as Record<string, unknown>)[name];
     if (typeof method === "function") {
+      const fn = method as (...args: unknown[]) => unknown;
       Object.defineProperty(realDocument, name, {
-        value: (method as (...args: unknown[]) => unknown).bind(realDocument),
+        // `this`-AWARE, never hard-bound. DOMPurify parses input into a
+        // FRESH document and invokes these against it; a copy bound to
+        // `realDocument` would query the wrong document, find nothing,
+        // and silently return empty output (every mermaid label came
+        // back blank). Honour the call-time receiver and fall back to
+        // the real document only for the detached calls that produced
+        // `TypeError: Illegal invocation` in the bundled frame.
+        value: function shadowed(this: unknown, ...args: unknown[]): unknown {
+          const receiver =
+            this === undefined || this === null || this === globalThis ? realDocument : this;
+          return fn.apply(receiver, args);
+        },
         configurable: true,
         writable: true,
       });

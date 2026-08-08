@@ -40,7 +40,17 @@ function ensureMermaidInitialized(): void {
     startOnLoad: false,
     securityLevel: "loose",
     suppressErrorRendering: true,
+    // The stage is dark. Mermaid's default (light) theme paints edges
+    // #333 and label text near-black — invisible here.
+    theme: "dark",
+    darkMode: true,
+    // htmlLabels OFF at EVERY level that can re-enable it. An HTML label
+    // is emitted inside a `<foreignObject>`, which the SVG import path
+    // strips as an XSS vector — so an HTML label renders as an EMPTY
+    // box. Text labels keep markup as DATA and survive the sanitizer.
+    htmlLabels: false,
     flowchart: { htmlLabels: false },
+    class: { htmlLabels: false },
   });
 }
 
