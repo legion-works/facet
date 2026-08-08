@@ -215,20 +215,18 @@ export function renderHelp(): string {
     "  facet publish --artifact-id <id> --type <t> --file -        read bytes from stdin",
     "  cat src.md | facet publish --artifact-id <id> --type <t>    read bytes from stdin (piped)",
     "",
-    "stdout is JSON; diagnostics are stderr.",
+    "stdout is the versioned JSON envelope (or --help / --version text);",
+    "diagnostics are stderr.",
     "",
     "Exit codes:",
   ];
   // Defined inline to avoid a circular import (output.ts does not
   // import from parser.ts; this is the only direction). The numbers
-  // are the canonical EX_USAGE / EX_DATAERR / EX_SOFTWARE / EX_TEMPFAIL
-  // values and must stay in sync with src/cli/output.ts.
+  // must stay in sync with src/cli/output.ts.
   const codes: readonly { code: number; meaning: string }[] = [
-    { code: 0, meaning: "ok" },
-    { code: 64, meaning: "usage error (unknown verb, bad flag)" },
-    { code: 65, meaning: "data error (envelope shape invalid)" },
-    { code: 70, meaning: "internal (spawn / contract-version mismatch)" },
-    { code: 75, meaning: "retryable (transient lock / connection)" },
+    { code: 0, meaning: "ok (any well-formed envelope on stdout, incl. typed error)" },
+    { code: 64, meaning: "usage error (pre-parse: unknown verb, bad flag)" },
+    { code: 70, meaning: "internal (unhandled non-FacetError throw)" },
   ];
   for (const c of codes) lines.push(`  ${c.code}  ${c.meaning}`);
   lines.push("");

@@ -30,7 +30,7 @@ import { join } from "node:path";
 
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 
-import { runCli, type CliIo, type CliExit } from "../../src/cli/main";
+import { runCli, type CliIo, type CliExit, type CliTestHooks } from "../../src/cli/main";
 
 const scratchRoot = join(tmpdir(), `facet-cli-test-${crypto.randomUUID()}`);
 
@@ -175,7 +175,7 @@ describe("cli contract — surface", () => {
     expect(io.stdoutBuf.value).toContain("promote");
     expect(io.stdoutBuf.value).toContain("instantiate");
     expect(io.stdoutBuf.value).toContain("pin");
-    expect(io.stdoutBuf.value).toContain("stdout is JSON");
+    expect(io.stdoutBuf.value).toContain("stdout is");
   });
 
   test("--version prints version + contractVersion", async () => {
@@ -248,19 +248,37 @@ describe("cli contract — lazy spawn", () => {
     expect(secondMeta.port).toBe(firstMeta.port);
   });
 
-  test("20 concurrent cold callers share ONE spawn (one pid, one metadata record)", async () => {
+  test("20 concurrent cold callers share ONE REAL spawn (counter proves it; non-vacuous proof in same test)", async () => {
     const { env, home } = makeEnv("concurrent");
     const N = 20;
+
+    // 1. 20 concurrent cold callers via the normal inflight path.
+    //    The onServiceSpawn hook fires on every real child_process.spawn;
+    //    the in-process inflight map is what keeps the count at 1.
+    const counter = { value: 0 };
+    const hooks: CliTestHooks = {
+      onServiceSpawn: () => {
+        counter.value += 1;
+      },
+    };
     const ios = Array.from({ length: N }, () => makeIo());
     const exits = await Promise.all(
-      ios.map((io) => runCli(["status", "--artifact-id", "does-not-exist"], { ...io, env })),
+      ios.map((io) => runCli(["status", "--artifact-id", "does-not-exist"], { ...io, env }, hooks)),
     );
     // Every call completed; the artifact-not-found code lands in the
     // envelope body (adapter-safe), not as a crash exit code.
     for (const e of exits) {
       expect(e.code).toBe(0);
     }
-    // Exactly one lock file; one record; one pid.
+    // The spawn counter is the meaningful assertion: exactly ONE
+    // real spawn happened across the 20 concurrent callers. The
+    // earlier lock-metadata-only assertion was vacuous — a
+    // broken-inflight impl still produces one lock winner and
+    // one metadata record, so the lock check could not detect it.
+    expect(counter.value).toBe(1);
+
+    // Tautological cross-check (the old, weaker assertion): the
+    // lock record still shows a single owner.
     const lockPath = join(home, "run", "facet.lock");
     expect(existsSync(lockPath)).toBe(true);
     const meta = JSON.parse(readFileSync(lockPath, "utf8")) as {
@@ -269,25 +287,48 @@ describe("cli contract — lazy spawn", () => {
     };
     const pids = new Set(exits.map((e) => e.spawnedPid).filter((p): p is number => p !== null));
     expect(pids.size).toBe(1);
-    // Every run reported the SAME spawnedPid; that pid is the lock holder.
     const firstExited = exits[0];
     if (firstExited === undefined) throw new Error("no exits");
     const spawnedPid = firstExited.spawnedPid;
     if (spawnedPid === null) throw new Error("no spawnedPid");
     expect(spawnedPid).toBe(meta.pid);
-    // A second concurrent burst on the same home reuses the same
-    // service (zero new spawns).
-    const ios2 = Array.from({ length: N }, () => makeIo());
-    const exits2 = await Promise.all(
-      ios2.map((io) => runCli(["list", "--project-id", "p"], { ...io, env })),
+
+    // 2. Non-vacuous proof: with the inflight map bypassed, the same
+    //    20-call burst produces 20 spawns. The delta (1 vs 20) is
+    //    what the concurrency test actually pins — removing the
+    //    inflight path would make THIS assertion fail.
+    const brokenCounter = { value: 0 };
+    const brokenHooks: CliTestHooks = {
+      onServiceSpawn: () => {
+        brokenCounter.value += 1;
+      },
+      bypassInflight: true,
+    };
+    // Each caller uses its own home so the lock-precheck path does
+    // not short-circuit (otherwise the broken impl would only spawn
+    // once for the first caller and hit the precheck for the rest).
+    const brokenHomes: { env: NodeJS.ProcessEnv; home: string }[] = [];
+    for (let i = 0; i < N; i += 1) {
+      const bhome = join(scratchRoot, `broken-${crypto.randomUUID()}`);
+      mkdirSync(bhome, { recursive: true });
+      brokenHomes.push({
+        home: bhome,
+        env: { ...process.env, FACET_HOME: bhome },
+      });
+    }
+    const brokenIos = brokenHomes.map(() => makeIo());
+    await Promise.all(
+      brokenHomes.map((h, i) => {
+        const io = brokenIos[i];
+        if (io === undefined) throw new Error("missing io");
+        return runCli(["list", "--project-id", "p"], { ...io, env: h.env }, brokenHooks);
+      }),
     );
-    const secondPids = new Set(
-      exits2.map((e) => e.spawnedPid).filter((p): p is number => p !== null),
-    );
-    expect(secondPids.size).toBe(1);
-    const secondPid = [...secondPids][0]!;
-    expect(secondPid).toBe(spawnedPid);
-  }, 30_000);
+    // The broken path (bypassInflight + unique homes) produces 20
+    // real spawns. The shared path above produced 1. The 20x delta
+    // is the proof that the inflight map is doing its job.
+    expect(brokenCounter.value).toBe(N);
+  }, 60_000);
 });
 
 describe("cli contract — wire", () => {

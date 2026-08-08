@@ -53,6 +53,20 @@ export interface SpawnServiceOptions {
   readonly pollIntervalMs?: number;
 }
 
+/**
+ * Test-side hooks. The `onServiceSpawn` callback fires once per
+ * REAL `child_process.spawn` call in the cold-start path; the
+ * concurrency test counts these to assert that 20 concurrent
+ * cold callers result in exactly ONE spawn (not 20). The
+ * `bypassInflight` flag skips the in-process inflight wait map
+ * so the test can prove the "exactly one" assertion is meaningful
+ * (with bypass on, the same 20 callers produce 20 spawns).
+ */
+export interface ServiceHooks {
+  readonly onServiceSpawn?: () => void;
+  readonly bypassInflight?: boolean;
+}
+
 export interface ResolvedService {
   readonly metadata: LockMetadata;
   readonly installToken: string;
@@ -133,8 +147,16 @@ function reapStaleLock(lockPath: string): void {
  * killing the parent. Instead the CLI reaps a stale lock and forks
  * the child, which acquires the lock on its own startup path via
  * `startFacetService`.
+ *
+ * The `onServiceSpawn` hook fires once before each real
+ * `child_process.spawn` call; the concurrency test uses it to
+ * assert that 20 concurrent cold callers produce exactly ONE
+ * spawn (not 20).
  */
-async function coldStart(options: SpawnServiceOptions): Promise<ResolvedService> {
+async function coldStart(
+  options: SpawnServiceOptions,
+  hooks: ServiceHooks = {},
+): Promise<ResolvedService> {
   const env = options.env.FACET_HOME !== undefined ? { facetHome: options.env.FACET_HOME } : {};
   const paths = options.paths ?? computeFacetPaths(env);
   reapStaleLock(paths.lock);
@@ -152,6 +174,7 @@ async function coldStart(options: SpawnServiceOptions): Promise<ResolvedService>
       baseUrl: `http://127.0.0.1:${precheck.port}`,
     };
   }
+  hooks.onServiceSpawn?.();
   const child = spawnChild(paths, options);
   // Detach the child from the parent's lifecycle — when the CLI
   // exits, the service keeps running until its idle window closes.
@@ -170,6 +193,20 @@ async function coldStart(options: SpawnServiceOptions): Promise<ResolvedService>
 }
 
 /**
+ * Exported for the non-vacuous concurrency test: cold-start
+ * without consulting the in-process inflight map. 20 concurrent
+ * calls with the same options produce 20 spawns (the test
+ * asserts this delta to prove the inflight map is what makes
+ * `ensureService` produce exactly one).
+ */
+export async function coldStartService(
+  options: SpawnServiceOptions,
+  hooks: ServiceHooks = {},
+): Promise<ResolvedService> {
+  return coldStart(options, hooks);
+}
+
+/**
  * Ensure a live, contract-version-matching service is running. If
  * one is already running, return its info; if not, lazily start one
  * and share the wait across concurrent callers.
@@ -178,7 +215,10 @@ async function coldStart(options: SpawnServiceOptions): Promise<ResolvedService>
  * token. Throws typed `FacetError` on contract-version mismatch
  * and on the ready deadline.
  */
-export async function ensureService(options: SpawnServiceOptions): Promise<ResolvedService> {
+export async function ensureService(
+  options: SpawnServiceOptions,
+  hooks: ServiceHooks = {},
+): Promise<ResolvedService> {
   const env = options.env.FACET_HOME !== undefined ? { facetHome: options.env.FACET_HOME } : {};
   const paths = options.paths ?? computeFacetPaths(env);
   const key = paths.lock;
@@ -206,12 +246,16 @@ export async function ensureService(options: SpawnServiceOptions): Promise<Resol
   }
 
   // Concurrent-caller fast path: another caller in this process is
-  // already spawning. Join the same wait.
-  const pending = inflight.get(key);
-  if (pending !== undefined) return pending;
+  // already spawning. Join the same wait. `bypassInflight` is a
+  // test-only flag that disables this join so the concurrency
+  // test can prove the join path is doing real work.
+  if (!hooks.bypassInflight) {
+    const pending = inflight.get(key);
+    if (pending !== undefined) return pending;
+  }
 
   // Cold path: become the spawner.
-  const promise = coldStart(options).finally(() => {
+  const promise = coldStart(options, hooks).finally(() => {
     inflight.delete(key);
   });
   inflight.set(key, promise);

@@ -1,18 +1,38 @@
 /**
  * Output adapter.
  *
- * stdout is reserved for the versioned JSON envelope. diagnostics,
- * help text, and kill-switch silence go to stderr. The CLI never
- * writes a human-readable body to stdout unless the caller passed
- * `--format text`, which only applies to `--help` and `--version`.
+ * I/O surface:
+ *   - stdout: `--help` text (default format), `--version` text, and
+ *     every envelope (success OR typed error). The envelope is the
+ *     product contract — adapters parse stdout as JSON and branch on
+ *     the typed `ok` + `error.code` shape.
+ *   - stderr: service-side structured JSON logs + any CLI-side
+ *     diagnostic the caller might want to capture (the current
+ *     `runCli` path is silent on stderr; future surface-level
+ *     warnings go here).
  *
- * Exit codes are adapter-safe: 0 ok, 64 usage error (EX_USAGE),
- * 65 data error (EX_DATAERR) for envelope failures, 70 internal
- * (EX_SOFTWARE) for protocol/spawn/contract failures, 75 temporary
- * (EX_TEMPFAIL) for retryable conditions. The reserved/not-implemented
- * path still exits 0 because the envelope carries the typed
- * `accepted: false` shape — adapters branch on the envelope, not the
- * exit code, for that case.
+ * Exit-code policy:
+ *   The envelope is the contract. Any CLI path that can produce a
+ *   well-formed `FacetEnvelope` exits 0 — adapters branch on the
+ *   envelope, not the exit code. Nonzero codes are reserved for
+ *   paths that cannot produce a typed envelope:
+ *
+ *     - pre-parse usage error (unknown verb, bad flag, missing arg)
+ *       → USAGE (64)
+ *     - unhandled non-FacetError throw (a real bug) → INTERNAL (70)
+ *
+ *   Rule of thumb: malformed invocation the CLI can't turn into a
+ *   typed envelope → nonzero; any well-formed envelope (incl.
+ *   `ok: false` with a typed `error.code`) → exit 0.
+ *
+ *   The reserved `export` verb exits 0 with a typed
+ *   `accepted: false` envelope — adapters see "not implemented"
+ *   via the envelope, not via the exit code.
+ *
+ * DATA / TEMPFAIL codes from earlier drafts were removed: with the
+ * envelope-first policy they are unreachable. Every `FacetError`
+ * thrown by the spawn path or a per-verb builder is wrapped in a
+ * typed envelope and exits 0.
  */
 
 import { errEnvelope, okEnvelope, type FacetEnvelope } from "../shared/contracts/envelope";
@@ -24,16 +44,21 @@ import { generateRequestId } from "../shared/util/time";
  * dispatch can never disagree.
  */
 export const EXIT_CODES = {
-  /** Operation succeeded (envelope is well-formed; may still be a typed error envelope). */
+  /** Well-formed envelope on stdout (success OR typed error). */
   OK: 0,
-  /** Usage error — unknown verb, bad flag, missing required argument. Adapter-safe. */
+  /**
+   * Pre-parse usage error — unknown verb, bad flag, missing
+   * required argument, or a malformed invocation the CLI cannot
+   * turn into a typed envelope. Distinct from typed error
+   * envelopes (which also exit 0).
+   */
   USAGE: 64,
-  /** The envelope was not produced (data error). Adapter-safe. */
-  DATA: 65,
-  /** Internal protocol/spawn/contract failure. */
+  /**
+   * Unhandled non-FacetError throw (a real bug). The CLI
+   * surfaced an internal envelope on stdout; the nonzero exit
+   * signals "shell pipeline should treat this as a crash".
+   */
   INTERNAL: 70,
-  /** Retryable failure (network, transient lock contention). */
-  TEMPFAIL: 75,
 } as const;
 
 export type ExitCode = (typeof EXIT_CODES)[keyof typeof EXIT_CODES];
@@ -47,11 +72,9 @@ export interface CliWriter {
  * by both the help text and the test that asserts it appears.
  */
 export const EXIT_CODE_TABLE: readonly { code: number; meaning: string }[] = [
-  { code: EXIT_CODES.OK, meaning: "ok" },
-  { code: EXIT_CODES.USAGE, meaning: "usage error (unknown verb, bad flag)" },
-  { code: EXIT_CODES.DATA, meaning: "data error (envelope shape invalid)" },
-  { code: EXIT_CODES.INTERNAL, meaning: "internal (spawn / contract-version mismatch)" },
-  { code: EXIT_CODES.TEMPFAIL, meaning: "retryable (transient lock / connection)" },
+  { code: EXIT_CODES.OK, meaning: "ok (any well-formed envelope on stdout)" },
+  { code: EXIT_CODES.USAGE, meaning: "usage error (pre-parse: unknown verb, bad flag)" },
+  { code: EXIT_CODES.INTERNAL, meaning: "internal (unhandled non-FacetError throw)" },
 ];
 
 /**
@@ -64,7 +87,8 @@ export function printEnvelope(writer: CliWriter, envelope: FacetEnvelope<unknown
 
 /**
  * Build an OK envelope carrying a version + contractVersion. Used by
- * `--version` (text mode) and `--version --json` (envelope mode).
+ * `--version --json`; the text form of `--version` writes a plain
+ * string to stdout instead.
  */
 export function buildVersionEnvelope(
   version: string,
@@ -77,9 +101,11 @@ export function buildVersionEnvelope(
 }
 
 /**
- * Build a typed error envelope for a CLI-side failure (no service
- * round-trip needed). Used by the kill switch, unknown verb, and
- * pre-spawn argument validation.
+ * Build a typed error envelope for a pre-parse CLI-side failure.
+ * Used by the parser when it cannot turn the invocation into a
+ * typed envelope (unknown verb, bad flag, missing required value).
+ * The CLI still exits USAGE (64) here because the user-supplied
+ * argv is what triggered the error, not the service.
  */
 export function buildUsageError(
   message: string,

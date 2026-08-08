@@ -27,7 +27,7 @@ import { FacetError } from "../shared/errors/facet-error";
 
 import { parseArgs, renderHelp, type ParsedCommand } from "./parser";
 import { buildVersionEnvelope, buildUsageError, printEnvelope, EXIT_CODES } from "./output";
-import { ensureService } from "./spawn-service";
+import { ensureService, type ServiceHooks } from "./spawn-service";
 import { FacetClient } from "./client";
 
 import { buildCreateRequest } from "./commands/create";
@@ -46,6 +46,16 @@ export interface CliIo {
   readonly stdout: { write(chunk: string | Uint8Array): boolean };
   readonly stderr: { write(chunk: string | Uint8Array): boolean };
   readonly env: NodeJS.ProcessEnv;
+}
+
+/**
+ * Test-only side-channels. The production entrypoint never passes
+ * these; the test suite uses them to count real spawns and to
+ * disable the in-process inflight wait map.
+ */
+export interface CliTestHooks {
+  readonly onServiceSpawn?: () => void;
+  readonly bypassInflight?: boolean;
 }
 
 export interface CliExit {
@@ -156,8 +166,15 @@ async function executeVerb(
  * Top-level CLI driver. Returns the exit code + the pid the CLI
  * spawned (for test assertions); never calls `process.exit` so
  * tests can run end-to-end without a real subprocess.
+ *
+ * The third arg is test-only and lets the concurrency test count
+ * real spawns + disable the in-process inflight wait map.
  */
-export async function runCli(argv: readonly string[], io: CliIo): Promise<CliExit> {
+export async function runCli(
+  argv: readonly string[],
+  io: CliIo,
+  testHooks: CliTestHooks = {},
+): Promise<CliExit> {
   // 1. Kill switch: FACET=off is a clean no-op.
   if ((io.env.FACET ?? "").toLowerCase() === "off") {
     return { code: EXIT_CODES.OK, spawnedPid: null };
@@ -194,7 +211,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<CliExi
     metadata: { pid: number; startTime: number; port: number; contractVersion: string };
   };
   try {
-    const r = await ensureService({ env: io.env });
+    const r = await ensureService({ env: io.env }, testHooks as ServiceHooks);
     resolved = { baseUrl: r.baseUrl, installToken: r.installToken, metadata: r.metadata };
   } catch (error) {
     // Any `FacetError` produces a well-formed envelope on stdout;
