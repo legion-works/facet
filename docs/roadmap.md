@@ -15,6 +15,7 @@ types may extend registries, but artifact code never gains host capabilities.
 ## v2
 
 • TypeScript `ArtifactBuilder`
+▸ Swappable UI library: let a TSX artifact declare its UI kit (design-system, shadcn, …) and resolve it through a registered provider — another typed registry extension, like `RendererRegistry`. Hard constraint: the kit is vendored/bundled offline (never a runtime CDN pull) and artifact code still gains zero host capabilities — the frozen-CSP + byte-dumb model binds it.
 • Forms `FormBridge`
 • FTS5 `SearchIndex`
 • Trilium `ExportSink`
