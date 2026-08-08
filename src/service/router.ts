@@ -25,6 +25,7 @@ import {
   type CommandRequest,
 } from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
+import { join, normalize, relative } from "node:path";
 
 import { requireAnyBearer, checkMutationSecurityHeaders } from "./security/auth";
 import {
@@ -269,17 +270,89 @@ export function buildRouter(deps: RouterDeps): {
     string,
     { readonly artifactId: string; readonly revisionSha: string; readonly leaseId: string }
   >();
-  const galleryHtml = `<!doctype html><html><head><meta charset="utf-8"><title>facet gallery</title></head><body><div id="facet-shell">Loading facet gallery…</div></body></html>`;
+  const galleryRoot = join(import.meta.dir, "../../dist/gallery");
+  const galleryCsp =
+    "default-src 'self'; " +
+    "script-src 'self'; " +
+    "style-src 'self'; " +
+    "connect-src 'self'; " +
+    "img-src 'self' data:; " +
+    "font-src 'self' data:; " +
+    "frame-src 'none'; " +
+    "object-src 'none'; " +
+    "base-uri 'none'; " +
+    "form-action 'none'";
+  let galleryBuild: Promise<void> | null = null;
+
+  const ensureGalleryBuild = async (): Promise<void> => {
+    if (await Bun.file(join(galleryRoot, "index.html")).exists()) return;
+    galleryBuild ??= (async () => {
+      const process = Bun.spawn(["bun", "scripts/build-gallery.ts"], {
+        cwd: join(import.meta.dir, "../.."),
+        stderr: "pipe",
+        stdout: "ignore",
+      });
+      const exitCode = await process.exited;
+      if (exitCode !== 0) {
+        const details = await new Response(process.stderr).text();
+        throw new Error(`Gallery build failed (exit ${exitCode})${details ? `: ${details}` : ""}`);
+      }
+    })().finally(() => {
+      galleryBuild = null;
+    });
+    await galleryBuild;
+  };
+
+  const galleryResponse = async (path: string): Promise<Response> => {
+    try {
+      await ensureGalleryBuild();
+    } catch (error) {
+      return new Response(error instanceof Error ? error.message : "Gallery build failed", {
+        status: 500,
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+    const requested = path === ROUTE_GALLERY ? "index.html" : path.replace(/^\/gallery\/?/, "");
+    return serveGalleryFile(requested, galleryCsp);
+  };
+
+  const serveGalleryFile = async (requested: string, csp?: string): Promise<Response> => {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(requested);
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+    const candidate = normalize(join(galleryRoot, decoded));
+    const rootRelative = relative(galleryRoot, candidate);
+    if (rootRelative.startsWith("..") || rootRelative.includes("/..")) {
+      return new Response("Not found", { status: 404 });
+    }
+    const file = Bun.file(candidate);
+    if (!(await file.exists())) return new Response("Not found", { status: 404 });
+    return new Response(file, {
+      status: 200,
+      headers: {
+        "cache-control": "no-store",
+        "content-type": file.type || "application/octet-stream",
+        ...(csp === undefined ? {} : { "content-security-policy": csp }),
+      },
+    });
+  };
 
   return {
     async fetch(req: Request): Promise<Response> {
       const url = new URL(req.url);
       const path = url.pathname;
-      if (path === ROUTE_GALLERY && req.method.toUpperCase() === "GET") {
-        return new Response(galleryHtml, {
-          status: 200,
-          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-        });
+      if (
+        (path === ROUTE_GALLERY || path.startsWith(`${ROUTE_GALLERY}/`)) &&
+        req.method.toUpperCase() === "GET"
+      ) {
+        return galleryResponse(path);
+      }
+      if (req.method.toUpperCase() === "GET" && path !== "/") {
+        const rootAssetResponse = await serveGalleryFile(path.replace(/^\//, ""));
+        if (rootAssetResponse.status !== 404) return rootAssetResponse;
       }
       if (path === ROUTE_BOOTSTRAP && req.method.toUpperCase() === "POST") {
         const body = (await req.json().catch(() => null)) as { token?: unknown } | null;
