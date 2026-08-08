@@ -77,8 +77,13 @@ function buildInputEnvelope(input: Tier0Input): WorkerInputEnvelope {
  * Strip the worker's trailing newline (if any) and parse the JSON.
  * A non-JSON payload, a schema mismatch, or extra trailing bytes
  * produces a typed `tier0_protocol_error`.
+ *
+ * Exported (with a test-only prefix) so the strict-zod guard is
+ * directly testable; production code only calls it through
+ * `runTier0`.
  */
-function parseWorkerStdout(stdout: string, outputCap: number): Tier0Result {
+// oxlint-disable-next-line no-underscore-dangle
+export function _parseWorkerStdout(stdout: string, outputCap: number): Tier0Result {
   const trimmed = stdout.trim();
   if (trimmed.length === 0) {
     throw new FacetError("tier0_protocol_error", "Worker emitted empty stdout", {
@@ -237,7 +242,7 @@ async function runOnce(
       details: { capBytes: options.outputCap },
     });
   }
-  return parseWorkerStdout(stdout, options.outputCap);
+  return _parseWorkerStdout(stdout, options.outputCap);
 }
 
 /**

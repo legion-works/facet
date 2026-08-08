@@ -20,7 +20,7 @@ import { parseMermaid } from "../../src/validation/tier0/mermaid";
 import { parseMarkdown } from "../../src/validation/tier0/markdown";
 import { parseSvg } from "../../src/validation/tier0/svg";
 import { parseChart } from "../../src/validation/tier0/chart";
-import { runTier0 } from "../../src/validation/tier0/runner";
+import { runTier0, _parseWorkerStdout } from "../../src/validation/tier0/runner";
 import { probeNetnsSupport } from "../../src/validation/sandbox/netns";
 import { TIER0_TIMEOUT_MS } from "../../src/validation/sandbox/limits";
 
@@ -343,6 +343,96 @@ describe("Tier 0 protocol-boundary unit cases (no subprocess required)", () => {
 
   test("an empty stdout payload is rejected at the runner's stdout parser", () => {
     expect(() => JSON.parse("".trim())).toThrow();
+  });
+});
+
+describe("Tier 0 stdout schema guard (strict-zod)", () => {
+  /**
+   * A well-formed JSON payload that violates the closed
+   * Tier0ResultSchema MUST surface as a typed `tier0_protocol_error`.
+   * The runner calls `_parseWorkerStdout` directly so the test is
+   * independent of the netns subprocess path.
+   *
+   * Mutation probe: loosen `_parseWorkerStdout` to skip the
+   * `Tier0ResultSchema.safeParse` call (or replace it with a wider
+   * parser) and every test in this block MUST redden — the schema
+   * guard is the only line that rejects these payloads.
+   */
+  const VALID_STDOUT = JSON.stringify({
+    tier: 0,
+    status: "ok",
+    artifactId: "artifact-test",
+    revisionSha: "0".repeat(64),
+    expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
+    observed: {
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      errorCount: 0,
+    },
+  });
+  const OUTPUT_CAP = 64 * 1024;
+
+  test("baseline: a well-formed Tier0Result JSON is accepted", () => {
+    const result = _parseWorkerStdout(VALID_STDOUT, OUTPUT_CAP);
+    expect(result.tier).toBe(0);
+    expect(result.status).toBe("ok");
+  });
+
+  test("rejects a well-formed JSON object that VIOLATES Tier0ResultSchema (missing required field)", () => {
+    // Drop the required `observed` field — the strict schema rejects
+    // a verdict without an observation block.
+    const bad = JSON.parse(VALID_STDOUT);
+    delete bad["observed"];
+    const stdout = JSON.stringify(bad);
+    expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
+      expect.objectContaining({ code: "tier0_protocol_error" }),
+    );
+  });
+
+  test("rejects a well-formed JSON object with a wrong-typed field (status not in the closed enum)", () => {
+    const bad = { ...JSON.parse(VALID_STDOUT), status: "yolo" };
+    const stdout = JSON.stringify(bad);
+    expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
+      expect.objectContaining({ code: "tier0_protocol_error" }),
+    );
+  });
+
+  test("rejects a well-formed JSON object with a wrong-typed field (revisionSha not a 64-hex string)", () => {
+    const bad = { ...JSON.parse(VALID_STDOUT), revisionSha: "not-a-sha" };
+    const stdout = JSON.stringify(bad);
+    expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
+      expect.objectContaining({ code: "tier0_protocol_error" }),
+    );
+  });
+
+  test("rejects a well-formed JSON object whose observed.discriminativeErrors violates the closed error-entry schema", () => {
+    // discriminativeErrors entries must have non-empty code + message.
+    // An entry with `code: 1` (wrong type) trips the schema.
+    const bad = JSON.parse(VALID_STDOUT);
+    bad["observed"] = {
+      ...bad["observed"],
+      discriminativeErrors: [{ code: 1, message: "wrong code type" }],
+    };
+    const stdout = JSON.stringify(bad);
+    expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
+      expect.objectContaining({ code: "tier0_protocol_error" }),
+    );
+  });
+
+  test("rejects a JSON value that is NOT an object (array)", () => {
+    const stdout = JSON.stringify([1, 2, 3]);
+    expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
+      expect.objectContaining({ code: "tier0_protocol_error" }),
+    );
+  });
+
+  test("rejects a JSON value that is NOT an object (string)", () => {
+    const stdout = JSON.stringify("a verdict");
+    expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
+      expect.objectContaining({ code: "tier0_protocol_error" }),
+    );
   });
 });
 
