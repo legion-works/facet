@@ -40,7 +40,7 @@ import {
 import { FacetError } from "../../shared/errors/facet-error";
 
 import { buildHostPage } from "./harness";
-import { PuppeteerTier1Browser } from "./cdp-pipe";
+import { PuppeteerTier1Browser, Tier1TransportWedgeError } from "./cdp-pipe";
 import { resolveLauncher } from "./launcher";
 import { createIsolatedWorld, resolveSrcdocChildFrame } from "./frame-target";
 import { probeProtocolGetDocument, probeProtocolSnapshot } from "./protocol-probe";
@@ -48,6 +48,21 @@ import { probeIsolatedCounts } from "./isolated-probe";
 import { TIER1_RENDER_BARRIER_MS } from "./limits";
 import { type VerifierTarget } from "./browser-process";
 import { deriveVerdict, type PageShim } from "./verdict";
+import { readPidStartTimeTicks } from "../../shared/util/process";
+
+/**
+ * The wedge's second face: with the pipe torn down, puppeteer rejects
+ * sends with a target/session-closed error instead of pending forever.
+ * Same cause, same remedy — relaunch once with a fresh browser.
+ */
+function isTransportClosedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("Session closed") ||
+    message.includes("Target closed") ||
+    message.includes("Connection closed")
+  );
+}
 
 interface ShimCapture {
   readonly pageShim: PageShim | null;
@@ -61,8 +76,32 @@ interface ShimCapture {
  * netns unavailable, browser died, probe timed out, protocol
  * error); verdict-level divergences are surfaced via the `status`
  * field on the returned result.
+ *
+ * A wedged CDP transport (browser alive, pipe dead — a launch-time
+ * race in the subprocess layer when a browser is spawned immediately
+ * after another browser's teardown) is retried ONCE with a fresh
+ * browser: it is a property of the launch, not of the artifact, so a
+ * relaunch verifies the same bytes.
  */
 export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
+  let lastWedge: Tier1TransportWedgeError | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await runTier1Attempt(input);
+    } catch (error) {
+      if (error instanceof Tier1TransportWedgeError) {
+        lastWedge = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new FacetError("tier1_protocol_error", lastWedge?.message ?? "tier1 transport wedged", {
+    retryable: false,
+  });
+}
+
+async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
   if (!Number.isInteger(input.artifactType === undefined)) {
     void (input.artifactType as unknown);
   }
@@ -71,11 +110,17 @@ export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
   });
   const profileDir = mkdtempSync(join(tmpdir(), "facet-tier1-host-"));
   let target: VerifierTarget | undefined;
+  let targetStartTime = 0;
   let hostHtmlPath: string | undefined;
   const hostDir = mkdtempSync(join(tmpdir(), "facet-tier1-hostdir-"));
+  let wedged = false;
 
   try {
     target = await browser.launch();
+    // Snapshot the OS start time NOW so the wedge teardown can confirm
+    // the pid still belongs to this browser before signaling it (a
+    // dead browser's pid can be reused by an unrelated process).
+    targetStartTime = target.startTime;
     hostHtmlPath = join(hostDir, "host.html");
     const { html } = await buildHostPage(input.source, "render", hostDir, input.artifactType);
     writeFileSync(hostHtmlPath, html, "utf8");
@@ -142,6 +187,14 @@ export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
     return result;
   } catch (error) {
     if (error instanceof FacetError) throw error;
+    if (error instanceof Tier1TransportWedgeError || isTransportClosedError(error)) {
+      // Flag before the finally block so teardown kills the wedged
+      // browser instead of pending on its dead pipe.
+      wedged = true;
+      if (error instanceof Tier1TransportWedgeError) throw error;
+      const closedMessage = error instanceof Error ? error.message : String(error);
+      throw new Tier1TransportWedgeError(closedMessage);
+    }
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("timed out") || message.includes("timeout")) {
       throw new FacetError("tier1_timeout", message, { retryable: false });
@@ -152,7 +205,21 @@ export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
     throw new FacetError("tier1_protocol_error", message, { retryable: false, cause: error });
   } finally {
     if (target !== undefined) {
-      await target.close().catch(() => {});
+      if (wedged && target.pid > 0 && readPidStartTimeTicks(target.pid) === targetStartTime) {
+        // A wedged transport makes close() pend on the dead pipe;
+        // kill the browser first so close only reaps. The start-time
+        // check pins the kill to THIS browser — signaling a reused
+        // pid (or -1, the whole process group) is not an option.
+        try {
+          process.kill(target.pid, "SIGKILL");
+        } catch {
+          // already dead
+        }
+      }
+      await Promise.race([
+        target.close().catch(() => {}),
+        new Promise<void>((resolve) => setTimeout(resolve, 3_000)),
+      ]);
     }
     if (hostHtmlPath !== undefined) {
       try {

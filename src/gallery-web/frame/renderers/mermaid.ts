@@ -1,11 +1,17 @@
 /**
- * Mermaid renderer — the REAL mermaid runtime, `securityLevel: "strict"`.
+ * Mermaid renderer — the REAL mermaid runtime, `securityLevel: "loose"`.
  *
  * Renders the diagram to an SVG string via `mermaid.render()`, awaits
  * completion, then imports the result through the ONE sanitized-SVG
- * import path (`svg.ts`). Mermaid's own strict-mode sanitization is
- * the first layer; the shared import path is the second (defense in
- * depth — the frame CSP is the third).
+ * import path (`svg.ts`). Mermaid's strict/sandbox levels add a
+ * whole-SVG DOMPurify pass on top — redundant here, and broken in the
+ * srcdoc bundle: the shim DOMPurify's SVG-input `_initDocument` path
+ * resolves `body` to null and returns `""` for every diagram. "loose"
+ * skips that pass (`!isLooseSecurityLevel` guard in mermaid's render),
+ * so `importSanitizedSvgText` is the SOLE outer-SVG sanitizer — script,
+ * foreignObject, on* handlers, and non-fragment URLs are still stripped
+ * there; the frame CSP is the backstop. Per-label `sanitizeText`
+ * (DOMPurify via the shim) is unaffected by the security level.
  *
  * Two render-time hazards are handled explicitly:
  *   1. `mermaid.render()` leaves its sandbox container (`d<id>` div)
@@ -32,8 +38,9 @@ function ensureMermaidInitialized(): void {
   initialized = true;
   mermaid.initialize({
     startOnLoad: false,
-    securityLevel: "strict",
+    securityLevel: "loose",
     suppressErrorRendering: true,
+    flowchart: { htmlLabels: false },
   });
 }
 

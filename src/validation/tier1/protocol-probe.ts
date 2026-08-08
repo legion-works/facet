@@ -29,7 +29,15 @@ interface SnapshotDocument {
   readonly frameId: number;
   readonly nodes: {
     readonly nodeName: number[];
-    readonly attributes?: { name: number[]; value: number[] }[];
+    /**
+     * Per-node attribute payload. The wire format is a FLAT array of
+     * alternating string-table indices — `[nameIdx, valueIdx, …]` —
+     * not `{name, value}` pairs (verified against the pinned shell:
+     * misparsing this shape silently zeroes every attribute-derived
+     * count, which the verdict layer then reads as a channel
+     * divergence → `tampered`).
+     */
+    readonly attributes?: readonly (readonly number[])[];
   };
 }
 
@@ -52,6 +60,19 @@ function countByName(snapshot: SnapshotResponse, documentIndex: number, name: st
   return count;
 }
 
+/** Iterate one node's attributes as decoded `[name, value]` pairs. */
+function* attributePairs(
+  snapshot: SnapshotResponse,
+  attr: readonly number[],
+): Generator<readonly [string, string]> {
+  for (let i = 0; i + 1 < attr.length; i += 2) {
+    yield [
+      readString(snapshot.strings, attr[i] ?? 0),
+      readString(snapshot.strings, attr[i + 1] ?? 0),
+    ] as const;
+  }
+}
+
 function countGNode(snapshot: SnapshotResponse, documentIndex: number): number {
   // Count `g.node` via the per-node attribute walk: DOMSnapshot exposes
   // attribute lists, so the protocol authority counts the SAME class
@@ -68,11 +89,9 @@ function countGNode(snapshot: SnapshotResponse, documentIndex: number): number {
     const tag = readString(snapshot.strings, document.nodes.nodeName[nodeIdx] ?? 0).toLowerCase();
     if (tag !== "g") continue;
     const attr = attributes[nodeIdx];
-    if (attr === undefined || attr.name === undefined || attr.value === undefined) continue;
-    for (let i = 0; i < attr.name.length; i += 1) {
-      const name = readString(snapshot.strings, attr.name[i] ?? 0);
+    if (attr === undefined) continue;
+    for (const [name, value] of attributePairs(snapshot, attr)) {
       if (name !== "class") continue;
-      const value = readString(snapshot.strings, attr.value[i] ?? 0);
       if (value.split(/\s+/).includes("node")) count += 1;
       break;
     }
@@ -81,19 +100,21 @@ function countGNode(snapshot: SnapshotResponse, documentIndex: number): number {
 }
 
 function collectViewBoxes(snapshot: SnapshotResponse, documentIndex: number): string[] {
+  // Only `<svg>` elements carry the layout signal: mermaid also puts
+  // viewBox on `<marker>`/`<symbol>` defs, and counting those would
+  // diverge from the isolated-world census (which reads viewBox off
+  // svg roots only) and forge a `tampered` verdict on honest renders.
   const document = snapshot.documents[documentIndex];
   if (document === undefined) return [];
   const result: string[] = [];
   const attributes = document.nodes.attributes ?? [];
   for (let nodeIdx = 0; nodeIdx < document.nodes.nodeName.length; nodeIdx += 1) {
+    const tag = readString(snapshot.strings, document.nodes.nodeName[nodeIdx] ?? 0).toLowerCase();
+    if (tag !== "svg") continue;
     const attr = attributes[nodeIdx];
-    if (attr === undefined || attr.name === undefined || attr.value === undefined) continue;
-    for (let i = 0; i < attr.name.length; i += 1) {
-      const name = readString(snapshot.strings, attr.name[i] ?? 0);
-      if (name === "viewBox") {
-        const value = readString(snapshot.strings, attr.value[i] ?? 0);
-        if (value.length > 0) result.push(value);
-      }
+    if (attr === undefined) continue;
+    for (const [name, value] of attributePairs(snapshot, attr)) {
+      if (name === "viewBox" && value.length > 0) result.push(value);
     }
   }
   return result;
@@ -117,9 +138,8 @@ function collectDiscriminativeErrors(
     }
     if (inFacetError) {
       inFacetError = false;
-      if (attr === undefined || attr.name === undefined) continue;
-      for (let j = 0; j < attr.name.length; j += 1) {
-        const name = readString(snapshot.strings, attr.name[j] ?? 0);
+      if (attr === undefined) continue;
+      for (const [name] of attributePairs(snapshot, attr)) {
         if (name === "data-facet-error") {
           result.push({ code: "facet_error", message: "facet-error element" });
           break;
@@ -227,25 +247,33 @@ export async function probeProtocolGetDocument(
     if (node === null || typeof node !== "object") return;
     const record = node as {
       nodeName?: string;
-      attributes?: { name?: string; value?: string }[];
+      // DOM.Node attributes arrive as a FLAT string array
+      // [name1, value1, name2, value2, …] — not {name, value} objects.
+      attributes?: string[];
       contentDocument?: unknown;
       children?: unknown[];
       shadowRoots?: unknown[];
     };
+    const findAttr = (wanted: string): string | undefined => {
+      const attrs = record.attributes;
+      if (!Array.isArray(attrs)) return undefined;
+      for (let i = 0; i + 1 < attrs.length; i += 2) {
+        if (attrs[i] === wanted) return attrs[i + 1];
+      }
+      return undefined;
+    };
     const name = (record.nodeName ?? "").toLowerCase();
     if (name === "svg") svgCount += 1;
     if (name === "facet-error") errorCount += 1;
-    if (name === "g" && Array.isArray(record.attributes)) {
+    if (name === "g") {
       // Class-aware g.node census — the same definition the isolated
       // world and DOMSnapshot channels use.
-      const classAttr = record.attributes.find((attr) => attr.name === "class");
-      if (classAttr !== undefined && typeof classAttr.value === "string") {
-        if (classAttr.value.split(/\s+/).includes("node")) gNodeCount += 1;
-      }
+      const classAttr = findAttr("class");
+      if (classAttr !== undefined && classAttr.split(/\s+/).includes("node")) gNodeCount += 1;
     }
-    if (name === "svg" && Array.isArray(record.attributes)) {
-      const vb = record.attributes.find((attr) => attr.name === "viewBox");
-      if (vb !== undefined && typeof vb.value === "string") viewBoxes.push(vb.value);
+    if (name === "svg") {
+      const vb = findAttr("viewBox");
+      if (vb !== undefined) viewBoxes.push(vb);
     }
     if (record.contentDocument !== undefined) visit(record.contentDocument);
     if (record.children !== undefined) for (const child of record.children) visit(child);

@@ -23,4 +23,6 @@ test("production Tier-1 launcher attempts every external channel and leaks nothi
   expect(new Set(result.attemptedChannels)).toEqual(new Set(CHANNELS));
   expect(result.sinkHits).toHaveLength(0);
   expect(result.udpPackets).toBe(0);
-});
+  // 30s budget: the harness waits out the artifact's settle window and
+  // launches a real netns'd browser, so the 5s default is too tight.
+}, 30_000);

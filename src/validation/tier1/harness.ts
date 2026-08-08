@@ -60,7 +60,10 @@ function freshNonce(): string {
  * does not apply to nonce-carrying inline script, so the REAL
  * mermaid/markdown/vega renderers run inside the verifier frame.
  */
-async function buildBootstrapBundle(): Promise<{ readonly code: string; readonly bytes: number }> {
+async function buildBootstrapBundleUncached(): Promise<{
+  readonly code: string;
+  readonly bytes: number;
+}> {
   const result = await build({
     entrypoints: [HARNESS_ENTRY],
     target: "browser",
@@ -78,6 +81,26 @@ async function buildBootstrapBundle(): Promise<{ readonly code: string; readonly
   }
   const text = await output.text();
   return { code: text, bytes: text.length };
+}
+
+let bundlePromise: Promise<{ readonly code: string; readonly bytes: number }> | null = null;
+
+/**
+ * Memoized bundle build: the ~8 MB bundle is a pure function of the
+ * source tree, so rebuilding it per verification buys nothing and
+ * puts a heavyweight bundler invocation on every run's critical path.
+ * The per-frame nonce is applied to the srcdoc, not the bundle, so
+ * sharing the bytes across runs is sound.
+ */
+function buildBootstrapBundle(): Promise<{ readonly code: string; readonly bytes: number }> {
+  if (bundlePromise === null) {
+    bundlePromise = buildBootstrapBundleUncached().catch((error: unknown) => {
+      // A failed build must not poison the cache for later runs.
+      bundlePromise = null;
+      throw error;
+    });
+  }
+  return bundlePromise;
 }
 
 /**

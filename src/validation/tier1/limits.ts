@@ -43,3 +43,14 @@ export const TIER1_HARNESS_BUNDLE_CAP_BYTES = 16 * 1024 * 1024;
  * the bundled runtime plus a 40-node layout must fit inside.
  */
 export const TIER1_RENDER_BARRIER_MS = 30_000;
+
+/**
+ * Ceiling for any single CDP call. Every protocol round-trip in a
+ * healthy session completes in well under a second; a call that
+ * outlives this budget means the pipe transport silently wedged
+ * (observed: a browser spawned immediately after another browser's
+ * teardown can have its devtools pipe torn down while the process
+ * stays alive — every subsequent call pends forever). The runner
+ * treats the typed rejection as retryable and relaunches once.
+ */
+export const TIER1_CDP_CALL_WATCHDOG_MS = 10_000;

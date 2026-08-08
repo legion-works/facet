@@ -21,6 +21,7 @@
 import puppeteer, { type Browser, type CDPSession, type Page } from "puppeteer-core";
 
 import { buildBrowserArgs, resolveLauncher, type ResolvedLauncher } from "./launcher";
+import { TIER1_CDP_CALL_WATCHDOG_MS } from "./limits";
 import {
   createEphemeralProfileDir,
   removeEphemeralProfileDir,
@@ -29,11 +30,44 @@ import {
 } from "./browser-process";
 import { readPidStartTimeTicks } from "../../shared/util/process";
 
+/**
+ * Typed signal for a dead CDP pipe transport: the browser process is
+ * alive but every protocol call pends forever (observed when a browser
+ * is spawned immediately after another browser's teardown — the new
+ * child's devtools pipe is torn down out from under it). The runner
+ * retries once with a fresh browser; anything else would hang the
+ * verification past every barrier deadline.
+ */
+export class Tier1TransportWedgeError extends Error {
+  constructor(where: string) {
+    super(`tier1: CDP transport wedged at ${where}`);
+    this.name = "Tier1TransportWedgeError";
+  }
+}
+
 class PuppeteerCdpSessionAdapter implements VerifierCdpSession {
   constructor(private readonly inner: CDPSession) {}
 
   async send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-    return (await this.inner.send(method as never, params as never)) as T;
+    // Watchdog every call: a wedged pipe transport leaves the browser
+    // alive but every send pending forever — the run would hang past
+    // every barrier deadline because the deadline loops only advance
+    // when a send resolves. A typed rejection lets the runner retry
+    // with a fresh browser instead of hanging the verification.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.inner.send(method as never, params as never) as Promise<T>,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Tier1TransportWedgeError(method)),
+            TIER1_CDP_CALL_WATCHDOG_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   async detach(): Promise<void> {
@@ -113,18 +147,50 @@ export class PuppeteerTier1Browser {
     const launcher = this.options.launcher ?? resolveLauncher();
     const profileDir = createEphemeralProfileDir();
     let browser: Browser | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let gaveUp = false;
     try {
-      browser = await puppeteer.launch({
+      const launchPromise = puppeteer.launch({
         executablePath: launcher.executablePath,
         pipe: true,
         headless: true,
         userDataDir: profileDir,
+        // Bound the phases puppeteer's own timeout covers (spawn,
+        // endpoint wait, initial page target).
+        timeout: TIER1_CDP_CALL_WATCHDOG_MS,
         args: buildBrowserArgs(profileDir) as string[],
       });
+      // A launch that outlives the watchdog is abandoned; should the
+      // handshake settle late anyway, close the orphan immediately.
+      void launchPromise.then(
+        (late) => {
+          if (gaveUp) void late.close().catch(() => {});
+        },
+        () => {},
+      );
+      // Separate watchdog around the WHOLE launch: with pipe transport
+      // puppeteer's own timeout does not cover the spawn/handshake
+      // phase, which can pend forever (observed: spawn after another
+      // browser's teardown never produces a child process).
+      browser = await Promise.race([
+        launchPromise,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            gaveUp = true;
+            reject(new Tier1TransportWedgeError("launch handshake"));
+          }, TIER1_CDP_CALL_WATCHDOG_MS);
+        }),
+      ]);
     } catch (error) {
       removeEphemeralProfileDir(profileDir);
+      if (error instanceof Tier1TransportWedgeError) throw error;
       const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new Tier1TransportWedgeError(`launch: ${message}`);
+      }
       throw new Error(`tier1: puppeteer launch failed: ${message}`, { cause: error });
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
     let page: Page;
     try {

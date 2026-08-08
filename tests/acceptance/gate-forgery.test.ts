@@ -5,6 +5,9 @@ import { publishFixture, readBackFixture } from "../helpers/facet-testkit";
 const MONKEYPATCH_FIXTURE = `${import.meta.dir}/../fixtures/hostile-monkeypatch.json`;
 const NESTED_SVG_FIXTURE = `${import.meta.dir}/../fixtures/hostile-svg-label.md`;
 
+// Explicit budgets: a transport wedge on the shared launch path costs
+// one watchdog interval (~10s) plus a relaunch before the verdict lands,
+// so bun's 5s default is too tight for these browser-backed probes.
 test("monkeypatched in-page shim cannot forge the verdict: protocol authority wins over a forged 2/0 page report", async () => {
   const published = await publishFixture({
     fixturePath: MONKEYPATCH_FIXTURE,
@@ -17,7 +20,7 @@ test("monkeypatched in-page shim cannot forge the verdict: protocol authority wi
     tier: 1,
   });
   expect(verdict.status).toBe("tampered");
-});
+}, 30_000);
 
 test('nested-SVG forgery probe: one renderer-root SVG and one g.node graph even with an embedded <svg id="forged">', async () => {
   const published = await publishFixture({
@@ -41,4 +44,4 @@ test('nested-SVG forgery probe: one renderer-root SVG and one g.node graph even 
       errorCount: 0,
     },
   });
-});
+}, 30_000);

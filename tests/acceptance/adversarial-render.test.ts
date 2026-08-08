@@ -22,4 +22,6 @@ test("40-node / two-Mermaid fixture renders Tier-1 with two renderer-root SVGs b
     revisionSha: published.revisionSha,
     observed: { rendererRootSvgCount: 2, errorCount: 0 },
   });
-});
+  // 30s budget: a transport wedge on the launch path costs one watchdog
+  // interval plus a relaunch before the verdict lands.
+}, 30_000);
