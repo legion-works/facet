@@ -129,7 +129,13 @@ export function validOpenResult() {
     frameUrl: "facet://frame/art-1/" + "a".repeat(64),
     lease: {
       leaseId: "lease-1",
-      expiresAt: Date.now() + 60_000,
+      // Fixed timestamp so two `validOpenResult()` calls in the same
+      // assertion produce the same value. `Date.now() + 60_000` here
+      // made the round-trip test a millisecond-race: the parsed value
+      // and the freshly built fixture could straddle a ms boundary and
+      // disagree on `expiresAt`. Tests should not depend on wall-clock
+      // state.
+      expiresAt: 1_700_000_000_000,
     },
   };
 }
