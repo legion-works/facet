@@ -15,9 +15,11 @@
  *     action; this module simply refuses to fabricate one.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+
+import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
 export interface InstallTokenStoreOptions {
   readonly tokenPath: string;
@@ -65,8 +67,10 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
     }
     // Atomic first-write: O_EXCL ensures exactly one writer wins the
     // race. Losers (EEXIST) re-read what the winner persisted — they
-    // never cache a different token than the one on disk.
-    mkdirSync(dirname(options.tokenPath), { recursive: true });
+    // never cache a different token than the one on disk. The
+    // containing directory lands at mode 0700 via the shared helper so
+    // a hostile umask cannot widen the secret-bearing layout.
+    ensureOwnerOnlyDirectory(dirname(options.tokenPath));
     const fresh = generateInstallToken();
     const tmpPath = join(tmpdir(), `facet-token-${crypto.randomUUID()}.tmp`);
     try {
@@ -100,7 +104,7 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
     },
     rotate() {
       const fresh = generateInstallToken();
-      mkdirSync(dirname(options.tokenPath), { recursive: true });
+      ensureOwnerOnlyDirectory(dirname(options.tokenPath));
       writeFileSync(options.tokenPath, fresh, { mode: 0o600 });
       ensureTightPermissions(options.tokenPath);
       cached = fresh;

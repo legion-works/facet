@@ -18,7 +18,6 @@
  * Idle-driven stop: release the lock, close the server, WAL checkpoint.
  */
 
-import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { FacetError } from "../shared/errors/facet-error";
@@ -42,6 +41,7 @@ import {
 import { runOrphanCleanup } from "./lifecycle/orphan-cleanup";
 import { createIdleController, type IdleController } from "./lifecycle/idle-controller";
 import { ensureEvidenceRoot } from "./store/evidence-retention";
+import { ensureOwnerOnlyDirectory } from "../shared/util/dir-permissions";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 const LEASE_TTL_MS = 5 * 60_000;
@@ -155,7 +155,7 @@ export async function startFacetService(
 
   try {
     // 2. Open the database under lock.
-    mkdirSync(dirname(dbPath), { recursive: true });
+    ensureOwnerOnlyDirectory(dirname(dbPath));
     const db = openDatabase({ databasePath: dbPath });
     databaseClose = () => db.close();
     runMigrations(db);

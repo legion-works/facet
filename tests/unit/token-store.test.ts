@@ -44,6 +44,31 @@ describe("generateInstallToken", () => {
 });
 
 describe("createInstallTokenStore", () => {
+  test("the containing directory lands at 0700 under a hostile umask", () => {
+    // Regression: token-store mkdir's the dirname with raw
+    // mkdirSync(recursive). Under an overlapping umask (0o177 strips
+    // the owner execute bit) the directory can land at 0o600 — the
+    // secret-bearing layout collapses. The migration uses
+    // `ensureOwnerOnlyDirectory` so the directory gets the mkdir +
+    // stat + chmod parity check.
+    const scratch = join(require("node:os").tmpdir(), `facet-token-umask-${crypto.randomUUID()}`);
+    const previousUmask = process.umask(0o177);
+    try {
+      const path = join(scratch, "deeply", "nested", "install.token");
+      const store = createInstallTokenStore({ tokenPath: path });
+      expect(store.read().length).toBeGreaterThan(0);
+      const parentDir = require("node:fs").statSync(require("node:path").dirname(path));
+      expect(parentDir.mode & 0o777).toBe(0o700);
+    } finally {
+      process.umask(previousUmask);
+      try {
+        require("node:fs").rmSync(scratch, { recursive: true, force: true });
+      } catch {
+        // best-effort
+      }
+    }
+  });
+
   test("creates a 0600 file on first read", () => {
     const path = freshPath("install");
     const store = createInstallTokenStore({ tokenPath: path });

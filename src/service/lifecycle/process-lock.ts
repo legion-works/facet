@@ -17,7 +17,6 @@ import { constants as fsConstants } from "node:fs";
 import {
   closeSync,
   existsSync,
-  mkdirSync,
   openSync,
   readFileSync,
   renameSync,
@@ -31,6 +30,7 @@ import { join } from "node:path";
 import { FacetError } from "../../shared/errors/facet-error";
 import { FACET_SCHEMA_VERSION } from "../../shared/contracts/envelope";
 import { isPidAlive, readPidStartTimeTicks } from "../../shared/util/process";
+import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
 export { isPidAlive, readPidStartTimeTicks };
 
@@ -111,7 +111,7 @@ export function readLockMetadata(lockPath: string): LockMetadata | null {
  * crashed write never leaves a half-formed JSON on disk.
  */
 export function writeLockMetadata(lockPath: string, metadata: LockMetadata): void {
-  mkdirSync(dirname(lockPath), { recursive: true });
+  ensureOwnerOnlyDirectory(dirname(lockPath));
   const tmpPath = join(tmpdir(), `facet-lock-${crypto.randomUUID()}.tmp`);
   writeFileSync(tmpPath, JSON.stringify(metadata), { mode: 0o600 });
   renameSync(tmpPath, lockPath);
@@ -124,7 +124,7 @@ export function writeLockMetadata(lockPath: string, metadata: LockMetadata): voi
  * return a typed constraint error.
  */
 export function acquireLock(lockPath: string, metadata: LockMetadata): AcquireResult {
-  mkdirSync(dirname(lockPath), { recursive: true });
+  ensureOwnerOnlyDirectory(dirname(lockPath));
 
   for (let attempt = 0; attempt < LOCK_RETRY_ATTEMPTS; attempt += 1) {
     let fd: number;

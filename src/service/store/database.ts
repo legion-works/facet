@@ -1,8 +1,9 @@
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
 
 import { FacetStoreError } from "../../shared/errors/store-error";
+import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
 // `FacetStoreError` + `asStoreError` + `StoreErrorCode` live in
 // `shared/errors/store-error.ts` so they can extend `FacetError`
@@ -28,7 +29,7 @@ export function openDatabase(paths: DatabasePaths | string): FacetDatabase {
   const config = typeof paths === "string" ? { databasePath: paths } : paths;
   const databasePath = config.databasePath ?? config.dbPath ?? config.path;
   if (!databasePath) throw new FacetStoreError("constraint", "A database path is required");
-  if (databasePath !== ":memory:") mkdirSync(dirname(databasePath), { recursive: true });
+  if (databasePath !== ":memory:") ensureOwnerOnlyDirectory(dirname(databasePath));
   let db: Database;
   try {
     db = new Database(databasePath, { create: true, strict: true });
