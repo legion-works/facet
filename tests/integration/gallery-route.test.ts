@@ -10,6 +10,9 @@ import { generateRequestId } from "../../src/shared/util/time";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { FROZEN_CSP_TEMPLATE } from "../../src/gallery-web/frame-html";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
+import { openDatabase } from "../../src/service/store/database";
+import { runMigrations } from "../../src/service/store/migrations";
+import { ArtifactRepository } from "../../src/service/store/repository";
 
 const GALLERY_DIR = join(import.meta.dir, "../../dist/gallery");
 const originalGalleryDir = mkdtempSync(join(tmpdir(), "facet-gallery-route-original-"));
@@ -159,9 +162,15 @@ describe("GET /gallery", () => {
       },
     });
     expect(source.status).toBe(200);
-    expect(await source.json()).toMatchObject({
+    const sourceBody = (await source.json()) as { verdict: unknown };
+    expect(sourceBody).toMatchObject({
       artifactId: first.artifactId,
       artifactType: "mermaid",
+    });
+    expect(sourceBody.verdict).toMatchObject({
+      artifactId: first.artifactId,
+      revisionSha: first.revisionSha,
+      tier: 0,
     });
     expect((await fetch(sourceUrl)).status).toBe(401);
     expect(
@@ -186,5 +195,77 @@ describe("GET /gallery", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  test("returns null for an unvalidated revision without creating a render run", async () => {
+    const testEnvDir = mkdtempSync(join(tmpdir(), "facet-gallery-source-unverified-"));
+    envDir = testEnvDir;
+    const dbPath = join(testEnvDir, "facet.sqlite");
+    const db = openDatabase({ databasePath: dbPath });
+    runMigrations(db);
+    const repository = new ArtifactRepository(db);
+    const project = repository.createProject({ projectRoot: testEnvDir });
+    const artifact = repository.createArtifact({
+      projectId: project.id,
+      slug: "unverified",
+      title: "Unverified",
+    });
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "mermaid",
+      source: new TextEncoder().encode("graph TD\n A-->B"),
+    });
+    expect(repository.listRenderRuns({ revisionId: revision.id, tier: 0 })).toHaveLength(0);
+    db.close();
+
+    service = await startFacetService({
+      dbPath,
+      installTokenPath: join(testEnvDir, "install.token"),
+      promoteTokenPath: join(testEnvDir, "promote.token"),
+      lockPath: join(testEnvDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "gallery-source-unverified-test" }),
+      tier0Runner: stubTier0Runner,
+    });
+    const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+    const openResponse = await client.sendCommand({
+      command: "open",
+      requestId: generateRequestId(),
+      artifactId: artifact.id,
+      revisionSha: revision.sha256,
+    });
+    expect(openResponse.ok).toBe(true);
+    if (!openResponse.ok) throw new Error("open request failed");
+    const open = CommandResultSchema.parse(openResponse.data);
+    if (open.command !== "open") throw new Error("open result mismatch");
+    const bootstrap = await fetch(`${service.url}/api/v1/gallery/bootstrap`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: new URL(open.frameUrl).hash.split("=")[1] }),
+    });
+    const handoff = (await bootstrap.json()) as {
+      authorization: string;
+      lease: { leaseId: string };
+    };
+    const source = await fetch(
+      `${service.url}/api/v1/gallery/source?revisionSha=${revision.sha256}`,
+      {
+        headers: {
+          authorization: handoff.authorization,
+          "x-gallery-lease": handoff.lease.leaseId,
+          "x-gallery-artifact": artifact.id,
+        },
+      },
+    );
+    expect(source.status).toBe(200);
+    expect((await source.json()).verdict).toBeNull();
+    await service.stop();
+    service = undefined;
+    const verifyDb = openDatabase({ databasePath: dbPath });
+    runMigrations(verifyDb);
+    const verifyRepository = new ArtifactRepository(verifyDb);
+    expect(verifyRepository.listRenderRuns({ revisionId: revision.id, tier: 0 })).toHaveLength(0);
+    expect(verifyRepository.listRenderRuns({ revisionId: revision.id, tier: 1 })).toHaveLength(0);
+    verifyDb.close();
   });
 });

@@ -1,0 +1,23 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "transparent", "primaryColor": "#1e2030", "primaryTextColor": "#c8d3f5", "primaryBorderColor": "#3b4261", "lineColor": "#545c7e", "textColor": "#a9b1d6", "fontFamily": "ui-monospace, Menlo, monospace", "fontSize": "13px", "clusterBkg": "#1a1b26", "clusterBorder": "#2e2e3a", "edgeLabelBackground": "#16161e"}}}%%
+flowchart TB
+  subgraph host [host · operator session]
+    CLI[facet cli]
+    SVC[service · byte-dumb]
+  end
+  subgraph netns [network namespace · no egress]
+    T0[tier 0 parser worker]
+    T1[tier 1 headless shell]
+  end
+  subgraph browser [your browser · display only]
+    SHELL[gallery shell]
+    FRAME[opaque frame · nonce CSP]
+  end
+  CLI --> SVC
+  SVC -->|bytes| T0
+  SVC -->|bytes| T1
+  SVC -->|lease| SHELL
+  SHELL -->|one-shot ingress| FRAME
+
+  classDef ok stroke:#c3e88d,color:#c3e88d
+  classDef warn stroke:#ffc777,color:#ffc777
+  classDef fail stroke:#ff757f,color:#ff757f

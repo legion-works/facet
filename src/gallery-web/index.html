@@ -5,24 +5,62 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>facet gallery</title>
     <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/verdict.css" />
     <link rel="stylesheet" href="./styles/app.css" />
   </head>
   <body>
     <div id="facet-shell">
       <header id="facet-status">
+        <span id="facet-mark" aria-hidden="true">◆</span>
         <span class="title" id="facet-title">facet</span>
+        <span class="sep" aria-hidden="true"></span>
+        <span id="facet-artifact-title"></span>
         <span class="revision" id="facet-revision">—</span>
         <span class="status-line" id="facet-status-line">idle</span>
+        <!--
+          Verdict badge. JS wiring: set data-status to the FULL wire
+          enum, text to status.split(":")[0], and the tier span to
+          `· T${verdict.tier}` (empty while unverified). The badge
+          shows read-back results only — the shell never derives one.
+        -->
+        <span class="facet-verdict facet-verdict--sm" id="facet-verdict" data-status="unverified"
+          >unverified<span class="tier"></span
+        ></span>
       </header>
+      <!-- Evidence strip — unhidden when a verdict is loaded. -->
+      <section id="facet-evidence" hidden>
+        <span class="label">OBSERVED</span>
+        <span id="facet-evidence-counts"></span>
+        <span class="label">CHANNELS</span>
+        <span class="facet-channels" id="facet-evidence-channels"></span>
+        <span class="divergence" id="facet-evidence-divergence"></span>
+        <span class="binding">bound to <span class="sha" id="facet-evidence-sha"></span></span>
+      </section>
       <main id="facet-canvas">
-        <!-- The iframe is created + appended by app.ts. -->
+        <div id="facet-swapbar" hidden><div class="bar"></div></div>
+        <div id="facet-empty">
+          <span class="glyph" aria-hidden="true">◌</span>
+          <span class="head">No artifact.</span>
+          <span class="sub">Publish one to display it here.</span>
+          <span class="cmd"
+            ><span class="p">$</span> facet publish ./artifact.md
+            <span class="p">&amp;&amp;</span> facet open</span
+          >
+        </div>
+        <!-- The iframe is created + appended by app.ts. JS wiring:
+             hide #facet-empty whenever a frame is mounted. -->
       </main>
       <footer id="facet-controls">
+        <span id="facet-live" data-state="idle"
+          ><span class="dot" aria-hidden="true">●</span
+          ><span id="facet-live-label">idle</span></span
+        >
+        <span id="facet-error" role="status"></span>
+        <span class="spacer"></span>
         <button type="button" id="facet-zoom-out" aria-label="zoom out">−</button>
         <button type="button" id="facet-zoom-reset" aria-label="reset zoom">100%</button>
         <button type="button" id="facet-zoom-in" aria-label="zoom in">+</button>
         <button type="button" id="facet-fullscreen" aria-label="fullscreen">fullscreen</button>
-        <span id="facet-error" role="status"></span>
       </footer>
     </div>
     <script type="module" src="./app.ts"></script>

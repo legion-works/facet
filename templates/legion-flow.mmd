@@ -1,0 +1,15 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "transparent", "primaryColor": "#1e2030", "primaryTextColor": "#c8d3f5", "primaryBorderColor": "#3b4261", "secondaryColor": "#222436", "tertiaryColor": "#16161e", "lineColor": "#545c7e", "textColor": "#a9b1d6", "fontFamily": "ui-monospace, Menlo, monospace", "fontSize": "14px", "edgeLabelBackground": "#16161e", "clusterBkg": "#1a1b26", "clusterBorder": "#2e2e3a"}}}%%
+flowchart LR
+  A([source bytes]) --> B[hash + store]
+  B --> C{validate}
+  C -->|tier 0| D[parse counts]
+  C -->|tier 1| E[browser verify]
+  D --> F([verdict])
+  E --> F
+
+  %% hue is semantic only — apply sparingly
+  classDef ok stroke:#c3e88d,color:#c3e88d
+  classDef warn stroke:#ffc777,color:#ffc777
+  classDef fail stroke:#ff757f,color:#ff757f
+  classDef accent stroke:#86e1fc,color:#86e1fc
+  class F ok

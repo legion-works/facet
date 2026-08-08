@@ -1,6 +1,6 @@
 # Structure
 
-Gallery source reads use the lease-gated `GET /api/v1/gallery/source` route alongside bootstrap, release, and revision SSE.
+Gallery source reads use the lease-gated `GET /api/v1/gallery/source` route alongside bootstrap, release, and revision SSE; responses include source bytes and the latest stored verdict or `null`.
 
 Public extension points: `RendererRegistry`, `Tier0ValidatorRegistry`, `Tier1ProbeRegistry`, `EvidenceStore`, `CliTransport`, `ArtifactBuilder`, `ExportSink`, `AuthorizationPolicy`, `SearchIndex`, and `FormBridge`. Artifact code never gains host capabilities.
 

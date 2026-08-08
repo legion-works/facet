@@ -30,7 +30,15 @@ import { join, resolve } from "node:path";
 
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 
-import { runCli, type CliIo, type CliExit, type CliTestHooks } from "../../src/cli/main";
+import {
+  runCli,
+  writeEnvelope,
+  type CliIo,
+  type CliExit,
+  type CliTestHooks,
+} from "../../src/cli/main";
+import { parseArgs } from "../../src/cli/parser";
+import { printEnvelope } from "../../src/cli/output";
 
 const scratchRoot = join(tmpdir(), `facet-cli-test-${crypto.randomUUID()}`);
 
@@ -209,6 +217,41 @@ function normalizeAdapterEnvelope(text: string): unknown {
 }
 
 describe("cli contract — surface", () => {
+  test("piped envelope bytes remain identical to the canonical output path", () => {
+    const envelope = {
+      schemaVersion: FACET_SCHEMA_VERSION,
+      requestId: "req-fixed",
+      ok: true as const,
+      data: { command: "status", state: "dormant" },
+    };
+    const before = { value: "" };
+    const after = { value: "" };
+    const writer = {
+      write(chunk: string | Uint8Array) {
+        before.value += String(chunk);
+        return true;
+      },
+    };
+    const io = {
+      stdout: {
+        write(chunk: string | Uint8Array) {
+          after.value += String(chunk);
+          return true;
+        },
+        isTTY: false,
+      },
+      stderr: {
+        write() {
+          return true;
+        },
+      },
+      env: {},
+    } as unknown as CliIo;
+    printEnvelope(writer, envelope);
+    writeEnvelope(io, parseArgs(["status"]), envelope);
+    expect(after.value).toBe(before.value);
+  });
+
   test("spawns the service when invoked outside the repository root", async () => {
     const { env } = makeEnv("non-root-cwd");
     const io = makeIo();

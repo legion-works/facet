@@ -1,0 +1,14 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "transparent", "primaryColor": "#1e2030", "primaryTextColor": "#c8d3f5", "primaryBorderColor": "#3b4261", "lineColor": "#545c7e", "textColor": "#a9b1d6", "fontFamily": "ui-monospace, Menlo, monospace", "fontSize": "13px", "actorBkg": "#1e2030", "actorBorder": "#3b4261", "actorTextColor": "#c8d3f5", "signalColor": "#545c7e", "signalTextColor": "#a9b1d6", "noteBkgColor": "#222436", "noteBorderColor": "#3b4261", "noteTextColor": "#c8d3f5", "labelBoxBkgColor": "#1a1b26", "labelBoxBorderColor": "#2e2e3a", "labelTextColor": "#c8d3f5", "loopTextColor": "#a9b1d6"}}}%%
+sequenceDiagram
+  participant agent
+  participant cli as facet cli
+  participant svc as service
+  participant t1 as tier 1 verifier
+
+  agent->>cli: publish artifact.md
+  cli->>svc: envelope facet.v1
+  svc->>svc: hash · store · lexical counts
+  svc->>t1: verify revision
+  t1-->>svc: verdict ok
+  svc-->>cli: envelope + verdict
+  cli-->>agent: ✓ ok · tier 1

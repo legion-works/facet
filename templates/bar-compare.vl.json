@@ -1,0 +1,63 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Facet bar template — read-backs by status. Inline data only.",
+  "background": "transparent",
+  "width": 640,
+  "height": 300,
+  "title": {
+    "text": "Read-backs by status · 30 days",
+    "anchor": "start",
+    "color": "#c8d3f5",
+    "font": "system-ui, sans-serif",
+    "fontSize": 15,
+    "fontWeight": 600,
+    "offset": 18
+  },
+  "data": {
+    "values": [
+      { "status": "ok", "count": 412 },
+      { "status": "partial", "count": 34 },
+      { "status": "error", "count": 26 },
+      { "status": "timeout", "count": 11 },
+      { "status": "shim_only", "count": 7 },
+      { "status": "probe_only", "count": 5 },
+      { "status": "tampered", "count": 3 }
+    ]
+  },
+  "mark": { "type": "bar", "cornerRadiusEnd": 3 },
+  "encoding": {
+    "x": {
+      "field": "status",
+      "type": "nominal",
+      "title": null,
+      "sort": ["ok", "partial", "error", "timeout", "shim_only", "probe_only", "tampered"],
+      "axis": { "labelAngle": 0 }
+    },
+    "y": { "field": "count", "type": "quantitative", "title": "count" },
+    "color": {
+      "field": "status",
+      "type": "nominal",
+      "legend": null,
+      "scale": {
+        "domain": ["ok", "partial", "error", "timeout", "shim_only", "probe_only", "tampered"],
+        "range": ["#c3e88d", "#ffc777", "#ff757f", "#737aa2", "#737aa2", "#737aa2", "#ff757f"]
+      }
+    }
+  },
+  "config": {
+    "view": { "stroke": null },
+    "axis": {
+      "domainColor": "#3b4261",
+      "tickColor": "#3b4261",
+      "gridColor": "#232330",
+      "gridDash": [2, 3],
+      "labelColor": "#828bb8",
+      "titleColor": "#a9b1d6",
+      "labelFont": "ui-monospace, Menlo, monospace",
+      "titleFont": "ui-monospace, Menlo, monospace",
+      "labelFontSize": 11,
+      "titleFontSize": 11,
+      "titlePadding": 12
+    }
+  }
+}

@@ -1,0 +1,7 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "transparent", "primaryColor": "#1e2030", "primaryTextColor": "#c8d3f5", "primaryBorderColor": "#3b4261", "lineColor": "#545c7e", "textColor": "#a9b1d6", "fontFamily": "ui-monospace, Menlo, monospace", "fontSize": "13px"}}}%%
+stateDiagram-v2
+  [*] --> dormant
+  dormant --> active : first command
+  active --> active : requests
+  active --> dormant : idle deadline
+  note right of dormant : zero processes · zero ports

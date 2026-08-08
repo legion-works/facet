@@ -1,0 +1,71 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Facet timeseries template — inline data only; a data.url spec fails closed.",
+  "background": "transparent",
+  "width": 640,
+  "height": 300,
+  "title": {
+    "text": "Verified renders · weekly",
+    "anchor": "start",
+    "color": "#c8d3f5",
+    "font": "system-ui, sans-serif",
+    "fontSize": 15,
+    "fontWeight": 600,
+    "offset": 18
+  },
+  "data": {
+    "values": [
+      { "week": "W01", "renders": 120 },
+      { "week": "W02", "renders": 132 },
+      { "week": "W03", "renders": 128 },
+      { "week": "W04", "renders": 161 },
+      { "week": "W05", "renders": 170 },
+      { "week": "W06", "renders": 158 },
+      { "week": "W07", "renders": 190 },
+      { "week": "W08", "renders": 204 },
+      { "week": "W09", "renders": 221 },
+      { "week": "W10", "renders": 218 },
+      { "week": "W11", "renders": 246 },
+      { "week": "W12", "renders": 261 }
+    ]
+  },
+  "mark": {
+    "type": "line",
+    "color": "#86e1fc",
+    "strokeWidth": 2,
+    "point": { "filled": true, "fill": "#86e1fc", "size": 34 }
+  },
+  "encoding": {
+    "x": {
+      "field": "week",
+      "type": "ordinal",
+      "title": null,
+      "axis": { "labelAngle": 0 }
+    },
+    "y": {
+      "field": "renders",
+      "type": "quantitative",
+      "title": "renders",
+      "axis": { "tickCount": 5 }
+    }
+  },
+  "config": {
+    "view": { "stroke": null },
+    "axis": {
+      "domainColor": "#3b4261",
+      "tickColor": "#3b4261",
+      "gridColor": "#232330",
+      "gridDash": [2, 3],
+      "labelColor": "#828bb8",
+      "titleColor": "#a9b1d6",
+      "labelFont": "ui-monospace, Menlo, monospace",
+      "titleFont": "ui-monospace, Menlo, monospace",
+      "labelFontSize": 11,
+      "titleFontSize": 11,
+      "titlePadding": 12
+    },
+    "range": {
+      "category": ["#86e1fc", "#82aaff", "#c099ff", "#ffc777", "#c3e88d", "#ff757f"]
+    }
+  }
+}

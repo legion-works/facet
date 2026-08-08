@@ -49,6 +49,7 @@ import {
 } from "./router-guards";
 import type { FacetLogger } from "../shared/logging/logger";
 import { buildFrameDocument, FROZEN_CSP_TEMPLATE } from "../gallery-web/frame-html";
+import { VerdictSchema, type Verdict } from "../shared/contracts/validation";
 
 const ROUTE_API = "/api/v1/commands";
 const ROUTE_STREAM = "/api/v1/stream";
@@ -86,6 +87,24 @@ function statusForHostCheck(error: FacetError | undefined): number {
   if (isCrossSiteRejection(error)) return 403;
   if (isMissingHostRejection(error)) return 421;
   return 400;
+}
+
+function latestStoredVerdict(
+  repository: RouterDeps["repository"],
+  revision: { readonly id: string; readonly artifactId: string; readonly sha256: string },
+): Verdict | null {
+  const runs = ([0, 1] as const)
+    .flatMap((tier) => repository.listRenderRuns({ revisionId: revision.id, tier }))
+    .toSorted((left, right) => right.finishedAt.localeCompare(left.finishedAt));
+  const run = runs[0];
+  if (run === undefined) return null;
+  return VerdictSchema.parse({
+    status: run.status,
+    tier: run.tier,
+    artifactId: revision.artifactId,
+    revisionSha: revision.sha256,
+    observed: JSON.parse(run.observedJson),
+  });
 }
 
 export async function handleCommand(deps: RouterDeps, req: Request): Promise<Response> {
@@ -496,6 +515,7 @@ export function buildRouter(deps: RouterDeps): {
             revisionSha: revision.sha256,
             artifactType: revision.artifactType,
             source: new TextDecoder().decode(revision.source),
+            verdict: latestStoredVerdict(deps.repository, revision),
           }),
           {
             status: 200,

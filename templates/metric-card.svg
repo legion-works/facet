@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="420" viewBox="0 0 800 420" role="img" aria-label="metric card template">
+  
+  <rect x="1" y="1" width="798" height="418" rx="14" fill="#16161e" stroke="#2e2e3a"></rect>
+
+  
+  <text x="48" y="76" font-family="ui-monospace, Menlo, monospace" font-size="11" letter-spacing="3" fill="#86e1fc">RENDER VERIFICATION</text>
+
+  
+  <text x="48" y="116" font-family="&#39;Space Grotesk&#39;, &#39;Geist&#39;, system-ui, sans-serif" font-size="26" font-weight="600" fill="#e6ecff">Tier 1 read-backs</text>
+
+  
+  <text x="48" y="238" font-family="ui-monospace, Menlo, monospace" font-size="64" font-weight="600" fill="#c8d3f5">9,412</text>
+  <text x="48" y="272" font-family="&#39;Geist&#39;, system-ui, sans-serif" font-size="13" fill="#737aa2">verified renders · 30 days</text>
+
+  
+  <g>
+    <rect x="614" y="52" width="138" height="28" rx="14" fill="rgba(195,232,141,0.10)" stroke="rgba(195,232,141,0.45)"></rect>
+    <text x="634" y="70" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#c3e88d">✓ OK · T1</text>
+  </g>
+
+  
+  <text x="48" y="322" font-family="ui-monospace, Menlo, monospace" font-size="14" fill="#c3e88d">▴ +261</text>
+  <text x="118" y="322" font-family="&#39;Geist&#39;, system-ui, sans-serif" font-size="13" fill="#737aa2">vs previous 30 days</text>
+
+  
+  <line x1="48" y1="356" x2="752" y2="356" stroke="#2e2e3a"></line>
+  <text x="48" y="384" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#545c7e">facet · a-0197 @ 9f2c41ab</text>
+  <text x="752" y="384" text-anchor="end" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#545c7e">2026-08-08</text>
+</svg>

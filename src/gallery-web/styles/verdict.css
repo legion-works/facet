@@ -1,0 +1,176 @@
+/*
+ * Facet verdict language — tokens + components.
+ * Vendored Legion Works semantics (Tokyo Night palette), fully
+ * offline, no imports, no remote assets. Safe under the frozen CSP.
+ *
+ * Grammar: every verdict is glyph + hue + weight. Glyphs survive
+ * no-color; hue survives small sizes; weight survives peripheral
+ * vision. Only `tampered` is filled and glowing — nothing animates.
+ */
+
+:root {
+  /* Verdict hues */
+  --facet-ok: #c3e88d; /* green-400  · ansi-green   */
+  --facet-fail: #ff757f; /* red-400    · ansi-red     */
+  --facet-partial: #ffc777; /* amber-300  · ansi-yellow  */
+  --facet-inert: #737aa2; /* neutral-500· bright-black */
+  --facet-tamper-ink: #16161e;
+
+  /* Skins: border at 45% alpha, fill at 10% */
+  --facet-ok-border: rgba(195, 232, 141, 0.45);
+  --facet-ok-fill: rgba(195, 232, 141, 0.1);
+  --facet-fail-border: rgba(255, 117, 127, 0.45);
+  --facet-fail-fill: rgba(255, 117, 127, 0.1);
+  --facet-partial-border: rgba(255, 199, 119, 0.45);
+  --facet-partial-fill: rgba(255, 199, 119, 0.1);
+  --facet-inert-border: rgba(115, 122, 162, 0.38);
+  --facet-inert-fill: rgba(115, 122, 162, 0.1);
+  --facet-glow-danger:
+    0 0 0 1px rgba(255, 117, 127, 0.4), 0 8px 32px -8px rgba(255, 117, 127, 0.55);
+}
+
+/*
+ * Verdict badge.
+ *   <span class="facet-verdict" data-status="ok">ok<span class="tier">· T1</span></span>
+ * JS sets data-status to the FULL wire enum value and the text to the
+ * status word (`status.split(":")[0]`). The glyph comes from CSS so
+ * markup stays free of presentation.
+ */
+.facet-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--facet-inert-border);
+  background: var(--facet-inert-fill);
+  color: var(--facet-inert);
+  font-family: var(--facet-font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.facet-verdict::before {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.facet-verdict .tier {
+  opacity: 0.62;
+  font-weight: 500;
+}
+.facet-verdict--sm {
+  height: 20px;
+  padding: 0 9px;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.facet-verdict[data-status="ok"] {
+  border-color: var(--facet-ok-border);
+  background: var(--facet-ok-fill);
+  color: var(--facet-ok);
+}
+.facet-verdict[data-status="ok"]::before {
+  content: "✓";
+}
+
+.facet-verdict[data-status="error"] {
+  border-color: var(--facet-fail-border);
+  background: var(--facet-fail-fill);
+  color: var(--facet-fail);
+}
+.facet-verdict[data-status="error"]::before {
+  content: "✗";
+}
+
+.facet-verdict[data-status="partial:layout_unverified"] {
+  border-color: var(--facet-partial-border);
+  background: var(--facet-partial-fill);
+  color: var(--facet-partial);
+}
+.facet-verdict[data-status="partial:layout_unverified"]::before {
+  content: "◐";
+}
+
+/* The alarm. The only fill, the only glow. Never animated. */
+.facet-verdict[data-status="tampered"] {
+  border-color: var(--facet-fail);
+  background: var(--facet-fail);
+  color: var(--facet-tamper-ink);
+  font-weight: 700;
+  box-shadow: var(--facet-glow-danger);
+}
+.facet-verdict[data-status="tampered"]::before {
+  content: "⊘";
+}
+
+.facet-verdict[data-status="timeout"]::before {
+  content: "◌";
+}
+.facet-verdict[data-status="shim_only"]::before {
+  content: "◇";
+}
+.facet-verdict[data-status="probe_only"]::before {
+  content: "◈";
+}
+
+/* No verdict yet for the displayed revision — dashed, tierless. */
+.facet-verdict[data-status="unverified"] {
+  border-style: dashed;
+  background: transparent;
+}
+.facet-verdict[data-status="unverified"]::before {
+  content: "◌";
+}
+
+/*
+ * Tier tag — metadata, not a verdict. Square, mono.
+ *   <span class="facet-tier" data-tier="1">T1<span>browser</span></span>
+ * T2 is dashed: it displays, it never testifies.
+ */
+.facet-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(169, 177, 214, 0.28);
+  background: rgba(169, 177, 214, 0.06);
+  color: var(--facet-ink);
+  font-family: var(--facet-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+.facet-tier span {
+  font-weight: 500;
+  opacity: 0.75;
+}
+.facet-tier[data-tier="1"] {
+  border-color: rgba(134, 225, 252, 0.45);
+  background: rgba(134, 225, 252, 0.08);
+  color: var(--facet-cyan);
+}
+.facet-tier[data-tier="2"] {
+  border-style: dashed;
+  background: transparent;
+  color: var(--facet-inert);
+}
+
+/* Evidence-channel dots (expanded panels only, never in the badge). */
+.facet-channels {
+  font-family: var(--facet-font-mono);
+  letter-spacing: 4px;
+  color: var(--facet-ink-dim);
+}
+.facet-channels[data-agree="true"] {
+  color: var(--facet-ok);
+}
+.facet-channels[data-agree="false"] {
+  color: var(--facet-fail);
+}

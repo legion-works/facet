@@ -31,6 +31,8 @@ export interface ConnectRevisionStreamOptions {
     readonly artifactType: string;
     readonly at: string;
   }) => void;
+  /** Connection lifecycle state for the gallery shell indicator. */
+  readonly onState?: (state: "idle" | "connecting" | "live") => void;
   /** Optional: called for `stream:heartbeat` events (used by tests). */
   readonly onHeartbeat?: (event: { readonly streamId: string; readonly at: string }) => void;
   /** Optional: called on `stream:close`. */
@@ -70,6 +72,7 @@ export function connectRevisionStream(
   const fetcher = options.fetchImpl ?? fetch;
   const url = `${options.baseUrl.replace(/\/$/, "")}/api/v1/stream`;
   const controller = new AbortController();
+  options.onState?.("connecting");
   if (options.signal !== undefined) {
     if (options.signal.aborted) controller.abort();
     else options.signal.addEventListener("abort", () => controller.abort(), { once: true });
@@ -96,8 +99,10 @@ export function connectRevisionStream(
           reason: `stream_status_${response.status}`,
           at: new Date().toISOString(),
         });
+        options.onState?.("idle");
         return;
       }
+      options.onState?.("live");
       reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -134,6 +139,7 @@ export function connectRevisionStream(
       }
     } catch (error) {
       if (controller.signal.aborted) return;
+      options.onState?.("idle");
       options.onClose?.({
         streamId: "",
         reason: error instanceof Error ? error.message : "stream_error",

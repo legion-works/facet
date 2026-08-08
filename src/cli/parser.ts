@@ -31,6 +31,7 @@ export type ParsedCommand =
       readonly verb: CommandName;
       readonly args: Readonly<Record<string, string | boolean>>;
       readonly format: "text" | "json";
+      readonly jsonFlag: boolean;
     }
   | { readonly kind: "usage"; readonly message: string };
 
@@ -155,6 +156,7 @@ function withoutFormatFlags(argv: readonly string[]): string[] {
 export function parseArgs(argv: readonly string[]): ParsedCommand {
   if (argv.length === 0) return { kind: "help", format: "text" };
   const format = readFormat(argv);
+  const jsonFlag = argv.includes("--json");
   const stripped = withoutFormatFlags(argv);
 
   const first = stripped[0];
@@ -191,7 +193,7 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
       args[flag.slice(2)] = true;
     }
   }
-  return { kind: "verb", verb: command, args, format };
+  return { kind: "verb", verb: command, args, format, jsonFlag };
 }
 
 /**

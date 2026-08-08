@@ -31,6 +31,7 @@ import {
 } from "./frame-html";
 import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
+import type { Verdict } from "../shared/contracts/validation";
 
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
@@ -338,6 +339,7 @@ export interface ReplaceArtifactFrameOptions {
   readonly source?: unknown;
   /** Per-barrier wait window (boot-ready, then render-complete). */
   readonly readyTimeoutMs?: number;
+  readonly onProgress?: (state: "ready" | "complete") => void;
 }
 
 export interface ReplaceArtifactFrameResult {
@@ -406,6 +408,7 @@ export async function replaceArtifactFrame(
   const bootReady = await next.awaitControlEvent("boot-ready", readyTimeoutMs);
   let renderComplete: FrameControlEvent | null = null;
   if (bootReady !== null) {
+    options.onProgress?.("ready");
     if (options.source !== undefined) next.deliverSource(options.source);
     renderComplete = await next.awaitControlEvent("render-complete", readyTimeoutMs);
   }
@@ -423,12 +426,14 @@ export async function replaceArtifactFrame(
 
   // new-frame-ready → … → remove-old: the rest of the plan, in order.
   for (const step of plan.slice(2)) runStep(step);
+  options.onProgress?.("complete");
   return { executedSteps: executed, failedNewFrameReady: false };
 }
 
 export interface RevisionFetchResult {
   readonly artifactType: string;
   readonly bytes: Uint8Array;
+  readonly verdict?: Verdict | null;
 }
 
 export interface SwapToRevisionDeps {
@@ -439,6 +444,7 @@ export interface SwapToRevisionDeps {
   /** Fetch the exact revision bytes the SSE event named. */
   readonly fetchRevision: (artifactId: string, revisionSha: string) => Promise<RevisionFetchResult>;
   readonly readyTimeoutMs?: number;
+  readonly onProgress?: (state: "ready" | "complete") => void;
   /**
    * Called with the fresh frame BEFORE the swap runs — production
    * uses it to transfer the port ends into the iframe once the load
@@ -465,7 +471,11 @@ export async function swapToRevision(
   current: CreatedArtifactFrame,
   event: RevisionEvent,
   viewState: ViewState,
-): Promise<{ readonly frame: CreatedArtifactFrame; readonly result: ReplaceArtifactFrameResult }> {
+): Promise<{
+  readonly frame: CreatedArtifactFrame;
+  readonly result: ReplaceArtifactFrameResult;
+  readonly verdict: Verdict | null;
+}> {
   const revision = await deps.fetchRevision(event.artifactId, event.revisionSha);
   const next = createArtifactFrame({
     bootstrapUrl: deps.bootstrapUrl,
@@ -480,14 +490,22 @@ export async function swapToRevision(
     host: deps.host,
     viewState,
     source: { artifactType: revision.artifactType, bytes: revision.bytes },
+    ...(deps.onProgress === undefined ? {} : { onProgress: deps.onProgress }),
     ...(deps.readyTimeoutMs !== undefined ? { readyTimeoutMs: deps.readyTimeoutMs } : {}),
   });
-  return { frame: result.failedNewFrameReady ? current : next, result };
+  return {
+    frame: result.failedNewFrameReady ? current : next,
+    result,
+    verdict: revision.verdict ?? null,
+  };
 }
 
 interface GallerySourceResponse {
+  readonly artifactId: string;
+  readonly revisionSha: string;
   readonly artifactType: string;
   readonly source: string;
+  readonly verdict: Verdict | null;
 }
 
 async function fetchGallerySource(
@@ -507,7 +525,11 @@ async function fetchGallerySource(
   });
   if (!response.ok) throw new Error(`Gallery source fetch failed (${response.status})`);
   const payload = (await response.json()) as GallerySourceResponse;
-  return { artifactType: payload.artifactType, bytes: new TextEncoder().encode(payload.source) };
+  return {
+    artifactType: payload.artifactType,
+    bytes: new TextEncoder().encode(payload.source),
+    verdict: payload.verdict ?? null,
+  };
 }
 
 function setGalleryStatus(status: string): void {
@@ -518,6 +540,80 @@ function setGalleryStatus(status: string): void {
 function setGalleryError(message: string): void {
   const target = document.getElementById("facet-error");
   if (target !== null) target.textContent = message;
+}
+
+function setGalleryVerdict(verdict: Verdict | null): void {
+  const badge = document.getElementById("facet-verdict");
+  const evidence = document.getElementById("facet-evidence");
+  if (badge === null || badge === undefined) return;
+  const tier = badge.querySelector<HTMLElement>(".tier");
+  if (verdict === null) {
+    badge.dataset.status = "unverified";
+    badge.childNodes[0]!.textContent = "unverified";
+    if (tier !== null) tier.textContent = "";
+    if (evidence !== null) evidence.hidden = true;
+    return;
+  }
+  badge.dataset.status = verdict.status;
+  badge.childNodes[0]!.textContent = verdict.status.split(":")[0] ?? verdict.status;
+  if (tier !== null) tier.textContent = `· T${verdict.tier}`;
+  const observed = verdict.observed;
+  const counts = document.getElementById("facet-evidence-counts");
+  if (counts !== null)
+    counts.textContent = `svg ${observed.rendererRootSvgCount} · graphs ${observed.graphCount} · nodes ${observed.mermaidNodeCount} · errors ${observed.errorCount}`;
+  const channels = document.getElementById("facet-evidence-channels");
+  if (channels !== null) {
+    channels.dataset.agree = verdict.status === "tampered" ? "false" : "true";
+    channels.textContent =
+      verdict.status === "tampered"
+        ? "●≠●"
+        : verdict.status === "timeout"
+          ? "○○○"
+          : verdict.status === "shim_only"
+            ? "○○●"
+            : verdict.status === "probe_only"
+              ? "●○○"
+              : "●●●";
+  }
+  const sha = document.getElementById("facet-evidence-sha");
+  if (sha !== null) sha.textContent = verdict.revisionSha.slice(0, 8);
+  const divergence = document.getElementById("facet-evidence-divergence");
+  if (divergence !== null) {
+    const detail = verdict.observed.discriminativeErrors?.[0]?.message;
+    divergence.textContent = verdict.status === "tampered" ? (detail ?? "channels disagree") : "";
+  }
+  if (evidence !== null) evidence.hidden = false;
+}
+
+function setLiveState(state: "idle" | "connecting" | "live"): void {
+  const live = document.getElementById("facet-live");
+  const label = document.getElementById("facet-live-label");
+  if (live !== null) live.dataset.state = state;
+  if (label !== null) label.textContent = state;
+}
+
+function setSwapBar(state: "start" | "ready" | "complete" | "failed"): void {
+  const swapbar = document.getElementById("facet-swapbar");
+  const bar = swapbar?.querySelector<HTMLElement>(".bar");
+  if (swapbar === null || swapbar === undefined || bar === null || bar === undefined) return;
+  if (state === "start") {
+    delete swapbar.dataset.failed;
+    swapbar.hidden = false;
+    bar.style.width = "34%";
+  } else if (state === "ready") {
+    bar.style.width = "80%";
+  } else if (state === "complete") {
+    bar.style.width = "100%";
+    window.setTimeout(() => {
+      swapbar.hidden = true;
+    }, 200);
+  } else {
+    swapbar.dataset.failed = "";
+    bar.style.width = "0%";
+    window.setTimeout(() => {
+      swapbar.hidden = true;
+    }, 2_000);
+  }
 }
 
 function armFrameLoad(
@@ -555,7 +651,8 @@ export async function startGallery(): Promise<void> {
   const revision = document.getElementById("facet-revision");
   if (title !== null) title.textContent = "facet";
   if (revision !== null) revision.textContent = handoff.revisionSha.slice(0, 12);
-  setGalleryStatus("loading");
+  setGalleryStatus("idle");
+  setLiveState("connecting");
   const bootstrapUrl = `${baseUrl}/gallery/frame/bootstrap.js`;
   const frameUrl = `${baseUrl}/gallery/frame`;
   const canvas = document.getElementById("facet-canvas");
@@ -567,7 +664,10 @@ export async function startGallery(): Promise<void> {
       iframe.dataset.frameId = frameId;
       iframe.style.visibility = "hidden";
       iframe.style.transformOrigin = "center center";
+      iframe.classList.add("facet-ready");
       canvas.appendChild(iframe);
+      const empty = document.getElementById("facet-empty");
+      if (empty !== null) empty.hidden = true;
     },
     setVisibility(frameId, visible) {
       const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`);
@@ -595,14 +695,20 @@ export async function startGallery(): Promise<void> {
     throw new Error("Gallery artifact failed to render");
   host.setVisibility(current.frameId, true);
   host.applyViewState(current.frameId, viewState);
-  setGalleryStatus("ok");
+  setGalleryVerdict(source.verdict ?? null);
+  setGalleryStatus("displayed");
+  setLiveState("live");
   const stream = connectRevisionStream({
     baseUrl,
     bearer: handoff.authorization.replace(/^Bearer\s+/i, ""),
     leaseId: handoff.lease.leaseId,
     artifactId: handoff.artifactId,
     hostname: window.location.hostname,
+    onState: setLiveState,
     onCommit: (event) => {
+      setGalleryStatus("swapping");
+      setSwapBar("start");
+      setGalleryVerdict(null);
       void swapToRevision(
         {
           dom,
@@ -616,23 +722,35 @@ export async function startGallery(): Promise<void> {
               host.mountOffScreen(frame.frameId, frame.element.raw),
             );
           },
+          onProgress: (state) => setSwapBar(state),
         },
         current,
         event,
         viewState,
       )
-        .then(({ frame, result }) => {
+        .then(({ frame, result, verdict }) => {
           current = frame;
           if (!result.failedNewFrameReady) {
             if (revision !== null) revision.textContent = event.revisionSha.slice(0, 12);
-            setGalleryStatus("ok");
+            setGalleryVerdict(verdict);
+            setGalleryStatus("displayed");
+            setSwapBar("complete");
+          } else {
+            setSwapBar("failed");
+            setGalleryVerdict(null);
+            setGalleryStatus("displayed");
           }
         })
-        .catch((error: unknown) =>
-          setGalleryError(error instanceof Error ? error.message : String(error)),
-        );
+        .catch((error: unknown) => {
+          setSwapBar("failed");
+          setGalleryStatus("displayed");
+          setGalleryError(error instanceof Error ? error.message : String(error));
+        });
     },
-    onClose: () => setGalleryStatus("closed"),
+    onClose: () => {
+      setLiveState("idle");
+      setGalleryStatus("idle");
+    },
   });
   const shutdown = (): void => {
     stream.close();

@@ -44,13 +44,32 @@ import { collectFacetStatus } from "./commands/status";
 import { computeFacetPaths } from "../shared/config/paths";
 import { generateRequestId } from "../shared/util/time";
 import { buildPublishRequest, resolveSourceBytes } from "./commands/publish";
+import { presentEnvelope, presenterCaps, shouldPresentPretty } from "./presenter";
 
 export interface CliIo {
   /** A standard Readable stream of bytes — the CLI reads source bytes for `publish` from here. */
   readonly stdin: ReadableStream<Uint8Array> | Readable;
-  readonly stdout: { write(chunk: string | Uint8Array): boolean };
+  readonly stdout: { write(chunk: string | Uint8Array): boolean; readonly isTTY?: boolean };
   readonly stderr: { write(chunk: string | Uint8Array): boolean };
   readonly env: NodeJS.ProcessEnv;
+}
+
+export function writeEnvelope(
+  io: CliIo,
+  parsed: ParsedCommand,
+  envelope: FacetEnvelope<unknown>,
+): void {
+  const routing = {
+    isTTY: io.stdout.isTTY === true,
+    jsonFlag: parsed.kind === "verb" && parsed.jsonFlag,
+    env: io.env,
+  };
+  if (shouldPresentPretty(routing)) {
+    for (const line of presentEnvelope(envelope, presenterCaps(routing)))
+      io.stdout.write(`${line}\n`);
+  } else {
+    printEnvelope(io.stdout, envelope);
+  }
 }
 
 /**
@@ -231,7 +250,7 @@ export async function runCli(
         spawnedPid = started.metadata.pid;
       }
       const data = { command: "status" as const, ...collectFacetStatus(paths) };
-      printEnvelope(io.stdout, okEnvelope(generateRequestId(), data));
+      writeEnvelope(io, parsed, okEnvelope(generateRequestId(), data));
       return { code: EXIT_CODES.OK, spawnedPid };
     } catch (error) {
       const facet = error instanceof FacetError ? error : FacetError.from(error);
@@ -241,7 +260,7 @@ export async function runCli(
         ok: false,
         error: facet.toBody(),
       };
-      printEnvelope(io.stdout, env1);
+      writeEnvelope(io, parsed, env1);
       return { code: EXIT_CODES.OK, spawnedPid: null };
     }
   }
@@ -289,7 +308,7 @@ export async function runCli(
       },
       testHooks.openLauncher,
     );
-    printEnvelope(io.stdout, response);
+    writeEnvelope(io, parsed, response);
     return { code: EXIT_CODES.OK, spawnedPid: resolved.metadata.pid };
   } catch (error) {
     // Any `FacetError` (typed validation, connection failure, contract
@@ -305,7 +324,7 @@ export async function runCli(
       ok: false,
       error: facet.toBody(),
     };
-    printEnvelope(io.stdout, env1);
+    writeEnvelope(io, parsed, env1);
     if (error instanceof FacetError) {
       return { code: EXIT_CODES.OK, spawnedPid: resolved.metadata.pid };
     }
@@ -322,6 +341,9 @@ async function main(): Promise<void> {
   const exit = await runCli(process.argv.slice(2), {
     stdin: process.stdin as unknown as ReadableStream<Uint8Array>,
     stdout: {
+      get isTTY() {
+        return process.stdout.isTTY === true;
+      },
       write(chunk) {
         process.stdout.write(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
         return true;
