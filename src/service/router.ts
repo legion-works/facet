@@ -50,6 +50,9 @@ import type { FacetLogger } from "../shared/logging/logger";
 
 const ROUTE_API = "/api/v1/commands";
 const ROUTE_STREAM = "/api/v1/stream";
+const ROUTE_GALLERY = "/gallery";
+const ROUTE_BOOTSTRAP = "/api/v1/gallery/bootstrap";
+const ROUTE_RELEASE = "/api/v1/gallery/release";
 
 // Re-export so `import { RAW_BODY_CAP_BYTES } from "./router"` keeps
 // working — the constant moved to `router-guards.ts` for size reasons.
@@ -64,6 +67,10 @@ export interface RouterDeps extends DispatcherDeps {
   readonly startTime: number;
   /** Per-artifact SSE fan-out the stream route registers into. */
   readonly broadcaster: RevisionBroadcaster;
+  readonly galleryBootstrap?: Map<
+    string,
+    { readonly artifactId: string; readonly revisionSha: string; readonly leaseId: string }
+  >;
 }
 
 function statusForHostCheck(error: FacetError | undefined): number {
@@ -214,7 +221,25 @@ export async function handleCommand(deps: RouterDeps, req: Request): Promise<Res
   deps.idle.acquire(`request:${requestId}`);
   try {
     const result = await dispatch(deps, command, requestId);
-    const safeResult = CommandResultSchema.parse(result);
+    let resultForWire = result;
+    if (command.command === "open") {
+      const openResult = result as {
+        readonly artifactId: string;
+        readonly revisionSha: string;
+        readonly lease: { readonly leaseId: string; readonly expiresAt: number };
+      };
+      const token = crypto.randomUUID();
+      deps.galleryBootstrap?.set(token, {
+        artifactId: openResult.artifactId,
+        revisionSha: openResult.revisionSha,
+        leaseId: openResult.lease.leaseId,
+      });
+      resultForWire = {
+        ...(result as Record<string, unknown>),
+        frameUrl: `${resolveHost(deps.ownOrigin)}/gallery#bootstrap=${encodeURIComponent(token)}`,
+      };
+    }
+    const safeResult = CommandResultSchema.parse(resultForWire);
     const elapsedMs = Math.round(performance.now() - startNs);
     deps.logger.info("command.completed", {
       requestId,
@@ -240,11 +265,79 @@ export async function handleCommand(deps: RouterDeps, req: Request): Promise<Res
 export function buildRouter(deps: RouterDeps): {
   fetch: (req: Request) => Promise<Response> | Response;
 } {
+  const bootstrap = new Map<
+    string,
+    { readonly artifactId: string; readonly revisionSha: string; readonly leaseId: string }
+  >();
+  const galleryHtml = `<!doctype html><html><head><meta charset="utf-8"><title>facet gallery</title></head><body><div id="facet-shell">Loading facet gallery…</div></body></html>`;
+
   return {
     async fetch(req: Request): Promise<Response> {
       const url = new URL(req.url);
       const path = url.pathname;
-      if (path === ROUTE_API) return handleCommand(deps, req);
+      if (path === ROUTE_GALLERY && req.method.toUpperCase() === "GET") {
+        return new Response(galleryHtml, {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
+      }
+      if (path === ROUTE_BOOTSTRAP && req.method.toUpperCase() === "POST") {
+        const body = (await req.json().catch(() => null)) as { token?: unknown } | null;
+        const token = typeof body?.token === "string" ? body.token : null;
+        const handoff = token === null ? undefined : bootstrap.get(token);
+        if (token !== null) bootstrap.delete(token);
+        const lease =
+          handoff === undefined
+            ? undefined
+            : deps.leases.list().find((entry) => entry.leaseId === handoff.leaseId);
+        if (handoff === undefined || lease === undefined) {
+          return envelopeResponse(
+            errEnvelope(generateRequestId(), {
+              code: "invalid_envelope",
+              message: "Bootstrap capability is invalid or already used",
+              retryable: false,
+            }),
+            401,
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            authorization: `Bearer ${deps.installToken}`,
+            artifactId: handoff.artifactId,
+            revisionSha: handoff.revisionSha,
+            lease: { leaseId: lease.leaseId, expiresAt: lease.expiresAt },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json", "cache-control": "no-store" },
+          },
+        );
+      }
+      if (path === ROUTE_RELEASE && req.method.toUpperCase() === "POST") {
+        const meta = readRequestMeta(req);
+        const auth = requireAnyBearer(meta.authorization, [deps.installToken]);
+        const leaseId = meta.headers.get("x-gallery-lease");
+        const artifactId = meta.headers.get("x-gallery-artifact");
+        if (!auth.ok || leaseId === null || artifactId === null) {
+          return envelopeResponse(
+            errEnvelope(generateRequestId(), {
+              code: "invalid_envelope",
+              message: "Display release requires authorization and lease headers",
+              retryable: false,
+            }),
+            401,
+          );
+        }
+        const lease = deps.leases
+          .list()
+          .find((entry) => entry.leaseId === leaseId && entry.artifactId === artifactId);
+        if (lease !== undefined) {
+          deps.leases.release(leaseId);
+          deps.idle.release(`lease:${leaseId}`);
+        }
+        return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+      }
+      if (path === ROUTE_API) return handleCommand({ ...deps, galleryBootstrap: bootstrap }, req);
       if (path === ROUTE_STREAM) {
         const meta = readRequestMeta(req);
         return handleStream(deps, {

@@ -13,6 +13,37 @@
 import { generateRequestId } from "../../shared/util/time";
 import { FacetError } from "../../shared/errors/facet-error";
 import type { OpenRequest } from "../../shared/contracts/commands/requests";
+import { spawn } from "node:child_process";
+
+export type OpenLauncher = (url: string) => void | Promise<void>;
+
+export interface DisplayOpenResult {
+  readonly frameUrl: string;
+  readonly installToken?: string;
+}
+
+function launchWithXdgOpen(url: string): void {
+  const child = spawn("xdg-open", [url], { detached: true, stdio: "ignore" });
+  child.unref();
+}
+
+export async function launchDisplay(
+  result: DisplayOpenResult,
+  launcher: OpenLauncher = launchWithXdgOpen,
+): Promise<void> {
+  if (result.installToken !== undefined && result.frameUrl.includes(result.installToken)) {
+    throw new FacetError("invalid_envelope", "Display URL contains the install token", {
+      retryable: false,
+    });
+  }
+  const parsed = new URL(result.frameUrl);
+  if (parsed.hostname !== "127.0.0.1") {
+    throw new FacetError("invalid_envelope", "Display URL must be loopback-only", {
+      retryable: false,
+    });
+  }
+  await launcher(result.frameUrl);
+}
 
 export function buildOpenRequest(args: Readonly<Record<string, string | boolean>>): OpenRequest {
   const artifactId = args["artifact-id"];

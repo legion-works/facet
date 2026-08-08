@@ -32,7 +32,7 @@ import { FacetClient } from "./client";
 
 import { buildCreateRequest } from "./commands/create";
 import { buildListRequest } from "./commands/list";
-import { buildOpenRequest } from "./commands/open";
+import { buildOpenRequest, launchDisplay } from "./commands/open";
 import { buildPinRequest } from "./commands/pin";
 import { buildPromoteRequest } from "./commands/promote";
 import { buildInstantiateRequest } from "./commands/instantiate";
@@ -56,6 +56,7 @@ export interface CliIo {
 export interface CliTestHooks {
   readonly onServiceSpawn?: () => void;
   readonly bypassInflight?: boolean;
+  readonly openLauncher?: (url: string) => void | Promise<void>;
 }
 
 export interface CliExit {
@@ -107,6 +108,7 @@ async function executeVerb(
   args: Readonly<Record<string, string | boolean>>,
   stdinBytes: Uint8Array,
   resolved: { baseUrl: string; installToken: string },
+  openLauncher?: (url: string) => void | Promise<void>,
 ): Promise<FacetEnvelope<CommandResult>> {
   const client = new FacetClient({
     baseUrl: resolved.baseUrl,
@@ -159,7 +161,15 @@ async function executeVerb(
       throw new FacetError("invalid_request", `Unhandled verb`, { retryable: false });
     }
   }
-  return client.sendCommand(request);
+  const response = await client.sendCommand(request);
+  if (verb.verb === "open" && response.ok) {
+    const openData = response.data as Extract<CommandResult, { command: "open" }>;
+    await launchDisplay(
+      { frameUrl: openData.frameUrl, installToken: resolved.installToken },
+      openLauncher,
+    );
+  }
+  return response;
 }
 
 /**
@@ -234,10 +244,16 @@ export async function runCli(
 
   // 5. Dispatch the verb.
   try {
-    const response = await executeVerb(parsed, parsed.args, stdinBytes, {
-      baseUrl: resolved.baseUrl,
-      installToken: resolved.installToken,
-    });
+    const response = await executeVerb(
+      parsed,
+      parsed.args,
+      stdinBytes,
+      {
+        baseUrl: resolved.baseUrl,
+        installToken: resolved.installToken,
+      },
+      testHooks.openLauncher,
+    );
     printEnvelope(io.stdout, response);
     return { code: EXIT_CODES.OK, spawnedPid: resolved.metadata.pid };
   } catch (error) {

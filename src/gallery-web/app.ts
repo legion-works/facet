@@ -46,6 +46,69 @@ export {
 export { planSwap, type SwapPlanStep } from "./swap";
 export { connectRevisionStream } from "./sse-client";
 
+export interface BootstrapHandoff {
+  readonly authorization: string;
+  readonly artifactId: string;
+  readonly revisionSha: string;
+  readonly lease: { readonly leaseId: string; readonly expiresAt: number };
+  readonly headers: Headers;
+}
+
+export function buildGalleryUrl(baseUrl: string, bootstrapToken: string): string {
+  const url = new URL(`${baseUrl.replace(/\/$/, "")}/gallery`);
+  if (url.hostname !== "127.0.0.1") throw new Error("Gallery URL must be loopback-only");
+  url.hash = `bootstrap=${encodeURIComponent(bootstrapToken)}`;
+  return url.toString();
+}
+
+export async function consumeBootstrapHandoff(options: {
+  readonly location: string;
+  readonly fetchImpl?: typeof fetch;
+  readonly clearFragment?: () => void;
+}): Promise<BootstrapHandoff> {
+  const location = new URL(options.location);
+  assertLoopbackHostname(location.hostname);
+  const params = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const token = params.get("bootstrap");
+  if (token === null || token.length === 0)
+    throw new Error("Gallery bootstrap capability is missing");
+  options.clearFragment?.();
+  const fetcher = options.fetchImpl ?? fetch;
+  const response = await fetcher(`${location.origin}/api/v1/gallery/bootstrap`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!response.ok) throw new Error(`Gallery bootstrap failed (${response.status})`);
+  const payload = (await response.json()) as Omit<BootstrapHandoff, "headers">;
+  const headers = new Headers({
+    authorization: payload.authorization,
+    "x-gallery-lease": payload.lease.leaseId,
+    "x-gallery-artifact": payload.artifactId,
+  });
+  return { ...payload, headers };
+}
+
+export async function releaseDisplayLease(options: {
+  readonly baseUrl: string;
+  readonly authorization: string;
+  readonly artifactId: string;
+  readonly leaseId: string;
+  readonly fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const url = new URL(options.baseUrl);
+  assertLoopbackHostname(url.hostname);
+  const fetcher = options.fetchImpl ?? fetch;
+  await fetcher(`${url.origin}/api/v1/gallery/release`, {
+    method: "POST",
+    headers: {
+      authorization: options.authorization,
+      "x-gallery-lease": options.leaseId,
+      "x-gallery-artifact": options.artifactId,
+    },
+  });
+}
+
 /**
  * Public surface of the shell — names only. Used by the gate test to
  * assert no list/sidebar/multi-frame APIs exist (single-artifact view).
