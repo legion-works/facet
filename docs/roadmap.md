@@ -10,6 +10,7 @@ types may extend registries, but artifact code never gains host capabilities.
 • Screenshot policy tuning
 • Export slot
 • Browser pin upgrades
+• Insecure mode — explicit opt-in relaxation tiers for users who accept the risk (e.g. `FACET_INSECURE=1|2|3`): candidate levels — (1) skip Tier 1 netns isolation, (2) run validators without sandboxing, (3) skip validation entirely / trust the artifact. Design lines: never the default, loud on every startup and envelope, and verdicts produced under any relaxed level carry an explicit `insecure` marker — a verdict must never claim a trust property the run did not have. Levels compose downward only (no per-request escalation).
 • Performance-budget verification: build a correct perf harness (fresh Tier 1 launches for cold read-back + browser-exit timing, service-process RSS/CPU sampling, warm-only SSE p95) and verify the RSS≤50MiB / CPU<0.5% / SSE-p95≤100ms / publish→visible<300ms / cold-readback<3s / browser-exit≤2s budgets. Deferred from v1: the v1 harness was defective and the budgets are unmeasured, not failed.
 
 ## v2
