@@ -168,6 +168,7 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
     // dead browser's pid can be reused by an unrelated process).
     targetStartTime = target.startTime;
     hostHtmlPath = join(hostDir, "host.html");
+    traceTier1("host-page:start", startedAt);
     const { html } = await buildHostPage(input.source, "render", hostDir, input.artifactType);
     traceTier1("host-page:complete", startedAt);
     writeFileSync(hostHtmlPath, html, "utf8");

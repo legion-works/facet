@@ -58,6 +58,8 @@ jobs:
           fi
       - run: bun test tests/unit tests/integration
       - run: bun test --coverage --coverage-reporter=lcov
+        env:
+          FACET_TIER1_TRACE: "1"
       - run: bun run coverage:check
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
