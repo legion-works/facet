@@ -81,3 +81,23 @@ class FacetLoggerImpl implements FacetLogger {
 export function createLogger(options: FacetLoggerOptions): FacetLogger {
   return new FacetLoggerImpl(options.component, options.baseFields ?? {});
 }
+
+const QUIET_NOOP = (): void => {};
+
+/**
+ * No-op logger. Used by integration tests so the test gate is
+ * pristine — the real stderr logger spams JSON lines on every service
+ * event, which drowns the test reporter.
+ */
+export function createQuietLogger(
+  options: FacetLoggerOptions = { component: "test" },
+): FacetLogger {
+  void options;
+  return {
+    debug: QUIET_NOOP,
+    info: QUIET_NOOP,
+    warn: QUIET_NOOP,
+    error: QUIET_NOOP,
+    child: () => createQuietLogger(),
+  };
+}

@@ -58,12 +58,13 @@ export function validCreateResult() {
   return { command: "create" as const, requestId: REQUEST_ID, artifact: ARTIFACT };
 }
 export function validPublishRequest() {
+  // Wire format is base64 (per D1 review) — "hi" → "aGk="
   return {
     command: "publish" as const,
     requestId: REQUEST_ID,
     artifactId: "art-1",
     artifactType: "markdown" as const,
-    bytes: [104, 105],
+    bytes: "aGk=",
     note: null,
   };
 }
@@ -125,7 +126,11 @@ export function validOpenResult() {
     requestId: REQUEST_ID,
     artifactId: "art-1",
     revisionSha: "a".repeat(64),
-    frameUrl: "facet://frame/art-1/a".repeat(8).slice(0, 64) + "0",
+    frameUrl: "facet://frame/art-1/" + "a".repeat(64),
+    lease: {
+      leaseId: "lease-1",
+      expiresAt: Date.now() + 60_000,
+    },
   };
 }
 export function validPromoteRequest() {

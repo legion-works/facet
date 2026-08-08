@@ -2,11 +2,11 @@
  * Service router — single entrypoint mapping HTTP requests to command
  * verbs, enveloping results, applying security guards.
  *
- * Guard order: Host exact-match → mutation headers → Bearer auth →
- * dispatch (delegated to dispatcher.ts).
- *
- * Every response carries `Cache-Control: no-store`. SSE handling lives
- * in stream.ts; this file owns the command route + fetch() entrypoint.
+ * Guard order: Host → Bearer auth → mutation Content-Type → raw body
+ * size cap → body read/parse → dispatch. Auth happens BEFORE any
+ * body read/parse (unauth malformed body → 401, not 400). Promote
+ * accepts install OR operator bearer (constant-time). Cross-site
+ * mutation failures map to 403 (CSRF).
  */
 
 import { randomUUID } from "node:crypto";
@@ -26,8 +26,12 @@ import {
 } from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
 
-import { requireBearer, checkMutationSecurityHeaders, parseBearer } from "./security/auth";
-import { checkHostOrigin } from "./security/host-origin";
+import { requireAnyBearer, checkMutationSecurityHeaders } from "./security/auth";
+import {
+  checkHostOrigin,
+  isCrossSiteRejection,
+  type HostOriginResult,
+} from "./security/host-origin";
 import { dispatch, type DispatcherDeps } from "./dispatcher";
 import { handleStream } from "./stream";
 import type { FacetLogger } from "../shared/logging/logger";
@@ -35,6 +39,14 @@ import type { FacetLogger } from "../shared/logging/logger";
 const NO_STORE = "no-store";
 const ROUTE_API = "/api/v1/commands";
 const ROUTE_STREAM = "/api/v1/stream";
+
+/**
+ * Hard ceiling on the raw HTTP body. Distinct from SOURCE_CAP_BYTES
+ * (which governs artifact payload bytes after decode). 16 MiB is
+ * well above 5 MiB source × 4/3 base64 envelope slack, so a legitimate
+ * client never hits it.
+ */
+export const RAW_BODY_CAP_BYTES = 16 * 1024 * 1024;
 
 export interface RouterDeps extends DispatcherDeps {
   readonly installToken: string;
@@ -49,7 +61,13 @@ function resolveHost(value: string | (() => string)): string {
   return typeof value === "function" ? value() : value;
 }
 
-export interface ParsedRequest {
+/**
+ * Request metadata extracted from headers — read BEFORE body. The body
+ * is read only after auth, mutation headers, and the raw size cap
+ * pass. This split keeps unauthenticated requests from touching the
+ * body at all.
+ */
+export interface RequestMeta {
   readonly url: string;
   readonly method: string;
   readonly host: string | null;
@@ -57,16 +75,13 @@ export interface ParsedRequest {
   readonly secFetchSite: string | null;
   readonly contentType: string | null;
   readonly authorization: string | null;
-  readonly bodyText: string | null;
+  readonly contentLength: number | null;
+  readonly headers: { get(name: string): string | null };
 }
 
-async function parseIncomingRequest(req: Request): Promise<ParsedRequest> {
+function readRequestMeta(req: Request): RequestMeta {
   const url = new URL(req.url);
-  let bodyText: string | null = null;
-  const upper = req.method.toUpperCase();
-  if (upper !== "GET" && upper !== "HEAD") {
-    bodyText = await req.text();
-  }
+  const cl = req.headers.get("content-length");
   return {
     url: url.pathname + url.search,
     method: req.method,
@@ -75,7 +90,8 @@ async function parseIncomingRequest(req: Request): Promise<ParsedRequest> {
     secFetchSite: req.headers.get("sec-fetch-site"),
     contentType: req.headers.get("content-type"),
     authorization: req.headers.get("authorization"),
-    bodyText,
+    contentLength: cl !== null ? Number(cl) : null,
+    headers: req.headers,
   };
 }
 
@@ -97,16 +113,6 @@ function pickRequestId(header: string | null | undefined): string {
   if (header === null || header === undefined) return generateRequestId();
   const trimmed = header.trim();
   return trimmed.length > 0 ? trimmed : generateRequestId();
-}
-
-function parseBody(bodyText: string | null): unknown {
-  if (bodyText === null) return null;
-  if (bodyText.length === 0) return null;
-  try {
-    return JSON.parse(bodyText);
-  } catch {
-    return Symbol.for("invalid_json");
-  }
 }
 
 function statusFor(error: FacetError): number {
@@ -134,15 +140,51 @@ function statusFor(error: FacetError): number {
   }
 }
 
-export async function handleCommand(deps: RouterDeps, req: ParsedRequest): Promise<Response> {
+function statusForHostCheck(error: FacetError | undefined): number {
+  return isCrossSiteRejection(error) ? 403 : 400;
+}
+
+async function readCappedBody(req: Request, contentLength: number | null): Promise<string> {
+  if (contentLength !== null) {
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      throw new FacetError("invalid_request", "Invalid Content-Length", { retryable: false });
+    }
+    if (contentLength > RAW_BODY_CAP_BYTES) {
+      throw new FacetError("payload_too_large", "Request body exceeds raw cap", {
+        retryable: false,
+        details: { capBytes: RAW_BODY_CAP_BYTES, receivedBytes: contentLength },
+      });
+    }
+  }
+  const text = await req.text();
+  if (text.length > RAW_BODY_CAP_BYTES) {
+    throw new FacetError("payload_too_large", "Request body exceeds raw cap", {
+      retryable: false,
+      details: { capBytes: RAW_BODY_CAP_BYTES, receivedBytes: text.length },
+    });
+  }
+  return text;
+}
+
+function parseBody(bodyText: string): unknown {
+  try {
+    return JSON.parse(bodyText);
+  } catch {
+    return Symbol.for("invalid_json");
+  }
+}
+
+export async function handleCommand(deps: RouterDeps, req: Request): Promise<Response> {
   const startNs = performance.now();
+  const meta = readRequestMeta(req);
   const requestId = pickRequestId(null);
 
-  const hostCheck = checkHostOrigin({
-    method: req.method,
-    host: req.host,
-    origin: req.origin,
-    secFetchSite: req.secFetchSite,
+  // 1. Host exact-match (DNS-rebinding defense). Reject missing Host.
+  const hostCheck: HostOriginResult = checkHostOrigin({
+    method: meta.method,
+    host: meta.host,
+    origin: meta.origin,
+    secFetchSite: meta.secFetchSite,
     expectedHost: resolveHost(deps.expectedHost),
     ownOrigin: resolveHost(deps.ownOrigin),
   });
@@ -150,24 +192,15 @@ export async function handleCommand(deps: RouterDeps, req: ParsedRequest): Promi
     deps.logger.warn("request.rejected", {
       reason: "host_origin",
       errorCode: hostCheck.error.code,
-      url: req.url,
+      url: meta.url,
     });
-    return envelopeResponse(errEnvelope(requestId, hostCheck.error.toBody()), 400);
+    return envelopeResponse(
+      errEnvelope(requestId, hostCheck.error.toBody()),
+      statusForHostCheck(hostCheck.error),
+    );
   }
 
-  const contentCheck = checkMutationSecurityHeaders({
-    method: req.method,
-    contentType: req.contentType,
-  });
-  if (!contentCheck.ok) {
-    deps.logger.warn("request.rejected", {
-      reason: "content_type",
-      errorCode: contentCheck.error.code,
-    });
-    return envelopeResponse(errEnvelope(requestId, contentCheck.error.toBody()), 400);
-  }
-
-  if (req.method.toUpperCase() === "GET") {
+  if (meta.method.toUpperCase() === "GET") {
     return envelopeResponse(
       errEnvelope(requestId, {
         code: "invalid_request",
@@ -178,15 +211,12 @@ export async function handleCommand(deps: RouterDeps, req: ParsedRequest): Promi
     );
   }
 
-  const bodyRaw = parseBody(req.bodyText);
-  if (bodyRaw === Symbol.for("invalid_json")) {
-    const err = new FacetError("invalid_envelope", "Request body is not valid JSON", {
-      retryable: false,
-    });
-    return envelopeResponse(errEnvelope(requestId, err.toBody()), 400);
-  }
-
-  const authResult = requireBearer(req.authorization, deps.installToken);
+  // 2. Bearer auth BEFORE any body read. Install or operator bearer is
+  //    accepted; the per-verb gate below enforces the operator requirement
+  //    for promote.
+  const authCandidates: string[] = [deps.installToken];
+  if (deps.promoteToken !== null) authCandidates.push(deps.promoteToken);
+  const authResult = requireAnyBearer(meta.authorization, authCandidates);
   if (!authResult.ok) {
     deps.logger.warn("auth.failed", {
       requestId,
@@ -194,7 +224,46 @@ export async function handleCommand(deps: RouterDeps, req: ParsedRequest): Promi
     });
     return envelopeResponse(errEnvelope(requestId, authResult.error.toBody()), 401);
   }
+  const matchedTokenIndex = authResult.matchedIndex;
+  const matchedIsOperator = matchedTokenIndex > 0; // index 0 = install, 1 = operator
 
+  // 3. Mutation Content-Type. GET already handled; mutations require JSON.
+  const contentCheck = checkMutationSecurityHeaders({
+    method: meta.method,
+    contentType: meta.contentType,
+  });
+  if (!contentCheck.ok) {
+    deps.logger.warn("request.rejected", {
+      reason: "content_type",
+      errorCode: contentCheck.error.code,
+    });
+    return envelopeResponse(errEnvelope(requestId, contentCheck.error.toBody()), 400);
+  }
+
+  // 4. Read body, enforcing the raw size cap BEFORE JSON.parse.
+  let bodyText: string;
+  try {
+    bodyText = await readCappedBody(req, meta.contentLength);
+  } catch (error) {
+    const err = FacetError.from(error);
+    deps.logger.warn("request.rejected", {
+      reason: "body_size",
+      errorCode: err.code,
+    });
+    return envelopeResponse(
+      errEnvelope(requestId, err.toBody()),
+      err.code === "payload_too_large" ? 413 : 400,
+    );
+  }
+  const bodyRaw = parseBody(bodyText);
+  if (bodyRaw === Symbol.for("invalid_json")) {
+    const err = new FacetError("invalid_envelope", "Request body is not valid JSON", {
+      retryable: false,
+    });
+    return envelopeResponse(errEnvelope(requestId, err.toBody()), 400);
+  }
+
+  // 5. Parse envelope.
   const env = parseEnvelope(bodyRaw);
   if (!env.ok) {
     return envelopeResponse(errEnvelope(requestId, env.body), 400);
@@ -203,6 +272,7 @@ export async function handleCommand(deps: RouterDeps, req: ParsedRequest): Promi
     return envelopeResponse(env.envelope, 400);
   }
 
+  // 6. Parse the command.
   const cmdParse = CommandRequestSchema.safeParse(env.envelope.data);
   if (!cmdParse.success) {
     const err = new FacetError("invalid_request", "Command request failed validation", {
@@ -213,6 +283,7 @@ export async function handleCommand(deps: RouterDeps, req: ParsedRequest): Promi
   }
   const command: CommandRequest = cmdParse.data;
 
+  // 7. Reserved-verb gate.
   const reserved = checkCommandImplemented(command.command);
   if (reserved !== null) {
     if (command.command === "export") {
@@ -227,14 +298,14 @@ export async function handleCommand(deps: RouterDeps, req: ParsedRequest): Promi
     return envelopeResponse(errEnvelope(requestId, reserved.toBody()), 400);
   }
 
+  // 8. Promote requires the operator token (constant-time compare).
   if (command.command === "promote") {
-    const supplied = parseBearer(req.authorization);
-    if (deps.promoteToken === null || supplied === null || supplied !== deps.promoteToken) {
+    if (!matchedIsOperator) {
       const err = new FacetError("invalid_envelope", "Promote requires the operator token", {
         retryable: false,
-        details: { reason: "operator_token_missing_or_mismatch" },
+        details: { reason: "operator_token_required" },
       });
-      return envelopeResponse(errEnvelope(requestId, err.toBody()), 401);
+      return envelopeResponse(errEnvelope(requestId, err.toBody()), 403);
     }
   }
 
@@ -269,18 +340,19 @@ export function buildRouter(deps: RouterDeps): {
 } {
   return {
     async fetch(req: Request): Promise<Response> {
-      const parsed = await parseIncomingRequest(req);
-      const url = parsed.url.split("?")[0] ?? parsed.url;
-      if (url === ROUTE_API) return handleCommand(deps, parsed);
-      if (url === ROUTE_STREAM) {
+      const url = new URL(req.url);
+      const path = url.pathname;
+      if (path === ROUTE_API) return handleCommand(deps, req);
+      if (path === ROUTE_STREAM) {
+        const meta = readRequestMeta(req);
         return handleStream(deps, {
-          url: parsed.url,
-          method: parsed.method,
-          host: parsed.host,
-          origin: parsed.origin,
-          secFetchSite: parsed.secFetchSite,
-          contentType: parsed.contentType,
-          authorization: parsed.authorization,
+          url: meta.url,
+          method: meta.method,
+          host: meta.host,
+          origin: meta.origin,
+          secFetchSite: meta.secFetchSite,
+          authorization: meta.authorization,
+          headers: meta.headers,
         });
       }
       return envelopeResponse(

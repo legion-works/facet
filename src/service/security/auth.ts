@@ -49,6 +49,58 @@ export type BearerAuthResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: FacetError };
 
+export type AnyBearerAuthResult =
+  | ({ readonly ok: true } & { readonly matchedIndex: number })
+  | { readonly ok: false; readonly error: FacetError };
+
+/**
+ * Validate that a request carries a Bearer token equal to one of the
+ * expected values (constant-time compare). Used for routes where the
+ * install bearer OR the operator promote bearer is acceptable — the
+ * dispatcher then chooses the verb-specific gate based on which token
+ * matched. Comparison is constant-time over every candidate so the
+ * match position does not leak via timing.
+ */
+export function requireAnyBearer(
+  header: string | null | undefined,
+  expected: readonly string[],
+): AnyBearerAuthResult {
+  if (expected.length === 0) {
+    return {
+      ok: false,
+      error: new FacetError("internal", "Server has no tokens configured", {
+        retryable: false,
+      }),
+    };
+  }
+  const token = parseBearer(header);
+  if (token === null) {
+    return {
+      ok: false,
+      error: new FacetError("invalid_envelope", "Missing or malformed Authorization header", {
+        retryable: false,
+        details: { reason: "missing_bearer" },
+      }),
+    };
+  }
+  let matched = -1;
+  for (let i = 0; i < expected.length; i += 1) {
+    const candidate = expected[i]!;
+    if (typeof candidate !== "string" || candidate.length === 0) continue;
+    if (constantTimeEqual(token, candidate)) matched = i;
+  }
+  if (matched < 0) {
+    return {
+      ok: false,
+      error: new FacetError("invalid_envelope", "Invalid bearer token", {
+        retryable: false,
+        details: { reason: "token_mismatch" },
+      }),
+    };
+  }
+  return { ok: true, matchedIndex: matched };
+}
+
 /**
  * Validate that a request carries a Bearer token equal to the expected
  * install token (constant-time compare). The caller supplies the request

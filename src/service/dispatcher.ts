@@ -76,7 +76,11 @@ export async function dispatch(
     case "publish": {
       const unsupported = checkArtifactTypeSupported(command.artifactType);
       if (unsupported !== null) throw unsupported;
-      const bytes = Uint8Array.from(command.bytes);
+      // Decode the base64 string into a Uint8Array. The schema validates
+      // base64 syntax; here we enforce the SOURCE_CAP_BYTES on the
+      // decoded length BEFORE any further work, throwing a typed
+      // payload_too_large so the wire response is 413 (not 400).
+      const bytes = Uint8Array.from(Buffer.from(command.bytes, "base64"));
       if (bytes.byteLength > SOURCE_CAP_BYTES) {
         throw new FacetError("payload_too_large", "Publish bytes exceed SOURCE_CAP_BYTES", {
           retryable: false,
@@ -157,13 +161,22 @@ export async function dispatch(
       }
       const lease = deps.leases.issue({ artifactId: command.artifactId, pid: process.pid });
       deps.idle.acquire(`lease:${lease.leaseId}`);
-      const frameUrl = `facet://frame/${command.artifactId}/${command.revisionSha}?lease=${lease.leaseId}`;
+      // The lease id is NOT embedded in the frameUrl — clients carry
+      // it out-of-band (header / cache) so a URL log line, referrer,
+      // or browser history cannot leak the lease. The frameUrl only
+      // identifies the artifact + revision; the SSE route takes the
+      // lease id via `X-Gallery-Lease` header.
+      const frameUrl = `facet://frame/${command.artifactId}/${command.revisionSha}`;
       return {
         command: "open",
         requestId,
         artifactId: command.artifactId,
         revisionSha: command.revisionSha,
         frameUrl,
+        lease: {
+          leaseId: lease.leaseId,
+          expiresAt: lease.expiresAt,
+        },
       };
     }
     case "promote": {

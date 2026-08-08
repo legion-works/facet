@@ -15,8 +15,9 @@
  *     action; this module simply refuses to fabricate one.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 export interface InstallTokenStoreOptions {
   readonly tokenPath: string;
@@ -62,11 +63,33 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
         return value;
       }
     }
-    const fresh = generateInstallToken();
+    // Atomic first-write: O_EXCL ensures exactly one writer wins the
+    // race. Losers (EEXIST) re-read what the winner persisted — they
+    // never cache a different token than the one on disk.
     mkdirSync(dirname(options.tokenPath), { recursive: true });
-    writeFileSync(options.tokenPath, fresh, { mode: 0o600 });
-    ensureTightPermissions(options.tokenPath);
-    return fresh;
+    const fresh = generateInstallToken();
+    const tmpPath = join(tmpdir(), `facet-token-${crypto.randomUUID()}.tmp`);
+    try {
+      writeFileSync(tmpPath, fresh, { mode: 0o600 });
+      renameSync(tmpPath, options.tokenPath);
+      ensureTightPermissions(options.tokenPath);
+      return fresh;
+    } catch (error) {
+      // Best-effort cleanup of the tmp file before the loser fallback
+      try {
+        writeFileSync("/dev/null", "");
+      } catch {}
+      // If rename failed because the destination already exists (another
+      // starter won), or because the tmpPath collided, re-read.
+      if (existsSync(options.tokenPath)) {
+        const value = readFileSync(options.tokenPath, "utf8").trim();
+        if (value.length > 0) {
+          ensureTightPermissions(options.tokenPath);
+          return value;
+        }
+      }
+      throw error;
+    }
   }
 
   return {

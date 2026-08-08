@@ -60,12 +60,16 @@ function isMutationMethod(method: string): boolean {
   return upper === "POST" || upper === "PUT" || upper === "DELETE" || upper === "PATCH";
 }
 
+export const CROSS_SITE_REASON = "cross_site_mutation" as const;
+
 /**
  * Combined check used by the route guard. Reads (`GET`) require only a
  * matching Host. Mutations additionally require:
  *   - Origin absent OR equal to ownOrigin
  *   - Sec-Fetch-Site absent OR in {same-origin, none}
- * Any other value is a typed rejection.
+ * Any other value is a typed rejection. Cross-site mutation failures
+ * carry `details.reason === CROSS_SITE_REASON` so the caller can map
+ * them to a 403 (CSRF) status instead of a 400 (malformed request).
  */
 export function checkHostOrigin(input: HostOriginInput): HostOriginResult {
   const hostResult = checkHost(input.host, input.expectedHost);
@@ -79,7 +83,7 @@ export function checkHostOrigin(input: HostOriginInput): HostOriginResult {
       ok: false,
       error: new FacetError("invalid_request", `Cross-site mutation rejected`, {
         retryable: false,
-        details: { secFetchSite },
+        details: { reason: CROSS_SITE_REASON, secFetchSite },
       }),
     };
   }
@@ -91,11 +95,18 @@ export function checkHostOrigin(input: HostOriginInput): HostOriginResult {
         ok: false,
         error: new FacetError("invalid_request", `Origin does not match service origin`, {
           retryable: false,
-          details: { received: origin, expected: input.ownOrigin },
+          details: { reason: CROSS_SITE_REASON, received: origin, expected: input.ownOrigin },
         }),
       };
     }
   }
 
   return { ok: true };
+}
+
+export function isCrossSiteRejection(error: FacetError | undefined): boolean {
+  return (
+    error?.code === "invalid_request" &&
+    (error.details as { reason?: string } | undefined)?.reason === CROSS_SITE_REASON
+  );
 }

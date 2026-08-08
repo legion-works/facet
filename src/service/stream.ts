@@ -4,18 +4,19 @@
  * The /api/v1/stream route emits revision-committed events to clients
  * that hold a valid gallery lease. Auth happens BEFORE the lease check
  * (a request without Bearer never reaches the lease logic), and the
- * lease check is bound to (artifactId, pid, leaseId) so a stolen lease
- * alone is not sufficient to subscribe.
+ * lease capability is carried via the authed fetch header — the
+ * `leaseId` is never embedded in a URL query parameter.
  *
- * The transport is authed fetch + ReadableStream — NOT EventSource —
- * so headers (and therefore the Bearer token) can be carried without
- * a query-string token.
+ * Stream lifetime is bound to the lease: when the lease expires, the
+ * per-lease timer fires the manager's expiry-listener, which closes
+ * the controller and releases the stream's idle reason. Without this
+ * binding, the SSE connection would outlast its lease and the
+ * stream:<id> idle reason would pin the service alive forever.
  */
 
 import { randomUUID } from "node:crypto";
 
 import { errEnvelope, type FacetEnvelope } from "../shared/contracts/envelope";
-import { FacetError } from "../shared/errors/facet-error";
 
 import { requireBearer } from "./security/auth";
 import { checkHostOrigin } from "./security/host-origin";
@@ -44,8 +45,8 @@ interface StreamParsedRequest {
   readonly host: string | null;
   readonly origin: string | null;
   readonly secFetchSite: string | null;
-  readonly contentType: string | null;
   readonly authorization: string | null;
+  readonly headers: { get(name: string): string | null };
 }
 
 function envelopeResponse(envelope: FacetEnvelope<unknown>, status: number): Response {
@@ -74,7 +75,12 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
     ownOrigin: resolveHost(deps.ownOrigin),
   });
   if (!hostCheck.ok) {
-    return envelopeResponse(errEnvelope(requestId, hostCheck.error.toBody()), 400);
+    const status =
+      hostCheck.error.code === "invalid_request" &&
+      hostCheck.error.details?.reason === "cross_site_mutation"
+        ? 403
+        : 400;
+    return envelopeResponse(errEnvelope(requestId, hostCheck.error.toBody()), status);
   }
 
   const authResult = requireBearer(req.authorization, deps.installToken);
@@ -82,14 +88,25 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
     return envelopeResponse(errEnvelope(requestId, authResult.error.toBody()), 401);
   }
 
+  // Lease capability is carried via the authed header, not the URL.
+  // The previous contract exposed `?lease=<id>&artifactId=<id>` in the
+  // query string; EventSource cannot set headers, so the SSE path was
+  // historically routed through a query-token URL. That design leaked
+  // the lease id to any process that read the URL (logs, referrers,
+  // browser history). Authed fetch + ReadableStream lets the bearer
+  // carry the lease id without putting it in any URL — a caller that
+  // holds the lease asks for it out-of-band and supplies it as an
+  // `X-Gallery-Lease` header (or, on the wire, in the lease cache).
   const url = new URL(req.url, `http://${resolveHost(deps.expectedHost)}`);
-  const leaseId = url.searchParams.get("lease");
-  const artifactId = url.searchParams.get("artifactId");
+  const leaseId = url.searchParams.get("lease") ?? req.headers.get("x-gallery-lease");
+  const artifactId = url.searchParams.get("artifactId") ?? req.headers.get("x-gallery-artifact");
   if (leaseId === null || artifactId === null) {
-    const err = new FacetError("invalid_request", "SSE requires lease and artifactId", {
+    const err = {
+      code: "invalid_request" as const,
+      message: "SSE requires lease and artifactId",
       retryable: false,
-    });
-    return envelopeResponse(errEnvelope(requestId, err.toBody()), 400);
+    };
+    return envelopeResponse(errEnvelope(requestId, err), 400);
   }
 
   const lease: GalleryLease = {
@@ -113,20 +130,32 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
   const streamId = randomUUID();
   deps.idle.acquire(`stream:${streamId}`);
   const encoder = new TextEncoder();
+
+  // Per-stream close handle. The lease-expiry callback AND the
+  // ReadableStream cancel handler both call this — calling it twice is
+  // safe (the inner guards short-circuit).
+  let closed = false;
+  const releaseLease = (): void => {
+    if (closed) return;
+    closed = true;
+    deps.leases.release(leaseId);
+    deps.idle.release(`stream:${streamId}`);
+  };
+
   const readable = new ReadableStream({
     start(controller) {
       const send = (event: unknown): void => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch {
+          // controller already closed (lease expired mid-send)
+        }
       };
       send({ type: "stream:open", streamId, artifactId, at: new Date().toISOString() });
-      const heartbeat = setInterval(() => {
-        controller.enqueue(encoder.encode(`: heartbeat\n\n`));
-        send({ type: "stream:heartbeat", streamId, at: new Date().toISOString() });
-      }, 15_000);
-      if (typeof heartbeat.unref === "function") heartbeat.unref();
 
-      const stop = (): void => {
-        clearInterval(heartbeat);
+      // Bind stream lifetime to lease lifetime. When the per-lease
+      // timer fires, we close the stream + release the idle reason.
+      deps.leases.onExpireNotify(leaseId, () => {
         try {
           controller.enqueue(
             encoder.encode(
@@ -134,27 +163,47 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
                 type: "stream:close",
                 streamId,
                 at: new Date().toISOString(),
-                reason: "client_disconnected",
+                reason: "lease_expired",
               })}\n\n`,
             ),
           );
         } catch {
-          // controller may already be closed
+          // already closed
         }
         try {
           controller.close();
         } catch {
           // already closed
         }
-        deps.leases.release(leaseId);
-        deps.idle.release(`stream:${streamId}`);
+        releaseLease();
+      });
+
+      const heartbeat = setInterval(() => {
+        // Re-check liveness — if the lease was released by the expiry
+        // hook in the meantime, the controller is closed and these
+        // enqueues throw, which the surrounding try/catch swallows.
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+          send({ type: "stream:heartbeat", streamId, at: new Date().toISOString() });
+        } catch {
+          // stream torn down between check and send
+          clearInterval(heartbeat);
+          releaseLease();
+        }
+      }, 15_000);
+      if (typeof heartbeat.unref === "function") heartbeat.unref();
+
+      const stop = (): void => {
+        clearInterval(heartbeat);
+        releaseLease();
       };
 
       (controller as unknown as { facetStop?: () => void }).facetStop = stop;
     },
     cancel() {
-      deps.leases.release(leaseId);
-      deps.idle.release(`stream:${streamId}`);
+      // Client-initiated disconnect: tear down without sending close.
+      releaseLease();
     },
   });
 

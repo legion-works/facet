@@ -6,11 +6,29 @@ import { BaseRequestSchema, ReadBackTierSchema } from "./_shared";
 
 /**
  * Wire-encoded byte payload for publish. JSON cannot carry a Uint8Array
- * directly, so the contract accepts an array of integers (0..255). The
- * router converts that array into a Uint8Array before passing to the
- * store, and the contract-level fixture tests assert the JSON shape.
+ * directly; the v1 contract uses base64 (per D1 review) so a 5 MiB
+ * source fits in ~7 MiB of JSON. The schema validates base64 syntax;
+ * the dispatcher enforces SOURCE_CAP_BYTES on the decoded length and
+ * throws `payload_too_large` so the wire response is a typed 413
+ * rather than a schema-level 400.
  */
-export const PublishBytesSchema = z.array(z.number().int().min(0).max(255));
+const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+
+export const PublishBytesSchema = z.string().superRefine((value, ctx) => {
+  if (value.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "publish.bytes is empty",
+    });
+    return;
+  }
+  if (!BASE64_RE.test(value)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "publish.bytes is not valid base64",
+    });
+  }
+});
 
 /**
  * Publish accepts the four implemented artifact types AND the reserved

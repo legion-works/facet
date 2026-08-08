@@ -1,17 +1,21 @@
 /**
  * Loopback service server.
  *
- * Wires the store, security, lifecycle, and router together. Boots on
- * 127.0.0.1:<os-assigned-port>, creates an install token if absent,
- * acquires the process lock, and writes the ready/metadata record so
- * external CLI tooling can discover the service. Exits on idle.
+ * Bind order (security-critical — D3 review):
+ *   1. Acquire the process lock FIRST with a minimal metadata record
+ *      (pid + startTime; port=0). A second cold start cannot race the
+ *      install-token create, DB migrate, or port bind while we hold
+ *      the lock.
+ *   2. Open the database + run migrations (idempotent under lock).
+ *   3. Create the install token atomically (temp-file + rename under
+ *      lock; a second starter that wins the lock reads what we wrote).
+ *   4. Read the operator promote token (read-only, may be absent).
+ *   5. Bind Bun.serve on 127.0.0.1:<os-assigned port>.
+ *   6. Update the lock metadata with the assigned port + complete
+ *      record — STILL holding the lock so a parallel starter cannot
+ *      observe a port-less lock and assume the service is unready.
  *
- * Bind strategy: we build the router with a placeholder port, bind once
- * on port 0 to learn the kernel-assigned port, then rewire the router's
- * expectedHost/origin via a mutable holder. We do NOT rebind Bun.serve
- * after the initial bind — the port is held for the lifetime of the
- * service, and the Host guard uses the placeholder until the first
- * request rewrites the holder.
+ * Idle-driven stop: release the lock, close the server, WAL checkpoint.
  */
 
 import { mkdirSync } from "node:fs";
@@ -24,10 +28,15 @@ import { computeFacetPaths } from "../shared/config/paths";
 import { openDatabase } from "./store/database";
 import { runMigrations } from "./store/migrations";
 import { ArtifactRepository } from "./store/repository";
-import { buildRouter, type RouterDeps } from "./router";
+import { buildRouter } from "./router";
 import { createInstallTokenStore, createPromoteTokenStore } from "./security/token-store";
 import { createLeaseManager, type GalleryLeaseManager } from "./security/leases";
-import { acquireLock, releaseLock, type LockMetadata } from "./lifecycle/process-lock";
+import {
+  acquireLock,
+  releaseLock,
+  writeLockMetadata,
+  type LockMetadata,
+} from "./lifecycle/process-lock";
 import { runOrphanCleanup } from "./lifecycle/orphan-cleanup";
 import { createIdleController, type IdleController } from "./lifecycle/idle-controller";
 
@@ -68,147 +77,176 @@ export async function startFacetService(
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const host = options.host ?? "127.0.0.1";
 
-  // 1. Orphan cleanup before we acquire anything new.
+  // Pre-lock: orphan cleanup (read-only inspection of disk state).
   runOrphanCleanup({ lockPath, databasePath: dbPath });
 
-  // 2. Open the store + run migrations.
-  mkdirSync(dirname(dbPath), { recursive: true });
-  const db = openDatabase({ databasePath: dbPath });
-  runMigrations(db);
-  const repository = new ArtifactRepository(db, {
-    onCommitted: (revision) => {
-      logger.info("revision.committed", {
-        artifactId: revision.artifactId,
-        revisionSha: revision.sha256,
-      });
-    },
-  });
-
-  // 3. Token stores (install is auto-created; promote is read-only).
-  const installTokenStore = createInstallTokenStore({ tokenPath: installTokenPath });
-  const installToken = installTokenStore.read();
-  const promoteTokenStore = createPromoteTokenStore({ tokenPath: promoteTokenPath });
-  const promoteToken = promoteTokenStore.read();
-
-  // 4. Idle + lease managers.
-  let resolveStop: (() => void) | null = null;
-  const idle: IdleController = createIdleController({
-    idleTimeoutMs,
-    onIdle: () => {
-      logger.info("service.idle", { idleTimeoutMs });
-      options.onIdle?.();
-      resolveStop?.();
-    },
-  });
-  const leases: GalleryLeaseManager = createLeaseManager({
-    leaseTtlMs: LEASE_TTL_MS,
-    onExpire: (entry) => {
-      logger.info("lease.expired", { leaseId: entry.leaseId, artifactId: entry.artifactId });
-      idle.release(`lease:${entry.leaseId}`);
-    },
-  });
-
-  // 5. Bind on 127.0.0.1:<os-assigned port>. We bind once. The router
-  //    uses a mutable `hostState` so the Host-exact-match guard
-  //    accepts the kernel-assigned port once known — until then, a
-  //    request with no Host header is normalized to the bound port.
-  const hostState: { value: string | null } = { value: null };
-  const routerDeps: RouterDeps = {
-    repository,
-    installToken,
-    promoteToken,
-    leases,
-    idle,
-    logger: logger.child("router"),
-    expectedHost: () => hostState.value ?? "127.0.0.1:0",
-    ownOrigin: () => `http://${hostState.value ?? "127.0.0.1:0"}`,
-    startTime: Date.now(),
-  };
-  // We pass RouterDeps by-value at build time, but `getHost()` is
-  // consulted inside the fetch handler below. The router holds the
-  // PLACEHOLDER expectedHost; we patch the comparison by reading
-  // hostState at request time.
-  const router = buildRouter(routerDeps);
-  let server: ReturnType<typeof Bun.serve>;
-  try {
-    server = Bun.serve({
-      hostname: host,
-      port: 0,
-      fetch: async (req) => {
-        const incomingHost = req.headers.get("host");
-        // If the request carries no Host (loopback transport), inject
-        // the bound expected host so the host-exact-match guard passes.
-        if (incomingHost === null && hostState.value !== null) {
-          const headers = new Headers(req.headers);
-          headers.set("host", hostState.value);
-          req = new Request(req, { headers });
-        }
-        return router.fetch(req);
-      },
-    });
-  } catch (error) {
-    db.close();
-    throw new FacetError("internal", "Failed to bind loopback port", {
-      retryable: false,
-      cause: error,
-    });
-  }
-  const actualPort = server.port ?? 0;
-  if (actualPort === 0) {
-    server.stop(true);
-    db.close();
-    throw new FacetError("internal", "Failed to bind loopback port", { retryable: false });
-  }
-  const expectedHost = `${host}:${actualPort}`;
-  const ownOrigin = `http://${expectedHost}`;
-  hostState.value = expectedHost;
-
-  // 6. Acquire the process lock.
+  // 1. Lock FIRST. port=0 because the kernel-assigned port is not yet
+  //    known. A second cold start that races this one will be refused
+  //    by acquireLock (live foreign pid contention) until we either
+  //    succeed (lock released on stop) or fail (typed constraint).
+  const lockStartTime = Date.now();
   const lockMetadata: LockMetadata = {
     pid: process.pid,
-    startTime: Date.now(),
-    port: actualPort,
+    startTime: lockStartTime,
+    port: 0,
     contractVersion: "facet.v1",
   };
   const lockResult = acquireLock(lockPath, lockMetadata);
   if (!lockResult.ok) {
-    server.stop(true);
-    db.close();
     throw lockResult.error;
   }
 
-  logger.info("service.ready", { port: actualPort, pid: process.pid });
-
-  const stopPromise = new Promise<void>((resolve) => {
-    resolveStop = () => {
+  let boundServer: ReturnType<typeof Bun.serve> | null = null;
+  let databaseClose: (() => void) | null = null;
+  let leasesClear: (() => void) | null = null;
+  const cleanup = (): void => {
+    if (boundServer !== null) {
       try {
-        server.stop(true);
+        boundServer.stop(true);
       } catch {
         // already stopped
       }
+      boundServer = null;
+    }
+    if (databaseClose !== null) {
       try {
-        db.close();
+        databaseClose();
       } catch {
         // already closed
       }
-      leases.clear();
-      releaseLock(lockPath);
-      logger.info("service.stopped", { port: actualPort });
-      resolve();
-    };
-  });
-
-  const running: RunningService = {
-    port: actualPort,
-    pid: process.pid,
-    url: ownOrigin,
-    installToken,
-    promoteToken,
-    stop: async () => {
-      idle.stop();
-      await stopPromise;
-    },
-    waitUntilIdle: () => idle.waitUntilIdle(),
+      databaseClose = null;
+    }
+    if (leasesClear !== null) {
+      try {
+        leasesClear();
+      } catch {
+        // already cleared
+      }
+      leasesClear = null;
+    }
+    releaseLock(lockPath);
   };
-  return running;
+
+  try {
+    // 2. Open the database under lock.
+    mkdirSync(dirname(dbPath), { recursive: true });
+    const db = openDatabase({ databasePath: dbPath });
+    databaseClose = () => db.close();
+    runMigrations(db);
+    const repository = new ArtifactRepository(db, {
+      onCommitted: (revision) => {
+        logger.info("revision.committed", {
+          artifactId: revision.artifactId,
+          revisionSha: revision.sha256,
+        });
+      },
+    });
+
+    // 3. Install token (atomic create under lock). The token store uses
+    //    write-tmp + rename so a second starter that later wins the lock
+    //    reads the persisted token; we never cache a token that is not
+    //    on disk.
+    const installTokenStore = createInstallTokenStore({ tokenPath: installTokenPath });
+    const installToken = installTokenStore.read();
+
+    // 4. Promote token (read-only; absence is a typed state).
+    const promoteTokenStore = createPromoteTokenStore({ tokenPath: promoteTokenPath });
+    const promoteToken = promoteTokenStore.read();
+
+    // 5. Idle + lease managers.
+    let resolveStop: (() => void) | null = null;
+    const idle: IdleController = createIdleController({
+      idleTimeoutMs,
+      onIdle: () => {
+        logger.info("service.idle", { idleTimeoutMs });
+        options.onIdle?.();
+        resolveStop?.();
+      },
+    });
+    const leases: GalleryLeaseManager = createLeaseManager({
+      leaseTtlMs: LEASE_TTL_MS,
+      onExpire: (entry) => {
+        logger.info("lease.expired", { leaseId: entry.leaseId, artifactId: entry.artifactId });
+        idle.release(`lease:${entry.leaseId}`);
+      },
+    });
+    leasesClear = () => leases.clear();
+
+    // 6. Bind Bun.serve on 127.0.0.1:<os-assigned port>. Host guards
+    //    must reject (not inject) a missing Host header.
+    const hostState: { value: string | null } = { value: null };
+    const router = buildRouter({
+      repository,
+      installToken,
+      promoteToken,
+      leases,
+      idle,
+      logger: logger.child("router"),
+      expectedHost: () => hostState.value ?? "127.0.0.1:0",
+      ownOrigin: () => `http://${hostState.value ?? "127.0.0.1:0"}`,
+      startTime: lockStartTime,
+    });
+    let server: ReturnType<typeof Bun.serve>;
+    try {
+      server = Bun.serve({
+        hostname: host,
+        port: 0,
+        fetch: (req) => router.fetch(req),
+      });
+    } catch (error) {
+      throw new FacetError("internal", "Failed to bind loopback port", {
+        retryable: false,
+        cause: error,
+      });
+    }
+    const actualPort = server.port ?? 0;
+    if (actualPort === 0) {
+      try {
+        server.stop(true);
+      } catch {
+        // ignore
+      }
+      throw new FacetError("internal", "Failed to bind loopback port", { retryable: false });
+    }
+    const expectedHost = `${host}:${actualPort}`;
+    const ownOrigin = `http://${expectedHost}`;
+    hostState.value = expectedHost;
+    boundServer = server;
+
+    // 7. Update lock metadata with the now-known port while still
+    //    holding the lock. This is the LAST step before serving; a
+    //    parallel starter that observes this lock sees a live service.
+    writeLockMetadata(lockPath, {
+      pid: process.pid,
+      startTime: lockStartTime,
+      port: actualPort,
+      contractVersion: "facet.v1",
+    });
+
+    logger.info("service.ready", { port: actualPort, pid: process.pid });
+
+    const stopPromise = new Promise<void>((resolve) => {
+      resolveStop = () => {
+        cleanup();
+        logger.info("service.stopped", { port: actualPort });
+        resolve();
+      };
+    });
+
+    return {
+      port: actualPort,
+      pid: process.pid,
+      url: ownOrigin,
+      installToken,
+      promoteToken,
+      stop: async () => {
+        idle.stop();
+        await stopPromise;
+      },
+      waitUntilIdle: () => idle.waitUntilIdle(),
+    };
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 }

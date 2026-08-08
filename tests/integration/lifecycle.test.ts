@@ -18,6 +18,7 @@ import { join } from "node:path";
 
 import { startFacetService } from "../../src/service/server";
 import { runOrphanCleanup } from "../../src/service/lifecycle/orphan-cleanup";
+import { createQuietLogger } from "../../src/shared/logging/logger";
 
 const scratchRoot = join(tmpdir(), `facet-lifecycle-${crypto.randomUUID()}`);
 
@@ -60,6 +61,7 @@ describe("service lifecycle", () => {
   test("after the last reason releases + idle expiry → process exits and port closed", async () => {
     const paths = envPaths("idle");
     const service = await startFacetService({
+      logger: createQuietLogger({ component: "test" }),
       ...paths,
       idleTimeoutMs: 200,
     });
@@ -73,6 +75,7 @@ describe("service lifecycle", () => {
   test("an active lease holds the service open past the idle window", async () => {
     const paths = envPaths("lease");
     const service = await startFacetService({
+      logger: createQuietLogger({ component: "test" }),
       ...paths,
       idleTimeoutMs: 200,
     });
@@ -112,7 +115,7 @@ describe("service lifecycle", () => {
             command: "publish",
             artifactId: createBody.data.artifact.id,
             artifactType: "markdown",
-            bytes: [104, 105],
+            bytes: "aGk=", // base64("hi")
           },
         }),
       });
@@ -139,8 +142,13 @@ describe("service lifecycle", () => {
           },
         }),
       });
-      const openBody = (await openRes.json()) as { ok: true; data: { frameUrl: string } };
-      expect(openBody.data.frameUrl).toContain("lease=");
+      const openBody = (await openRes.json()) as {
+        ok: true;
+        data: { frameUrl: string; lease: { leaseId: string; expiresAt: number } };
+      };
+      // Lease id is carried in the body, NOT embedded in the URL.
+      expect(openBody.data.frameUrl).not.toContain("lease=");
+      expect(openBody.data.lease.leaseId.length).toBeGreaterThan(0);
       // Idle window is 200ms — wait 600ms; the lease should have held it.
       await new Promise((r) => setTimeout(r, 600));
       expect(await portClosed(service.port)).toBe(false);
@@ -162,6 +170,7 @@ describe("service lifecycle", () => {
       { mode: 0o600 },
     );
     const service = await startFacetService({
+      logger: createQuietLogger({ component: "test" }),
       ...paths,
       idleTimeoutMs: 500,
     });
@@ -204,6 +213,7 @@ describe("service lifecycle", () => {
   test("stop() is idempotent (no hang / no crash on double-call)", async () => {
     const paths = envPaths("double-stop");
     const service = await startFacetService({
+      logger: createQuietLogger({ component: "test" }),
       ...paths,
       idleTimeoutMs: 500,
     });

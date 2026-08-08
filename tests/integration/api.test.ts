@@ -21,6 +21,7 @@ import {
 } from "../../src/shared/contracts/commands";
 
 import { startFacetService, type RunningService } from "../../src/service/server";
+import { createQuietLogger } from "../../src/shared/logging/logger";
 
 interface TestEnv {
   service: RunningService;
@@ -54,6 +55,7 @@ async function startService(): Promise<TestEnv> {
     promoteTokenPath,
     lockPath,
     idleTimeoutMs: 5_000,
+    logger: createQuietLogger({ component: "test" }),
   });
 
   return {
@@ -121,7 +123,7 @@ describe("service API integration", () => {
         command: "publish",
         artifactId: createBody.data.artifact.id,
         artifactType: "markdown",
-        bytes: [104, 105],
+        bytes: "aGk=", // base64("hi")
       });
       const publishBody = parseEnvelopeStrict(await publishRes.text()) as {
         ok: true;
@@ -152,8 +154,8 @@ describe("service API integration", () => {
         data: { artifact: { id: string } };
       };
 
-      // 5MB + 1 byte exceeds SOURCE_CAP_BYTES. JSON-encoded as an array.
-      const huge = Array.from({ length: 5 * 1024 * 1024 + 1 }, () => 0);
+      // 5MB + 1 byte exceeds SOURCE_CAP_BYTES. Wire format is base64.
+      const huge = Buffer.alloc(5 * 1024 * 1024 + 1).toString("base64");
       const res = await envelopeRequest(env, {
         command: "publish",
         artifactId: createBody.data.artifact.id,
@@ -216,7 +218,7 @@ describe("service API integration", () => {
         command: "publish",
         artifactId: createBody.data.artifact.id,
         artifactType: "html",
-        bytes: [60, 104, 49, 62],
+        bytes: Buffer.from("<h1>", "utf8").toString("base64"),
       });
       const body = parseEnvelopeStrict(await res.text()) as {
         ok: false;
@@ -333,7 +335,7 @@ describe("service API integration", () => {
         command: "publish",
         artifactId: createBody.data.artifact.id,
         artifactType: "markdown",
-        bytes: [104],
+        bytes: "aA==", // base64 single byte 0x68
       });
       const publishBody = parseEnvelopeStrict(await publishRes.text()) as {
         ok: true;
@@ -459,6 +461,7 @@ describe("service API integration", () => {
       promoteTokenPath: join(envDir, "promote.token"),
       lockPath: join(envDir, "lock"),
       idleTimeoutMs: 5_000,
+      logger: createQuietLogger({ component: "test" }),
     });
     try {
       expect(existsSync(installTokenPath)).toBe(true);
@@ -492,7 +495,7 @@ describe("service API integration", () => {
         command: "publish",
         artifactId: createBody.data.artifact.id,
         artifactType: "markdown",
-        bytes: [1],
+        bytes: "AQ==", // base64 single byte 0x01
       });
       const pubBody = parseEnvelopeStrict(await pubRes.text()) as {
         ok: true;
