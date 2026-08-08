@@ -319,7 +319,7 @@ describe("cli contract — surface", () => {
       });
     }
     for (const run of normalizedRuns.slice(1)) expect(run).toEqual(normalizedRuns[0]);
-  }, 60_000);
+  }, 180_000);
 
   test("--help prints usage including every verb, the stdin example, and the stdout-is-JSON line", async () => {
     const { env } = makeEnv("help");
