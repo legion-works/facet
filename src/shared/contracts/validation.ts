@@ -120,6 +120,14 @@ export const Tier1InputSchema = Tier0InputSchema.extend({
   launcherVersion: z.string().min(1),
   /** Network namespace name the verifier must be confined to. */
   networkNamespace: z.string().min(1),
+  /**
+   * Per-run evidence directory (mode 0700). The runner writes the
+   * screenshot, the bounded console summary, and the protocol
+   * observation JSON under this directory. When omitted, the runner
+   * falls back to `computeFacetPaths().evidence` so production
+   * callers never have to specify it.
+   */
+  evidenceDir: z.string().optional(),
 });
 export type Tier1Input = z.infer<typeof Tier1InputSchema>;
 
@@ -133,12 +141,27 @@ export type Tier1Input = z.infer<typeof Tier1InputSchema>;
  */
 export type Tier1Runner = (input: Tier1Input) => Promise<Tier1Result>;
 
-/** Tier 1 result: extends Tier 0 with screenshot/console paths. */
+/**
+ * Tier 1 result: extends Tier 0 with screenshot/console paths.
+ *
+ * `partial:layout_unverified` is the ONLY status that REQUIRES a
+ * screenshot path: the verdict is partial precisely because layout
+ * could not be confirmed, and the screenshot is the audit trail that
+ * lets a human (or a future re-verification) see what the verifier
+ * saw. A partial verdict without a screenshot is rejected at the
+ * parse boundary so it can never reach the DB or the wire.
+ */
 export const Tier1ResultSchema = Tier0ResultSchema.extend({
   tier: z.literal(1),
   screenshotPath: z.string().nullable(),
   consolePath: z.string().nullable(),
-});
+}).refine(
+  (value) => value.status !== "partial:layout_unverified" || value.screenshotPath !== null,
+  {
+    message: "partial:layout_unverified verdict requires a non-null screenshotPath",
+    path: ["screenshotPath"],
+  },
+);
 export type Tier1Result = z.infer<typeof Tier1ResultSchema>;
 
 /**

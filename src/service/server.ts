@@ -41,6 +41,7 @@ import {
 } from "./lifecycle/process-lock";
 import { runOrphanCleanup } from "./lifecycle/orphan-cleanup";
 import { createIdleController, type IdleController } from "./lifecycle/idle-controller";
+import { ensureEvidenceRoot } from "./store/evidence-retention";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 const LEASE_TTL_MS = 5 * 60_000;
@@ -98,6 +99,12 @@ export async function startFacetService(
 
   // Pre-lock: orphan cleanup (read-only inspection of disk state).
   runOrphanCleanup({ lockPath, databasePath: dbPath });
+
+  // Ensure the evidence root exists with mode 0700 before any
+  // service writes land there. Idempotent and best-effort — the
+  // directory may already exist (e.g. from a prior run) in which case
+  // ensureEvidenceRoot rechmods to enforce the secret-bearing layout.
+  ensureEvidenceRoot(paths.evidence);
 
   // 1. Lock FIRST. port=0 because the kernel-assigned port is not yet
   //    known. A second cold start that races this one will be refused
@@ -159,6 +166,10 @@ export async function startFacetService(
           revisionSha: revision.sha256,
         });
       },
+      // Evidence retention runs inside the write path; the root must
+      // match the Tier 1 runner's screenshot/console destination so
+      // the cleanup unlink lands on the same path the runner wrote.
+      evidenceRoot: paths.evidence,
     });
 
     // 3. Install token (atomic create under lock). The token store uses

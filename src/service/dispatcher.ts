@@ -301,6 +301,10 @@ export async function dispatch(
           status: enrichedTier1.status,
           expected: enrichedTier1.expected,
           observed: enrichedTier1.observed,
+          ...(enrichedTier1.screenshotPath !== null
+            ? { screenshotPath: enrichedTier1.screenshotPath }
+            : {}),
+          ...(enrichedTier1.consolePath !== null ? { consolePath: enrichedTier1.consolePath } : {}),
         });
         tier1Verdict = enrichedTier1;
       }

@@ -1,3 +1,10 @@
+/**
+ * The canonical DDL applied to a fresh database. Every column the
+ * schema holds today lives here; the v1 migration runs this block
+ * verbatim. Subsequent migrations extend this table set via additive
+ * ALTER TABLE statements (never a destructive rewrite — the schema
+ * migrations ledger records each version).
+ */
 export const INITIAL_SCHEMA = `
 CREATE TABLE projects(
   id TEXT PRIMARY KEY,
@@ -49,3 +56,21 @@ CREATE TABLE templates(
   promoted_at TEXT NOT NULL
 );
 `;
+
+/**
+ * The v2 DDL fragment — appended after `INITIAL_SCHEMA` for fresh
+ * databases that land on v2 directly. Existing v1 databases pick up
+ * the v2 column via the migration step in `migrations.ts`. Keeping
+ * the fragment here (and not duplicated in the migration) means the
+ * canonical DDL and the migration body cannot drift apart.
+ */
+export const V2_SCHEMA_FRAGMENT = `
+ALTER TABLE render_runs ADD COLUMN retained INTEGER NOT NULL DEFAULT 0;
+`;
+
+/**
+ * The full DDL for a fresh v2-or-later database. Useful for tests
+ * that skip the migration ledger; production code MUST go through
+ * `runMigrations` so the version ledger stays authoritative.
+ */
+export const FULL_SCHEMA_V2 = `${INITIAL_SCHEMA}${V2_SCHEMA_FRAGMENT}`;

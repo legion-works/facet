@@ -24,6 +24,7 @@ import {
   type PromoteRevisionInput,
   type TemplateInput,
 } from "./repository-lifecycle";
+import { enforceEvidenceRetention } from "./evidence-retention";
 
 interface ProjectInput {
   readonly projectRoot: string;
@@ -49,6 +50,12 @@ interface RenderRunInput {
   readonly observed: unknown;
   readonly screenshotPath?: string | null;
   readonly consolePath?: string | null;
+  /**
+   * Retained-evidence carve-out: `true` exempts the row from the
+   * last-N cleanup policy. Pin/template call sites set this; the
+   * default false makes new runs eviction-eligible.
+   */
+  readonly retained?: boolean;
   readonly startedAt?: string;
   readonly finishedAt?: string;
 }
@@ -59,6 +66,12 @@ interface WriteHookContext {
 interface RepositoryOptions {
   readonly onCommitted?: (revision: Revision) => void;
   readonly writeHook?: (context: WriteHookContext) => void;
+  /**
+   * Evidence root used by the last-N retention cleanup. When omitted,
+   * retention is skipped (acceptable for in-process / unit tests that
+   * never write evidence files).
+   */
+  readonly evidenceRoot?: string;
 }
 
 interface ListArtifactsInput {
@@ -216,7 +229,7 @@ export class ArtifactRepository {
     try {
       const rows = this.db
         .query(
-          "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC",
+          "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, retained, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC",
         )
         .all(input.revisionId, input.tier) as Array<{
         id: string;
@@ -227,6 +240,7 @@ export class ArtifactRepository {
         observed_json: string;
         screenshot_path: string | null;
         console_path: string | null;
+        retained: number;
         started_at: string;
         finished_at: string;
       }>;
@@ -240,6 +254,7 @@ export class ArtifactRepository {
           observedJson: row.observed_json,
           screenshotPath: row.screenshot_path,
           consolePath: row.console_path,
+          retained: row.retained === 1,
           startedAt: row.started_at,
           finishedAt: row.finished_at,
         }),
@@ -407,6 +422,7 @@ export class ArtifactRepository {
   recordRenderRun(input: RenderRunInput): RenderRun {
     const startedAt = input.startedAt ?? now();
     const finishedAt = input.finishedAt ?? now();
+    const retained = input.retained ?? false;
     const value = {
       id: crypto.randomUUID(),
       revisionId: input.revisionId,
@@ -416,13 +432,15 @@ export class ArtifactRepository {
       observedJson: JSON.stringify(input.observed),
       screenshotPath: input.screenshotPath ?? null,
       consolePath: input.consolePath ?? null,
+      retained,
       startedAt,
       finishedAt,
     };
+    let artifactIdForCleanup: string | null = null;
     try {
       this.db
         .query(
-          "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           value.id,
@@ -433,11 +451,52 @@ export class ArtifactRepository {
           value.observedJson,
           value.screenshotPath,
           value.consolePath,
+          value.retained ? 1 : 0,
           value.startedAt,
           value.finishedAt,
         );
-      return RenderRunSchema.parse(value);
+      const ownerRow = this.db
+        .query("SELECT artifact_id FROM revisions WHERE id = ?")
+        .get(input.revisionId) as { artifact_id: string } | null;
+      if (ownerRow !== null) artifactIdForCleanup = ownerRow.artifact_id;
+      const parsed = RenderRunSchema.parse(value);
+      // Last-N retention runs AFTER the row is durable; a failure
+      // here would lose the just-recorded run, so it sits outside the
+      // INSERT transaction. Cleanup is best-effort — the row is
+      // authoritative, a stale on-disk file is recoverable.
+      if (artifactIdForCleanup !== null && this.options.evidenceRoot !== undefined) {
+        try {
+          enforceEvidenceRetention({
+            db: this.db,
+            artifactId: artifactIdForCleanup,
+            evidenceRoot: this.options.evidenceRoot,
+          });
+        } catch {
+          // Retention cleanup is best-effort; do not fail the write.
+        }
+      }
+      return parsed;
     } catch (error) {
+      // Cleanup-after-failure: if the INSERT failed, unlink any
+      // caller-supplied evidence files so the failed write leaves no
+      // orphan pixels behind. The row is the authoritative state —
+      // an unpaired file is recoverable only via manual inspection.
+      if (input.screenshotPath !== null && input.screenshotPath !== undefined) {
+        try {
+          const { rmSync } = require("node:fs") as typeof import("node:fs");
+          rmSync(input.screenshotPath, { force: true });
+        } catch {
+          // best-effort
+        }
+      }
+      if (input.consolePath !== null && input.consolePath !== undefined) {
+        try {
+          const { rmSync } = require("node:fs") as typeof import("node:fs");
+          rmSync(input.consolePath, { force: true });
+        } catch {
+          // best-effort
+        }
+      }
       throw asStoreError(error);
     }
   }

@@ -27,7 +27,7 @@
  * are returned as a populated `Tier1Result` — never a throw.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,6 +38,7 @@ import {
   type Tier1Result,
 } from "../../shared/contracts/validation";
 import { FacetError } from "../../shared/errors/facet-error";
+import { computeFacetPaths } from "../../shared/config/paths";
 
 import { buildHostPage } from "./harness";
 import { PuppeteerTier1Browser, Tier1TransportWedgeError } from "./cdp-pipe";
@@ -49,6 +50,13 @@ import { TIER1_RENDER_BARRIER_MS } from "./limits";
 import { type VerifierTarget } from "./browser-process";
 import { deriveVerdict, type PageShim } from "./verdict";
 import { readPidStartTimeTicks } from "../../shared/util/process";
+
+/**
+ * Hard ceiling for the captured console summary. Real page logs from
+ * a hostile artifact can be unbounded; the runner truncates at this
+ * boundary so a poison artifact cannot blow out the evidence dir.
+ */
+const CONSOLE_SUMMARY_CUP_BYTES = 64 * 1024;
 
 /**
  * The wedge's second face: with the pipe torn down, puppeteer rejects
@@ -114,6 +122,17 @@ async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
   let hostHtmlPath: string | undefined;
   const hostDir = mkdtempSync(join(tmpdir(), "facet-tier1-hostdir-"));
   let wedged = false;
+  // Per-run evidence directory under the XDG-state evidence root
+  // (mode 0700). The dispatcher wires the parent's evidenceRoot in;
+  // when omitted the runner falls back to the canonical path so
+  // production callers never have to specify it.
+  const evidenceRoot = input.evidenceDir ?? computeFacetPaths().evidence;
+  const runId = crypto.randomUUID();
+  const runEvidenceDir = join(evidenceRoot, "tier1", input.revisionSha, runId);
+  mkdirSync(runEvidenceDir, { recursive: true, mode: 0o700 });
+  const screenshotPath = join(runEvidenceDir, "screenshot.png");
+  const consolePath = join(runEvidenceDir, "console.txt");
+  const observationPath = join(runEvidenceDir, "protocol-observation.json");
 
   try {
     target = await browser.launch();
@@ -165,6 +184,19 @@ async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
       { bootReady: shim.bootReady, renderComplete: shim.renderComplete },
     );
 
+    // Capture evidence AFTER the verdict is known so a `partial:*`
+    // verdict always lands with a screenshot path (the schema refine
+    // enforces this; the runner honors it). Reduced-motion emulation
+    // + a document.fonts.ready await make the screenshot deterministic
+    // across re-runs (perf-spike finding: byte-identical across 20 runs).
+    const captured = await captureEvidence(target, {
+      screenshotPath,
+      consolePath,
+      observationPath,
+      protocolObservation,
+      pageShim: shim.pageShim,
+    });
+
     const observed = protocolObservation;
     const result: Tier1Result = Tier1ResultSchema.parse({
       tier: 1,
@@ -181,8 +213,8 @@ async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
         errorCount: observed.errorCount,
         discriminativeErrors: observed.discriminativeErrors,
       },
-      screenshotPath: null,
-      consolePath: null,
+      screenshotPath: captured.screenshotPath,
+      consolePath: captured.consolePath,
     });
     return result;
   } catch (error) {
@@ -338,4 +370,79 @@ function mergeProtocol(
     errorCount: snapshot.errorCount,
     discriminativeErrors: errors,
   };
+}
+
+interface EvidenceCapture {
+  readonly screenshotPath: string | null;
+  readonly consolePath: string | null;
+}
+
+/**
+ * Capture screenshot + bounded console summary + protocol observation
+ * to the per-run evidence directory. Always succeeds at writing the
+ * console summary + observation JSON (pure filesystem IO); the screenshot
+ * may fail when the browser transport is wedged or the page is closed
+ * — those failures land as `null` rather than throwing so the verdict
+ * can still be recorded.
+ *
+ * Determinism: emulate prefers-reduced-motion + await
+ * `document.fonts.ready` BEFORE `Page.captureScreenshot`. Without the
+ * two, two runs over the same artifact differ byte-for-byte in font
+ * loading order + animation timing (perf-spike finding).
+ */
+async function captureEvidence(
+  target: VerifierTarget,
+  options: {
+    readonly screenshotPath: string;
+    readonly consolePath: string;
+    readonly observationPath: string;
+    readonly protocolObservation: ProtocolObservation;
+    readonly pageShim: PageShim | null;
+  },
+): Promise<EvidenceCapture> {
+  let screenshotPath: string | null = null;
+  try {
+    // Emulate reduced-motion so animations resolve to their final
+    // frame; document.fonts.ready ensures webfont glyphs have laid
+    // out before the screenshot fires (byte-determinism pre-flight).
+    await target.session.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+    await target.session.send("Runtime.evaluate", {
+      expression:
+        "(async()=>{if(document.fonts&&document.fonts.ready){await document.fonts.ready;}" +
+        "return 'ready';})()",
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    const shot = (await target.session.send("Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport: false,
+    })) as { data?: string };
+    if (typeof shot.data === "string" && shot.data.length > 0) {
+      writeFileSync(options.screenshotPath, Buffer.from(shot.data, "base64"));
+      screenshotPath = options.screenshotPath;
+    }
+  } catch {
+    // screenshot is best-effort; a transport-wedged page cannot be
+    // captured but the verdict is still authoritative.
+  }
+  // Bounded console summary — never grow past CONSOLE_SUMMARY_CUP_BYTES.
+  // The shim self-report + a fixed header covers the diagnostic surface;
+  // a hostile artifact cannot inflate this past the cap.
+  const summaryParts: string[] = [
+    `tier1 evidence for revisionSha=${options.protocolObservation ? "ok" : "ok"}`,
+    `protocol: ${JSON.stringify(options.protocolObservation)}`,
+  ];
+  if (options.pageShim !== null) {
+    summaryParts.push(`shim: ${JSON.stringify(options.pageShim)}`);
+  }
+  const summary = summaryParts.join("\n").slice(0, CONSOLE_SUMMARY_CUP_BYTES);
+  writeFileSync(options.consolePath, summary, "utf8");
+  writeFileSync(
+    options.observationPath,
+    JSON.stringify(options.protocolObservation, null, 2),
+    "utf8",
+  );
+  return { screenshotPath, consolePath: options.consolePath };
 }

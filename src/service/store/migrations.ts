@@ -1,11 +1,35 @@
 import type { Database } from "bun:sqlite";
 
 import { asStoreError, FacetStoreError } from "./database";
-import { INITIAL_SCHEMA } from "./schema";
+import { INITIAL_SCHEMA, V2_SCHEMA_FRAGMENT } from "./schema";
 
 export interface MigrationOptions {
   readonly beforeRecordVersion?: (version: number) => void;
 }
+
+interface MigrationStep {
+  readonly version: number;
+  /** Idempotent body — safe to re-run against an already-migrated DB. */
+  readonly apply: (db: Database) => void;
+}
+
+const MIGRATION_STEPS: readonly MigrationStep[] = [
+  {
+    version: 1,
+    apply: (db) => {
+      db.exec(INITIAL_SCHEMA);
+    },
+  },
+  {
+    version: 2,
+    apply: (db) => {
+      // Evidence retention: the `retained` column exempts a render_run
+      // from the last-N cleanup policy. Default 0 (not retained) keeps
+      // every existing row eligible for eviction.
+      db.exec(V2_SCHEMA_FRAGMENT);
+    },
+  },
+];
 
 export function runMigrations(db: Database, options: MigrationOptions = {}): void {
   try {
@@ -15,14 +39,17 @@ export function runMigrations(db: Database, options: MigrationOptions = {}): voi
     const applied = db
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as Array<{ version: number }>;
-    if (applied.some((row) => row.version === 1)) return;
+    const appliedSet = new Set(applied.map((row) => row.version));
     const migrate = db.transaction(() => {
-      db.exec(INITIAL_SCHEMA);
-      options.beforeRecordVersion?.(1);
-      db.query("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(
-        1,
-        new Date().toISOString(),
-      );
+      for (const step of MIGRATION_STEPS) {
+        if (appliedSet.has(step.version)) continue;
+        step.apply(db);
+        options.beforeRecordVersion?.(step.version);
+        db.query("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(
+          step.version,
+          new Date().toISOString(),
+        );
+      }
     });
     migrate();
   } catch (error) {
