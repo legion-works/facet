@@ -16,13 +16,14 @@
 
 import { randomUUID } from "node:crypto";
 
-import { errEnvelope, type FacetEnvelope } from "../shared/contracts/envelope";
+import { errEnvelope } from "../shared/contracts/envelope";
 
 import { requireBearer } from "./security/auth";
-import { checkHostOrigin } from "./security/host-origin";
+import { checkHostOrigin, resolveHost } from "./security/host-origin";
 import type { GalleryLease, GalleryLeaseManager } from "./security/leases";
 import type { FacetLogger } from "../shared/logging/logger";
 import type { IdleController } from "./lifecycle/idle-controller";
+import { envelopeResponse, generateRequestId } from "./http-utils";
 
 const NO_STORE = "no-store";
 
@@ -35,10 +36,6 @@ export interface StreamHandlerDeps {
   readonly ownOrigin: string | (() => string);
 }
 
-function resolveHost(value: string | (() => string)): string {
-  return typeof value === "function" ? value() : value;
-}
-
 interface StreamParsedRequest {
   readonly url: string;
   readonly method: string;
@@ -47,20 +44,6 @@ interface StreamParsedRequest {
   readonly secFetchSite: string | null;
   readonly authorization: string | null;
   readonly headers: { get(name: string): string | null };
-}
-
-function envelopeResponse(envelope: FacetEnvelope<unknown>, status: number): Response {
-  return new Response(JSON.stringify(envelope), {
-    status,
-    headers: {
-      "content-type": "application/json",
-      "cache-control": NO_STORE,
-    },
-  });
-}
-
-function generateRequestId(): string {
-  return `req-${randomUUID()}`;
 }
 
 export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest): Response {
@@ -89,17 +72,13 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
     return envelopeResponse(errEnvelope(requestId, authResult.error.toBody()), 401);
   }
 
-  // Lease capability is carried via the authed header, not the URL.
-  // The previous contract exposed `?lease=<id>&artifactId=<id>` in the
-  // query string; EventSource cannot set headers, so the SSE path was
-  // historically routed through a query-token URL. That design leaked
-  // the lease id to any process that read the URL (logs, referrers,
-  // browser history). Authed fetch + ReadableStream lets the bearer
-  // carry the lease id without putting it in any URL — a caller that
-  // holds the lease asks for it out-of-band and supplies it as an
-  // `X-Gallery-Lease` header. A query-string `?lease=` is REJECTED
-  // (not silently accepted) so a misconfigured client sees a typed
-  // 401/403 instead of an unguarded stream.
+  // Lease capability travels in the `X-Gallery-Lease` header, never in
+  // a URL query parameter. URL tokens leak via server logs, the
+  // `Referer` header on outbound navigations, and the browser history
+  // — any of those would expose the lease id to processes the bearer
+  // holder did not authorise. A query-string `?lease=` is REJECTED (not
+  // silently accepted) so a misconfigured client sees a typed 401
+  // instead of an unguarded stream.
   const leaseId = req.headers.get("x-gallery-lease");
   const artifactId = req.headers.get("x-gallery-artifact");
   if (leaseId === null || artifactId === null) {

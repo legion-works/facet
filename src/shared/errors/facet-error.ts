@@ -46,9 +46,14 @@ export interface FacetErrorOptions {
  * envelope. Carries the wire-friendly `code`, the `retryable` flag, and
  * primitive-only `details` so a `FacetErrorBody` derived from this object
  * is always JSON-round-trippable.
+ *
+ * `FacetStoreError` extends this class — see `./store-error.ts`. The
+ * `from()` bridge relies on that inheritance so a thrown store fault
+ * surfaces on the wire with its typed code instead of collapsing to
+ * `invalid_envelope`.
  */
 export class FacetError extends Error {
-  override readonly name = "FacetError";
+  override readonly name: string = "FacetError";
 
   constructor(
     readonly code: FacetErrorCode,

@@ -15,6 +15,8 @@
 
 import { FacetError } from "../../shared/errors/facet-error";
 
+import { isMutationMethod } from "./http-guards";
+
 export interface HostOriginInput {
   readonly method: string;
   readonly host: string | null | undefined;
@@ -62,9 +64,14 @@ export function checkHost(host: string | null | undefined, expectedHost: string)
   return { ok: true };
 }
 
-function isMutationMethod(method: string): boolean {
-  const upper = method.toUpperCase();
-  return upper === "POST" || upper === "PUT" || upper === "DELETE" || upper === "PATCH";
+/**
+ * Resolve a host configuration value: either a static string or a
+ * function that returns the live value. Exported so router.ts and
+ * stream.ts can use the same accessor (a duplicated copy in either
+ * file would risk one of them forgetting to call the function form).
+ */
+export function resolveHost(value: string | (() => string)): string {
+  return typeof value === "function" ? value() : value;
 }
 
 export const CROSS_SITE_REASON = "cross_site_mutation" as const;

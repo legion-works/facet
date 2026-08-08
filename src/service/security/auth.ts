@@ -11,6 +11,8 @@
 
 import { FacetError } from "../../shared/errors/facet-error";
 
+import { isMutationMethod } from "./http-guards";
+
 /**
  * Constant-time equality check. Both strings are compared slot-by-slot;
  * the loop runs the full length of `b` regardless of where `a` first
@@ -163,9 +165,4 @@ export function checkMutationSecurityHeaders(check: MutationHeaderCheck): Bearer
       details: { received: check.contentType ?? null },
     }),
   };
-}
-
-function isMutationMethod(method: string): boolean {
-  const upper = method.toUpperCase();
-  return upper === "POST" || upper === "PUT" || upper === "DELETE" || upper === "PATCH";
 }

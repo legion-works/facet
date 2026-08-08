@@ -7,16 +7,16 @@
  * body read/parse (unauth malformed body → 401, not 400). Promote
  * accepts install OR operator bearer (constant-time). Cross-site
  * mutation failures map to 403 (CSRF).
+ *
+ * The pieces of each guard live in sibling modules (`router-guards.ts`
+ * for body-cap + parse + status mapping, `http-utils.ts` for the
+ * envelope → Response builder, `security/host-origin.ts` for the host
+ * check + `resolveHost`, `security/auth.ts` for the bearer check).
+ * This file is intentionally the orchestration: read the function
+ * top-to-bottom and the guard order is the sequence of statements.
  */
 
-import { randomUUID } from "node:crypto";
-
-import {
-  errEnvelope,
-  okEnvelope,
-  parseEnvelope,
-  type FacetEnvelope,
-} from "../shared/contracts/envelope";
+import { errEnvelope, okEnvelope, parseEnvelope } from "../shared/contracts/envelope";
 import {
   CommandRequestSchema,
   CommandResultSchema,
@@ -31,23 +31,29 @@ import {
   checkHostOrigin,
   isCrossSiteRejection,
   isMissingHostRejection,
+  resolveHost,
   type HostOriginResult,
 } from "./security/host-origin";
 import { dispatch, type DispatcherDeps } from "./dispatcher";
 import { handleStream } from "./stream";
+import { envelopeResponse, generateRequestId, pickRequestId } from "./http-utils";
+import {
+  INVALID_JSON,
+  RAW_BODY_CAP_BYTES,
+  parseBody,
+  readCappedBody,
+  readRequestMeta,
+  statusFor,
+  type RequestMeta,
+} from "./router-guards";
 import type { FacetLogger } from "../shared/logging/logger";
 
-const NO_STORE = "no-store";
 const ROUTE_API = "/api/v1/commands";
 const ROUTE_STREAM = "/api/v1/stream";
 
-/**
- * Hard ceiling on the raw HTTP body. Distinct from SOURCE_CAP_BYTES
- * (which governs artifact payload bytes after decode). 16 MiB is
- * well above 5 MiB source × 4/3 base64 envelope slack, so a legitimate
- * client never hits it.
- */
-export const RAW_BODY_CAP_BYTES = 16 * 1024 * 1024;
+// Re-export so `import { RAW_BODY_CAP_BYTES } from "./router"` keeps
+// working — the constant moved to `router-guards.ts` for size reasons.
+export { RAW_BODY_CAP_BYTES };
 
 export interface RouterDeps extends DispatcherDeps {
   readonly installToken: string;
@@ -56,89 +62,6 @@ export interface RouterDeps extends DispatcherDeps {
   readonly expectedHost: string | (() => string);
   readonly ownOrigin: string | (() => string);
   readonly startTime: number;
-}
-
-function resolveHost(value: string | (() => string)): string {
-  return typeof value === "function" ? value() : value;
-}
-
-/**
- * Request metadata extracted from headers — read BEFORE body. The body
- * is read only after auth, mutation headers, and the raw size cap
- * pass. This split keeps unauthenticated requests from touching the
- * body at all.
- */
-export interface RequestMeta {
-  readonly url: string;
-  readonly method: string;
-  readonly host: string | null;
-  readonly origin: string | null;
-  readonly secFetchSite: string | null;
-  readonly contentType: string | null;
-  readonly authorization: string | null;
-  readonly contentLength: number | null;
-  readonly headers: { get(name: string): string | null };
-}
-
-function readRequestMeta(req: Request): RequestMeta {
-  const url = new URL(req.url);
-  const cl = req.headers.get("content-length");
-  return {
-    url: url.pathname + url.search,
-    method: req.method,
-    host: req.headers.get("host"),
-    origin: req.headers.get("origin"),
-    secFetchSite: req.headers.get("sec-fetch-site"),
-    contentType: req.headers.get("content-type"),
-    authorization: req.headers.get("authorization"),
-    contentLength: cl !== null ? Number(cl) : null,
-    headers: req.headers,
-  };
-}
-
-function envelopeResponse(envelope: FacetEnvelope<unknown>, status: number): Response {
-  return new Response(JSON.stringify(envelope), {
-    status,
-    headers: {
-      "content-type": "application/json",
-      "cache-control": NO_STORE,
-    },
-  });
-}
-
-function generateRequestId(): string {
-  return `req-${randomUUID()}`;
-}
-
-function pickRequestId(header: string | null | undefined): string {
-  if (header === null || header === undefined) return generateRequestId();
-  const trimmed = header.trim();
-  return trimmed.length > 0 ? trimmed : generateRequestId();
-}
-
-function statusFor(error: FacetError): number {
-  switch (error.code) {
-    case "artifact_not_found":
-    case "revision_not_found":
-    case "template_not_found":
-      return 404;
-    case "payload_too_large":
-      return 413;
-    case "reserved_not_implemented":
-    case "unsupported_reserved_type":
-    case "invalid_envelope":
-    case "invalid_request":
-    case "unknown_schema_version":
-      return 400;
-    case "duplicate_revision":
-    case "constraint":
-    case "foreign_key":
-    case "immutable_revision":
-    case "invalid_artifact_type":
-      return 409;
-    default:
-      return 500;
-  }
 }
 
 function statusForHostCheck(error: FacetError | undefined): number {
@@ -152,39 +75,9 @@ function statusForHostCheck(error: FacetError | undefined): number {
   return 400;
 }
 
-async function readCappedBody(req: Request, contentLength: number | null): Promise<string> {
-  if (contentLength !== null) {
-    if (!Number.isFinite(contentLength) || contentLength < 0) {
-      throw new FacetError("invalid_request", "Invalid Content-Length", { retryable: false });
-    }
-    if (contentLength > RAW_BODY_CAP_BYTES) {
-      throw new FacetError("payload_too_large", "Request body exceeds raw cap", {
-        retryable: false,
-        details: { capBytes: RAW_BODY_CAP_BYTES, receivedBytes: contentLength },
-      });
-    }
-  }
-  const text = await req.text();
-  if (text.length > RAW_BODY_CAP_BYTES) {
-    throw new FacetError("payload_too_large", "Request body exceeds raw cap", {
-      retryable: false,
-      details: { capBytes: RAW_BODY_CAP_BYTES, receivedBytes: text.length },
-    });
-  }
-  return text;
-}
-
-function parseBody(bodyText: string): unknown {
-  try {
-    return JSON.parse(bodyText);
-  } catch {
-    return Symbol.for("invalid_json");
-  }
-}
-
 export async function handleCommand(deps: RouterDeps, req: Request): Promise<Response> {
   const startNs = performance.now();
-  const meta = readRequestMeta(req);
+  const meta: RequestMeta = readRequestMeta(req);
   const requestId = pickRequestId(null);
 
   // 1. Host exact-match (DNS-rebinding defense). Reject missing Host.
@@ -232,8 +125,7 @@ export async function handleCommand(deps: RouterDeps, req: Request): Promise<Res
     });
     return envelopeResponse(errEnvelope(requestId, authResult.error.toBody()), 401);
   }
-  const matchedTokenIndex = authResult.matchedIndex;
-  const matchedIsOperator = matchedTokenIndex > 0; // index 0 = install, 1 = operator
+  const matchedIsOperator = authResult.matchedIndex > 0; // index 0 = install, 1 = operator
 
   // 3. Mutation Content-Type. GET already handled; mutations require JSON.
   const contentCheck = checkMutationSecurityHeaders({
@@ -264,7 +156,7 @@ export async function handleCommand(deps: RouterDeps, req: Request): Promise<Res
     );
   }
   const bodyRaw = parseBody(bodyText);
-  if (bodyRaw === Symbol.for("invalid_json")) {
+  if (bodyRaw === INVALID_JSON) {
     const err = new FacetError("invalid_envelope", "Request body is not valid JSON", {
       retryable: false,
     });

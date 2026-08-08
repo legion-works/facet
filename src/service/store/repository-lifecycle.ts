@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import { type Template, TemplateSchema } from "../../shared/contracts/artifact";
+import { now } from "../../shared/util/time";
 import { asStoreError, FacetStoreError } from "./database";
 
 export interface TemplateInput {
@@ -19,10 +20,6 @@ export interface PromoteRevisionInput {
   readonly description?: string | null;
   readonly promotedBy: string;
   readonly promotedAt?: string;
-}
-
-function now(): string {
-  return new Date().toISOString();
 }
 
 export function evictRevisions(db: Database, artifactId: string): void {

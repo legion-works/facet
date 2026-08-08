@@ -17,7 +17,7 @@
 
 import { existsSync, unlinkSync } from "node:fs";
 
-import { readLockMetadata } from "./process-lock";
+import { isPidAlive, readLockMetadata } from "./process-lock";
 
 export interface OrphanCleanupInput {
   readonly lockPath: string;
@@ -29,16 +29,6 @@ export interface OrphanCleanupResult {
     readonly lock: boolean;
     readonly walSidecars: readonly string[];
   };
-}
-
-function isPidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
 }
 
 export function runOrphanCleanup(input: OrphanCleanupInput): OrphanCleanupResult {

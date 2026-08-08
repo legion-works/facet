@@ -14,6 +14,7 @@ import {
   type Revision,
   type Template,
 } from "../../shared/contracts/artifact";
+import { now } from "../../shared/util/time";
 import { asStoreError, FacetStoreError, hardenDatabaseFiles } from "./database";
 import {
   evictRevisions,
@@ -89,10 +90,6 @@ type SqlRevision = Omit<
   pinned: number;
   created_at: string;
 };
-
-function now(): string {
-  return new Date().toISOString();
-}
 
 function sha256(source: Uint8Array): string {
   const hasher = new Bun.CryptoHasher("sha256");

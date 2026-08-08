@@ -2,54 +2,18 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
 
-export type StoreErrorCode =
-  | "database_corrupt"
-  | "database_busy"
-  | "disk_full"
-  | "duplicate_revision"
-  | "foreign_key"
-  | "immutable_revision"
-  | "migration_failed"
-  | "invalid_artifact_type"
-  | "constraint";
+import { FacetStoreError } from "../../shared/errors/store-error";
 
-export class FacetStoreError extends Error {
-  override readonly name = "FacetStoreError";
-
-  constructor(
-    readonly code: StoreErrorCode,
-    message: string,
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-  }
-}
-
-export function asStoreError(error: unknown): FacetStoreError {
-  if (error instanceof FacetStoreError) return error;
-  const message = error instanceof Error ? error.message : String(error);
-  const lower = message.toLowerCase();
-  if (
-    lower.includes("not a database") ||
-    lower.includes("malformed") ||
-    lower.includes("corrupt")
-  ) {
-    return new FacetStoreError("database_corrupt", message, { cause: error });
-  }
-  if (lower.includes("busy") || lower.includes("locked")) {
-    return new FacetStoreError("database_busy", message, { cause: error });
-  }
-  if (lower.includes("no space") || lower.includes("enospc") || lower.includes("disk full")) {
-    return new FacetStoreError("disk_full", message, { cause: error });
-  }
-  if (lower.includes("foreign key")) {
-    return new FacetStoreError("foreign_key", message, { cause: error });
-  }
-  if (lower.includes("unique constraint")) {
-    return new FacetStoreError("duplicate_revision", message, { cause: error });
-  }
-  return new FacetStoreError("constraint", message, { cause: error });
-}
+// `FacetStoreError` + `asStoreError` + `StoreErrorCode` live in
+// `shared/errors/store-error.ts` so they can extend `FacetError`
+// without an upward import from `shared/` to `service/`. Re-exported
+// here so existing `import { ... } from "./database"` call sites keep
+// working unchanged.
+export {
+  FacetStoreError,
+  asStoreError,
+  type StoreErrorCode,
+} from "../../shared/errors/store-error";
 
 export interface DatabasePaths {
   readonly databasePath?: string;

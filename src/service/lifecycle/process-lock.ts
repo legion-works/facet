@@ -42,20 +42,24 @@ export type AcquireResult = { ok: true; metadata: LockMetadata } | { ok: false; 
 
 const LOCK_RETRY_ATTEMPTS = 5;
 
-function isPidAlive(pid: number): boolean {
+/**
+ * Probe whether `pid` is alive. Returns true when `process.kill(pid, 0)`
+ * succeeds OR returns EPERM (the pid exists but we lack permission to
+ * signal it — treat as alive so we never reclaim a foreign-pid lock
+ * whose ownership we cannot independently prove). False for non-positive
+ * / non-integer pids, for ESRCH (pid does not exist), and for any
+ * other error code (conservative: assume alive is impossible to prove,
+ * so we report not-alive and let the caller decide; in practice every
+ * other kill-0 failure is a real "dead" signal).
+ */
+export function isPidAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    // EPERM means the pid exists but we lack permission to signal it
-    // (e.g. another user's process). Treat as alive — we still cannot
-    // reclaim a lock we cannot prove is dead.
     if (code === "EPERM") return true;
-    // ESRCH means the pid does not exist; any other error is treated
-    // as "unknown" → conservative: assume alive so we never unlink a
-    // live foreign pid.
     return false;
   }
 }
