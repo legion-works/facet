@@ -31,6 +31,14 @@ import {
 } from "./frame-html";
 import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
+import {
+  clampZoom,
+  resetViewState,
+  validateViewIntent,
+  zoomAtPoint,
+  type ViewIntent,
+  type ViewState,
+} from "./view-state";
 import type { Verdict } from "../shared/contracts/validation";
 
 // Re-exports — the gate test + sibling modules import these from `app`
@@ -133,9 +141,7 @@ export interface ShellDom {
 }
 
 /** View state the shell preserves across a swap. */
-export interface ViewState {
-  zoom: number;
-}
+export type { ViewIntent, ViewState } from "./view-state";
 
 /**
  * Control-port events the frame emits to the shell. The frame's
@@ -209,7 +215,7 @@ export interface FrameHost {
   setVisibility(frameId: string, visible: boolean): void;
   /** Remove the frame element from the document. */
   unmount(frameId: string): void;
-  /** Apply the preserved view state (zoom transform) to the frame element. */
+  /** Apply the preserved view state transform to the frame element. */
   applyViewState(frameId: string, viewState: ViewState): void;
   /** Terse error badge — failed swaps keep the last-good frame. */
   showErrorBadge(message: string): void;
@@ -657,13 +663,13 @@ export async function startGallery(): Promise<void> {
   const frameUrl = `${baseUrl}/gallery/frame`;
   const canvas = document.getElementById("facet-canvas");
   if (!(canvas instanceof HTMLElement)) throw new Error("Gallery canvas is missing");
-  const viewState: ViewState = { zoom: 1 };
+  const viewState: ViewState = { zoom: 1, panX: 0, panY: 0 };
   const host: FrameHost = {
     mountOffScreen(frameId, element) {
       const iframe = element as HTMLIFrameElement;
       iframe.dataset.frameId = frameId;
       iframe.style.visibility = "hidden";
-      iframe.style.transformOrigin = "center center";
+      iframe.style.transformOrigin = "top left";
       iframe.classList.add("facet-ready");
       canvas.appendChild(iframe);
       const empty = document.getElementById("facet-empty");
@@ -678,7 +684,8 @@ export async function startGallery(): Promise<void> {
     },
     applyViewState(frameId, state) {
       const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`);
-      if (iframe !== null) iframe.style.transform = `scale(${state.zoom})`;
+      if (iframe !== null)
+        iframe.style.transform = `translate(${state.panX ?? 0}px, ${state.panY ?? 0}px) scale(${state.zoom})`;
     },
     showErrorBadge: setGalleryError,
   };
@@ -718,6 +725,7 @@ export async function startGallery(): Promise<void> {
           fetchRevision: (_artifactId, revisionSha) =>
             fetchGallerySource(baseUrl, handoff, revisionSha),
           onFrameCreated: (next) => {
+            bindFrameIntents(next);
             void armFrameLoad(next, (frame) =>
               host.mountOffScreen(frame.frameId, frame.element.raw),
             );
@@ -762,17 +770,121 @@ export async function startGallery(): Promise<void> {
     });
   };
   window.addEventListener("beforeunload", shutdown, { once: true });
+
+  const applyIntent = (intent: ViewIntent): void => {
+    if (intent.mode === "pan") {
+      viewState.panX = (viewState.panX ?? 0) + intent.dx;
+      viewState.panY = (viewState.panY ?? 0) + intent.dy;
+    } else {
+      const factor = Math.exp(-intent.deltaY * 0.001);
+      Object.assign(
+        viewState,
+        zoomAtPoint(viewState, clampZoom(viewState.zoom * factor), intent.cursorX, intent.cursorY),
+      );
+    }
+    host.applyViewState(current.frameId, viewState);
+  };
+  const forwardCanvasIntent = (intent: ViewIntent): void => applyIntent(intent);
+  const bindFrameIntents = (frame: CreatedArtifactFrame): void => {
+    frame.onControlEvent((event) => {
+      const intent = validateViewIntent(event);
+      if (intent !== null) forwardCanvasIntent(intent);
+    });
+  };
+  bindFrameIntents(current);
+  const canvasRect = (): DOMRect => canvas.getBoundingClientRect();
+  canvas.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const rect = canvasRect();
+      forwardCanvasIntent({
+        type: "view-intent",
+        mode: "zoom",
+        deltaY: event.deltaY,
+        cursorX: event.clientX - rect.left,
+        cursorY: event.clientY - rect.top,
+        rect: { w: rect.width, h: rect.height },
+      });
+    },
+    { passive: false },
+  );
+  let drag: { x: number; y: number } | null = null;
+  canvas.addEventListener("pointerdown", (event) => {
+    drag = { x: event.clientX, y: event.clientY };
+    canvas.setPointerCapture(event.pointerId);
+    canvas.style.cursor = "grabbing";
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (drag === null) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    drag = { x: event.clientX, y: event.clientY };
+    forwardCanvasIntent({ type: "view-intent", mode: "pan", dx, dy });
+  });
+  const endDrag = (event: PointerEvent): void => {
+    drag = null;
+    canvas.releasePointerCapture(event.pointerId);
+    canvas.style.cursor = "grab";
+  };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.style.cursor = "grab";
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      const rect = canvasRect();
+      applyIntent({
+        type: "view-intent",
+        mode: "zoom",
+        deltaY: -100,
+        cursorX: rect.width / 2,
+        cursorY: rect.height / 2,
+        rect: { w: rect.width, h: rect.height },
+      });
+    } else if (event.key === "-") {
+      event.preventDefault();
+      const rect = canvasRect();
+      applyIntent({
+        type: "view-intent",
+        mode: "zoom",
+        deltaY: 100,
+        cursorX: rect.width / 2,
+        cursorY: rect.height / 2,
+        rect: { w: rect.width, h: rect.height },
+      });
+    } else if (event.key === "0") {
+      event.preventDefault();
+      Object.assign(viewState, resetViewState(viewState));
+      host.applyViewState(current.frameId, viewState);
+    } else if (
+      event.key === "ArrowLeft" ||
+      event.key === "ArrowRight" ||
+      event.key === "ArrowUp" ||
+      event.key === "ArrowDown"
+    ) {
+      event.preventDefault();
+      const amount = event.shiftKey ? 50 : 10;
+      const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
+      const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
+      applyIntent({ type: "view-intent", mode: "pan", dx, dy });
+    }
+  });
   for (const [id, delta] of [
     ["facet-zoom-in", 0.1],
     ["facet-zoom-out", -0.1],
   ] as const) {
     document.getElementById(id)?.addEventListener("click", () => {
-      viewState.zoom = Math.max(0.25, Math.min(3, viewState.zoom + delta));
+      const rect = canvasRect();
+      Object.assign(
+        viewState,
+        zoomAtPoint(viewState, viewState.zoom + delta, rect.width / 2, rect.height / 2),
+      );
       host.applyViewState(current.frameId, viewState);
     });
   }
   document.getElementById("facet-zoom-reset")?.addEventListener("click", () => {
-    viewState.zoom = 1;
+    Object.assign(viewState, resetViewState(viewState));
     host.applyViewState(current.frameId, viewState);
   });
   document

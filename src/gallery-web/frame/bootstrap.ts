@@ -23,7 +23,7 @@
  *
  * The control port also has a RECEIVE path (shell → frame view-state
  * commands). The shell owns zoom/pan via the iframe element transform;
- * the frame records the latest view-state and takes no further action.
+ * input over the opaque frame is forwarded as numeric intent only.
  */
 
 import {
@@ -67,6 +67,8 @@ const nonce = new URLSearchParams(location.search).get("nonce") ?? "";
 
 let controlPost: ((event: unknown) => void) | null = null;
 
+let drag: { x: number; y: number } | null = null;
+
 function deliver(event: unknown): void {
   try {
     controlPost?.(event);
@@ -100,10 +102,40 @@ window.addEventListener(
     // addEventListener-registered port events, and the setter works
     // everywhere the listener form does.
     // oxlint-disable-next-line unicorn/prefer-add-event-listener
-    control.onmessage = (_controlEvent: MessageEvent) => {
-      // View-state messages are recorded for future consumers (pan/zoom
-      // is owned by the shell today); the frame intentionally no-ops.
+    control.onmessage = (_controlEvent: MessageEvent) => {};
+    container.addEventListener(
+      "wheel",
+      (wheelEvent) => {
+        wheelEvent.preventDefault();
+        const rect = container.getBoundingClientRect();
+        deliver({
+          type: "view-intent",
+          mode: "zoom",
+          deltaY: wheelEvent.deltaY,
+          cursorX: wheelEvent.clientX - rect.left,
+          cursorY: wheelEvent.clientY - rect.top,
+          rect: { w: rect.width, h: rect.height },
+        });
+      },
+      { passive: false },
+    );
+    container.addEventListener("pointerdown", (pointerEvent) => {
+      drag = { x: pointerEvent.clientX, y: pointerEvent.clientY };
+      container.setPointerCapture(pointerEvent.pointerId);
+    });
+    container.addEventListener("pointermove", (pointerEvent) => {
+      if (drag === null) return;
+      const dx = pointerEvent.clientX - drag.x;
+      const dy = pointerEvent.clientY - drag.y;
+      drag = { x: pointerEvent.clientX, y: pointerEvent.clientY };
+      deliver({ type: "view-intent", mode: "pan", dx, dy });
+    });
+    const endDrag = (pointerEvent: PointerEvent): void => {
+      drag = null;
+      container.releasePointerCapture(pointerEvent.pointerId);
     };
+    container.addEventListener("pointerup", endDrag);
+    container.addEventListener("pointercancel", endDrag);
     // oxlint-disable-next-line unicorn/prefer-add-event-listener
     ingress.onmessage = async (sourceEvent: MessageEvent) => {
       // One-shot ingress: receive the artifact, then close the port.
