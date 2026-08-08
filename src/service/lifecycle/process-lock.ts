@@ -23,9 +23,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname } from "node:path";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { FacetError } from "../../shared/errors/facet-error";
 import { FACET_SCHEMA_VERSION } from "../../shared/contracts/envelope";
@@ -117,8 +115,9 @@ export function readLockMetadata(lockPath: string): LockMetadata | null {
  * crashed write never leaves a half-formed JSON on disk.
  */
 export function writeLockMetadata(lockPath: string, metadata: LockMetadata): void {
-  ensureOwnerOnlyDirectory(dirname(lockPath));
-  const tmpPath = join(tmpdir(), `facet-lock-${crypto.randomUUID()}.tmp`);
+  const lockDir = dirname(lockPath);
+  ensureOwnerOnlyDirectory(lockDir);
+  const tmpPath = join(lockDir, `.facet-lock-${crypto.randomUUID()}.tmp`);
   writeFileSync(tmpPath, JSON.stringify(metadata), { mode: 0o600 });
   renameSync(tmpPath, lockPath);
 }

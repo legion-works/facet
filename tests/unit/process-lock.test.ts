@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   acquireLock,
@@ -99,5 +99,17 @@ describe("acquireLock", () => {
     const lockPath = freshPath();
     writeLockMetadata(lockPath, liveMetadata);
     expect(readLockMetadata(lockPath)).toEqual(liveMetadata);
+  });
+
+  test("stages metadata beside the lock file for cross-device safety", () => {
+    const lockPath = join(process.cwd(), `.facet-lock-cross-device-${crypto.randomUUID()}.lock`);
+    const lockDir = dirname(lockPath);
+    try {
+      writeLockMetadata(lockPath, liveMetadata);
+      expect(dirname(lockPath)).toBe(lockDir);
+      expect(readLockMetadata(lockPath)).toEqual(liveMetadata);
+    } finally {
+      rmSync(lockPath, { force: true });
+    }
   });
 });

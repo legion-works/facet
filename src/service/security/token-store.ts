@@ -16,7 +16,6 @@
  */
 
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
@@ -86,7 +85,8 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
     // a hostile umask cannot widen the secret-bearing layout.
     ensureOwnerOnlyDirectory(dirname(options.tokenPath));
     const fresh = generateInstallToken();
-    const tmpPath = join(tmpdir(), `facet-token-${crypto.randomUUID()}.tmp`);
+    const tokenDir = dirname(options.tokenPath);
+    const tmpPath = join(tokenDir, `.facet-token-${crypto.randomUUID()}.tmp`);
     try {
       writeFileSync(tmpPath, fresh, { mode: 0o600 });
       renameSync(tmpPath, options.tokenPath);
