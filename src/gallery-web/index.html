@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>facet gallery</title>
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/app.css" />
+  </head>
+  <body>
+    <div id="facet-shell">
+      <header id="facet-status">
+        <span class="title" id="facet-title">facet</span>
+        <span class="revision" id="facet-revision">—</span>
+        <span class="status-line" id="facet-status-line">idle</span>
+      </header>
+      <main id="facet-canvas">
+        <!-- The iframe is created + appended by app.ts. -->
+      </main>
+      <footer id="facet-controls">
+        <button type="button" id="facet-zoom-out" aria-label="zoom out">−</button>
+        <button type="button" id="facet-zoom-reset" aria-label="reset zoom">100%</button>
+        <button type="button" id="facet-zoom-in" aria-label="zoom in">+</button>
+        <button type="button" id="facet-fullscreen" aria-label="fullscreen">fullscreen</button>
+        <span id="facet-error" role="status"></span>
+      </footer>
+    </div>
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>

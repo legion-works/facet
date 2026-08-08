@@ -1,0 +1,41 @@
+/*
+ * Legion Works design tokens — vendored for offline use.
+ *
+ * The gallery renders fully OFFLINE on 127.0.0.1; no remote font or
+ * CDN fetch is allowed. The font stacks reference locally-installed
+ * faces (Space Grotesk, Geist, JetBrains Mono); when those are absent
+ * the system-stack fallback takes over. The CSP forbids external
+ * resource loads anyway, so missing faces degrade silently.
+ */
+
+:root {
+  /* Brand palette — vendored Legion Works colors */
+  --facet-cyan: #86e1fc;
+  --facet-amber: #ff966c;
+  --facet-navy: #16161e;
+  --facet-navy-2: #1d1d27;
+  --facet-navy-3: #232330;
+  --facet-ink: #e9eaf0;
+  --facet-ink-dim: #b6b7c2;
+  --facet-ink-faint: #6a6b78;
+  --facet-rule: #2e2e3a;
+  --facet-error: #ff6e6e;
+
+  /* Spacing scale (4px base) */
+  --facet-space-1: 4px;
+  --facet-space-2: 8px;
+  --facet-space-3: 12px;
+  --facet-space-4: 16px;
+  --facet-space-5: 24px;
+  --facet-space-6: 32px;
+
+  /* Radii */
+  --facet-radius-1: 4px;
+  --facet-radius-2: 8px;
+
+  /* Type */
+  --facet-font-sans:
+    "Space Grotesk", "Geist", "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --facet-font-mono: "JetBrains Mono", "Geist Mono", "SF Mono", "Menlo", "Consolas", monospace;
+}
