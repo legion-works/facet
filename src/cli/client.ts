@@ -105,8 +105,6 @@ export class FacetClient {
     if (options.extraHeaders) {
       Object.assign(headers, options.extraHeaders);
     }
-    // Bun 1.3.14 can orphan a reused loopback fetch after a long response closes its socket.
-    headers.connection = "close";
     let res: Response;
     let text: string;
     const signal = AbortSignal.timeout(this.#commandTimeoutMs);

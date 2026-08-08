@@ -1,56 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import { FacetClient } from "../../src/cli/client";
-import { errEnvelope } from "../../src/shared/contracts/envelope";
 import { FacetError } from "../../src/shared/errors/facet-error";
 import { generateRequestId } from "../../src/shared/util/time";
 
-const servers: Array<ReturnType<typeof Bun.serve>> = [];
-
-afterEach(() => {
-  for (const server of servers.splice(0)) server.stop(true);
-});
-
 describe("FacetClient transport", () => {
-  test("command POSTs use distinct loopback connections", async () => {
-    const remotePorts: number[] = [];
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      async fetch(request, bunServer) {
-        remotePorts.push(bunServer.requestIP(request)?.port ?? -1);
-        const envelope = (await request.json()) as { requestId: string };
-        return Response.json(
-          errEnvelope(envelope.requestId, {
-            code: "internal",
-            message: "transport probe",
-            retryable: false,
-          }),
-        );
-      },
-    });
-    servers.push(server);
-    const client = new FacetClient({
-      baseUrl: `http://${server.hostname}:${server.port}`,
-      installToken: "x".repeat(32),
-    });
-
-    await client.sendCommand({
-      command: "list",
-      requestId: generateRequestId(),
-      projectId: "/facet",
-    });
-    await client.sendCommand({
-      command: "list",
-      requestId: generateRequestId(),
-      projectId: "/facet",
-    });
-
-    expect(remotePorts).toHaveLength(2);
-    expect(remotePorts[0]).not.toBe(-1);
-    expect(remotePorts[1]).not.toBe(remotePorts[0]);
-  });
-
   test("command timeout surfaces a typed retryable transport error", async () => {
     const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       await new Promise<never>((_resolve, reject) => {
