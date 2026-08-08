@@ -8,6 +8,7 @@ import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { CommandResultSchema } from "../../src/shared/contracts/commands";
 import { generateRequestId } from "../../src/shared/util/time";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { FROZEN_CSP_TEMPLATE } from "../../src/gallery-web/frame-html";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const GALLERY_DIR = join(import.meta.dir, "../../dist/gallery");
@@ -68,6 +69,41 @@ describe("GET /gallery", () => {
     expect(asset.status).toBe(200);
     const galleryAsset = await fetch(new URL(assetPath!, `${service.url}/gallery/`));
     expect(galleryAsset.status).toBe(200);
+  });
+
+  test("serves a nonce-bound frame document and CORS-enabled module bootstrap", async () => {
+    const testEnvDir = mkdtempSync(join(tmpdir(), "facet-gallery-frame-"));
+    envDir = testEnvDir;
+    service = await startFacetService({
+      dbPath: join(testEnvDir, "facet.sqlite"),
+      installTokenPath: join(testEnvDir, "install.token"),
+      promoteTokenPath: join(testEnvDir, "promote.token"),
+      lockPath: join(testEnvDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "gallery-frame-test" }),
+      tier0Runner: stubTier0Runner,
+    });
+    const nonce = "0123456789abcdef0123456789abcdef";
+    const frame = await fetch(`${service.url}/gallery/frame?nonce=${nonce}`);
+    const document = await frame.text();
+    expect(frame.status).toBe(200);
+    expect(frame.headers.get("content-security-policy")).toBe(
+      FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce),
+    );
+    expect(document).toContain(
+      `<script type="module" nonce="${nonce}" src="/gallery/frame/bootstrap.js">`,
+    );
+    expect(document).not.toContain("FACET_SENTINEL_ARTIFACT_BYTES");
+    expect(document.match(/<script/gi)?.length ?? 0).toBe(1);
+
+    const invalid = await fetch(`${service.url}/gallery/frame?nonce=bad%0d%0aX-Evil%3A%20yes`);
+    expect(invalid.status).toBe(400);
+
+    const bootstrap = await fetch(`${service.url}/gallery/frame/bootstrap.js`, {
+      headers: { origin: "null" },
+    });
+    expect(bootstrap.status).toBe(200);
+    expect(bootstrap.headers.get("access-control-allow-origin")).toBe("*");
   });
 
   test("serves source only through the matching live gallery lease", async () => {

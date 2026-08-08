@@ -1,11 +1,11 @@
 /**
- * Pure frame-HTML helpers — srcdoc + attribute generation, hostname
+ * Pure frame-HTML helpers — document + attribute generation, hostname
  * guard, per-frame nonce. No DOM mutation; the shell's createArtifactFrame
  * calls these to assemble the iframe configuration.
  *
  * Kept in a separate file from `app.ts` so the security invariants
- * (CSP exactness, charset-before-CSP ordering, nonce substitution,
- * artifact-byte absence in srcdoc) are testable without touching the
+ * (CSP exactness, nonce substitution, artifact-byte absence in the frame
+ * document) are testable without touching the
  * DOM-touching surface.
  */
 
@@ -35,31 +35,29 @@ export const FROZEN_CSP_TEMPLATE =
 
 /**
  * Frame element attributes. The shell applies these to every iframe it
- * creates. `src` is intentionally absent — the srcdoc carries the document
- * shell, including the nonce'd CSP.
+ * creates. The nonce is carried in the loopback document URL so the service
+ * can deliver the frozen CSP as an HTTP response header.
  */
 export interface FrameAttributes {
   readonly sandbox: "allow-scripts";
   readonly referrerpolicy: "no-referrer";
   readonly allow: "";
   readonly title: string;
-  readonly srcdoc: string;
+  readonly src: string;
 }
 
-export function buildFrameAttributes(): Omit<FrameAttributes, "srcdoc"> {
+export function buildFrameAttributes(src = "/gallery/frame"): FrameAttributes {
   return {
     sandbox: "allow-scripts",
     referrerpolicy: "no-referrer",
     allow: "",
     title: "facet artifact frame",
+    src,
   };
 }
 
-export function buildFrameSrcdoc(options: { nonce: string; bootstrapUrl: string }): string {
+export function buildFrameDocument(options: { nonce: string; bootstrapUrl: string }): string {
   const { nonce, bootstrapUrl } = options;
-  // Charset meta MUST precede the CSP meta — a CSP declared before the
-  // charset parser hint is treated as unsafe.
-  //
   // The script tag is `type="module"` on purpose: Vega's bundled source
   // declares `function addEventListener(...)` at the top level, and a
   // classic `<script>` would hoist that into `window.addEventListener`,
@@ -67,18 +65,16 @@ export function buildFrameSrcdoc(options: { nonce: string; bootstrapUrl: string 
   // can be registered. The module script keeps top-level function
   // declarations in the module scope instead of the global one.
   // The nonce authorizes this one external script without adding a host to
-  // script-src. Keeping the bundle out of srcdoc avoids parser hangs on the
-  // multi-megabyte renderer while preserving the opaque sandbox origin.
+  // script-src. Keeping the bundle out of the document avoids parser hangs on
+  // the multi-megabyte renderer while preserving the opaque sandbox origin.
   const escapedBootstrapUrl = bootstrapUrl
     .replaceAll("&", "&amp;")
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
-  const csp = FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce);
   return (
     "<!doctype html><html><head>" +
     `<meta charset="utf-8">` +
-    `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<style>html,body,#artifact{margin:0;min-height:100%;background:transparent}</style>` +
     "</head><body>" +
     `<main id="artifact"></main>` +

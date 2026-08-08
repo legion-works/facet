@@ -48,10 +48,12 @@ import {
   type RequestMeta,
 } from "./router-guards";
 import type { FacetLogger } from "../shared/logging/logger";
+import { buildFrameDocument, FROZEN_CSP_TEMPLATE } from "../gallery-web/frame-html";
 
 const ROUTE_API = "/api/v1/commands";
 const ROUTE_STREAM = "/api/v1/stream";
 const ROUTE_GALLERY = "/gallery";
+const ROUTE_FRAME = "/gallery/frame";
 const ROUTE_BOOTSTRAP = "/api/v1/gallery/bootstrap";
 const ROUTE_RELEASE = "/api/v1/gallery/release";
 const ROUTE_SOURCE = "/api/v1/gallery/source";
@@ -279,7 +281,7 @@ export function buildRouter(deps: RouterDeps): {
     "connect-src 'self'; " +
     "img-src 'self' data:; " +
     "font-src 'self' data:; " +
-    "frame-src 'none'; " +
+    "frame-src 'self'; " +
     "object-src 'none'; " +
     "base-uri 'none'; " +
     "form-action 'none'";
@@ -317,7 +319,11 @@ export function buildRouter(deps: RouterDeps): {
     return serveGalleryFile(requested, galleryCsp);
   };
 
-  const serveGalleryFile = async (requested: string, csp?: string): Promise<Response> => {
+  const serveGalleryFile = async (
+    requested: string,
+    csp?: string,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<Response> => {
     let decoded: string;
     try {
       decoded = decodeURIComponent(requested);
@@ -336,6 +342,7 @@ export function buildRouter(deps: RouterDeps): {
       headers: {
         "cache-control": "no-store",
         "content-type": file.type || "application/octet-stream",
+        ...extraHeaders,
         ...(csp === undefined ? {} : { "content-security-policy": csp }),
       },
     });
@@ -345,6 +352,42 @@ export function buildRouter(deps: RouterDeps): {
     async fetch(req: Request): Promise<Response> {
       const url = new URL(req.url);
       const path = url.pathname;
+      if (path === `${ROUTE_FRAME}/bootstrap.js` && req.method.toUpperCase() === "GET") {
+        try {
+          await ensureGalleryBuild();
+        } catch (error) {
+          return new Response(error instanceof Error ? error.message : "Gallery build failed", {
+            status: 500,
+            headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+          });
+        }
+        return serveGalleryFile("frame/bootstrap.js", undefined, {
+          "access-control-allow-origin": "*",
+        });
+      }
+      if (path === ROUTE_FRAME && req.method.toUpperCase() === "GET") {
+        const nonce = url.searchParams.get("nonce");
+        if (nonce === null || !/^[a-f0-9]{32}$/.test(nonce)) {
+          return new Response("Invalid frame nonce", {
+            status: 400,
+            headers: {
+              "cache-control": "no-store",
+              "content-type": "text/plain; charset=utf-8",
+            },
+          });
+        }
+        return new Response(
+          buildFrameDocument({ nonce, bootstrapUrl: "/gallery/frame/bootstrap.js" }),
+          {
+            status: 200,
+            headers: {
+              "cache-control": "no-store",
+              "content-security-policy": FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce),
+              "content-type": "text/html; charset=utf-8",
+            },
+          },
+        );
+      }
       if (
         (path === ROUTE_GALLERY || path.startsWith(`${ROUTE_GALLERY}/`)) &&
         req.method.toUpperCase() === "GET"
@@ -352,7 +395,11 @@ export function buildRouter(deps: RouterDeps): {
         return galleryResponse(path);
       }
       if (req.method.toUpperCase() === "GET" && path !== "/") {
-        const rootAssetResponse = await serveGalleryFile(path.replace(/^\//, ""));
+        const rootAssetResponse = await serveGalleryFile(
+          path.replace(/^\//, ""),
+          undefined,
+          path === `${ROUTE_FRAME}/bootstrap.js` ? { "access-control-allow-origin": "*" } : {},
+        );
         if (rootAssetResponse.status !== 404) return rootAssetResponse;
       }
       if (path === ROUTE_BOOTSTRAP && req.method.toUpperCase() === "POST") {

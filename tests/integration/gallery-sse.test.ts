@@ -3,7 +3,7 @@
  *
  * Every assertion here is structural — the test gate fails when the
  * shell drifts from the frozen security model. The shell builds its
- * srcdoc and frame attributes via pure helpers (`buildFrameSrcdoc`,
+ * frame document and frame attributes via pure helpers (`buildFrameDocument`,
  * `buildFrameAttributes`, `FROZEN_CSP_TEMPLATE`) so the assertions can
  * inspect the produced strings without a browser harness.
  *
@@ -25,7 +25,7 @@ import {
   SHELL_EXPORTS,
   assertLoopbackHostname,
   buildFrameAttributes,
-  buildFrameSrcdoc,
+  buildFrameDocument,
   createArtifactFrame,
   isLoopbackHostname,
   planSwap,
@@ -52,7 +52,7 @@ function buildFreshNonce(): string {
   return "n-" + crypto.randomUUID().replace(/-/g, "");
 }
 
-describe("gallery shell — CSP + srcdoc invariants", () => {
+describe("gallery shell — CSP + frame-document invariants", () => {
   test("buildFrameAttributes: sandbox is EXACTLY 'allow-scripts' (not allow-same-origin)", () => {
     const attrs = buildFrameAttributes();
     expect(attrs.sandbox).toBe("allow-scripts");
@@ -64,9 +64,10 @@ describe("gallery shell — CSP + srcdoc invariants", () => {
     expect(attrs.referrerpolicy).toBe("no-referrer");
   });
 
-  test("buildFrameAttributes: no src attribute (srcdoc only)", () => {
+  test("buildFrameAttributes: loopback src is assigned by the shell", () => {
     const attrs = buildFrameAttributes();
-    expect("src" in attrs).toBe(false);
+    expect("src" in attrs).toBe(true);
+    expect(attrs.src).toBe("/gallery/frame");
   });
 
   test("buildFrameAttributes: shell-controlled CSS transform is the zoom surface (not inside-frame script)", () => {
@@ -101,68 +102,65 @@ describe("gallery shell — FROZEN CSP", () => {
   });
 
   test("rendered CSP substitutes the per-frame nonce into script-src", () => {
-    const srcdoc = buildFrameSrcdoc({
+    const document = buildFrameDocument({
       nonce: NONCE,
       bootstrapUrl: BOOTSTRAP_URL,
     });
-    expect(srcdoc).toContain(`script-src 'nonce-${NONCE}'`);
-    expect(srcdoc).not.toContain("script-src 'unsafe-inline'");
-    // No leftover placeholder.
-    expect(srcdoc).not.toContain("<BOOTSTRAP_NONCE>");
+    expect(document).not.toContain("Content-Security-Policy");
+    expect(document).not.toContain(`script-src 'nonce-${NONCE}'`);
   });
 });
 
-describe("gallery shell — srcdoc generation", () => {
-  test("charset meta precedes CSP meta (unsafe-parse if reversed)", () => {
-    const srcdoc = buildFrameSrcdoc({
+describe("gallery shell — frame document generation", () => {
+  test("document contains charset, artifact mount, and no CSP meta", () => {
+    const document = buildFrameDocument({
       nonce: NONCE,
       bootstrapUrl: BOOTSTRAP_URL,
     });
-    const charsetIdx = srcdoc.indexOf('<meta charset="utf-8">');
-    const cspIdx = srcdoc.indexOf("Content-Security-Policy");
+    const charsetIdx = document.indexOf('<meta charset="utf-8">');
     expect(charsetIdx).toBeGreaterThanOrEqual(0);
-    expect(cspIdx).toBeGreaterThanOrEqual(0);
-    expect(charsetIdx).toBeLessThan(cspIdx);
+    expect(document).toContain('<main id="artifact"></main>');
+    expect(document).not.toContain("Content-Security-Policy");
   });
 
-  test("srcdoc references the trusted bootstrap under the per-frame nonce", () => {
-    const srcdoc = buildFrameSrcdoc({
+  test("document references the trusted module bootstrap under the per-frame nonce", () => {
+    const document = buildFrameDocument({
       nonce: NONCE,
       bootstrapUrl: BOOTSTRAP_URL,
     });
     // `type="module"` keeps Vega's top-level `function addEventListener`
     // out of the global scope (a classic script would hoist it into
     // `window.addEventListener` and break the frame's own listener).
-    expect(srcdoc).toContain(`<script type="module" nonce="${NONCE}" src="${BOOTSTRAP_URL}">`);
-    expect(srcdoc).toContain(`src="${BOOTSTRAP_URL}"`);
-    expect(srcdoc).toContain("</script>");
+    expect(document).toContain(`<script type="module" nonce="${NONCE}" src="${BOOTSTRAP_URL}">`);
+    expect(document).toContain(`src="${BOOTSTRAP_URL}"`);
+    expect(document).toContain("</script>");
   });
 
-  test("srcdoc NEVER carries artifact source bytes (publish sentinel — must be absent)", () => {
-    // The shell's srcdoc is generated ONLY from the nonce + the built
-    // trusted bootstrap. If a future shell change ever interpolates
-    // artifact bytes into srcdoc (the most dangerous regression in
+  test("document NEVER carries artifact source bytes (publish sentinel — must be absent)", () => {
+    // The frame document is generated ONLY from the nonce + the built
+    // trusted bootstrap. If a future change ever interpolates
+    // artifact bytes into the document (the most dangerous regression in
     // this whole surface), this assertion fires.
-    const srcdoc = buildFrameSrcdoc({
+    const document = buildFrameDocument({
       nonce: NONCE,
       bootstrapUrl: BOOTSTRAP_URL,
     });
-    expect(srcdoc).not.toContain(ARTIFACT_SENTINEL);
-    // Defensive: exactly ONE <script tag in srcdoc — the trusted bootstrap.
+    expect(document).not.toContain(ARTIFACT_SENTINEL);
+    // Defensive: exactly ONE <script tag in the document — the trusted bootstrap.
     // Any future regression that injects a second script would let
     // artifact bytes (or a hostile inline script) execute under the
     // per-frame nonce.
-    expect(srcdoc.match(/<script/gi)?.length ?? 0).toBe(1);
+    expect(document.match(/<script/gi)?.length ?? 0).toBe(1);
   });
 
-  test("srcdoc escapes bootstrap URL attributes", () => {
+  test("frame document escapes bootstrap URL attributes", () => {
     const tricky = "https://example.test/bootstrap.js?a=1&b=2";
-    const srcdoc = buildFrameSrcdoc({
+    const document = buildFrameDocument({
       nonce: NONCE,
       bootstrapUrl: tricky,
     });
-    expect(srcdoc).toContain("https://example.test/bootstrap.js?a=1&amp;b=2");
-    expect(srcdoc.match(/<\/script>/g)?.length ?? 0).toBe(1);
+    expect(document).toContain("https://example.test/bootstrap.js?a=1&amp;b=2");
+    expect(document.match(/<\/script>/g)?.length ?? 0).toBe(1);
   });
 });
 
@@ -461,19 +459,18 @@ describe("gallery shell — frame attributes type contract", () => {
 });
 
 describe("gallery shell — per-frame nonce freshness", () => {
-  test("each buildFrameSrcdoc call mints a distinct, fresh nonce when given one", () => {
-    const a = buildFrameSrcdoc({
+  test("each frame document carries its own fresh script nonce", () => {
+    const a = buildFrameDocument({
       nonce: buildFreshNonce(),
       bootstrapUrl: BOOTSTRAP_URL,
     });
-    const b = buildFrameSrcdoc({
+    const b = buildFrameDocument({
       nonce: buildFreshNonce(),
       bootstrapUrl: BOOTSTRAP_URL,
     });
     expect(a).not.toBe(b);
-    // Each srcdoc's CSP carries its own nonce.
-    const nonceA = a.match(/script-src 'nonce-([^']+)'/)?.[1];
-    const nonceB = b.match(/script-src 'nonce-([^']+)'/)?.[1];
+    const nonceA = a.match(/nonce="([^"]+)"/)?.[1];
+    const nonceB = b.match(/nonce="([^"]+)"/)?.[1];
     expect(nonceA).toBeDefined();
     expect(nonceB).toBeDefined();
     expect(nonceA).not.toBe(nonceB);
@@ -663,14 +660,14 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     const recording = createRecordingHost();
     const first = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     const second = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
-    // Fresh nonce + fresh srcdoc per frame — an old bootstrap cannot
-    // survive into a new CSP window, and no source bytes ride srcdoc.
+    // Fresh nonce + fresh loopback URL per frame — an old bootstrap cannot
+    // survive into a new CSP window, and no source bytes ride the document.
     expect(first.nonce).not.toBe(second.nonce);
-    expect(first.attrs.srcdoc).not.toBe(second.attrs.srcdoc);
-    expect(first.attrs.srcdoc).toContain(first.nonce);
-    expect(second.attrs.srcdoc).toContain(second.nonce);
-    expect(first.attrs.srcdoc).not.toContain(ARTIFACT_SENTINEL);
-    expect(second.attrs.srcdoc).not.toContain(ARTIFACT_SENTINEL);
+    expect(first.attrs.src).not.toBe(second.attrs.src);
+    expect(first.attrs.src).toContain(encodeURIComponent(first.nonce));
+    expect(second.attrs.src).toContain(encodeURIComponent(second.nonce));
+    expect(first.attrs.src).not.toContain(ARTIFACT_SENTINEL);
+    expect(second.attrs.src).not.toContain(ARTIFACT_SENTINEL);
 
     // Two consecutive swaps: rev1 → rev2. The second swap's frame is
     // distinct and receives ITS bytes once; the first frame's ingress

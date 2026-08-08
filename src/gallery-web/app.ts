@@ -26,7 +26,6 @@
 import {
   assertLoopbackHostname,
   buildFrameAttributes,
-  buildFrameSrcdoc,
   newFrameNonce,
   type FrameAttributes,
 } from "./frame-html";
@@ -39,7 +38,7 @@ export {
   FROZEN_CSP_TEMPLATE,
   assertLoopbackHostname,
   buildFrameAttributes,
-  buildFrameSrcdoc,
+  buildFrameDocument,
   isLoopbackHostname,
   newFrameNonce,
   type FrameAttributes,
@@ -154,6 +153,7 @@ export interface FrameControlEvent {
 
 export interface CreateArtifactFrameOptions {
   readonly bootstrapUrl: string;
+  readonly frameUrl?: string;
   readonly dom: ShellDom;
   readonly nonce?: string;
 }
@@ -215,7 +215,7 @@ export interface FrameHost {
 }
 
 /**
- * Create a fresh artifact frame: build the srcdoc, mint a per-frame
+ * Create a fresh artifact frame: build the loopback document URL, mint a per-frame
  * nonce, open two MessageChannels, hold port1 of each. The returned
  * `frameIngressPort` + `frameControlPort` MUST be transferred into the
  * frame via `frame.contentWindow.postMessage({facetHandshake: "ports",
@@ -227,11 +227,9 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   // capability code runs.
   assertLoopbackHostname(dom.hostname);
   const nonce = options.nonce ?? newFrameNonce();
-  const attrs = buildFrameAttributes();
-  const srcdoc = buildFrameSrcdoc({
-    nonce,
-    bootstrapUrl: options.bootstrapUrl,
-  });
+  const frameUrl = new URL(options.frameUrl ?? "/gallery/frame", `http://${dom.hostname}`);
+  frameUrl.searchParams.set("nonce", nonce);
+  const attrs = buildFrameAttributes(frameUrl.toString());
   // Fresh channels per frame. port1 = shell side; port2 = frame side
   // (transferred on the postMessage handshake).
   const ingress = new dom.MessageChannel();
@@ -243,7 +241,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   element.setAttribute("referrerpolicy", attrs.referrerpolicy);
   element.setAttribute("allow", attrs.allow);
   element.setAttribute("title", attrs.title);
-  element.setAttribute("srcdoc", srcdoc);
+  element.setAttribute("src", attrs.src);
   const frameId = `frame-${crypto.randomUUID()}`;
 
   // Control-port RECEIVE path. MessagePort.onmessage setter form with
@@ -262,7 +260,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   return {
     frameId,
     nonce,
-    attrs: { ...attrs, srcdoc },
+    attrs,
     frameIngressPort: ingress.port2,
     frameControlPort: control.port2,
     deliverSource(payload) {
@@ -437,6 +435,7 @@ export interface SwapToRevisionDeps {
   readonly dom: ShellDom;
   readonly host: FrameHost;
   readonly bootstrapUrl: string;
+  readonly frameUrl?: string;
   /** Fetch the exact revision bytes the SSE event named. */
   readonly fetchRevision: (artifactId: string, revisionSha: string) => Promise<RevisionFetchResult>;
   readonly readyTimeoutMs?: number;
@@ -468,7 +467,11 @@ export async function swapToRevision(
   viewState: ViewState,
 ): Promise<{ readonly frame: CreatedArtifactFrame; readonly result: ReplaceArtifactFrameResult }> {
   const revision = await deps.fetchRevision(event.artifactId, event.revisionSha);
-  const next = createArtifactFrame({ bootstrapUrl: deps.bootstrapUrl, dom: deps.dom });
+  const next = createArtifactFrame({
+    bootstrapUrl: deps.bootstrapUrl,
+    dom: deps.dom,
+    ...(deps.frameUrl === undefined ? {} : { frameUrl: deps.frameUrl }),
+  });
   deps.onFrameCreated?.(next);
   const result = await replaceArtifactFrame({
     current,
@@ -530,11 +533,15 @@ function armFrameLoad(
           frame.frameIngressPort,
           frame.frameControlPort,
         ]);
-        mount(frame);
         void frame.awaitControlEvent("boot-ready", DEFAULT_READY_TIMEOUT_MS).then(resolve);
       },
       { once: true },
     );
+    // Mount AFTER the listener is armed: a detached iframe never loads, so
+    // mounting inside the load handler deadlocks on an event that can only
+    // fire once mounted. The swap path (`planSwap` build-new) orders it the
+    // same way.
+    mount(frame);
   });
 }
 
@@ -550,6 +557,7 @@ export async function startGallery(): Promise<void> {
   if (revision !== null) revision.textContent = handoff.revisionSha.slice(0, 12);
   setGalleryStatus("loading");
   const bootstrapUrl = `${baseUrl}/gallery/frame/bootstrap.js`;
+  const frameUrl = `${baseUrl}/gallery/frame`;
   const canvas = document.getElementById("facet-canvas");
   if (!(canvas instanceof HTMLElement)) throw new Error("Gallery canvas is missing");
   const viewState: ViewState = { zoom: 1 };
@@ -576,7 +584,7 @@ export async function startGallery(): Promise<void> {
   };
   const dom: ShellDom = { document, MessageChannel, hostname: window.location.hostname, window };
   const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha);
-  let current = createArtifactFrame({ bootstrapUrl, dom });
+  let current = createArtifactFrame({ bootstrapUrl, frameUrl, dom });
   const boot = await armFrameLoad(current, (frame) =>
     host.mountOffScreen(frame.frameId, frame.element.raw),
   );
@@ -600,6 +608,7 @@ export async function startGallery(): Promise<void> {
           dom,
           host,
           bootstrapUrl,
+          frameUrl,
           fetchRevision: (_artifactId, revisionSha) =>
             fetchGallerySource(baseUrl, handoff, revisionSha),
           onFrameCreated: (next) => {
