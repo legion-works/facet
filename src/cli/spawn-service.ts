@@ -51,6 +51,14 @@ export interface SpawnServiceOptions {
   readonly readyTimeoutMs?: number;
   /** Poll interval in ms (default: 25). */
   readonly pollIntervalMs?: number;
+  /**
+   * Override the Tier 0 runner module path. Defaults to
+   * `src/validation/tier0/runner.ts` resolved relative to this file.
+   * The CLI owns this path because only the CLI may import the
+   * validation module directly; the service child dynamic-imports
+   * the path passed here.
+   */
+  readonly tier0RunnerPath?: string;
 }
 
 /**
@@ -101,6 +109,10 @@ function spawnChild(paths: FacetRuntimePaths, options: SpawnServiceOptions): Chi
     ...options.env,
     FACET_HOME: facetHome,
   };
+  // The CLI owns the concrete path to the Tier 0 runner module; the
+  // service child dynamic-imports this path so the service's static
+  // boundary check stays clean (no `import "../validation/..."`).
+  const tier0RunnerPath = options.tier0RunnerPath ?? resolveDefaultTier0RunnerPath();
   // Pass per-path overrides as flags so the child does not have to
   // recompute paths from FACET_HOME; this keeps parent + child
   // identical even when an operator sets XDG_* vars.
@@ -114,12 +126,24 @@ function spawnChild(paths: FacetRuntimePaths, options: SpawnServiceOptions): Chi
     paths.token,
     "--lock-path",
     paths.lock,
+    "--tier0-runner-path",
+    tier0RunnerPath,
   ];
   return spawn(bunPath, args, {
     env: childEnv,
     stdio: ["ignore", "ignore", "ignore"],
     detached: true,
   });
+}
+
+/**
+ * Default Tier 0 runner module path. Resolved relative to this file
+ * (which lives in `src/cli/`) so the import is `../validation/tier0/runner`.
+ * Callers can override via `SpawnServiceOptions.tier0RunnerPath` for
+ * tests or for custom builds.
+ */
+function resolveDefaultTier0RunnerPath(): string {
+  return resolvePath(import.meta.dir, "..", "validation", "tier0", "runner.ts");
 }
 
 /**

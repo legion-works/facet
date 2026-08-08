@@ -121,12 +121,19 @@ export function statusFor(error: FacetError): number {
     case "invalid_request":
     case "unknown_schema_version":
       return 400;
+    case "tier0_unavailable":
+      return 503;
     case "duplicate_revision":
     case "constraint":
     case "foreign_key":
     case "immutable_revision":
     case "invalid_artifact_type":
       return 409;
+    case "tier0_timeout":
+    case "tier0_protocol_error":
+    case "tier0_worker_died":
+    case "tier0_output_cap":
+      return 422;
     default:
       return 500;
   }

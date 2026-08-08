@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 import { startFacetService, type RunningService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const scratchRoot = join(tmpdir(), `facet-r2-${crypto.randomUUID()}`);
 
@@ -54,6 +55,7 @@ async function startEnv(
     idleTimeoutMs: opts.idleTimeoutMs ?? 5_000,
     ...(opts.leaseTtlMs !== undefined ? { leaseTtlMs: opts.leaseTtlMs } : {}),
     logger: createQuietLogger({ component: "r2-test" }),
+    tier0Runner: stubTier0Runner,
   });
   return {
     service,

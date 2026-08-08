@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { startFacetService } from "../../src/service/server";
 import { runOrphanCleanup } from "../../src/service/lifecycle/orphan-cleanup";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const scratchRoot = join(tmpdir(), `facet-lifecycle-${crypto.randomUUID()}`);
 
@@ -64,6 +65,7 @@ describe("service lifecycle", () => {
       logger: createQuietLogger({ component: "test" }),
       ...paths,
       idleTimeoutMs: 200,
+      tier0Runner: stubTier0Runner,
     });
     expect(await portClosed(service.port)).toBe(false);
     await service.waitUntilIdle();
@@ -78,6 +80,7 @@ describe("service lifecycle", () => {
       logger: createQuietLogger({ component: "test" }),
       ...paths,
       idleTimeoutMs: 200,
+      tier0Runner: stubTier0Runner,
     });
     try {
       // Drive an `open` to create a lease that pins the idle controller.
@@ -173,6 +176,7 @@ describe("service lifecycle", () => {
       logger: createQuietLogger({ component: "test" }),
       ...paths,
       idleTimeoutMs: 500,
+      tier0Runner: stubTier0Runner,
     });
     try {
       // If stale reclaim had failed the service wouldn't have started.
@@ -216,6 +220,7 @@ describe("service lifecycle", () => {
       logger: createQuietLogger({ component: "test" }),
       ...paths,
       idleTimeoutMs: 500,
+      tier0Runner: stubTier0Runner,
     });
     await service.stop();
     await service.stop();

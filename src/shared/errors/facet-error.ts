@@ -27,6 +27,16 @@ export const FacetErrorCodes = {
   artifact_not_found: true,
   revision_not_found: true,
   template_not_found: true,
+  // Tier 0 worker-level failures. These surface when the parent cannot
+  // even obtain a Tier0Result (worker died, bad stdout, wall-clock cap,
+  // output cap, unshare/unshare wrapper unavailable). Parser-level
+  // failures (mermaid syntax error, hostile svg, etc.) are recorded as
+  // a Tier0Result with status="error" and do NOT throw.
+  tier0_timeout: true,
+  tier0_protocol_error: true,
+  tier0_worker_died: true,
+  tier0_output_cap: true,
+  tier0_unavailable: true,
   // Generic catch-alls.
   internal: true,
 } as const;

@@ -17,6 +17,13 @@
     "check:boundaries": "bun scripts/check-boundaries.ts"
   },
   "dependencies": {
+    "dompurify": "^3.4.13",
+    "fast-xml-parser": "^5.10.1",
+    "happy-dom": "^20.11.2",
+    "linkedom": "^0.18.13",
+    "marked": "^18.0.9",
+    "vega": "^6.3.1",
+    "vega-lite": "^6.4.3",
     "zod": "3.24.1"
   },
   "devDependencies": {

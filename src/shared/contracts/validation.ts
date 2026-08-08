@@ -91,10 +91,21 @@ export type Verdict = z.infer<typeof VerdictSchema>;
 export const Tier0InputSchema = z.object({
   revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   artifactType: z.enum(["markdown", "mermaid", "svg", "chart"]),
-  source: z.instanceof(Uint8Array),
+  source: z.instanceof(Uint8Array<ArrayBuffer>),
   lexical: LexicalCountersSchema,
 });
 export type Tier0Input = z.infer<typeof Tier0InputSchema>;
+
+/**
+ * The parent-side Tier 0 runner contract. The default implementation
+ * lives in `src/validation/tier0/runner.ts` (out-of-process Bun
+ * subprocess under `unshare --map-current-user --net`). The service
+ * imports THIS TYPE only — the runner implementation is constructed
+ * by callers (`src/cli/`, tests) and injected into the dispatcher so
+ * `src/service/**` stays byte-dumb and the boundary checker remains
+ * clean.
+ */
+export type Tier0Runner = (input: Tier0Input) => Promise<Tier0Result>;
 
 /** Tier 0 result: extends the canonical verdict with the expected counters. */
 export const Tier0ResultSchema = VerdictSchema.extend({

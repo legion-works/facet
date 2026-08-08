@@ -31,6 +31,7 @@ import { ArtifactRepository } from "./store/repository";
 import { buildRouter } from "./router";
 import { createInstallTokenStore, createPromoteTokenStore } from "./security/token-store";
 import { createLeaseManager, type GalleryLeaseManager } from "./security/leases";
+import type { Tier0Runner } from "../shared/contracts/validation";
 import {
   acquireLock,
   releaseLock,
@@ -53,6 +54,14 @@ export interface StartServiceOptions {
   readonly logger?: FacetLogger;
   readonly host?: string;
   readonly onIdle?: () => void;
+  /**
+   * Tier 0 runner. Production callers pass the default from
+   * `src/validation/tier0/runner.ts`; tests inject a stub so they
+   * can exercise the publish path without spawning a worker. The
+   * type lives in `dispatcher.ts` so the server does not need to
+   * know which module implements it.
+   */
+  readonly tier0Runner?: Tier0Runner;
 }
 
 export interface RunningService {
@@ -177,6 +186,17 @@ export async function startFacetService(
     // 6. Bind Bun.serve on 127.0.0.1:<os-assigned port>. Host guards
     //    must reject (not inject) a missing Host header.
     const hostState: { value: string | null } = { value: null };
+    // The Tier 0 runner is required because the service is byte-dumb
+    // and may not import `src/validation`. The default runner lives
+    // there; callers (CLI, tests) construct it externally and inject.
+    if (options.tier0Runner === undefined) {
+      throw new FacetError(
+        "internal",
+        "Tier 0 runner is not configured; pass startFacetService({ tier0Runner })",
+        { retryable: false },
+      );
+    }
+    const tier0Runner: Tier0Runner = options.tier0Runner;
     const router = buildRouter({
       repository,
       installToken,
@@ -187,6 +207,7 @@ export async function startFacetService(
       expectedHost: () => hostState.value ?? "127.0.0.1:0",
       ownOrigin: () => `http://${hostState.value ?? "127.0.0.1:0"}`,
       startTime: lockStartTime,
+      tier0Runner,
     });
     let server: ReturnType<typeof Bun.serve>;
     try {

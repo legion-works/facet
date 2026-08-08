@@ -33,6 +33,7 @@ import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/cont
 import { startFacetService, type RunningService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { asStoreError } from "../../src/shared/errors/store-error";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const scratchRoot = join(tmpdir(), `facet-store-err-${crypto.randomUUID()}`);
 
@@ -61,6 +62,7 @@ async function startEnv(): Promise<TestEnv> {
     lockPath: join(envDir, "facet.lock"),
     idleTimeoutMs: 5_000,
     logger: createQuietLogger({ component: "store-err-wire-test" }),
+    tier0Runner: stubTier0Runner,
   });
   return {
     service,
@@ -198,6 +200,7 @@ describe("store errors surface on the wire with typed codes", () => {
         lockPath: join(envDir, "facet.lock"),
         idleTimeoutMs: 5_000,
         logger: createQuietLogger({ component: "store-err-wire-test" }),
+        tier0Runner: stubTier0Runner,
       });
     } catch (error) {
       caught = error;

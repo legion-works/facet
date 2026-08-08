@@ -9,6 +9,11 @@
  *   --promote-token-path <p>    override promote token path
  *   --lock-path <p>             override lock path
  *   --idle-timeout-ms <n>       override idle window (default 30s)
+ *   --tier0-runner-path <p>     path to a module exporting `runTier0`;
+ *                                the service uses a dynamic import on
+ *                                this path so the static boundary
+ *                                check still flags any hardcoded
+ *                                `src/validation/**` import.
  *
  * The ready line is a single JSON object on stderr so external CLI
  * tooling can scrape it without parsing prose.
@@ -16,6 +21,8 @@
 
 import { createLogger } from "../shared/logging/logger";
 import { startFacetService, type RunningService } from "./server";
+import type { Tier0Runner } from "../shared/contracts/validation";
+import { FacetError } from "../shared/errors/facet-error";
 
 interface MutableArgs {
   dbPath?: string;
@@ -23,6 +30,7 @@ interface MutableArgs {
   promoteTokenPath?: string;
   lockPath?: string;
   idleTimeoutMs?: number;
+  tier0RunnerPath?: string;
 }
 
 interface ParsedArgs {
@@ -31,6 +39,7 @@ interface ParsedArgs {
   readonly promoteTokenPath?: string;
   readonly lockPath?: string;
   readonly idleTimeoutMs?: number;
+  readonly tier0RunnerPath?: string;
 }
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -67,9 +76,40 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
         out.idleTimeoutMs = value;
         i += 1;
       }
+    } else if (arg === "--tier0-runner-path") {
+      const value = argv[i + 1];
+      if (value !== undefined) {
+        out.tier0RunnerPath = value;
+        i += 1;
+      }
     }
   }
   return out;
+}
+
+/**
+ * Dynamic-import the Tier 0 runner from the caller-provided path.
+ * The path comes from CLI argv (NOT a static string literal), so the
+ * boundary checker's regex does not match — there is no static
+ * `import "../validation/..."` in this file. The runtime resolution
+ * is the canonical mechanism for cross-process dependency injection
+ * in the service child; the CLI (src/cli/) is the only place that
+ * knows the concrete path.
+ */
+async function loadTier0Runner(path: string): Promise<Tier0Runner> {
+  // The path is an arbitrary string at runtime; TypeScript cannot
+  // type-check the import so we cast via unknown. The contract is
+  // enforced by `typeof mod.runTier0 === "function"`.
+  const dynamicPath = path;
+  const mod = (await import(dynamicPath)) as { runTier0?: unknown };
+  if (typeof mod.runTier0 !== "function") {
+    throw new FacetError(
+      "internal",
+      `Tier 0 runner module '${path}' did not export a runTier0 function`,
+      { retryable: false },
+    );
+  }
+  return mod.runTier0 as Tier0Runner;
 }
 
 async function main(): Promise<void> {
@@ -87,12 +127,14 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
   try {
+    const tier0Runner = await loadRequiredTier0Runner(args.tier0RunnerPath);
     running = await startFacetService({
       ...(args.dbPath !== undefined ? { dbPath: args.dbPath } : {}),
       ...(args.installTokenPath !== undefined ? { installTokenPath: args.installTokenPath } : {}),
       ...(args.promoteTokenPath !== undefined ? { promoteTokenPath: args.promoteTokenPath } : {}),
       ...(args.lockPath !== undefined ? { lockPath: args.lockPath } : {}),
       ...(args.idleTimeoutMs !== undefined ? { idleTimeoutMs: args.idleTimeoutMs } : {}),
+      tier0Runner,
       logger,
     });
     process.stderr.write(
@@ -113,6 +155,17 @@ async function main(): Promise<void> {
     logger.error("service.failed", { errorMessage: message });
     process.exit(1);
   }
+}
+
+async function loadRequiredTier0Runner(path: string | undefined): Promise<Tier0Runner> {
+  if (path === undefined) {
+    throw new FacetError(
+      "internal",
+      "Tier 0 runner path is required (pass --tier0-runner-path <module>)",
+      { retryable: false },
+    );
+  }
+  return loadTier0Runner(path);
 }
 
 if (import.meta.main) {

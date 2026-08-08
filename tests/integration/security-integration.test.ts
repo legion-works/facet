@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 import { startFacetService, type RunningService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const scratchRoot = join(tmpdir(), `facet-sec-int-${crypto.randomUUID()}`);
 
@@ -50,6 +51,7 @@ async function startWithPromote(promote: string | null): Promise<TestEnv> {
     lockPath: join(envDir, "facet.lock"),
     idleTimeoutMs: 5_000,
     logger: createQuietLogger({ component: "sec-int-test" }),
+    tier0Runner: stubTier0Runner,
   });
   return {
     service,
@@ -278,6 +280,7 @@ describe("Must #4: SSE stream lifetime bound to lease", () => {
       lockPath: join(envDir, "facet.lock"),
       idleTimeoutMs: 5_000,
       logger: createQuietLogger({ component: "stream-exp-test" }),
+      tier0Runner: stubTier0Runner,
     });
     try {
       // Build an artifact + revision + lease via the public API.

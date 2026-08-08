@@ -390,8 +390,8 @@ describe("cli contract — wire", () => {
       expect((statusEnv.data["revisionCount"] as number) > 0).toBe(true);
     }
 
-    // read-back Tier 0 (no render runs → typed error envelope; the
-    // shape is still one valid envelope).
+    // read-back Tier 0 (publish now records a Tier 0 render_run, so
+    // read-back returns the verdict bound to (artifactId, revisionSha)).
     const rbIo = makeIo();
     const pubSha = (publishEnv.data["revision"] as { sha256: string }).sha256;
     const rbExit = await runOnce(
@@ -400,7 +400,7 @@ describe("cli contract — wire", () => {
     );
     expect(rbExit.code).toBe(0);
     const rbEnv = parseStdoutEnvelope(rbIo.stdoutBuf.value);
-    expect(rbEnv.ok).toBe(false);
+    expect(rbEnv.ok).toBe(true);
 
     // pin
     const pinIo = makeIo();

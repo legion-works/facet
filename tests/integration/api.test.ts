@@ -22,6 +22,7 @@ import {
 
 import { startFacetService, type RunningService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 interface TestEnv {
   service: RunningService;
@@ -56,6 +57,7 @@ async function startService(): Promise<TestEnv> {
     lockPath,
     idleTimeoutMs: 5_000,
     logger: createQuietLogger({ component: "test" }),
+    tier0Runner: stubTier0Runner,
   });
 
   return {
@@ -346,20 +348,24 @@ describe("service API integration", () => {
         revisionSha = publishBody.data.revision.sha256;
       }
 
-      const rb404 = await envelopeRequest(env, {
+      const rb = await envelopeRequest(env, {
         schemaVersion: FACET_SCHEMA_VERSION,
-        requestId: "req-rb404",
+        requestId: "req-rb",
         command: "readBack",
         artifactId: createBody.data.artifact.id,
         revisionSha,
         tier: 0,
       });
-      expect(rb404.status).toBe(404);
-      const rb404Body = parseEnvelopeStrict(await rb404.text()) as {
-        ok: false;
-        error: { code: string };
+      // Publish now records a Tier 0 render_run, so read-back succeeds
+      // and returns the verdict bound to (artifactId, revisionSha).
+      expect(rb.status).toBe(200);
+      const rbBody = parseEnvelopeStrict(await rb.text()) as {
+        ok: true;
+        data: { command: "readBack"; verdict: { tier: 0; revisionSha: string } };
       };
-      expect(rb404Body.error.code).toBe("revision_not_found");
+      expect(rbBody.data.command).toBe("readBack");
+      expect(rbBody.data.verdict.tier).toBe(0);
+      expect(rbBody.data.verdict.revisionSha).toBe(revisionSha);
     } finally {
       await env.cleanup();
     }
@@ -462,6 +468,7 @@ describe("service API integration", () => {
       lockPath: join(envDir, "lock"),
       idleTimeoutMs: 5_000,
       logger: createQuietLogger({ component: "test" }),
+      tier0Runner: stubTier0Runner,
     });
     try {
       expect(existsSync(installTokenPath)).toBe(true);

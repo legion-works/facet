@@ -16,21 +16,41 @@ import {
   type ArtifactEnvelope,
   type CommandRequest,
 } from "../shared/contracts/commands";
-import { VerdictObservedSchema, VerdictSchema, type Verdict } from "../shared/contracts/validation";
+import type { Artifact } from "../shared/contracts/artifact";
+import {
+  Tier0InputSchema,
+  Tier0ResultSchema,
+  VerdictObservedSchema,
+  VerdictSchema,
+  type Tier0Input,
+  type Tier0Result,
+  type Tier0Runner,
+  type Verdict,
+} from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
 import { SOURCE_CAP_BYTES } from "../shared/config/limits";
+import { computeLexicalExpectations } from "./lexical/expectations";
 
 import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
 import type { ArtifactRepository } from "./store/repository";
 
+/**
+ * Tier 0 runner contract lives in `shared/contracts/validation.ts` so
+ * the service can depend on it as a TYPE without importing the
+ * implementation in `src/validation/`. The default runner is built by
+ * callers (`src/cli/`, integration tests) and injected; this keeps the
+ * service byte-dumb AND the boundary checker clean.
+ */
+
 export interface DispatcherDeps {
   readonly repository: ArtifactRepository;
   readonly leases: GalleryLeaseManager;
   readonly idle: IdleController;
+  readonly tier0Runner: Tier0Runner;
 }
 
-function mapArtifact(a: import("../shared/contracts/artifact").Artifact): ArtifactEnvelope {
+function mapArtifact(a: Artifact): ArtifactEnvelope {
   return {
     id: a.id,
     projectId: a.projectId,
@@ -55,6 +75,52 @@ function buildVerdict(input: {
     artifactId: input.artifactId,
     revisionSha: input.revisionSha,
     observed,
+  });
+}
+
+/**
+ * Run the Tier 0 worker, mapping a thrown `FacetError` to a synthetic
+ * Tier0Result with `status: "error"`. The wire response must still be
+ * a publish envelope (the revision IS committed), so the run is
+ * recorded as an error-tier observation rather than as a publish
+ * failure. The original error code is surfaced via
+ * `discriminativeErrors[].code` so the read-back verdict carries the
+ * typed reason.
+ */
+async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tier0Result> {
+  try {
+    return await runner(input);
+  } catch (error) {
+    const facet = FacetError.from(error);
+    return {
+      tier: 0,
+      status: "error",
+      artifactId: "",
+      revisionSha: input.revisionSha,
+      expected: input.lexical,
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        errorCount: 1,
+        discriminativeErrors: [{ code: facet.code, message: facet.message }],
+      },
+    };
+  }
+}
+
+/**
+ * Pin the verdict to the (artifactId, revisionSha) pair the parent
+ * service is committing. The worker doesn't know the artifactId (it
+ * runs out of process and only needs the sha); we fill it in here so
+ * every Tier 0 verdict carries the canonical binding.
+ */
+function enrichVerdict(result: Tier0Result, artifactId: string, revisionSha: string): Tier0Result {
+  return Tier0ResultSchema.parse({
+    ...result,
+    artifactId,
+    revisionSha,
   });
 }
 
@@ -87,6 +153,9 @@ export async function dispatch(
           details: { sizeBytes: bytes.byteLength, capBytes: SOURCE_CAP_BYTES },
         });
       }
+      // 1. Persist the IMMUTABLE revision first. The bytes-on-disk +
+      // sha256 + revision row are the source of truth; Tier 0 is an
+      // observation over those bytes, not a gate.
       const revision = deps.repository.publishRevision({
         artifactId: command.artifactId,
         artifactType: command.artifactType,
@@ -96,9 +165,45 @@ export async function dispatch(
           ? { parentRevisionId: command.parentRevisionId }
           : {}),
       });
+      // 2. Run Tier 0 over the SAME immutable bytes — never re-decode
+      // from the wire or substitute. The runner lives in
+      // src/validation (netns'd subprocess); only its contract type
+      // is visible to the service. A thrown FacetError here (unshare
+      // unavailable, worker died, protocol error, …) aborts the
+      // publish AFTER the revision is committed; we still record the
+      // partial run so the wire response can carry a verdict-shaped
+      // body. A non-ok Tier0Result is normal: the parser rejected the
+      // artifact and we persist that decision as a render_run.
+      const lexical = computeLexicalExpectations(bytes);
+      const tier0Input = Tier0InputSchema.parse({
+        revisionSha: revision.sha256,
+        artifactType: command.artifactType,
+        source: bytes,
+        lexical: {
+          rendererRootSvgCount: lexical.expectedRendererRoots,
+          mermaidNodeCount: lexical.mermaidNodeCount,
+          visibleSvgCount: 0,
+        },
+      });
+      const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input);
+      // 3. Bind the verdict to (artifactId, revisionSha) via the
+      // canonical render_run row so read-back returns it later.
+      const enriched = enrichVerdict(tier0Result, command.artifactId, revision.sha256);
+      deps.repository.recordRenderRun({
+        revisionId: revision.id,
+        tier: 0,
+        status: enriched.status,
+        expected: enriched.expected,
+        observed: enriched.observed,
+      });
       const { source: _source, ...envelope } = revision;
       void _source;
-      return { command: "publish", requestId, revision: envelope };
+      return {
+        command: "publish",
+        requestId,
+        revision: envelope,
+        verdict: enriched,
+      };
     }
     case "list": {
       const project = deps.repository.getOrCreateProjectById(command.projectId, "/facet");
