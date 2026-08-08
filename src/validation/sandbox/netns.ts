@@ -19,7 +19,7 @@
  * running un-sandboxed.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { statSync } from "node:fs";
 
 import { TIER0_MEMORY_CAP_BYTES } from "./limits";
@@ -61,31 +61,22 @@ let cachedProbe: NetnsProbe | null = null;
 export function probeNetnsSupport(): NetnsProbe {
   if (cachedProbe !== null) return cachedProbe;
   try {
-    const probe = spawn("unshare", ["--map-current-user", "--net", "--", "/bin/true"], {
+    // spawnSync, NOT spawn: `exit` fires on a later tick, so an async probe
+    // read synchronously ALWAYS observed "not resolved" and cached a false
+    // negative for the process lifetime — disabling Tier 0 wherever the
+    // capability is in fact present.
+    const probe = spawnSync("unshare", ["--map-current-user", "--net", "--", "/bin/true"], {
       stdio: "ignore",
     });
-    const outcome = (() => {
-      let resolved = false;
-      let result: NetnsProbe = { available: false, reason: "unshare probe did not exit" };
-      probe.on("error", (error) => {
-        resolved = true;
-        result = { available: false, reason: `unshare: ${error.message}` };
-      });
-      probe.on("exit", (code, signal) => {
-        resolved = true;
-        if (code === 0) result = { available: true, reason: null };
-        else if (signal !== null)
-          result = { available: false, reason: `unshare killed by ${signal}` };
-        else result = { available: false, reason: `unshare exited with code ${code}` };
-      });
-      return { isResolved: () => resolved, result };
-    })();
-    if (!outcome.isResolved()) {
-      // `exit` should fire synchronously for a successful spawn + /bin/true;
-      // if it doesn't, return a conservative unavailable verdict.
-      return (cachedProbe = { available: false, reason: "unshare probe did not resolve" });
-    }
-    return (cachedProbe = outcome.result);
+    if (probe.error !== undefined)
+      return (cachedProbe = { available: false, reason: `unshare: ${probe.error.message}` });
+    if (probe.signal !== null)
+      return (cachedProbe = { available: false, reason: `unshare killed by ${probe.signal}` });
+    if (probe.status === 0) return (cachedProbe = { available: true, reason: null });
+    return (cachedProbe = {
+      available: false,
+      reason: `unshare exited with code ${probe.status}`,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return (cachedProbe = { available: false, reason: `unshare probe threw: ${message}` });

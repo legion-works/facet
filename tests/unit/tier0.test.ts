@@ -10,8 +10,8 @@
  * extra stdout, signal death.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { spawn } from "node:child_process";
+import { describe, expect, test } from "bun:test";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { Lexer } from "marked";
@@ -308,18 +308,11 @@ describe("Tier 0 chart parser", () => {
 });
 
 describe("Tier 0 process boundary — worker subprocess", () => {
-  // Skip the network-confirmation test if the environment does not
-  // provide rootless user namespaces. The parse workers themselves
-  // still run; only the live egress probe is skipped.
-  let netnsAvailable = false;
-  beforeAll(async () => {
-    netnsAvailable = probeNetnsSupport().available;
-  });
-  afterAll(() => {
-    // best-effort cleanup; nothing async to wait on
-  });
+  const netnsProbe = probeNetnsSupport();
+  const netnsAvailable = netnsProbe.available;
+  const netnsTest = test.skipIf(!netnsAvailable);
 
-  test(
+  netnsTest(
     "worker parses adversarial markdown end-to-end under netns",
     async () => {
       const bytes = readBytes(FIXTURES.adversarial);
@@ -329,13 +322,6 @@ describe("Tier 0 process boundary — worker subprocess", () => {
         source: bytes,
         lexical: lexicalCounters(bytes),
       };
-      if (!netnsAvailable) {
-        // The runner throws tier0_unavailable; the unit test below proves
-        // the typed error path. Here we still verify the parser modules
-        // and the worker protocol independently.
-        await expect(runTier0(input)).rejects.toMatchObject({ code: "tier0_unavailable" });
-        return;
-      }
       const result = await runTier0(input);
       expect(result.status).toBe("ok");
       expect(result.tier).toBe(0);
@@ -344,7 +330,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
     { timeout: TIER0_TIMEOUT_MS + 5_000 },
   );
 
-  test(
+  netnsTest(
     "worker rejects malformed mermaid end-to-end",
     async () => {
       const bytes = readBytes(FIXTURES.malformedMermaid);
@@ -354,10 +340,6 @@ describe("Tier 0 process boundary — worker subprocess", () => {
         source: bytes,
         lexical: lexicalCounters(bytes),
       };
-      if (!netnsAvailable) {
-        await expect(runTier0(input)).rejects.toMatchObject({ code: "tier0_unavailable" });
-        return;
-      }
       const result = await runTier0(input);
       expect(result.status).toBe("error");
       if (result.status === "error" && result.observed.discriminativeErrors !== undefined) {
@@ -368,7 +350,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
     { timeout: TIER0_TIMEOUT_MS + 5_000 },
   );
 
-  test(
+  netnsTest(
     "worker rejects hostile svg end-to-end",
     async () => {
       const bytes = readBytes(FIXTURES.svgHostile);
@@ -378,17 +360,13 @@ describe("Tier 0 process boundary — worker subprocess", () => {
         source: bytes,
         lexical: lexicalCounters(bytes),
       };
-      if (!netnsAvailable) {
-        await expect(runTier0(input)).rejects.toMatchObject({ code: "tier0_unavailable" });
-        return;
-      }
       const result = await runTier0(input);
       expect(result.status).toBe("error");
     },
     { timeout: TIER0_TIMEOUT_MS + 5_000 },
   );
 
-  test(
+  netnsTest(
     "worker rejects external-data chart end-to-end",
     async () => {
       const bytes = readBytes(FIXTURES.chartExternal);
@@ -398,10 +376,6 @@ describe("Tier 0 process boundary — worker subprocess", () => {
         source: bytes,
         lexical: lexicalCounters(bytes),
       };
-      if (!netnsAvailable) {
-        await expect(runTier0(input)).rejects.toMatchObject({ code: "tier0_unavailable" });
-        return;
-      }
       const result = await runTier0(input);
       expect(result.status).toBe("error");
     },
@@ -409,12 +383,39 @@ describe("Tier 0 process boundary — worker subprocess", () => {
   );
 
   test("netns probe reports a typed reason when unavailable (or ok when available)", () => {
-    const probe = probeNetnsSupport();
-    if (probe.available) {
-      expect(probe.reason).toBeNull();
+    if (netnsProbe.available) {
+      expect(netnsProbe.reason).toBeNull();
     } else {
-      expect(probe.reason).not.toBeNull();
+      expect(netnsProbe.reason).toEqual(expect.any(String));
     }
+  });
+
+  test("netns probe cannot report unavailable when the synchronous probe succeeds", () => {
+    const directProbe = spawnSync("unshare", ["--map-current-user", "--net", "--", "/bin/true"], {
+      stdio: "ignore",
+    });
+    if (directProbe.status === 0) {
+      expect(netnsProbe).toEqual({ available: true, reason: null });
+    } else {
+      expect(netnsProbe.available).toBe(false);
+      expect(netnsProbe.reason).toEqual(expect.any(String));
+    }
+  });
+
+  test("unavailable netns is surfaced as a typed runner error", async () => {
+    if (netnsProbe.available) return;
+    const bytes = readBytes(FIXTURES.adversarial);
+    await expect(
+      runTier0({
+        revisionSha: "0".repeat(64),
+        artifactType: "markdown",
+        source: bytes,
+        lexical: lexicalCounters(bytes),
+      }),
+    ).rejects.toMatchObject({
+      code: "tier0_unavailable",
+      details: { reason: netnsProbe.reason },
+    });
   });
 });
 
@@ -524,6 +525,26 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
     const result = _parseWorkerStdout(VALID_STDOUT, OUTPUT_CAP);
     expect(result.tier).toBe(0);
     expect(result.status).toBe("ok");
+  });
+
+  test("accepts identity-blind worker stdout before parent enrichment", () => {
+    const workerPayload = JSON.stringify({
+      tier: 0,
+      status: "ok",
+      revisionSha: "0".repeat(64),
+      expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        errorCount: 0,
+      },
+    });
+    const result = _parseWorkerStdout(workerPayload, OUTPUT_CAP);
+    expect(result.tier).toBe(0);
+    expect(result.status).toBe("ok");
+    expect("artifactId" in result).toBe(false);
   });
 
   test("rejects a well-formed JSON object that VIOLATES Tier0ResultSchema (missing required field)", () => {

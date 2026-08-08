@@ -9,8 +9,8 @@
  *      The parsers are pure-token or pure-compile — none of them touch
  *      a DOM, open a socket, or load a remote resource. The netns is
  *      the second line of defense for any library that does try to.
- *   3. Writes ONE JSON envelope to STDOUT (the Tier0Result wire shape
- *      via `protocol.ts`). STDOUT is capped by the parent; anything
+ *   3. Writes ONE JSON envelope to STDOUT (the identity-blind
+ *      Tier0WorkerResult wire shape). STDOUT is capped by the parent; anything
  *      beyond the first JSON object is a typed `tier0_protocol_error`
  *      failure on the parent side.
  *   4. Writes diagnostics to STDERR. STDERR is NEVER parsed by the
@@ -21,7 +21,7 @@
  */
 
 import type { ArtifactType } from "../../shared/contracts/artifact";
-import type { LexicalCounters, Tier0Result } from "../../shared/contracts/validation";
+import type { LexicalCounters, Tier0WorkerResult } from "../../shared/contracts/validation";
 
 import { parseMermaid } from "./mermaid";
 import { parseMarkdown } from "./markdown";
@@ -131,9 +131,8 @@ function parseWorkerInput(bytes: Uint8Array): WorkerInput {
  * protocol violations are NOT observed here — they are enforced by the
  * PARENT runner.
  */
-async function runParser(input: WorkerInput): Promise<Tier0Result> {
+async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
   const base = {
-    artifactId: "", // filled in by parent after reading this result
     revisionSha: input.revisionSha,
     expected: input.lexical,
     tier: 0 as const,
@@ -201,7 +200,7 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  let result: Tier0Result;
+  let result: Tier0WorkerResult;
   try {
     result = await runParser(input);
   } catch (error) {

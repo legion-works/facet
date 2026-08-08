@@ -105,7 +105,7 @@ export type Tier0Input = z.infer<typeof Tier0InputSchema>;
  * `src/service/**` stays byte-dumb and the boundary checker remains
  * clean.
  */
-export type Tier0Runner = (input: Tier0Input) => Promise<Tier0Result>;
+export type Tier0Runner = (input: Tier0Input) => Promise<Tier0WorkerResult>;
 
 /** Tier 0 result: extends the canonical verdict with the expected counters. */
 export const Tier0ResultSchema = VerdictSchema.extend({
@@ -113,6 +113,10 @@ export const Tier0ResultSchema = VerdictSchema.extend({
   expected: LexicalCountersSchema,
 });
 export type Tier0Result = z.infer<typeof Tier0ResultSchema>;
+
+/** Identity-blind worker stdout; the parent adds artifactId before persistence. */
+export const Tier0WorkerResultSchema = Tier0ResultSchema.omit({ artifactId: true });
+export type Tier0WorkerResult = z.infer<typeof Tier0WorkerResultSchema>;
 
 /** Tier 1 input: headless-shell-backed verifier on top of Tier 0. */
 export const Tier1InputSchema = Tier0InputSchema.extend({

@@ -18,7 +18,7 @@
  *   - `tier0_protocol_error`  — non-JSON, schema mismatch, or extra
  *                               trailing bytes.
  *
- * Parser-level outcomes (status="error") are returned as Tier0Result
+ * Parser-level outcomes (status="error") are returned as Tier0WorkerResult
  * with discriminativeErrors populated; the caller persists them as a
  * render_run bound to (artifactId, revisionSha).
  */
@@ -30,10 +30,10 @@ import type { ArtifactType } from "../../shared/contracts/artifact";
 import { FacetError } from "../../shared/errors/facet-error";
 import {
   LexicalCountersSchema,
-  Tier0ResultSchema,
+  Tier0WorkerResultSchema,
   type LexicalCounters,
   type Tier0Input,
-  type Tier0Result,
+  type Tier0WorkerResult,
 } from "../../shared/contracts/validation";
 
 import { probeNetnsSupport, spawnNetnsWorker } from "../sandbox/netns";
@@ -83,7 +83,7 @@ function buildInputEnvelope(input: Tier0Input): WorkerInputEnvelope {
  * `runTier0`.
  */
 // oxlint-disable-next-line no-underscore-dangle
-export function _parseWorkerStdout(stdout: string, outputCap: number): Tier0Result {
+export function _parseWorkerStdout(stdout: string, outputCap: number): Tier0WorkerResult {
   const trimmed = stdout.trim();
   if (trimmed.length === 0) {
     throw new FacetError("tier0_protocol_error", "Worker emitted empty stdout", {
@@ -99,11 +99,11 @@ export function _parseWorkerStdout(stdout: string, outputCap: number): Tier0Resu
       retryable: false,
     });
   }
-  const result = Tier0ResultSchema.safeParse(parsedJson);
+  const result = Tier0WorkerResultSchema.safeParse(parsedJson);
   if (!result.success) {
     throw new FacetError(
       "tier0_protocol_error",
-      `Worker stdout does not match Tier0ResultSchema: ${result.error.issues
+      `Worker stdout does not match Tier0WorkerResultSchema: ${result.error.issues
         .slice(0, 3)
         .map((issue) => issue.message)
         .join("; ")}`,
@@ -172,7 +172,7 @@ async function readStreamCapped(
 async function runOnce(
   input: Tier0Input,
   options: { timeoutMs: number; outputCap: number },
-): Promise<Tier0Result> {
+): Promise<Tier0WorkerResult> {
   const envelope = buildInputEnvelope(input);
   const envelopeJson = `${JSON.stringify(envelope)}\n`;
 
@@ -247,12 +247,12 @@ async function runOnce(
 
 /**
  * Run the Tier 0 worker against an artifact's immutable bytes. The
- * returned `Tier0Result` ALWAYS conforms to `Tier0ResultSchema`; the
+ * returned worker result ALWAYS conforms to `Tier0WorkerResultSchema`; the
  * `status` field distinguishes a clean parse (`ok`) from a parser
  * rejection (`error`). System-level failures throw `FacetError` with
  * a typed `tier0_*` code.
  */
-export async function runTier0(input: Tier0Input): Promise<Tier0Result> {
+export async function runTier0(input: Tier0Input): Promise<Tier0WorkerResult> {
   // The contract requires `tier` to be 0 here, but we trust the
   // caller's input rather than re-parsing it — `Tier0ResultSchema`
   // enforces `tier: 0` on the worker side.

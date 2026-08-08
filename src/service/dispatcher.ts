@@ -22,12 +22,14 @@ import { RevisionCommittedEventSchema } from "../shared/contracts/events";
 import {
   Tier0InputSchema,
   Tier0ResultSchema,
+  Tier0WorkerResultSchema,
   Tier1InputSchema,
   Tier1ResultSchema,
   VerdictObservedSchema,
   VerdictSchema,
   type Tier0Input,
   type Tier0Result,
+  type Tier0WorkerResult,
   type Tier0Runner,
   type Tier1Input,
   type Tier1Result,
@@ -115,19 +117,14 @@ function buildVerdict(input: {
  * `discriminativeErrors[].code` so the read-back verdict carries the
  * typed reason.
  */
-async function runTier0Safe(
-  runner: Tier0Runner,
-  input: Tier0Input,
-  artifactId: string,
-): Promise<Tier0Result> {
+async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tier0WorkerResult> {
   try {
     return await runner(input);
   } catch (error) {
     const facet = FacetError.from(error);
-    return Tier0ResultSchema.parse({
+    return Tier0WorkerResultSchema.parse({
       tier: 0,
       status: "error",
-      artifactId,
       revisionSha: input.revisionSha,
       expected: input.lexical,
       observed: {
@@ -149,7 +146,11 @@ async function runTier0Safe(
  * runs out of process and only needs the sha); we fill it in here so
  * every Tier 0 verdict carries the canonical binding.
  */
-function enrichVerdict(result: Tier0Result, artifactId: string, revisionSha: string): Tier0Result {
+function enrichVerdict(
+  result: Tier0WorkerResult,
+  artifactId: string,
+  revisionSha: string,
+): Tier0Result {
   return Tier0ResultSchema.parse({
     ...result,
     artifactId,
@@ -270,7 +271,7 @@ export async function dispatch(
           visibleSvgCount: 0,
         },
       });
-      const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input, command.artifactId);
+      const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input);
       // 3. Bind the verdict to (artifactId, revisionSha) via the
       // canonical render_run row so read-back returns it later.
       const enriched = enrichVerdict(tier0Result, command.artifactId, revision.sha256);
