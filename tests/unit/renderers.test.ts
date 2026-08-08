@@ -174,6 +174,118 @@ describe("svg renderer — sanitize BEFORE import", () => {
     expect(rect!.getAttribute("fill")).toBe("url(#g1)");
   });
 
+  test("CSS in <style> and style= attribute is sanitized: @import, expression(), dangerous url() stripped", () => {
+    const hostile = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">',
+      "<style>",
+      '@import url("http://evil.example/x.css");',
+      ".a { fill: url(javascript:alert(1)); }",
+      ".b { stroke: url(http://evil.example/x.svg); }",
+      ".c { background: expression(alert(1)); }",
+      '.d { background-image: url("https://evil.example/x.png"); }',
+      ".e { background: url(vbscript:msgbox(1)); }",
+      ".f { background: url(//evil.example/x.png); }",
+      ".g { background: url(data:text/html,evil); }",
+      "</style>",
+      '<rect style="fill: url(javascript:alert(1)); background:url(http://x); stroke:url(//y)"/>',
+      '<g style="background-image: url(//evil.example/x.png)"/>',
+      '<circle fill="url(javascript:alert(1))" stroke="url(http://x.svg)"/>',
+      '<path filter="url(javascript:alert(1))" mask="url(http://x.svg)"/>',
+      "</svg>",
+    ].join("");
+    const doc = svg.parseSvgData(hostile);
+    svg.sanitizeSvgDocument(doc);
+
+    const styleEl = doc.querySelector("style");
+    const styleText = styleEl?.textContent ?? "";
+    expect(styleText).not.toMatch(/@import/i);
+    expect(styleText).not.toMatch(/javascript:/i);
+    expect(styleText).not.toMatch(/vbscript:/i);
+    expect(styleText).not.toMatch(/expression\(/i);
+    expect(styleText).not.toMatch(/https?:/i);
+    expect(styleText).not.toMatch(/url\(\/\//i);
+    expect(styleText).not.toMatch(/url\(\s*["']?data:/i);
+
+    const rect = doc.querySelector("rect");
+    const rectStyle = rect?.getAttribute("style") ?? "";
+    expect(rectStyle).not.toMatch(/javascript:/i);
+    expect(rectStyle).not.toMatch(/https?:/i);
+    expect(rectStyle).not.toMatch(/url\(\/\//i);
+
+    const g = doc.querySelector("g");
+    const gStyle = g?.getAttribute("style") ?? "";
+    expect(gStyle).not.toMatch(/url\(\/\//i);
+    expect(gStyle).not.toMatch(/https?:/i);
+
+    const circle = doc.querySelector("circle");
+    expect(circle?.getAttribute("fill")).toBeNull();
+    expect(circle?.getAttribute("stroke")).toBeNull();
+
+    const path = doc.querySelector("path");
+    expect(path?.getAttribute("filter")).toBeNull();
+    expect(path?.getAttribute("mask")).toBeNull();
+  });
+
+  test("benign mermaid-style <style> with fill:#86E1FC and fragment url() refs survive sanitization", () => {
+    const benign = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">',
+      '<defs><linearGradient id="g1"><stop offset="0" stop-color="#86E1FC"/></linearGradient></defs>',
+      "<style>",
+      ".node rect { fill: #86E1FC; stroke: #444; stroke-width: 1px; }",
+      ".edge path { stroke: #6f6f6f; }",
+      '.label { font-family: "Helvetica", sans-serif; color: #222; }',
+      "</style>",
+      '<rect class="node" fill="url(#g1)" stroke="#FF0000"/>',
+      '<circle fill="none" stroke="red" style="fill:#86E1FC; stroke:url(#g1)"/>',
+      '<path style="stroke:#6f6f6f; fill:none"/>',
+      "</svg>",
+    ].join("");
+    const doc = svg.parseSvgData(benign);
+    svg.sanitizeSvgDocument(doc);
+
+    const styleEl = doc.querySelector("style");
+    const styleText = styleEl?.textContent ?? "";
+    expect(styleText).toContain("#86E1FC");
+    expect(styleText).toContain("#444");
+    expect(styleText).toContain("#6f6f6f");
+    expect(styleText).toContain("#222");
+
+    const rect = doc.querySelector("rect");
+    expect(rect?.getAttribute("fill")).toBe("url(#g1)");
+    expect(rect?.getAttribute("stroke")).toBe("#FF0000");
+
+    const circle = doc.querySelector("circle");
+    expect(circle?.getAttribute("fill")).toBe("none");
+    expect(circle?.getAttribute("stroke")).toBe("red");
+    const circleStyle = circle?.getAttribute("style") ?? "";
+    expect(circleStyle).toContain("#86E1FC");
+    expect(circleStyle).toContain("url(#g1)");
+
+    const path = doc.querySelector("path");
+    const pathStyle = path?.getAttribute("style") ?? "";
+    expect(pathStyle).toContain("#6f6f6f");
+    expect(pathStyle).toContain("none");
+  });
+
+  test("importSanitizedSvgText: hostile CSS in <style> + style= is neutralized in the imported container", async () => {
+    const hostile = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">',
+      '<style>@import url("http://evil.example/x.css"); .x { fill: url(javascript:alert(1)); }</style>',
+      '<rect style="background: url(javascript:alert(1))"/>',
+      "</svg>",
+    ].join("");
+    const container = freshContainer();
+    await svg.importSanitizedSvgText(container, hostile);
+
+    const styleEl = container.querySelector("style");
+    const styleText = styleEl?.textContent ?? "";
+    expect(styleText).not.toMatch(/@import/i);
+    expect(styleText).not.toMatch(/javascript:/i);
+
+    const rect = container.querySelector("rect");
+    expect(rect?.getAttribute("style") ?? "").not.toMatch(/javascript:/i);
+  });
+
   test("foreignObject (nested document) is removed wholesale", () => {
     const doc = svg.parseSvgData(
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">' +

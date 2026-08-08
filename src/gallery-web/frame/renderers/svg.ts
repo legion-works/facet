@@ -16,6 +16,15 @@
  *   - URL-bearing attributes (href/xlink:href/src): only fragment
  *     references (`#...`) survive; external schemes (http, data, blob,
  *     javascript, …) are removed.
+ *   - CSS-bearing surface: `<style>` element textContent and `style=`
+ *     attribute values are scanned for `@import`, `expression(...)`,
+ *     `progid:`, and `url(...)` with a script/external scheme; benign
+ *     property:value rules (mermaid node/edge colors, `url(#id)` paint
+ *     refs) survive. Presentation attrs that may carry a paint server
+ *     (`fill`, `stroke`, `filter`, `mask`, `clip-path`, `marker*`,
+ *     `color-profile`, `cursor`, `background-image`) are stripped when
+ *     their value resolves to a non-fragment URL with a dangerous scheme;
+ *     color literals and fragment refs survive.
  *
  * The frame CSP (`connect-src 'none'`, `script-src 'nonce-…'`) blocks
  * anything that slipped the strip; the strip exists so the DOM the
@@ -43,10 +52,78 @@ const STRIPPED_TAGS = new Set([
   "embed",
 ]);
 
-/** Attributes carrying URLs: only fragment references survive. */
-const URL_ATTRS = ["href", "xlink:href", "src"];
+/** Attributes carrying URLs where only fragment references survive. */
+const STRICT_URL_ATTRS = new Set(["href", "xlink:href", "src"]);
+
+/**
+ * Presentation attributes that may carry a paint server (`url(#id)`)
+ * OR a color/named value. Color literals and fragment refs survive;
+ * an attribute is stripped when its value resolves to a non-fragment
+ * URL with a dangerous scheme (script execution, external fetch,
+ * data: payload, or protocol-relative).
+ */
+const CSS_REF_ATTRS = new Set([
+  "fill",
+  "stroke",
+  "filter",
+  "mask",
+  "clip-path",
+  "marker",
+  "marker-start",
+  "marker-mid",
+  "marker-end",
+  "color-profile",
+  "cursor",
+  "background-image",
+]);
 
 const EVENT_HANDLER_RE = /^on[a-z]+$/i;
+
+/**
+ * Dangerous CSS url() targets. `expression(...)` and the legacy
+ * `progid:DXImageTransform.*` IE vector are stripped in the same
+ * pass because they are equivalent script-execution surface.
+ */
+const DANGEROUS_CSS_URL_RE =
+  /url\s*\(\s*["']?(?:javascript|vbscript|data|https?|file|ftp|blob):[^)]*\)/gi;
+const DANGEROUS_PROTOCOL_RELATIVE_URL_RE = /url\s*\(\s*["']?\/\/[^)]*\)/gi;
+const CSS_EXPRESSION_RE = /expression\s*\([^)]*\)/gi;
+const CSS_PROGID_RE = /progid\s*:[^;}]*/gi;
+const CSS_AT_IMPORT_RE = /@import\s+[^;}]*[;}]?/gi;
+
+/** Strip dangerous CSS constructs from raw CSS text. Benign rules survive. */
+function sanitizeCssText(css: string): string {
+  if (!css) return css;
+  return css
+    .replace(CSS_AT_IMPORT_RE, "")
+    .replace(CSS_EXPRESSION_RE, "")
+    .replace(CSS_PROGID_RE, "")
+    .replace(DANGEROUS_CSS_URL_RE, "none")
+    .replace(DANGEROUS_PROTOCOL_RELATIVE_URL_RE, "none");
+}
+
+const CSS_URL_VALUE_RE = /url\s*\(\s*["']?([^)]*?)["']?\s*\)/gi;
+
+/**
+ * True when a presentation-attribute value carries a url() whose target
+ * is a script/external scheme, or the value itself starts with such a
+ * scheme. Fragment refs (`url(#id)`) and color/named values return false.
+ */
+function containsDangerousCssRef(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  let m: RegExpExecArray | null;
+  CSS_URL_VALUE_RE.lastIndex = 0;
+  while ((m = CSS_URL_VALUE_RE.exec(v)) !== null) {
+    const inner = (m[1] ?? "").trim();
+    if (inner.startsWith("#")) continue;
+    if (/^(?:javascript|vbscript|data|https?|file|ftp|blob):/i.test(inner)) return true;
+    if (inner.startsWith("//")) return true;
+  }
+  if (/^(?:javascript|vbscript|data|https?|file|ftp|blob):/i.test(v)) return true;
+  if (v.startsWith("//")) return true;
+  return false;
+}
 
 /**
  * Walk a parsed SVG document and strip hostile surface IN PLACE.
@@ -67,8 +144,24 @@ export function sanitizeSvgDocument(doc: Document): void {
         el.removeAttribute(attr.name);
         continue;
       }
-      if (URL_ATTRS.includes(name) && !attr.value.trim().startsWith("#")) {
+      if (STRICT_URL_ATTRS.has(name) && !attr.value.trim().startsWith("#")) {
         el.removeAttribute(attr.name);
+        continue;
+      }
+      if (CSS_REF_ATTRS.has(name) && containsDangerousCssRef(attr.value)) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+      if (name === "style") {
+        const sanitized = sanitizeCssText(attr.value);
+        if (sanitized !== attr.value) el.setAttribute(attr.name, sanitized);
+      }
+    }
+    if (el.localName.toLowerCase() === "style") {
+      const text = el.textContent;
+      if (text) {
+        const sanitized = sanitizeCssText(text);
+        if (sanitized !== text) el.textContent = sanitized;
       }
     }
   }
