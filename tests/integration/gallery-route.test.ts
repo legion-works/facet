@@ -195,6 +195,21 @@ describe("GET /gallery", () => {
         })
       ).status,
     ).toBe(404);
+    // The lease is for artifact A, but artifactId is read from the CALLER's
+    // X-Gallery-Artifact header. Naming artifact B with B's own revisionSha
+    // makes the repository lookup SUCCEED, so only the lease's artifact-match
+    // stands between a display lease and another artifact's bytes.
+    expect(
+      (
+        await fetch(`${service.url}/api/v1/gallery/source?revisionSha=${second.revisionSha}`, {
+          headers: {
+            authorization: handoff.authorization,
+            "x-gallery-lease": handoff.lease.leaseId,
+            "x-gallery-artifact": second.artifactId,
+          },
+        })
+      ).status,
+    ).toBe(401);
   });
 
   test("returns null for an unvalidated revision without creating a render run", async () => {

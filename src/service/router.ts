@@ -495,6 +495,9 @@ export function buildRouter(deps: RouterDeps): {
         if (!auth.ok || leaseId === null || artifactId === null) {
           return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
         }
+        // artifactId comes from the CALLER's X-Gallery-Artifact header, so the
+        // lease must be matched on BOTH fields: a valid lease for artifact A
+        // paired with a header naming artifact B would otherwise read B's bytes.
         const lease = deps.leases
           .list()
           .find((entry) => entry.leaseId === leaseId && entry.artifactId === artifactId);
