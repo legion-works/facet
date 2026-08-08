@@ -24,7 +24,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { unlinkSync } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 
 import { FACET_SCHEMA_VERSION } from "../shared/contracts/envelope";
 import { isLockStale, readLockMetadata } from "../service/lifecycle/process-lock";
@@ -101,7 +101,7 @@ const inflight = new Map<string, Promise<ResolvedService>>();
  */
 function spawnChild(paths: FacetRuntimePaths, options: SpawnServiceOptions): ChildProcess {
   const bunPath = options.bunPath ?? process.execPath;
-  const entrypoint = options.entrypoint ?? join("src", "service", "main.ts");
+  const entrypoint = options.entrypoint ?? resolvePath(import.meta.dir, "..", "service", "main.ts");
   const facetHome = paths.database
     ? resolvePath(dirname(dirname(dirname(paths.database))))
     : (options.env.FACET_HOME ?? "");

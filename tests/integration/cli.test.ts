@@ -209,6 +209,27 @@ function normalizeAdapterEnvelope(text: string): unknown {
 }
 
 describe("cli contract — surface", () => {
+  test("spawns the service when invoked outside the repository root", async () => {
+    const { env } = makeEnv("non-root-cwd");
+    const io = makeIo();
+    const originalCwd = process.cwd();
+
+    process.chdir(scratchRoot);
+    try {
+      const exit = await runCli(
+        ["create", "--project-id", "dogfood", "--slug", "outside-cwd", "--title", "Outside cwd"],
+        { ...io, env },
+      );
+
+      expect(exit.code).toBe(0);
+      const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+      expect(envelope.ok).toBe(true);
+      if (envelope.ok) expect(envelope.data.artifact).toBeDefined();
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   test("all harness adapters preserve the CLI envelope for publish and read-back", async () => {
     const repoRoot = resolve(import.meta.dir, "../..");
     const adapters = [
