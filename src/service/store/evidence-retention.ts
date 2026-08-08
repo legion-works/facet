@@ -18,14 +18,21 @@
  * orphan pixels behind. Failures to unlink are best-effort — the row
  * is the authoritative state; a stale file under the 0700 root is
  * recoverable by the next orphan sweep.
+ *
+ * The umask-parity mkdir (mkdirSync + stat + chmodSync when the
+ * post-mkdir mode disagrees with 0700) is delegated to the shared
+ * `ensureOwnerOnlyDirectory` helper in `src/shared/util/dir-permissions.ts`
+ * so the service and the validation runner share ONE canonical
+ * implementation. A fix in one place lands in both.
  */
 
-import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { Database } from "bun:sqlite";
 
 import { asStoreError } from "../../shared/errors/store-error";
+import { ensureOwnerOnlyDirectory, OWNER_ONLY_MODE } from "../../shared/util/dir-permissions";
 
 /**
  * Default retention depth per artifact. Tuned to bound the on-disk
@@ -34,8 +41,8 @@ import { asStoreError } from "../../shared/errors/store-error";
  */
 export const EVIDENCE_LAST_N_PER_ARTIFACT = 10;
 
-/** Mode for the evidence root and per-run subdirectories — secret-bearing layout. */
-export const EVIDENCE_DIR_MODE = 0o700;
+/** Mode for the evidence root and per-run subdirectories — re-exported for callers that already import it. */
+export const EVIDENCE_DIR_MODE = OWNER_ONLY_MODE;
 
 export interface EnforceRetentionOptions {
   readonly db: Database;
@@ -117,33 +124,12 @@ export function ensureRunEvidenceDirectory(
     options.revisionSha,
     options.runId,
   );
-  ensureEvidenceRootInternal(directory);
+  ensureOwnerOnlyDirectory(directory);
   return {
     directory,
     screenshotPath: join(directory, "screenshot.png"),
     consolePath: join(directory, "console.txt"),
   };
-}
-
-function ensureEvidenceRootInternal(directory: string): void {
-  mkdirSync(directory, { recursive: true, mode: EVIDENCE_DIR_MODE });
-  // The mkdir mode is masked by the process umask; chmod catches the
-  // parity check (the canonical secret-bearing layout must hold even
-  // when the test runner sets umask 0222).
-  try {
-    const stat = statSync(directory);
-    if ((stat.mode & 0o777) !== EVIDENCE_DIR_MODE) {
-      // Best-effort chmod; ignore ENOENT from a concurrent teardown.
-      try {
-        const { chmodSync } = require("node:fs") as typeof import("node:fs");
-        chmodSync(directory, EVIDENCE_DIR_MODE);
-      } catch {
-        // ignore
-      }
-    }
-  } catch {
-    // ignore — best-effort
-  }
 }
 
 /**
@@ -152,7 +138,7 @@ function ensureEvidenceRootInternal(directory: string): void {
  * bearing layout survives every startup.
  */
 export function ensureEvidenceRoot(directory: string): void {
-  ensureEvidenceRootInternal(directory);
+  ensureOwnerOnlyDirectory(directory);
 }
 
 function unlinkEvidenceFiles(screenshotPath: string | null, consolePath: string | null): void {

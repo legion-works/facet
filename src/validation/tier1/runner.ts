@@ -27,7 +27,7 @@
  * are returned as a populated `Tier1Result` — never a throw.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -39,6 +39,7 @@ import {
 } from "../../shared/contracts/validation";
 import { FacetError } from "../../shared/errors/facet-error";
 import { computeFacetPaths } from "../../shared/config/paths";
+import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
 import { buildHostPage } from "./harness";
 import { PuppeteerTier1Browser, Tier1TransportWedgeError } from "./cdp-pipe";
@@ -125,11 +126,16 @@ async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
   // Per-run evidence directory under the XDG-state evidence root
   // (mode 0700). The dispatcher wires the parent's evidenceRoot in;
   // when omitted the runner falls back to the canonical path so
-  // production callers never have to specify it.
+  // production callers never have to specify it. The mkdir goes
+  // through `ensureOwnerOnlyDirectory` so a hostile process umask
+  // cannot widen the secret-bearing layout to 0755 — a fix in that
+  // helper lands in one place (the service's `evidence-retention.ts`
+  // delegates to the same helper).
   const evidenceRoot = input.evidenceDir ?? computeFacetPaths().evidence;
   const runId = crypto.randomUUID();
-  const runEvidenceDir = join(evidenceRoot, "tier1", input.revisionSha, runId);
-  mkdirSync(runEvidenceDir, { recursive: true, mode: 0o700 });
+  const runEvidenceDir = ensureOwnerOnlyDirectory(
+    join(evidenceRoot, "tier1", input.revisionSha, runId),
+  );
   const screenshotPath = join(runEvidenceDir, "screenshot.png");
   const consolePath = join(runEvidenceDir, "console.txt");
   const observationPath = join(runEvidenceDir, "protocol-observation.json");
@@ -374,7 +380,14 @@ function mergeProtocol(
 
 interface EvidenceCapture {
   readonly screenshotPath: string | null;
-  readonly consolePath: string | null;
+  /**
+   * Console summary path. The bounded console write is pure
+   * filesystem IO and always succeeds, so this field is non-nullable
+   * — a transport-wedged browser can lose its screenshot but not its
+   * console summary (the per-run directory is already on disk by the
+   * time captureEvidence runs).
+   */
+  readonly consolePath: string;
 }
 
 /**

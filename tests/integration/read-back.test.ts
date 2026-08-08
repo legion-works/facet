@@ -453,6 +453,32 @@ describe("evidence directory mode + retention", () => {
     }
   });
 
+  test("per-run evidence directory lands at exactly 0700 under a hostile umask", () => {
+    // Regression: the runner creates the per-run evidence directory
+    // with mkdirSync(mode: 0o700). Under a hostile umask (e.g. 0o022)
+    // mkdir's mode is masked and the directory lands at 0o755 — the
+    // secret-bearing screenshots/console become group-readable. The
+    // canonical helper must chmod the directory back to 0o700 so the
+    // post-mkdir stat reads 0o700 regardless of the process umask.
+    const { ensureOwnerOnlyDirectory } =
+      require("../../src/shared/util/dir-permissions") as typeof import("../../src/shared/util/dir-permissions");
+    const scratchDir = join(scratchRoot, `umask-hostile-${crypto.randomUUID()}`);
+    const previousUmask = process.umask(0o022);
+    try {
+      const created = ensureOwnerOnlyDirectory(scratchDir);
+      expect(created).toBe(scratchDir);
+      expect(existsSync(scratchDir)).toBe(true);
+      expect(statSync(scratchDir).mode & 0o777).toBe(0o700);
+    } finally {
+      try {
+        rmSync(scratchDir, { recursive: true, force: true });
+      } catch {
+        // best-effort
+      }
+      process.umask(previousUmask);
+    }
+  });
+
   test("last-N retention: publishing beyond N evicts oldest runs AND their evidence files", async () => {
     // Stub runner writes a screenshot per run with a known sentinel
     // marker; cleanup-after-N must unlink those files.
@@ -535,18 +561,6 @@ describe("evidence directory mode + retention", () => {
       await env.cleanup();
     }
   }, 30_000);
-
-  test("retained rows are exempt from retention eviction — direct repository path", async () => {
-    // The wire-level path cannot mark a row retained (the dispatcher
-    // never sets the column — Task 14 wires pin/template sites), so
-    // the carve-out coverage lives in the direct-repository suite
-    // below. This test pins the policy contract at the
-    // Tier1Result level: a Tier 1 verdict carrying a `retained`
-    // semantic lands in the DB and survives the per-artifact
-    // retention cleanup.
-    void SENTINEL_CONSOLE;
-  });
-  void SENTINEL_CONSOLE;
 });
 
 describe("evidence content does not leak across the wire", () => {
