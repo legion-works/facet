@@ -45,6 +45,13 @@ export class Tier1TransportWedgeError extends Error {
   }
 }
 
+const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+
+function traceLaunch(stage: string, startedAt: number): void {
+  if (!TIER1_TRACE) return;
+  process.stderr.write(`[tier1] +${Date.now() - startedAt}ms browser:${stage}\n`);
+}
+
 class PuppeteerCdpSessionAdapter implements VerifierCdpSession {
   constructor(private readonly inner: CDPSession) {}
 
@@ -144,8 +151,11 @@ export class PuppeteerTier1Browser {
   constructor(private readonly options: PuppeteerTier1BrowserOptions = {}) {}
 
   async launch(): Promise<VerifierTarget> {
+    const startedAt = Date.now();
     const launcher = this.options.launcher ?? resolveLauncher();
+    traceLaunch("launcher-resolved", startedAt);
     const profileDir = createEphemeralProfileDir();
+    traceLaunch("profile-created", startedAt);
     let browser: Browser | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let gaveUp = false;
@@ -181,6 +191,7 @@ export class PuppeteerTier1Browser {
           }, TIER1_CDP_CALL_WATCHDOG_MS);
         }),
       ]);
+      traceLaunch("puppeteer-launch-complete", startedAt);
     } catch (error) {
       removeEphemeralProfileDir(profileDir);
       if (error instanceof Tier1TransportWedgeError) throw error;
@@ -195,6 +206,7 @@ export class PuppeteerTier1Browser {
     let page: Page;
     try {
       page = await browser.newPage();
+      traceLaunch("page-created", startedAt);
     } catch (error) {
       await browser.close().catch(() => {});
       removeEphemeralProfileDir(profileDir);
@@ -204,6 +216,7 @@ export class PuppeteerTier1Browser {
     let session: CDPSession;
     try {
       session = await page.createCDPSession();
+      traceLaunch("cdp-session-created", startedAt);
     } catch (error) {
       await page.close().catch(() => {});
       await browser.close().catch(() => {});
@@ -211,6 +224,7 @@ export class PuppeteerTier1Browser {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`tier1: failed to open CDP session: ${message}`, { cause: error });
     }
+    traceLaunch("ready", startedAt);
     return new PuppeteerVerifierTarget(browser, page, session, profileDir);
   }
 

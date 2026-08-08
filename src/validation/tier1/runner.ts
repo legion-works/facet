@@ -58,6 +58,13 @@ import { readPidStartTimeTicks } from "../../shared/util/process";
  * boundary so a poison artifact cannot blow out the evidence dir.
  */
 const CONSOLE_SUMMARY_CUP_BYTES = 64 * 1024;
+const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+
+function traceTier1(stage: string, startedAt: number, detail = ""): void {
+  if (!TIER1_TRACE) return;
+  const suffix = detail.length > 0 ? ` ${detail}` : "";
+  process.stderr.write(`[tier1] +${Date.now() - startedAt}ms ${stage}${suffix}\n`);
+}
 
 /**
  * The wedge's second face: with the pipe torn down, puppeteer rejects
@@ -93,24 +100,36 @@ interface ShimCapture {
  * relaunch verifies the same bytes.
  */
 export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
+  const startedAt = Date.now();
+  traceTier1("run:start", startedAt);
   let lastWedge: Tier1TransportWedgeError | undefined;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await runTier1Attempt(input);
+      traceTier1(`attempt:${attempt + 1}:start`, startedAt);
+      const result = await runTier1Attempt(input, startedAt);
+      traceTier1(`attempt:${attempt + 1}:complete`, startedAt, `status=${result.status}`);
+      return result;
     } catch (error) {
       if (error instanceof Tier1TransportWedgeError) {
+        traceTier1(`attempt:${attempt + 1}:transport-wedge`, startedAt, error.message);
         lastWedge = error;
         continue;
       }
+      traceTier1(
+        `attempt:${attempt + 1}:error`,
+        startedAt,
+        error instanceof Error ? error.message : String(error),
+      );
       throw error;
     }
   }
+  traceTier1("run:transport-error", startedAt);
   throw new FacetError("tier1_protocol_error", lastWedge?.message ?? "tier1 transport wedged", {
     retryable: false,
   });
 }
 
-async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
+async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promise<Tier1Result> {
   if (!Number.isInteger(input.artifactType === undefined)) {
     void (input.artifactType as unknown);
   }
@@ -141,25 +160,38 @@ async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
   const observationPath = join(runEvidenceDir, "protocol-observation.json");
 
   try {
+    traceTier1("launch:start", startedAt);
     target = await browser.launch();
+    traceTier1("launch:complete", startedAt, `pid=${target.pid}`);
     // Snapshot the OS start time NOW so the wedge teardown can confirm
     // the pid still belongs to this browser before signaling it (a
     // dead browser's pid can be reused by an unrelated process).
     targetStartTime = target.startTime;
     hostHtmlPath = join(hostDir, "host.html");
     const { html } = await buildHostPage(input.source, "render", hostDir, input.artifactType);
+    traceTier1("host-page:complete", startedAt);
     writeFileSync(hostHtmlPath, html, "utf8");
+    traceTier1("cdp:enable:start", startedAt);
     await target.session.send("Page.enable");
+    traceTier1("cdp:enable:complete", startedAt);
+    traceTier1("navigate:start", startedAt);
     await target.session.send("Page.navigate", { url: `file://${hostHtmlPath}` });
+    traceTier1("navigate:complete", startedAt);
     // Wait for the host page to settle.
     await waitForBootReady(target, TIER1_RENDER_BARRIER_MS);
+    traceTier1("boot-ready:complete", startedAt);
 
+    traceTier1("frame-resolve:start", startedAt);
     const childFrame = await resolveSrcdocChildFrame(target.session);
+    traceTier1("frame-resolve:complete", startedAt);
+    traceTier1("isolated-world:start", startedAt);
     const isolated = await createIsolatedWorld(target.session, childFrame.frameId);
+    traceTier1("isolated-world:complete", startedAt);
 
     // Inject the artifact via the parent page world's transfer (the
     // parent page has the ingress port; the iframe receives it via
     // postMessage handshake).
+    traceTier1("deliver:start", startedAt);
     await target.session.send("Runtime.evaluate", {
       expression:
         "(function(){" +
@@ -170,15 +202,24 @@ async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
         "})()",
       returnByValue: true,
     });
+    traceTier1("deliver:complete", startedAt);
 
+    traceTier1("render-complete:wait", startedAt);
     const shim = await waitForRenderComplete(target, TIER1_RENDER_BARRIER_MS);
+    traceTier1("render-complete:complete", startedAt, `received=${shim.renderComplete}`);
 
+    traceTier1("protocol-snapshot:start", startedAt);
     const protocolSnapshot = await probeProtocolSnapshot(target.session, childFrame);
+    traceTier1("protocol-snapshot:complete", startedAt);
+    traceTier1("protocol-document:start", startedAt);
     const protocolGetDocument = await probeProtocolGetDocument(target.session);
+    traceTier1("protocol-document:complete", startedAt);
+    traceTier1("isolated-probe:start", startedAt);
     const isolatedObservation = await probeIsolatedCounts(
       target.session,
       isolated.executionContextId,
     );
+    traceTier1("isolated-probe:complete", startedAt);
 
     const protocolObservation = mergeProtocol(protocolSnapshot, protocolGetDocument);
 
@@ -189,6 +230,7 @@ async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
       shim.pageShim,
       { bootReady: shim.bootReady, renderComplete: shim.renderComplete },
     );
+    traceTier1("verdict:complete", startedAt, `status=${status}`);
 
     // Capture evidence AFTER the verdict is known so a `partial:*`
     // verdict always lands with a screenshot path (the schema refine
@@ -202,6 +244,7 @@ async function runTier1Attempt(input: Tier1Input): Promise<Tier1Result> {
       protocolObservation,
       pageShim: shim.pageShim,
     });
+    traceTier1("evidence:complete", startedAt);
 
     const observed = protocolObservation;
     const result: Tier1Result = Tier1ResultSchema.parse({
