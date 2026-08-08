@@ -49,6 +49,7 @@ export interface StartServiceOptions {
   readonly promoteTokenPath?: string;
   readonly lockPath?: string;
   readonly idleTimeoutMs?: number;
+  readonly leaseTtlMs?: number;
   readonly logger?: FacetLogger;
   readonly host?: string;
   readonly onIdle?: () => void;
@@ -75,6 +76,7 @@ export async function startFacetService(
   const promoteTokenPath = options.promoteTokenPath ?? paths.token;
   const lockPath = options.lockPath ?? paths.lock;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+  const leaseTtlMs = options.leaseTtlMs ?? LEASE_TTL_MS;
   const host = options.host ?? "127.0.0.1";
 
   // Pre-lock: orphan cleanup (read-only inspection of disk state).
@@ -164,7 +166,7 @@ export async function startFacetService(
       },
     });
     const leases: GalleryLeaseManager = createLeaseManager({
-      leaseTtlMs: LEASE_TTL_MS,
+      leaseTtlMs,
       onExpire: (entry) => {
         logger.info("lease.expired", { leaseId: entry.leaseId, artifactId: entry.artifactId });
         idle.release(`lease:${entry.leaseId}`);

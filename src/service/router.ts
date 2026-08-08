@@ -30,6 +30,7 @@ import { requireAnyBearer, checkMutationSecurityHeaders } from "./security/auth"
 import {
   checkHostOrigin,
   isCrossSiteRejection,
+  isMissingHostRejection,
   type HostOriginResult,
 } from "./security/host-origin";
 import { dispatch, type DispatcherDeps } from "./dispatcher";
@@ -141,7 +142,14 @@ function statusFor(error: FacetError): number {
 }
 
 function statusForHostCheck(error: FacetError | undefined): number {
-  return isCrossSiteRejection(error) ? 403 : 400;
+  // Cross-site mutation → 403 (CSRF). Missing host → 421 (Misdirected
+  // Request, per RFC 8470 — distinguishes "no host" from "wrong host",
+  // both of which are 400-ish but the typed 421 makes the missing-host
+  // case unambiguous in logs and test assertions). Every other
+  // host/origin failure is a 400.
+  if (isCrossSiteRejection(error)) return 403;
+  if (isMissingHostRejection(error)) return 421;
+  return 400;
 }
 
 async function readCappedBody(req: Request, contentLength: number | null): Promise<string> {

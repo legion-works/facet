@@ -34,13 +34,20 @@ const SAFE_SEC_FETCH_SITE = new Set(["same-origin", "none", ""]);
  * Reject when `Host` !== `expectedHost` exactly. The check is byte-exact
  * — no canonicalization of `127.0.0.1.` with a trailing dot, no
  * case-folding — so a forged header cannot sneak through a quirk of
- * the URL parser.
+ * the URL parser. A null/empty `Host` is its own typed 400 (`reason:
+ * "missing_host"`) so the caller can distinguish "no host at all"
+ * from "host mismatch" — both fail-closed, neither is a 500.
  */
+export const HOST_MISSING_REASON = "missing_host" as const;
+
 export function checkHost(host: string | null | undefined, expectedHost: string): HostOriginResult {
   if (host === null || host === undefined || host.length === 0) {
     return {
       ok: false,
-      error: new FacetError("invalid_request", "Missing Host header", { retryable: false }),
+      error: new FacetError("invalid_request", "Missing Host header", {
+        retryable: false,
+        details: { reason: HOST_MISSING_REASON },
+      }),
     };
   }
   if (host !== expectedHost) {
@@ -48,7 +55,7 @@ export function checkHost(host: string | null | undefined, expectedHost: string)
       ok: false,
       error: new FacetError("invalid_request", `Host header does not match service origin`, {
         retryable: false,
-        details: { expected: expectedHost, received: host },
+        details: { reason: "host_mismatch", expected: expectedHost, received: host },
       }),
     };
   }
@@ -108,5 +115,17 @@ export function isCrossSiteRejection(error: FacetError | undefined): boolean {
   return (
     error?.code === "invalid_request" &&
     (error.details as { reason?: string } | undefined)?.reason === CROSS_SITE_REASON
+  );
+}
+
+/**
+ * True when a host-check rejection is a missing-host case (vs a host
+ * mismatch). Useful for the route guard to map both to 400 but log /
+ * surface them differently.
+ */
+export function isMissingHostRejection(error: FacetError | undefined): boolean {
+  return (
+    error?.code === "invalid_request" &&
+    (error.details as { reason?: string } | undefined)?.reason === HOST_MISSING_REASON
   );
 }

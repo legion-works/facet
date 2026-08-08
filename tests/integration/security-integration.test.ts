@@ -353,12 +353,14 @@ describe("Must #4: SSE stream lifetime bound to lease", () => {
       expect(opened.frameUrl).not.toContain("lease=");
       expect(opened.frameUrl).not.toContain(opened.lease.leaseId);
 
-      // The lease id is carried out-of-band via X-Gallery-Lease.
-      const streamRes = await fetch(`${service.url}/api/v1/stream?artifactId=${artifactId}`, {
+      // The lease id is carried out-of-band via X-Gallery-Lease +
+      // X-Gallery-Artifact headers (NO query-string fallback).
+      const streamRes = await fetch(`${service.url}/api/v1/stream`, {
         headers: {
           authorization: `Bearer ${service.installToken}`,
           host: `127.0.0.1:${service.port}`,
           "x-gallery-lease": opened.lease.leaseId,
+          "x-gallery-artifact": artifactId,
         },
       });
       // We don't drain the stream — just verify the request succeeded

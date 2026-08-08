@@ -75,11 +75,12 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
     ownOrigin: resolveHost(deps.ownOrigin),
   });
   if (!hostCheck.ok) {
-    const status =
-      hostCheck.error.code === "invalid_request" &&
-      hostCheck.error.details?.reason === "cross_site_mutation"
-        ? 403
-        : 400;
+    let status = 400;
+    if (hostCheck.error.code === "invalid_request") {
+      const reason = (hostCheck.error.details as { reason?: string } | undefined)?.reason;
+      if (reason === "cross_site_mutation") status = 403;
+      else if (reason === "missing_host") status = 421;
+    }
     return envelopeResponse(errEnvelope(requestId, hostCheck.error.toBody()), status);
   }
 
@@ -96,17 +97,22 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
   // browser history). Authed fetch + ReadableStream lets the bearer
   // carry the lease id without putting it in any URL — a caller that
   // holds the lease asks for it out-of-band and supplies it as an
-  // `X-Gallery-Lease` header (or, on the wire, in the lease cache).
-  const url = new URL(req.url, `http://${resolveHost(deps.expectedHost)}`);
-  const leaseId = url.searchParams.get("lease") ?? req.headers.get("x-gallery-lease");
-  const artifactId = url.searchParams.get("artifactId") ?? req.headers.get("x-gallery-artifact");
+  // `X-Gallery-Lease` header. A query-string `?lease=` is REJECTED
+  // (not silently accepted) so a misconfigured client sees a typed
+  // 401/403 instead of an unguarded stream.
+  const leaseId = req.headers.get("x-gallery-lease");
+  const artifactId = req.headers.get("x-gallery-artifact");
   if (leaseId === null || artifactId === null) {
-    const err = {
-      code: "invalid_request" as const,
-      message: "SSE requires lease and artifactId",
-      retryable: false,
-    };
-    return envelopeResponse(errEnvelope(requestId, err), 400);
+    return envelopeResponse(
+      errEnvelope(requestId, {
+        code: "invalid_envelope",
+        message:
+          "SSE requires X-Gallery-Lease + X-Gallery-Artifact headers (no query-string fallback)",
+        retryable: false,
+        details: { reason: "lease_header_missing" },
+      }),
+      401,
+    );
   }
 
   const lease: GalleryLease = {
