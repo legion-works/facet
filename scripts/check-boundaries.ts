@@ -209,7 +209,7 @@ export function runBoundaryCheck(roots: BoundaryRoots): Violation[] {
   return violations;
 }
 
-function main(): number {
+export function main(): number {
   const REPO_ROOT = resolve(import.meta.dir, "..");
   const SERVICE_DIR = join(REPO_ROOT, "src/service");
   const FRAME_DIR = join(REPO_ROOT, "src/gallery-web/frame");

@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { runBoundaryCheck, type BoundaryRoots } from "../../scripts/check-boundaries";
+import { main, runBoundaryCheck, type BoundaryRoots } from "../../scripts/check-boundaries";
 
 const tempRoots: string[] = [];
 
@@ -190,6 +190,10 @@ describe("boundary check — gallery frame zod guard", () => {
 });
 
 describe("boundary check — clean surface", () => {
+  test("the repository entrypoint reports a clean boundary", () => {
+    expect(main()).toBe(0);
+  });
+
   test("a service file with only safe relative imports produces zero violations", () => {
     const root = makeRoot();
     writeServiceFile(

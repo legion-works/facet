@@ -37,7 +37,7 @@ export function verifyAdapters(root = ADAPTER_ROOT): string[] {
   return issues;
 }
 
-function main(): void {
+export function main(): void {
   const issues = verifyAdapters();
   if (issues.length > 0) {
     for (const issue of issues) console.error(`✗ ${issue}`);

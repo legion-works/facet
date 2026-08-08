@@ -163,6 +163,24 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
       ],
     };
   }
+  if (counts.hasExternalRef) {
+    return {
+      status: "error",
+      observed: {
+        rendererRootSvgCount: counts.rendererRoots,
+        graphCount: counts.mermaidFenced,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        errorCount: 1,
+      },
+      errors: [
+        {
+          code: "html_external_reference_in_markdown",
+          message: "Raw HTML in markdown contains an external href/src URL; Tier 0 rejects it",
+        },
+      ],
+    };
+  }
 
   return {
     status: "ok",

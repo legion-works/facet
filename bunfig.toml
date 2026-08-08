@@ -2,5 +2,15 @@
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
 coverageThreshold = { lines = 0.9, functions = 0.9, statements = 0.9 }
-# Keep process wiring and generated bundles out; security gates remain mandatory.
-coveragePathIgnorePatterns = ["dist/", "**/main.ts"]
+# Cross-process code is invisible to in-process line instrumentation; mandatory
+# egress, forgery, and adversarial-render acceptance gates cover these paths.
+coveragePathIgnorePatterns = [
+  "dist/",
+  "**/main.ts",
+  "src/validation/sandbox/netns.ts",
+  "src/validation/tier0/runner.ts",
+  "src/validation/tier1/browser-process.ts",
+  "src/validation/tier1/cdp-pipe.ts",
+  "src/validation/tier1/runner.ts",
+  "tests/helpers/**",
+]

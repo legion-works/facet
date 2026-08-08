@@ -10,6 +10,10 @@ Release assets include the source archive, the built CLI and gallery, and a brow
 
 Any shell, CSP, sandbox, token, or network-boundary change requires evidence from both acceptance gates before merge. Maintainers must not weaken the check to optional because a hosted runner lacks namespaces; provision or repair the named runner instead.
 
+## Coverage posture
+
+Coverage remains at 90% for lines, functions, and statements. The five validation files that execute inside the netns subprocess or drive a separate browser process are excluded because Bun's in-process instrumentation cannot observe those instructions: `sandbox/netns.ts`, `tier0/runner.ts`, `tier1/browser-process.ts`, `tier1/cdp-pipe.ts`, and `tier1/runner.ts`. They remain covered by the required egress, gate-forgery, and adversarial-render acceptance gates. Test helpers are excluded as infrastructure; pure Tier 0 parsers remain in the measured set and must meet the threshold through hostile-input unit tests.
+
 ## Operator sequence
 
 1. Use a Conventional Commit and run the local gates in `CONTRIBUTING.md`.

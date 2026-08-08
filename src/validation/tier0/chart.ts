@@ -38,17 +38,14 @@ const InlineDataSchema = z.union([
   z.undefined(),
 ]);
 
-const VegaLiteDataSchema = z
-  .object({
-    data: InlineDataSchema.optional(),
-  })
-  .passthrough();
-
 const VegaLiteSpecSchema = z
   .object({
     $schema: z.string().optional(),
     description: z.string().optional(),
-    data: InlineDataSchema.optional(),
+    // Leave the raw data value open here so the dedicated check below can
+    // report the security-specific external-data error instead of a generic
+    // schema failure.
+    data: z.unknown().optional(),
     mark: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
     encoding: z.record(z.string(), z.unknown()).optional(),
     layer: z.array(z.record(z.string(), z.unknown())).optional(),
@@ -119,7 +116,7 @@ export function parseChart(bytes: Uint8Array): ChartParseResult {
     };
   }
   // Re-check the data field specifically to surface a precise error.
-  const dataCheck = VegaLiteDataSchema.safeParse({ data: topLevel.data.data });
+  const dataCheck = InlineDataSchema.safeParse(topLevel.data.data);
   if (!dataCheck.success) {
     return {
       status: "error",

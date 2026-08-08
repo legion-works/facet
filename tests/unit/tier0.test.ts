@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
+import { Lexer } from "marked";
 
 import { LexicalCountersSchema } from "../../src/shared/contracts/validation";
 import { parseMermaid } from "../../src/validation/tier0/mermaid";
@@ -109,6 +110,44 @@ describe("Tier 0 markdown parser", () => {
       expect(result.observed.rendererRootSvgCount).toBe(0);
     }
   });
+
+  test("walks nested table tokens without executing their contents", () => {
+    const source = "| name | value |\n| --- | --- |\n| safe | 1 |\n";
+    const result = parseMarkdown(new TextEncoder().encode(source));
+    expect(result.status).toBe("ok");
+    expect(result.observed.errorCount).toBe(0);
+  });
+
+  test("surfaces a lexer failure as a typed markdown parse error", () => {
+    const originalLex = Lexer.prototype.lex;
+    Lexer.prototype.lex = () => {
+      throw new Error("forced lexer failure");
+    };
+    try {
+      const result = parseMarkdown(new TextEncoder().encode("safe"));
+      expect(result.status).toBe("error");
+      if (result.status === "error") {
+        expect(result.errors[0]!.code).toBe("markdown_lex_error");
+        expect(result.errors[0]!.message).toBe("forced lexer failure");
+      }
+    } finally {
+      Lexer.prototype.lex = originalLex;
+    }
+  });
+
+  test.each([
+    ["script", "<script>alert(1)</script>", "html_script_in_markdown"],
+    ["event handler", '<button onclick="alert(1)">x</button>', "html_event_handler_in_markdown"],
+    [
+      "external URL",
+      '<iframe src="https://evil.invalid/pixel"></iframe>',
+      "html_external_reference_in_markdown",
+    ],
+  ])("rejects markdown raw HTML containing a %s", (_label, source, code) => {
+    const result = parseMarkdown(new TextEncoder().encode(source));
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe(code);
+  });
 });
 
 describe("Tier 0 svg parser", () => {
@@ -135,6 +174,70 @@ describe("Tier 0 svg parser", () => {
       expect(found).toBe(true);
     }
   });
+
+  test("rejects an SVG with an event-handler attribute when no earlier hostile branch fires", () => {
+    const result = parseSvg(
+      new TextEncoder().encode('<svg viewBox="0 0 10 10" onclick="alert(1)"/>'),
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_event_handler");
+  });
+
+  test("rejects an SVG script element when no handler or external URL masks the branch", () => {
+    const result = parseSvg(
+      new TextEncoder().encode('<svg viewBox="0 0 10 10"><script>alert(1)</script></svg>'),
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_script_element");
+  });
+
+  test("rejects an SVG with an external URL when no earlier hostile branch fires", () => {
+    const result = parseSvg(
+      new TextEncoder().encode(
+        '<svg viewBox="0 0 10 10"><image href="https://evil.invalid/x"/></svg>',
+      ),
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_external_reference");
+  });
+
+  test("rejects an SVG without a top-level root", () => {
+    const result = parseSvg(new TextEncoder().encode("<html/>"));
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_no_root");
+  });
+
+  test("rejects an SVG without a viewBox", () => {
+    const result = parseSvg(new TextEncoder().encode('<svg width="1"></svg>'));
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_missing_viewbox");
+  });
+
+  test("rejects malformed SVG XML", () => {
+    const result = parseSvg(new TextEncoder().encode("<svg><"));
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_xml_error");
+  });
+
+  test("rejects an SVG over the byte cap", () => {
+    const bytes = new Uint8Array(1_048_577);
+    const result = parseSvg(bytes);
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_too_large");
+  });
+
+  test("walks repeated SVG child nodes without treating them as extra roots", () => {
+    const source = '<svg viewBox="0 0 1 1"><g><path/><path/></g></svg>';
+    const result = parseSvg(new TextEncoder().encode(source));
+    expect(result.status).toBe("ok");
+  });
+
+  test("rejects more top-level SVG roots than the cap", () => {
+    const source = Array.from({ length: 17 }, () => '<svg viewBox="0 0 1 1"/>').join("");
+    const result = parseSvg(new TextEncoder().encode(source));
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_too_many_roots");
+  });
 });
 
 describe("Tier 0 chart parser", () => {
@@ -158,6 +261,41 @@ describe("Tier 0 chart parser", () => {
       const allowed = ["chart_external_data_rejected", "chart_invalid_type", "chart_invalid_spec"];
       expect(codes.some((c) => allowed.includes(c))).toBe(true);
     }
+  });
+
+  test("rejects malformed chart JSON", () => {
+    const result = parseChart(new TextEncoder().encode("{not json"));
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("chart_json_error");
+  });
+
+  test("rejects a chart with an invalid top-level field shape", () => {
+    const result = parseChart(
+      new TextEncoder().encode(JSON.stringify({ encoding: "not-an-object" })),
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("chart_invalid_type");
+  });
+
+  test.each([
+    ["a data URL", { data: { url: "https://evil.invalid/data.json" }, mark: "bar" }],
+    ["a loader string", { data: "dataset.csv", mark: "bar" }],
+    [
+      "a loader form",
+      { data: { values: [], loader: { url: "https://evil.invalid" } }, mark: "bar" },
+    ],
+  ])("rejects chart specs containing %s", (_label, spec) => {
+    const result = parseChart(new TextEncoder().encode(JSON.stringify(spec)));
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.errors[0]!.code).toMatch(/^chart_(invalid_|external_data_rejected)/);
+    }
+  });
+
+  test("rejects a syntactically valid but uncompileable chart spec", () => {
+    const result = parseChart(new TextEncoder().encode(JSON.stringify({ mark: "not-a-mark" })));
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.errors[0]!.code).toBe("chart_compile_error");
   });
 });
 

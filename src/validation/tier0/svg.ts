@@ -71,6 +71,9 @@ function walkNode(
   },
   isRoot: boolean,
 ): void {
+  if (name === "script" || DANGEROUS_TAGS.has(name)) {
+    ctx.scriptElements += 1;
+  }
   if (!isPlainObject(node)) return;
   // Detect attributes on the current element.
   for (const [key, value] of Object.entries(node)) {
@@ -90,9 +93,6 @@ function walkNode(
     if (isRoot && attrName === "viewBox") {
       ctx.viewBoxes.push(attrValue);
     }
-  }
-  if (name === "script" || DANGEROUS_TAGS.has(name)) {
-    ctx.scriptElements += 1;
   }
   if (isRoot && name === "svg") {
     ctx.rootSvgCount += 1;
@@ -211,6 +211,25 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         {
           code: "svg_too_many_roots",
           message: `SVG contains ${ctx.rootSvgCount} top-level <svg> elements; cap is ${MAX_SVG_ROOTS}`,
+        },
+      ],
+    };
+  }
+  if (ctx.viewBoxes.length === 0) {
+    return {
+      status: "error",
+      observed: {
+        rendererRootSvgCount: ctx.rootSvgCount,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        errorCount: 1,
+      },
+      errors: [
+        {
+          code: "svg_missing_viewbox",
+          message:
+            "Top-level <svg> element must declare a viewBox; Tier 0 rejects ambiguous bounds",
         },
       ],
     };
