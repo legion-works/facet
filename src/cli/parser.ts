@@ -63,7 +63,10 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly { flag: string; takesVal
       { flag: "--revision-sha", takesValue: true },
       { flag: "--tier", takesValue: true },
     ],
-    status: [{ flag: "--artifact-id", takesValue: true }],
+    status: [
+      { flag: "--artifact-id", takesValue: true },
+      { flag: "--start", takesValue: false },
+    ],
     open: [
       { flag: "--artifact-id", takesValue: true },
       { flag: "--revision-sha", takesValue: true },

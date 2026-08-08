@@ -38,6 +38,9 @@ import { buildPromoteRequest } from "./commands/promote";
 import { buildInstantiateRequest } from "./commands/instantiate";
 import { buildReadBackRequest } from "./commands/read-back";
 import { buildStatusRequest } from "./commands/status";
+import { collectFacetStatus } from "./commands/status";
+import { computeFacetPaths } from "../shared/config/paths";
+import { generateRequestId } from "../shared/util/time";
 import { buildPublishRequest, resolveSourceBytes } from "./commands/publish";
 
 export interface CliIo {
@@ -209,6 +212,36 @@ export async function runCli(
     const env1 = buildUsageError(parsed.message, { reason: "usage_error" });
     printEnvelope(io.stdout, env1);
     return { code: EXIT_CODES.USAGE, spawnedPid: null };
+  }
+
+  if (
+    parsed.kind === "verb" &&
+    parsed.verb === "status" &&
+    parsed.args["artifact-id"] === undefined
+  ) {
+    const paths = computeFacetPaths(
+      io.env.FACET_HOME === undefined ? {} : { facetHome: io.env.FACET_HOME },
+    );
+    try {
+      let spawnedPid: number | null = null;
+      if (parsed.args.start === true) {
+        const started = await ensureService({ env: io.env }, testHooks as ServiceHooks);
+        spawnedPid = started.metadata.pid;
+      }
+      const data = { command: "status" as const, ...collectFacetStatus(paths) };
+      printEnvelope(io.stdout, okEnvelope(generateRequestId(), data));
+      return { code: EXIT_CODES.OK, spawnedPid };
+    } catch (error) {
+      const facet = error instanceof FacetError ? error : FacetError.from(error);
+      const env1: FacetEnvelope<never> = {
+        schemaVersion: FACET_SCHEMA_VERSION,
+        requestId: generateRequestId(),
+        ok: false,
+        error: facet.toBody(),
+      };
+      printEnvelope(io.stdout, env1);
+      return { code: EXIT_CODES.OK, spawnedPid: null };
+    }
   }
 
   // 3. Read stdin up front (cheap when empty; needed for `publish -`).

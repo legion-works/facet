@@ -444,7 +444,6 @@ describe("cli contract — wire", () => {
     await runCli(["list", "--project-id", "warm"], { ...warmIo, env });
 
     const cases: { args: string[]; label: string }[] = [
-      { args: ["status"], label: "status missing --artifact-id" },
       { args: ["list"], label: "list missing --project-id" },
       { args: ["create", "--project-id", "p", "--slug", "s"], label: "create missing --title" },
       { args: ["open", "--artifact-id", "x"], label: "open missing --revision-sha" },
@@ -477,6 +476,19 @@ describe("cli contract — wire", () => {
       }
     }
   }, 60_000);
+
+  test("status without artifact id reports dormant health without spawning", async () => {
+    const { env, home } = makeEnv("health-dormant");
+    const io = makeIo();
+    const exit = await runCli(["status"], { ...io, env });
+    expect(exit.code).toBe(0);
+    expect(exit.spawnedPid).toBeNull();
+    expect(JSON.parse(io.stdoutBuf.value)).toMatchObject({
+      ok: true,
+      data: { command: "status", state: "dormant", process: null },
+    });
+    expect(existsSync(join(home, "run", "facet.lock"))).toBe(false);
+  });
 });
 
 describe("cli contract — reserved + errors", () => {

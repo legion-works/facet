@@ -49,10 +49,10 @@ export type ReadBackResult = z.infer<typeof ReadBackResultSchema>;
 
 export const StatusResultSchema = BaseResultSchema.extend({
   command: z.literal("status"),
-  artifactId: z.string().min(1),
-  revisionCount: z.number().int().nonnegative(),
-  pinnedCount: z.number().int().nonnegative(),
-  templateCount: z.number().int().nonnegative(),
+  artifactId: z.string().min(1).optional(),
+  revisionCount: z.number().int().nonnegative().optional(),
+  pinnedCount: z.number().int().nonnegative().optional(),
+  templateCount: z.number().int().nonnegative().optional(),
   state: z.enum(["dormant", "active"]).optional(),
   process: z
     .object({

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { collectFacetStatus } from "../../src/cli/commands/status";
 import { runOrphanCleanup } from "../../src/service/lifecycle/orphan-cleanup";
 import { readPidStartTimeTicks } from "../../src/shared/util/process";
+import { runCli, type CliIo } from "../../src/cli/main";
 
 const root = join(tmpdir(), `facet-status-${crypto.randomUUID()}`);
 
@@ -25,7 +26,50 @@ function paths(label: string) {
   };
 }
 
+function cliIo(env: NodeJS.ProcessEnv): { io: CliIo; output: { value: string } } {
+  const output = { value: "" };
+  return {
+    output,
+    io: {
+      env,
+      stdin: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      stdout: {
+        write(chunk) {
+          output.value += String(chunk);
+          return true;
+        },
+      },
+      stderr: {
+        write() {
+          return true;
+        },
+      },
+    },
+  };
+}
+
 describe("facet status", () => {
+  test("CLI dormant health status does not spawn", async () => {
+    const home = join(root, "cli-dormant");
+    mkdirSync(home, { recursive: true });
+    const { io, output } = cliIo({ ...process.env, FACET_HOME: home });
+    const exit = await runCli(["status"], io);
+    const body = JSON.parse(output.value) as {
+      data: { command: string; state: string };
+      ok: boolean;
+    };
+    expect(exit.spawnedPid).toBeNull();
+    expect(exit.code).toBe(0);
+    expect(body.ok).toBe(true);
+    expect(body.data.command).toBe("status");
+    expect(body.data.state).toBe("dormant");
+    expect(existsSync(join(home, "run", "facet.lock"))).toBe(false);
+  });
+
   test("dormant status does not spawn or create state", () => {
     const runtime = paths("dormant");
     const status = collectFacetStatus(runtime);
