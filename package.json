@@ -2,6 +2,9 @@
   "name": "facet",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "facet": "./src/cli/main.ts"
+  },
   "type": "module",
   "scripts": {
     "build": "bun scripts/build-gallery.ts",

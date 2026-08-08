@@ -1,16 +1,20 @@
 /**
  * HTTP utilities shared by the router and the SSE stream.
  *
- * `envelopeResponse` and `generateRequestId` were duplicated between
- * router.ts and stream.ts; both files now import from here. The
- * `cache-control: no-store` header is universal — no Facet response is
- * cacheable, and a divergent cache header between routes would let a
- * proxy pin a stale error envelope for a future caller.
+ * `envelopeResponse` is the single Response builder for every Facet
+ * route. The `cache-control: no-store` header is universal — no Facet
+ * response is cacheable, and a divergent cache header between routes
+ * would let a proxy pin a stale error envelope for a future caller.
+ *
+ * `generateRequestId` lives in `src/shared/util/time.ts` and is
+ * re-exported here so the existing import sites (router.ts, stream.ts)
+ * keep working without churn.
  */
 
-import { randomUUID } from "node:crypto";
-
 import { type FacetEnvelope } from "../shared/contracts/envelope";
+import { generateRequestId } from "../shared/util/time";
+
+export { generateRequestId };
 
 const NO_STORE = "no-store";
 
@@ -22,10 +26,6 @@ export function envelopeResponse(envelope: FacetEnvelope<unknown>, status: numbe
       "cache-control": NO_STORE,
     },
   });
-}
-
-export function generateRequestId(): string {
-  return `req-${randomUUID()}`;
 }
 
 /**
