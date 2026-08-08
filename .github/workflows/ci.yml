@@ -27,6 +27,11 @@ jobs:
           key: puppeteer-chrome-headless-shell-131.0.6778.204
       - name: install pinned chrome-headless-shell
         run: bunx --bun puppeteer browsers install chrome-headless-shell@131.0.6778.204
+      - name: diagnose Chromium nested user namespaces
+        shell: bash
+        run: |
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          unshare --map-current-user --user --net -- /bin/true || true
       - run: bun run format:check
       - run: bun run lint
       - run: bun run typecheck
