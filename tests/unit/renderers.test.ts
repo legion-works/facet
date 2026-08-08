@@ -85,6 +85,14 @@ function freshContainer(): HTMLElement {
   return el as unknown as HTMLElement;
 }
 
+function escapeXmlAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 // Deferred imports — the shim above must be in place first.
 let registry: typeof import("../../src/gallery-web/frame/renderers/registry");
 let markdown: typeof import("../../src/gallery-web/frame/renderers/markdown");
@@ -226,13 +234,99 @@ describe("svg renderer — sanitize BEFORE import", () => {
     expect(path?.getAttribute("mask")).toBeNull();
   });
 
+  test("CSS canonicalization strips every non-fragment url and legacy executable construct on all surfaces", async () => {
+    const hostileValues = [
+      "url(java/**/script:alert(1))",
+      "url(\\6a avascript:alert(2))",
+      "url(\\00006aavascript:alert(3))",
+      "JAVASCRIPT:alert(4)",
+      "Url( JavaScript : alert(5) )",
+      "url(//evil.example/x)",
+      'url("data:text/html,evil")',
+      "@im\\port url(#g1)",
+      "EXPRESSION(alert(6))",
+      "progid:DXImageTransform.Microsoft.Alpha(opacity=50)",
+      "behavior:url(#g1)",
+      "url(url(#x))",
+    ];
+    const hostile = [
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">',
+      '<defs><linearGradient id="g1"/></defs>',
+      ...hostileValues.flatMap((value, index) => {
+        const attrValue = escapeXmlAttribute(value);
+        return [
+          `<style data-case="${index}">.case-${index} { fill: ${value}; }</style>`,
+          `<rect id="style-${index}" style="font-family:serif;fill:${attrValue};stroke:#6f6f6f"/>`,
+          `<rect id="fill-${index}" fill="${attrValue}"/>`,
+          `<rect id="stroke-${index}" stroke="${attrValue}"/>`,
+        ];
+      }),
+      "</svg>",
+    ].join("");
+    const container = freshContainer();
+    await svg.importSanitizedSvgText(container, hostile, { settleMs: 0, maxWaitMs: 10 });
+
+    for (const [index] of hostileValues.entries()) {
+      expect(container.querySelector(`style[data-case="${index}"]`)?.textContent ?? "").not.toMatch(
+        /\bfill\s*:/i,
+      );
+
+      const style = container.querySelector(`#style-${index}`)?.getAttribute("style") ?? "";
+      expect(style).not.toMatch(/\bfill\s*:/i);
+      expect(style).toContain("font-family:serif");
+      expect(style).toContain("stroke:#6f6f6f");
+      expect(style).not.toContain("font-family:none)");
+
+      expect(container.querySelector(`#fill-${index}`)?.getAttribute("fill")).toBeNull();
+      expect(container.querySelector(`#stroke-${index}`)?.getAttribute("stroke")).toBeNull();
+    }
+  });
+
+  test("every CSS-reference presentation attribute allows only local fragment urls", () => {
+    const attributes = [
+      "fill",
+      "stroke",
+      "filter",
+      "mask",
+      "clip-path",
+      "marker",
+      "marker-start",
+      "marker-mid",
+      "marker-end",
+      "cursor",
+      "background",
+      "background-image",
+      "color-profile",
+    ];
+    const doc = svg.parseSvgData(
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg">',
+        '<defs><linearGradient id="g1"/></defs>',
+        ...attributes.map(
+          (attribute, index) => `<rect id="unsafe-${index}" ${attribute}="url(//evil.example/x)"/>`,
+        ),
+        ...attributes.map(
+          (attribute, index) => `<rect id="safe-${index}" ${attribute}="url(#g1)"/>`,
+        ),
+        "</svg>",
+      ].join(""),
+    );
+    svg.sanitizeSvgDocument(doc);
+
+    for (const [index, attribute] of attributes.entries()) {
+      expect(doc.querySelector(`#unsafe-${index}`)?.getAttribute(attribute)).toBeNull();
+      expect(doc.querySelector(`#safe-${index}`)?.getAttribute(attribute)).toBe("url(#g1)");
+    }
+  });
+
   test("benign mermaid-style <style> with fill:#86E1FC and fragment url() refs survive sanitization", () => {
     const benign = [
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">',
-      '<defs><linearGradient id="g1"><stop offset="0" stop-color="#86E1FC"/></linearGradient></defs>',
+      '<defs><linearGradient id="g1"><stop offset="0" stop-color="#86E1FC"/></linearGradient><radialGradient id="gradient"/></defs>',
       "<style>",
       ".node rect { fill: #86E1FC; stroke: #444; stroke-width: 1px; }",
       ".edge path { stroke: #6f6f6f; }",
+      ".gradient { fill: url(#gradient); }",
       '.label { font-family: "Helvetica", sans-serif; color: #222; }',
       "</style>",
       '<rect class="node" fill="url(#g1)" stroke="#FF0000"/>',
@@ -249,6 +343,7 @@ describe("svg renderer — sanitize BEFORE import", () => {
     expect(styleText).toContain("#444");
     expect(styleText).toContain("#6f6f6f");
     expect(styleText).toContain("#222");
+    expect(styleText).toContain("url(#gradient)");
 
     const rect = doc.querySelector("rect");
     expect(rect?.getAttribute("fill")).toBe("url(#g1)");

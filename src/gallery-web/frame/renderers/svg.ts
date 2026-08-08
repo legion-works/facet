@@ -74,55 +74,193 @@ const CSS_REF_ATTRS = new Set([
   "marker-end",
   "color-profile",
   "cursor",
+  "background",
   "background-image",
 ]);
 
 const EVENT_HANDLER_RE = /^on[a-z]+$/i;
 
-/**
- * Dangerous CSS url() targets. `expression(...)` and the legacy
- * `progid:DXImageTransform.*` IE vector are stripped in the same
- * pass because they are equivalent script-execution surface.
- */
-const DANGEROUS_CSS_URL_RE =
-  /url\s*\(\s*["']?(?:javascript|vbscript|data|https?|file|ftp|blob):[^)]*\)/gi;
-const DANGEROUS_PROTOCOL_RELATIVE_URL_RE = /url\s*\(\s*["']?\/\/[^)]*\)/gi;
-const CSS_EXPRESSION_RE = /expression\s*\([^)]*\)/gi;
-const CSS_PROGID_RE = /progid\s*:[^;}]*/gi;
-const CSS_AT_IMPORT_RE = /@import\s+[^;}]*[;}]?/gi;
-
-/** Strip dangerous CSS constructs from raw CSS text. Benign rules survive. */
-function sanitizeCssText(css: string): string {
-  if (!css) return css;
-  return css
-    .replace(CSS_AT_IMPORT_RE, "")
-    .replace(CSS_EXPRESSION_RE, "")
-    .replace(CSS_PROGID_RE, "")
-    .replace(DANGEROUS_CSS_URL_RE, "none")
-    .replace(DANGEROUS_PROTOCOL_RELATIVE_URL_RE, "none");
+function stripCssComments(css: string): string {
+  let clean = "";
+  let quote = "";
+  for (let index = 0; index < css.length; index += 1) {
+    const char = css[index]!;
+    if (quote) {
+      clean += char;
+      if (char === "\\" && index + 1 < css.length) clean += css[(index += 1)]!;
+      else if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      clean += char;
+      continue;
+    }
+    if (char === "/" && css[index + 1] === "*") {
+      const end = css.indexOf("*/", index + 2);
+      index = end === -1 ? css.length : end + 1;
+      continue;
+    }
+    clean += char;
+  }
+  return clean;
 }
 
-const CSS_URL_VALUE_RE = /url\s*\(\s*["']?([^)]*?)["']?\s*\)/gi;
-
-/**
- * True when a presentation-attribute value carries a url() whose target
- * is a script/external scheme, or the value itself starts with such a
- * scheme. Fragment refs (`url(#id)`) and color/named values return false.
- */
-function containsDangerousCssRef(value: string): boolean {
-  const v = value.trim();
-  if (!v) return false;
-  let m: RegExpExecArray | null;
-  CSS_URL_VALUE_RE.lastIndex = 0;
-  while ((m = CSS_URL_VALUE_RE.exec(v)) !== null) {
-    const inner = (m[1] ?? "").trim();
-    if (inner.startsWith("#")) continue;
-    if (/^(?:javascript|vbscript|data|https?|file|ftp|blob):/i.test(inner)) return true;
-    if (inner.startsWith("//")) return true;
+function canonicalizeCss(css: string): string {
+  const uncommented = stripCssComments(css);
+  let decoded = "";
+  for (let index = 0; index < uncommented.length; index += 1) {
+    const char = uncommented[index]!;
+    if (char !== "\\") {
+      decoded += char;
+      continue;
+    }
+    const next = uncommented[index + 1];
+    if (next === undefined) break;
+    if (next === "\n" || next === "\f") {
+      index += 1;
+      continue;
+    }
+    if (next === "\r") {
+      index += uncommented[index + 2] === "\n" ? 2 : 1;
+      continue;
+    }
+    let hex = "";
+    while (hex.length < 6 && /[0-9a-f]/i.test(uncommented[index + 1] ?? "")) {
+      hex += uncommented[(index += 1)]!;
+    }
+    if (hex) {
+      const codePoint = Number.parseInt(hex, 16);
+      decoded +=
+        codePoint === 0 || codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)
+          ? "\uFFFD"
+          : String.fromCodePoint(codePoint);
+      if (/\s/.test(uncommented[index + 1] ?? "")) index += 1;
+      continue;
+    }
+    decoded += next;
+    index += 1;
   }
-  if (/^(?:javascript|vbscript|data|https?|file|ftp|blob):/i.test(v)) return true;
-  if (v.startsWith("//")) return true;
+  return decoded.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function findClosingDelimiter(css: string, openIndex: number, open: string, close: string): number {
+  let depth = 1;
+  let quote = "";
+  for (let index = openIndex + 1; index < css.length; index += 1) {
+    const char = css[index]!;
+    if (quote) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'") quote = char;
+    else if (char === open) depth += 1;
+    else if (char === close && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function containsUnsafeCssValue(value: string): boolean {
+  const canonical = canonicalizeCss(value);
+  if (!canonical) return false;
+  if (
+    /@import\b/.test(canonical) ||
+    /(?:^|[^a-z0-9_-])expression\s*\(/.test(canonical) ||
+    /(?:^|[^a-z0-9_-])progid\s*:/.test(canonical) ||
+    /(?:^|[^a-z0-9_-])behavior\s*:/.test(canonical) ||
+    /^[a-z][a-z0-9+.-]*\s*:/.test(canonical)
+  ) {
+    return true;
+  }
+
+  for (let searchFrom = 0; searchFrom < canonical.length; ) {
+    const index = canonical.indexOf("url", searchFrom);
+    if (index === -1) return false;
+    searchFrom = index + 3;
+    if (index > 0 && /[a-z0-9_-]/.test(canonical[index - 1]!)) continue;
+    let openIndex = searchFrom;
+    while (canonical[openIndex] === " ") openIndex += 1;
+    if (canonical[openIndex] !== "(") continue;
+    const closeIndex = findClosingDelimiter(canonical, openIndex, "(", ")");
+    if (closeIndex === -1) return true;
+    let argument = canonical.slice(openIndex + 1, closeIndex).trim();
+    const quote = argument[0];
+    if (quote === '"' || quote === "'") {
+      if (argument.at(-1) !== quote) return true;
+      argument = argument.slice(1, -1).trim();
+    }
+    if (!argument.startsWith("#")) return true;
+    searchFrom = closeIndex + 1;
+  }
   return false;
+}
+
+function findDeclarationColon(css: string): number {
+  let depth = 0;
+  let quote = "";
+  for (let index = 0; index < css.length; index += 1) {
+    const char = css[index]!;
+    if (quote) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'") quote = char;
+    else if (char === "(") depth += 1;
+    else if (char === ")") depth = Math.max(0, depth - 1);
+    else if (char === ":" && depth === 0) return index;
+  }
+  return -1;
+}
+
+function sanitizeCssStatement(statement: string): string {
+  const trimmed = statement.trim();
+  if (!trimmed) return "";
+  const colon = findDeclarationColon(trimmed);
+  const checkedValue = colon === -1 ? trimmed : trimmed.slice(colon + 1);
+  return containsUnsafeCssValue(checkedValue) || /@import\b/.test(canonicalizeCss(trimmed))
+    ? ""
+    : trimmed;
+}
+
+function sanitizeCssBlock(css: string): string {
+  let sanitized = "";
+  let start = 0;
+  let depth = 0;
+  let quote = "";
+  for (let index = 0; index < css.length; index += 1) {
+    const char = css[index]!;
+    if (quote) {
+      if (char === "\\") index += 1;
+      else if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'") quote = char;
+    else if (char === "(") depth += 1;
+    else if (char === ")") depth = Math.max(0, depth - 1);
+    else if (char === ";" && depth === 0) {
+      const statement = sanitizeCssStatement(css.slice(start, index));
+      if (statement) sanitized += `${statement};`;
+      start = index + 1;
+    } else if (char === "{" && depth === 0) {
+      const closeIndex = findClosingDelimiter(css, index, "{", "}");
+      const prelude = css.slice(start, index).trim();
+      if (closeIndex === -1) return sanitized;
+      if (!containsUnsafeCssValue(prelude) && !/@import\b/.test(canonicalizeCss(prelude))) {
+        sanitized += `${prelude}{${sanitizeCssBlock(css.slice(index + 1, closeIndex))}}`;
+      }
+      index = closeIndex;
+      start = closeIndex + 1;
+    }
+  }
+  const trailing = sanitizeCssStatement(css.slice(start));
+  return trailing ? sanitized + trailing : sanitized;
+}
+
+/** CSS is decoded for comparison because source spelling is not a security boundary. */
+function sanitizeCssText(css: string): string {
+  return sanitizeCssBlock(stripCssComments(css));
 }
 
 /**
@@ -148,13 +286,14 @@ export function sanitizeSvgDocument(doc: Document): void {
         el.removeAttribute(attr.name);
         continue;
       }
-      if (CSS_REF_ATTRS.has(name) && containsDangerousCssRef(attr.value)) {
+      if (CSS_REF_ATTRS.has(name) && containsUnsafeCssValue(attr.value)) {
         el.removeAttribute(attr.name);
         continue;
       }
       if (name === "style") {
         const sanitized = sanitizeCssText(attr.value);
-        if (sanitized !== attr.value) el.setAttribute(attr.name, sanitized);
+        if (!sanitized) el.removeAttribute(attr.name);
+        else if (sanitized !== attr.value) el.setAttribute(attr.name, sanitized);
       }
     }
     if (el.localName.toLowerCase() === "style") {
