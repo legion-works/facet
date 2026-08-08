@@ -35,8 +35,8 @@ export const FROZEN_CSP_TEMPLATE =
 
 /**
  * Frame element attributes. The shell applies these to every iframe it
- * creates. `src` is intentionally absent — the srcdoc carries the WHOLE
- * document, including the nonce'd CSP.
+ * creates. `src` is intentionally absent — the srcdoc carries the document
+ * shell, including the nonce'd CSP.
  */
 export interface FrameAttributes {
   readonly sandbox: "allow-scripts";
@@ -55,14 +55,10 @@ export function buildFrameAttributes(): Omit<FrameAttributes, "srcdoc"> {
   };
 }
 
-export function buildFrameSrcdoc(options: { nonce: string; bootstrapScript: string }): string {
-  const { nonce, bootstrapScript } = options;
+export function buildFrameSrcdoc(options: { nonce: string; bootstrapUrl: string }): string {
+  const { nonce, bootstrapUrl } = options;
   // Charset meta MUST precede the CSP meta — a CSP declared before the
   // charset parser hint is treated as unsafe.
-  //
-  // The bootstrap text has any literal `</script` escaped to `<\\/script`
-  // so an attacker-controlled script (future renderer) cannot terminate
-  // the parent <script> tag and break out of the nonce boundary.
   //
   // The script tag is `type="module"` on purpose: Vega's bundled source
   // declares `function addEventListener(...)` at the top level, and a
@@ -70,7 +66,14 @@ export function buildFrameSrcdoc(options: { nonce: string; bootstrapScript: stri
   // replacing the native one before the frame's own message listener
   // can be registered. The module script keeps top-level function
   // declarations in the module scope instead of the global one.
-  const escapedBootstrap = bootstrapScript.replace(/<\/script/gi, "<\\/script");
+  // The nonce authorizes this one external script without adding a host to
+  // script-src. Keeping the bundle out of srcdoc avoids parser hangs on the
+  // multi-megabyte renderer while preserving the opaque sandbox origin.
+  const escapedBootstrapUrl = bootstrapUrl
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
   const csp = FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce);
   return (
     "<!doctype html><html><head>" +
@@ -79,7 +82,7 @@ export function buildFrameSrcdoc(options: { nonce: string; bootstrapScript: stri
     `<style>html,body,#artifact{margin:0;min-height:100%;background:transparent}</style>` +
     "</head><body>" +
     `<main id="artifact"></main>` +
-    `<script type="module" nonce="${nonce}">${escapedBootstrap}</script>` +
+    `<script type="module" nonce="${nonce}" src="${escapedBootstrapUrl}"></script>` +
     "</body></html>"
   );
 }

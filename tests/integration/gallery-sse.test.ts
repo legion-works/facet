@@ -44,8 +44,7 @@ import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const NONCE = "facet-nonce-abcd1234";
-const BOOTSTRAP_SCRIPT =
-  "/* built trusted bootstrap — placeholder marker */ window.__facetBootstrapRan = true;";
+const BOOTSTRAP_URL = "/gallery/frame/bootstrap.js";
 
 const ARTIFACT_SENTINEL = "FACET_SENTINEL_ARTIFACT_BYTES_ZZZ_9999";
 
@@ -104,7 +103,7 @@ describe("gallery shell — FROZEN CSP", () => {
   test("rendered CSP substitutes the per-frame nonce into script-src", () => {
     const srcdoc = buildFrameSrcdoc({
       nonce: NONCE,
-      bootstrapScript: BOOTSTRAP_SCRIPT,
+      bootstrapUrl: BOOTSTRAP_URL,
     });
     expect(srcdoc).toContain(`script-src 'nonce-${NONCE}'`);
     expect(srcdoc).not.toContain("script-src 'unsafe-inline'");
@@ -117,7 +116,7 @@ describe("gallery shell — srcdoc generation", () => {
   test("charset meta precedes CSP meta (unsafe-parse if reversed)", () => {
     const srcdoc = buildFrameSrcdoc({
       nonce: NONCE,
-      bootstrapScript: BOOTSTRAP_SCRIPT,
+      bootstrapUrl: BOOTSTRAP_URL,
     });
     const charsetIdx = srcdoc.indexOf('<meta charset="utf-8">');
     const cspIdx = srcdoc.indexOf("Content-Security-Policy");
@@ -126,16 +125,16 @@ describe("gallery shell — srcdoc generation", () => {
     expect(charsetIdx).toBeLessThan(cspIdx);
   });
 
-  test("srcdoc embeds the trusted bootstrap under the per-frame nonce", () => {
+  test("srcdoc references the trusted bootstrap under the per-frame nonce", () => {
     const srcdoc = buildFrameSrcdoc({
       nonce: NONCE,
-      bootstrapScript: BOOTSTRAP_SCRIPT,
+      bootstrapUrl: BOOTSTRAP_URL,
     });
     // `type="module"` keeps Vega's top-level `function addEventListener`
     // out of the global scope (a classic script would hoist it into
     // `window.addEventListener` and break the frame's own listener).
-    expect(srcdoc).toContain(`<script type="module" nonce="${NONCE}">`);
-    expect(srcdoc).toContain(BOOTSTRAP_SCRIPT);
+    expect(srcdoc).toContain(`<script type="module" nonce="${NONCE}" src="${BOOTSTRAP_URL}">`);
+    expect(srcdoc).toContain(`src="${BOOTSTRAP_URL}"`);
     expect(srcdoc).toContain("</script>");
   });
 
@@ -146,7 +145,7 @@ describe("gallery shell — srcdoc generation", () => {
     // this whole surface), this assertion fires.
     const srcdoc = buildFrameSrcdoc({
       nonce: NONCE,
-      bootstrapScript: BOOTSTRAP_SCRIPT,
+      bootstrapUrl: BOOTSTRAP_URL,
     });
     expect(srcdoc).not.toContain(ARTIFACT_SENTINEL);
     // Defensive: exactly ONE <script tag in srcdoc — the trusted bootstrap.
@@ -156,17 +155,13 @@ describe("gallery shell — srcdoc generation", () => {
     expect(srcdoc.match(/<script/gi)?.length ?? 0).toBe(1);
   });
 
-  test("srcdoc closes </script> tags inside bootstrap to prevent parse breakout", () => {
-    const tricky = "x = '</script' + '>';";
+  test("srcdoc escapes bootstrap URL attributes", () => {
+    const tricky = "https://example.test/bootstrap.js?a=1&b=2";
     const srcdoc = buildFrameSrcdoc({
       nonce: NONCE,
-      bootstrapScript: tricky,
+      bootstrapUrl: tricky,
     });
-    // The escape: any literal '</script' inside bootstrap must be
-    // '<\\/script' so the parent <script> tag cannot be terminated
-    // by artifact-style text. buildFrameSrcdoc is responsible for
-    // escaping (the production spike applied the same rule).
-    expect(srcdoc).toContain("<\\/script");
+    expect(srcdoc).toContain("https://example.test/bootstrap.js?a=1&amp;b=2");
     expect(srcdoc.match(/<\/script>/g)?.length ?? 0).toBe(1);
   });
 });
@@ -469,11 +464,11 @@ describe("gallery shell — per-frame nonce freshness", () => {
   test("each buildFrameSrcdoc call mints a distinct, fresh nonce when given one", () => {
     const a = buildFrameSrcdoc({
       nonce: buildFreshNonce(),
-      bootstrapScript: BOOTSTRAP_SCRIPT,
+      bootstrapUrl: BOOTSTRAP_URL,
     });
     const b = buildFrameSrcdoc({
       nonce: buildFreshNonce(),
-      bootstrapScript: BOOTSTRAP_SCRIPT,
+      bootstrapUrl: BOOTSTRAP_URL,
     });
     expect(a).not.toBe(b);
     // Each srcdoc's CSP carries its own nonce.
@@ -596,8 +591,8 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("seamless swap: new frame renders BEFORE the old frame is removed", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
-    const next = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const next = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     const received: unknown[] = [];
     simulateFrameSide(next, received);
 
@@ -644,8 +639,8 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("view state (zoom) is preserved across the swap", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
-    const next = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const next = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     simulateFrameSide(next, []);
 
     const result = await replaceArtifactFrame({
@@ -666,8 +661,8 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("every revision gets a FRESH opaque frame — no artifact-JS carryover", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const first = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
-    const second = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const first = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const second = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     // Fresh nonce + fresh srcdoc per frame — an old bootstrap cannot
     // survive into a new CSP window, and no source bytes ride srcdoc.
     expect(first.nonce).not.toBe(second.nonce);
@@ -682,7 +677,7 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     // is already closed (one-shot) and its control dies at replacement.
     const receivedFirst: unknown[] = [];
     simulateFrameSide(first, receivedFirst);
-    const seed = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const seed = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     const swapOne = await replaceArtifactFrame({
       current: seed,
       next: first,
@@ -719,8 +714,8 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("failed new render keeps the last-good frame + error badge", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
-    const next = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const next = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     // The frame boots but its render reports errors.
     simulateFrameSide(next, [], { errorCount: 1 });
 
@@ -749,8 +744,8 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("new frame that never boots keeps the last-good frame (timeout path)", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
-    const next = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const next = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     // No boot-ready at all.
     simulateFrameSide(next, [], { omitBootReady: true, omitRenderComplete: true });
 
@@ -773,7 +768,7 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("swapToRevision fetches the exact revision and swaps to a fresh frame", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     const fetched: { artifactId: string; revisionSha: string }[] = [];
     const bytes = new Uint8Array([7, 7, 7]);
     const received: unknown[] = [];
@@ -782,7 +777,7 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
       {
         dom,
         host: recording.host,
-        bootstrapScript: BOOTSTRAP_SCRIPT,
+        bootstrapUrl: BOOTSTRAP_URL,
         fetchRevision: async (artifactId, revisionSha) => {
           fetched.push({ artifactId, revisionSha });
           return { artifactType: "markdown", bytes };
@@ -808,7 +803,7 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
 describe("gallery shell — control-port RECEIVE path", () => {
   test("onControlEvent receives frame→shell events posted on the frame-held end", async () => {
     const dom = createStubDom();
-    const frame = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const frame = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     const events: FrameControlEvent[] = [];
     const unsubscribe = frame.onControlEvent((event) => events.push(event));
     postFrameControl(frame, { type: "boot-ready" });
@@ -831,7 +826,7 @@ describe("gallery shell — control-port RECEIVE path", () => {
 
   test("awaitControlEvent resolves on the matching type and times out to null", async () => {
     const dom = createStubDom();
-    const frame = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const frame = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
     const pending = frame.awaitControlEvent("boot-ready", 1_000);
     postFrameControl(frame, { type: "boot-ready" });
     expect(await pending).toMatchObject({ type: "boot-ready" });

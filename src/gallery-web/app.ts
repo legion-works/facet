@@ -153,7 +153,7 @@ export interface FrameControlEvent {
 }
 
 export interface CreateArtifactFrameOptions {
-  readonly bootstrapScript: string;
+  readonly bootstrapUrl: string;
   readonly dom: ShellDom;
   readonly nonce?: string;
 }
@@ -230,7 +230,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   const attrs = buildFrameAttributes();
   const srcdoc = buildFrameSrcdoc({
     nonce,
-    bootstrapScript: options.bootstrapScript,
+    bootstrapUrl: options.bootstrapUrl,
   });
   // Fresh channels per frame. port1 = shell side; port2 = frame side
   // (transferred on the postMessage handshake).
@@ -436,7 +436,7 @@ export interface RevisionFetchResult {
 export interface SwapToRevisionDeps {
   readonly dom: ShellDom;
   readonly host: FrameHost;
-  readonly bootstrapScript: string;
+  readonly bootstrapUrl: string;
   /** Fetch the exact revision bytes the SSE event named. */
   readonly fetchRevision: (artifactId: string, revisionSha: string) => Promise<RevisionFetchResult>;
   readonly readyTimeoutMs?: number;
@@ -468,7 +468,7 @@ export async function swapToRevision(
   viewState: ViewState,
 ): Promise<{ readonly frame: CreatedArtifactFrame; readonly result: ReplaceArtifactFrameResult }> {
   const revision = await deps.fetchRevision(event.artifactId, event.revisionSha);
-  const next = createArtifactFrame({ bootstrapScript: deps.bootstrapScript, dom: deps.dom });
+  const next = createArtifactFrame({ bootstrapUrl: deps.bootstrapUrl, dom: deps.dom });
   deps.onFrameCreated?.(next);
   const result = await replaceArtifactFrame({
     current,
@@ -549,10 +549,7 @@ export async function startGallery(): Promise<void> {
   if (title !== null) title.textContent = "facet";
   if (revision !== null) revision.textContent = handoff.revisionSha.slice(0, 12);
   setGalleryStatus("loading");
-  const bootstrapResponse = await fetch(`${baseUrl}/gallery/frame/bootstrap.js`);
-  if (!bootstrapResponse.ok)
-    throw new Error(`Gallery frame bootstrap failed (${bootstrapResponse.status})`);
-  const bootstrapScript = await bootstrapResponse.text();
+  const bootstrapUrl = `${baseUrl}/gallery/frame/bootstrap.js`;
   const canvas = document.getElementById("facet-canvas");
   if (!(canvas instanceof HTMLElement)) throw new Error("Gallery canvas is missing");
   const viewState: ViewState = { zoom: 1 };
@@ -579,7 +576,7 @@ export async function startGallery(): Promise<void> {
   };
   const dom: ShellDom = { document, MessageChannel, hostname: window.location.hostname, window };
   const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha);
-  let current = createArtifactFrame({ bootstrapScript, dom });
+  let current = createArtifactFrame({ bootstrapUrl, dom });
   const boot = await armFrameLoad(current, (frame) =>
     host.mountOffScreen(frame.frameId, frame.element.raw),
   );
@@ -602,7 +599,7 @@ export async function startGallery(): Promise<void> {
         {
           dom,
           host,
-          bootstrapScript,
+          bootstrapUrl,
           fetchRevision: (_artifactId, revisionSha) =>
             fetchGallerySource(baseUrl, handoff, revisionSha),
           onFrameCreated: (next) => {
