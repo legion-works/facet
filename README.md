@@ -19,4 +19,4 @@ facet read-back --tier visual
 The CLI is the product contract. Agent workflows and adapter guidance live in
 [Agents](docs/guides/agents.md).
 
-→ [Agents](docs/guides/agents.md) · [CLI reference](docs/reference/cli.md) · [Architecture](ARCHITECTURE.md) · [Structure](STRUCTURE.md) · [Contributing](CONTRIBUTING.md)
+→ [Agents](docs/guides/agents.md) · [CLI reference](docs/reference/cli.md) · [Architecture](ARCHITECTURE.md) · [Structure](STRUCTURE.md) · [Verification](docs/verification/v1-ship-gate.md) · [Contributing](CONTRIBUTING.md)

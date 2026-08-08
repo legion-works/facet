@@ -149,7 +149,7 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
   });
   return {
     status: result.status,
-    tier: result.tier,
+    tier: result.tier === "visual" ? 1 : result.tier,
     artifactId: result.artifactId,
     revisionSha: result.revisionSha,
     observed: {

@@ -17,5 +17,5 @@
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"],
   // Acceptance gates + their shared testkit reference the full product surface that lands in later stages; they are red-by-design until then and are re-included in the ship-gate typecheck. Unit/integration tests stay covered.
-  "exclude": ["node_modules", "dist", "coverage", "tests/acceptance", "tests/helpers"]
+  "exclude": ["node_modules", "dist", "coverage"]
 }
