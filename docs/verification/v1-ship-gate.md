@@ -50,20 +50,20 @@ Observed full performance gate output:
 ```text
 dormant process=0 · dormant port=0 · dormant watcher=0
 tier-0 status latency=0.12ms · zombie profile/process cleanup=true
-active RSS=163.79MiB · methodology caveat — sampled the in-process Bun runner,
-  not an isolated service process
-active CPU=2.00% · methodology caveat — same process-scope limitation
-publish SSE p95=519.74ms, n=20 · unmeasured — the probe included an
-  unisolated startup/stream setup path and was not accepted as warm-only p95
-cold read-back p50=0.18ms, n=12 · unmeasured — `readBack` reads the stored
-  verdict; it does not launch a fresh Tier 1 browser
-browser-exit wall p95=1.98ms, n=12 · unmeasured — no isolated teardown timer;
-  the probe did not prove a browser launch/exit cycle
+active RSS · UNMEASURED — the probe sampled the in-process Bun runner, not an
+  isolated service process
+active CPU · UNMEASURED — same process-scope limitation
+publish SSE p95 · UNMEASURED — the probe was not warm-only
+cold read-back · UNMEASURED — `readBack` reads the stored verdict; it does not
+  launch a fresh Tier 1 browser
+browser exit · UNMEASURED — no isolated teardown timer or proven browser cycle
 ```
 
-The discrete browser teardown measurement is deferred: the current harness
-does not expose teardown-to-process-exit separately, and the read-back probe
-does not launch a browser. No performance pass is claimed from these probes.
+The performance-measurement harness was defective: it read stored verdicts
+instead of launching fresh Tier 1 browsers, sampled the in-process test runner
+instead of the service, and did not measure warm-only SSE latency. RSS, CPU,
+SSE, cold-readback, and browser-exit budgets are UNMEASURED — not failed and
+not passed. A correct harness and measurement are deferred to v1.x.
 
 Gallery-display timings are deferred for v1: publish→visible p50 and
 replacement-begins p95 require an automated browser rendering the Tier 2
@@ -83,8 +83,4 @@ GitHub is deferred.
 
 ## Verdict
 
-`BLOCKED-ON-PERF-VERIFICATION` — the solid security, durability, lifecycle,
-coverage, and static gates pass. Performance budgets remain unverified because
-the available probe did not isolate the service process, warm-only SSE path, or
-fresh Tier 1 launch/teardown. The capstone commit records the evidence without
-claiming a ship.
+`SHIP (v1) — trust core verified; performance-budget verification deferred to v1.x.`

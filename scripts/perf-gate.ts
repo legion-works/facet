@@ -47,12 +47,24 @@ try {
     metrics.push(
       {
         name: "active RSS MiB",
-        observed: "not measured (no active service)",
+        observed: "UNMEASURED (harness defect — see roadmap)",
         status: "skipped",
       },
-      { name: "active CPU percent", observed: "not measured", status: "skipped" },
-      { name: "publish SSE p95 ms", observed: "not measured", status: "skipped" },
-      { name: "replacement p95 ms", observed: "not measured", status: "skipped" },
+      {
+        name: "active CPU percent",
+        observed: "UNMEASURED (harness defect — see roadmap)",
+        status: "skipped",
+      },
+      {
+        name: "publish SSE p95 ms",
+        observed: "UNMEASURED (harness defect — see roadmap)",
+        status: "skipped",
+      },
+      {
+        name: "replacement p95 ms",
+        observed: "UNMEASURED (harness defect — see roadmap)",
+        status: "skipped",
+      },
     );
   }
   for (const metric of metrics) {
