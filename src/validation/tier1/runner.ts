@@ -304,21 +304,45 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
       ]);
     }
     if (hostHtmlPath !== undefined) {
+      const cleanupStartedAt = performance.now();
+      traceTier1("cleanup:host-html:start", startedAt);
       try {
         rmSync(hostHtmlPath, { force: true });
       } catch {
         // best-effort
+      } finally {
+        traceTier1(
+          "cleanup:host-html:complete",
+          startedAt,
+          `durationMs=${Math.round(performance.now() - cleanupStartedAt)}`,
+        );
       }
     }
+    const hostDirCleanupStartedAt = performance.now();
+    traceTier1("cleanup:host-dir:start", startedAt);
     try {
       rmSync(hostDir, { recursive: true, force: true });
     } catch {
       // best-effort
+    } finally {
+      traceTier1(
+        "cleanup:host-dir:complete",
+        startedAt,
+        `durationMs=${Math.round(performance.now() - hostDirCleanupStartedAt)}`,
+      );
     }
+    const profileCleanupStartedAt = performance.now();
+    traceTier1("cleanup:profile-dir:start", startedAt);
     try {
       rmSync(profileDir, { recursive: true, force: true });
     } catch {
       // best-effort
+    } finally {
+      traceTier1(
+        "cleanup:profile-dir:complete",
+        startedAt,
+        `durationMs=${Math.round(performance.now() - profileCleanupStartedAt)}`,
+      );
     }
     clearTimeout(undefined as unknown as NodeJS.Timeout);
   }

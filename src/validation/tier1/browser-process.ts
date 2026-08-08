@@ -21,6 +21,8 @@ import { FacetError } from "../../shared/errors/facet-error";
 import { TIER1_USER_DATA_DIR_MODE, TIER1_PINNED_VERSION } from "./limits";
 import { resolveLauncher, type ResolvedLauncher } from "./launcher";
 
+const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+
 /**
  * Minimal CDP session surface the verifier uses. Puppeteer-core's
  * `CDPSession` satisfies this shape; a raw-CDP impl can too.
@@ -79,10 +81,18 @@ export function createEphemeralProfileDir(): string {
 
 /** Remove the ephemeral profile directory; best-effort. */
 export function removeEphemeralProfileDir(path: string): void {
+  const startedAt = performance.now();
+  if (TIER1_TRACE) process.stderr.write(`[tier1] browser-profile-remove:start path=${path}\n`);
   try {
     rmSync(path, { recursive: true, force: true });
   } catch {
     // best-effort
+  } finally {
+    if (TIER1_TRACE) {
+      process.stderr.write(
+        `[tier1] browser-profile-remove:complete durationMs=${Math.round(performance.now() - startedAt)} path=${path}\n`,
+      );
+    }
   }
 }
 

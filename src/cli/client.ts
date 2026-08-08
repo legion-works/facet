@@ -13,6 +13,8 @@
  * invalid input is rejected at parse time (typed `invalid_request`).
  */
 
+import { spawn } from "node:child_process";
+
 import {
   errEnvelope,
   parseEnvelope,
@@ -27,10 +29,65 @@ import {
 } from "../shared/contracts/commands";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+const TIER1_TRACE_SOCKET_SNAPSHOT_MS = 10_000;
 
 function traceTier1Transport(stage: string): void {
   if (!TIER1_TRACE) return;
   process.stderr.write(`[tier1-transport] ${stage}\n`);
+}
+
+function startFetchDiagnostics(command: string, baseUrl: string): () => void {
+  if (!TIER1_TRACE || command !== "publish") return () => {};
+  let ticks = 0;
+  let lastTickAt = performance.now();
+  const heartbeat = setInterval(() => {
+    const now = performance.now();
+    ticks += 1;
+    traceTier1Transport(
+      `client:fetch:liveness command=${command} tick=${ticks} gapMs=${Math.round(now - lastTickAt)}`,
+    );
+    lastTickAt = now;
+  }, 1_000);
+  heartbeat.unref();
+  const servicePort = Number(new URL(baseUrl).port);
+  const snapshot = spawn(
+    "/bin/sh",
+    [
+      "-c",
+      `sleep ${TIER1_TRACE_SOCKET_SNAPSHOT_MS / 1_000}
+observed_at=$(date +%s%3N)
+printf '[tier1-transport] client:fetch:socket-snapshot command=%s observedAt=%s pid=%s servicePort=%s\\n' "$FACET_TRACE_COMMAND" "$observed_at" "$FACET_TRACE_PARENT_PID" "$FACET_TRACE_SERVICE_PORT" >&2
+for source in /proc/net/tcp /proc/net/tcp6; do
+  awk -v command="$FACET_TRACE_COMMAND" -v port="$FACET_TRACE_PORT_HEX" -v source="$source" 'NR > 1 { split($2, local, ":"); split($3, remote, ":"); if (toupper(local[2]) == port || toupper(remote[2]) == port) { row=$0; gsub(/[[:space:]]+/, " ", row); sub(/^ /, "", row); printf "[tier1-transport] client:fetch:socket-row command=%s source=%s raw=%s\\n", command, source, row > "/dev/stderr" } }' "$source"
+done
+for fd in /proc/$FACET_TRACE_PARENT_PID/fd/*; do
+  target=$(readlink "$fd" 2>/dev/null || true)
+  case "$target" in
+    socket:*) printf '[tier1-transport] client:fetch:socket-fd command=%s fd=%s target=%s\\n' "$FACET_TRACE_COMMAND" "\${fd##*/}" "$target" >&2 ;;
+  esac
+done`,
+    ],
+    {
+      stdio: ["ignore", "ignore", "inherit"],
+      env: {
+        ...process.env,
+        FACET_TRACE_COMMAND: command,
+        FACET_TRACE_PARENT_PID: String(process.pid),
+        FACET_TRACE_PORT_HEX: servicePort.toString(16).padStart(4, "0").toUpperCase(),
+        FACET_TRACE_SERVICE_PORT: String(servicePort),
+      },
+    },
+  );
+  snapshot.unref();
+  return () => {
+    clearInterval(heartbeat);
+    try {
+      snapshot.kill("SIGTERM");
+    } catch {
+      // Snapshot already exited.
+    }
+    traceTier1Transport(`client:fetch:liveness-stop command=${command} ticks=${ticks}`);
+  };
 }
 import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
@@ -101,6 +158,7 @@ export class FacetClient {
       Object.assign(headers, options.extraHeaders);
     }
     let res: Response;
+    const stopFetchDiagnostics = startFetchDiagnostics(parsed.command, this.#baseUrl);
     try {
       traceTier1Transport(`client:fetch:start command=${parsed.command}`);
       res = await this.#fetchImpl(`${this.#baseUrl}/api/v1/commands`, {
@@ -115,6 +173,8 @@ export class FacetClient {
         cause: error,
         details: { reason: "connection_failed", host: this.#baseUrl },
       });
+    } finally {
+      stopFetchDiagnostics();
     }
     traceTier1Transport(`client:body:start command=${parsed.command}`);
     const text = await res.text();
