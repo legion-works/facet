@@ -118,8 +118,17 @@ export function writeLockMetadata(lockPath: string, metadata: LockMetadata): voi
   const lockDir = dirname(lockPath);
   ensureOwnerOnlyDirectory(lockDir);
   const tmpPath = join(lockDir, `.facet-lock-${crypto.randomUUID()}.tmp`);
-  writeFileSync(tmpPath, JSON.stringify(metadata), { mode: 0o600 });
-  renameSync(tmpPath, lockPath);
+  try {
+    writeFileSync(tmpPath, JSON.stringify(metadata), { mode: 0o600 });
+    renameSync(tmpPath, lockPath);
+  } catch (error) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // Preserve the original write or rename failure.
+    }
+    throw error;
+  }
 }
 
 /**

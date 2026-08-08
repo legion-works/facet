@@ -8,7 +8,15 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -80,6 +88,11 @@ describe("createInstallTokenStore", () => {
     expect(readFileSync(path).length).toBeGreaterThan(0);
     const stat = require("node:fs").statSync(path);
     expect(stat.mode & 0o777).toBe(0o600);
+    expect(
+      readdirSync(scratchDir).filter(
+        (name) => name.startsWith(".facet-token-") && name.endsWith(".tmp"),
+      ),
+    ).toEqual([]);
   });
 
   test("returns the same token on subsequent reads (stable)", () => {

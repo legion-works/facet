@@ -15,7 +15,14 @@
  *     action; this module simply refuses to fabricate one.
  */
 
-import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
@@ -93,6 +100,11 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
       ensureTightPermissions(options.tokenPath);
       return fresh;
     } catch (error) {
+      try {
+        unlinkSync(tmpPath);
+      } catch {
+        // Preserve the original write or rename failure.
+      }
       return recoverInstallTokenAfterWriteFailure(options.tokenPath, error);
     }
   }

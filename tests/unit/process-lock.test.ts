@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -111,5 +111,16 @@ describe("acquireLock", () => {
     } finally {
       rmSync(lockPath, { force: true });
     }
+  });
+
+  test("cleans the staged file when the rename fails", () => {
+    const lockPath = freshPath();
+    mkdirSync(lockPath);
+    expect(() => writeLockMetadata(lockPath, liveMetadata)).toThrow();
+    expect(
+      readdirSync(dirname(lockPath)).filter(
+        (name) => name.startsWith(".facet-lock-") && name.endsWith(".tmp"),
+      ),
+    ).toEqual([]);
   });
 });
