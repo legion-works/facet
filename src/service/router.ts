@@ -58,6 +58,31 @@ const ROUTE_FRAME = "/gallery/frame";
 const ROUTE_BOOTSTRAP = "/api/v1/gallery/bootstrap";
 const ROUTE_RELEASE = "/api/v1/gallery/release";
 const ROUTE_SOURCE = "/api/v1/gallery/source";
+const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+
+function traceTier1Transport(stage: string): void {
+  if (!TIER1_TRACE) return;
+  process.stderr.write(`[tier1-transport] ${stage}\n`);
+}
+
+function startRequestHeartbeat(requestId: string, command: string): () => void {
+  if (!TIER1_TRACE) return () => {};
+  let ticks = 0;
+  const heartbeat = setInterval(() => {
+    ticks += 1;
+    traceTier1Transport(
+      `request:heartbeat tick=${ticks} command=${command} requestId=${requestId}`,
+    );
+  }, 1_000);
+  heartbeat.unref();
+  traceTier1Transport(`request:heartbeat:start command=${command} requestId=${requestId}`);
+  return () => {
+    clearInterval(heartbeat);
+    traceTier1Transport(
+      `request:heartbeat:stop ticks=${ticks} command=${command} requestId=${requestId}`,
+    );
+  };
+}
 
 // Re-export so `import { RAW_BODY_CAP_BYTES } from "./router"` keeps
 // working — the constant moved to `router-guards.ts` for size reasons.
@@ -242,8 +267,12 @@ export async function handleCommand(deps: RouterDeps, req: Request): Promise<Res
   }
 
   deps.idle.acquire(`request:${requestId}`);
+  const stopHeartbeat = startRequestHeartbeat(requestId, command.command);
   try {
     const result = await dispatch(deps, command, requestId);
+    traceTier1Transport(
+      `router:dispatch-result-received command=${command.command} requestId=${requestId}`,
+    );
     let resultForWire = result;
     if (command.command === "open") {
       const openResult = result as {
@@ -263,6 +292,9 @@ export async function handleCommand(deps: RouterDeps, req: Request): Promise<Res
       };
     }
     const safeResult = CommandResultSchema.parse(resultForWire);
+    traceTier1Transport(
+      `router:envelope-response:start command=${command.command} requestId=${requestId}`,
+    );
     const elapsedMs = Math.round(performance.now() - startNs);
     deps.logger.info("command.completed", {
       requestId,
@@ -281,6 +313,7 @@ export async function handleCommand(deps: RouterDeps, req: Request): Promise<Res
     });
     return envelopeResponse(errEnvelope(requestId, facetError.toBody()), statusFor(facetError));
   } finally {
+    stopHeartbeat();
     deps.idle.release(`request:${requestId}`);
   }
 }

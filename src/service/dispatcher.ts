@@ -334,6 +334,7 @@ export async function dispatch(
       );
       const { source: _source, ...envelope } = revision;
       void _source;
+      traceTier1Transport("publish:return:before");
       return {
         command: "publish",
         requestId,
