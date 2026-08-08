@@ -32,10 +32,15 @@ export function evictRevisions(db: Database, artifactId: string): void {
     if (count.count <= 50) return;
     const candidate = db
       .query(
-        "SELECT id FROM revisions WHERE artifact_id = ? AND pinned = 0 AND NOT EXISTS (SELECT 1 FROM templates WHERE templates.revision_id = revisions.id) ORDER BY revision_number ASC LIMIT 1",
+        "SELECT id FROM revisions WHERE artifact_id = ? AND revision_number < (SELECT MAX(revision_number) FROM revisions WHERE artifact_id = ?) AND pinned = 0 AND NOT EXISTS (SELECT 1 FROM templates WHERE templates.revision_id = revisions.id) ORDER BY revision_number ASC LIMIT 1",
       )
-      .get(artifactId) as { id: string } | null;
-    if (!candidate) return;
+      .get(artifactId, artifactId) as { id: string } | null;
+    if (!candidate) {
+      throw new FacetStoreError(
+        "revision_capacity_pinned",
+        `Revision capacity is full for artifact ${artifactId}; all revisions are pinned or template-bound`,
+      );
+    }
     db.query("UPDATE revisions SET parent_revision_id = NULL WHERE parent_revision_id = ?").run(
       candidate.id,
     );
@@ -85,9 +90,14 @@ export function instantiateTemplate(db: Database, input: TemplateInput): Templat
   }
 }
 
-export function pinRevision(db: Database, revisionId: string): void {
+export function pinRevision(db: Database, revisionId: string, pinned = true): void {
   try {
-    db.query("UPDATE revisions SET pinned = 1 WHERE id = ?").run(revisionId);
+    const result = db
+      .query("UPDATE revisions SET pinned = ? WHERE id = ?")
+      .run(pinned ? 1 : 0, revisionId);
+    if (result.changes === 0) {
+      throw new FacetStoreError("foreign_key", `Revision not found: ${revisionId}`);
+    }
   } catch (error) {
     throw asStoreError(error);
   }

@@ -128,6 +128,7 @@ export function statusFor(error: FacetError): number {
     case "foreign_key":
     case "immutable_revision":
     case "invalid_artifact_type":
+    case "revision_capacity_pinned":
       return 409;
     case "tier0_timeout":
     case "tier0_protocol_error":

@@ -509,8 +509,8 @@ export class ArtifactRepository {
     return instantiateLifecycleTemplate(this.db, input);
   }
 
-  pinRevision(revisionId: string): void {
-    pinLifecycleRevision(this.db, revisionId);
+  pinRevision(revisionId: string, pinned = true): void {
+    pinLifecycleRevision(this.db, revisionId, pinned);
   }
 
   updateRevisionSource(_revisionId: string, _source: Uint8Array): never {

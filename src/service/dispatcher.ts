@@ -437,6 +437,19 @@ export async function dispatch(
         slug: command.newSlug,
         title: template.name,
       });
+      const source = deps.repository.getRevisionById(template.revisionId);
+      if (source === null) {
+        throw new FacetError("revision_not_found", "Template revision not found", {
+          retryable: false,
+          details: { revisionId: template.revisionId },
+        });
+      }
+      deps.repository.publishRevision({
+        artifactId: artifact.id,
+        artifactType: source.artifactType,
+        source: new Uint8Array(source.source),
+        note: `Instantiated from template ${template.name}`,
+      });
       return {
         command: "instantiate",
         requestId,
@@ -452,9 +465,7 @@ export async function dispatch(
           details: { revisionId: command.revisionId },
         });
       }
-      if (command.pinned) {
-        deps.repository.pinRevision(command.revisionId);
-      }
+      deps.repository.pinRevision(command.revisionId, command.pinned);
       return {
         command: "pin",
         requestId,

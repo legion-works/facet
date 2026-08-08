@@ -23,6 +23,7 @@ export type StoreErrorCode = Extract<
   | "migration_failed"
   | "invalid_artifact_type"
   | "constraint"
+  | "revision_capacity_pinned"
 >;
 
 export class FacetStoreError extends FacetError {
