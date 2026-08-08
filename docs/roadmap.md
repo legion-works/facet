@@ -16,7 +16,7 @@ types may extend registries, but artifact code never gains host capabilities.
 ## v2
 
 • TypeScript `ArtifactBuilder`
-▸ Swappable UI library: let a TSX artifact declare its UI kit (design-system, shadcn, …) and resolve it through a registered provider — another typed registry extension, like `RendererRegistry`. Hard constraint: the kit is vendored/bundled offline (never a runtime CDN pull) and artifact code still gains zero host capabilities — the frozen-CSP + byte-dumb model binds it.
+▸ Swappable UI library: let a TSX artifact declare its UI kit and resolve it through a registered provider — another typed registry extension, like `RendererRegistry`. Hard constraint: the kit is vendored/bundled offline (never a runtime CDN pull) and artifact code still gains zero host capabilities — the frozen-CSP + byte-dumb model binds it. Researched defaults (T1, re-verify at design time): **Base UI** for polished/composed work (headless primitives; `CSPProvider` v1.1.0+ threads the per-frame nonce into its 4 style-injecting components) + **daisyUI 5** for quick dashboards (56/58 components pure CSS → CSP-safe by construction; themes are CSS-var sets that slot into the design-token palette). Disqualified: shadcn/ui's default Radix variant — `react-style-singleton` injects scroll-lock `<style>` without nonce propagation in static builds (upstream open since 2023). Charts stay vega-lite (already vendored, SVG, no runtime style injection).
 • Forms `FormBridge`
 • FTS5 `SearchIndex`
 • Trilium `ExportSink`
