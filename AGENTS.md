@@ -15,3 +15,7 @@ The test matrix has three layers:
 - acceptance — browser and end-to-end behavior
 
 Public text follows the Legion Works house voice: terse, technical, sentence case, glyphs instead of emoji.
+
+Agent workflows: [guides/agents.md](docs/guides/agents.md). CLI details:
+[reference/cli.md](docs/reference/cli.md). Public extension points are listed
+in [STRUCTURE.md](STRUCTURE.md).

@@ -16,6 +16,7 @@ facet open
 facet read-back --tier visual
 ```
 
-The CLI examples are the product contract; the CLI ships in a later release stage.
+The CLI is the product contract. Agent workflows and adapter guidance live in
+[Agents](docs/guides/agents.md).
 
-→ [Architecture](ARCHITECTURE.md) · [Structure](STRUCTURE.md) · [Contributing](CONTRIBUTING.md)
+→ [Agents](docs/guides/agents.md) · [CLI reference](docs/reference/cli.md) · [Architecture](ARCHITECTURE.md) · [Structure](STRUCTURE.md) · [Contributing](CONTRIBUTING.md)

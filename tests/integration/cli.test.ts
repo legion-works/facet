@@ -26,7 +26,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 
@@ -159,7 +159,104 @@ async function runOnce(args: string[], io: TestIo): Promise<CliExit> {
   return runCli(args, io);
 }
 
+async function runAdapter(
+  adapter: string,
+  args: string[],
+  home: string,
+  stdin = "",
+): Promise<string> {
+  const proc = Bun.spawn(["sh", adapter, ...args], {
+    cwd: resolve(import.meta.dir, "../.."),
+    env: { ...process.env, FACET_HOME: home },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  proc.stdin.write(stdin);
+  proc.stdin.end();
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(stderr);
+  }
+  return stdout;
+}
+
+function normalizeAdapterValue(value: unknown, key = ""): unknown {
+  if (Array.isArray(value)) return value.map((entry) => normalizeAdapterValue(entry));
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+        childKey,
+        normalizeAdapterValue(childValue, childKey),
+      ]),
+    );
+  }
+  if (
+    key === "requestId" ||
+    key === "id" ||
+    key.endsWith("Id") ||
+    key.endsWith("At") ||
+    key === "timestamp"
+  )
+    return "<volatile>";
+  return value;
+}
+
+function normalizeAdapterEnvelope(text: string): unknown {
+  return normalizeAdapterValue(JSON.parse(text) as Record<string, unknown>);
+}
+
 describe("cli contract — surface", () => {
+  test("all harness adapters preserve the CLI envelope for publish and read-back", async () => {
+    const repoRoot = resolve(import.meta.dir, "../..");
+    const adapters = [
+      join(repoRoot, "src/harness-adapters/opencode/facet.sh"),
+      join(repoRoot, "src/harness-adapters/claude-code/facet.sh"),
+      join(repoRoot, "src/harness-adapters/codex/facet.sh"),
+    ];
+    const normalizedRuns: unknown[] = [];
+    for (const [index, adapter] of adapters.entries()) {
+      const home = join(scratchRoot, `adapter-${index}-${crypto.randomUUID()}`);
+      mkdirSync(home, { recursive: true });
+      const created = JSON.parse(
+        await runAdapter(
+          adapter,
+          ["create", "--project-id", "p", "--slug", "s", "--title", "S"],
+          home,
+        ),
+      ) as { data: { artifact: { id: string } } };
+      const artifactId = created.data.artifact.id;
+      const published = JSON.parse(
+        await runAdapter(
+          adapter,
+          ["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"],
+          home,
+          "adapter fixture",
+        ),
+      ) as { data: { revision: { sha256: string } } };
+      const readBack = await runAdapter(
+        adapter,
+        [
+          "read-back",
+          "--artifact-id",
+          artifactId,
+          "--revision-sha",
+          published.data.revision.sha256,
+          "--tier",
+          "0",
+        ],
+        home,
+      );
+      normalizedRuns.push({
+        publish: normalizeAdapterEnvelope(JSON.stringify(published)),
+        readBack: normalizeAdapterEnvelope(readBack),
+      });
+    }
+    for (const run of normalizedRuns.slice(1)) expect(run).toEqual(normalizedRuns[0]);
+  }, 60_000);
+
   test("--help prints usage including every verb, the stdin example, and the stdout-is-JSON line", async () => {
     const { env } = makeEnv("help");
     const io = makeIo();
