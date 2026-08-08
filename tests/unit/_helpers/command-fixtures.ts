@@ -63,7 +63,7 @@ export function validPublishRequest() {
     requestId: REQUEST_ID,
     artifactId: "art-1",
     artifactType: "markdown" as const,
-    bytes: new Uint8Array([104, 105]),
+    bytes: [104, 105],
     note: null,
   };
 }

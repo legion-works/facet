@@ -5,6 +5,14 @@ import { ArtifactTypeSchema, ReservedArtifactTypeSchema } from "../artifact";
 import { BaseRequestSchema, ReadBackTierSchema } from "./_shared";
 
 /**
+ * Wire-encoded byte payload for publish. JSON cannot carry a Uint8Array
+ * directly, so the contract accepts an array of integers (0..255). The
+ * router converts that array into a Uint8Array before passing to the
+ * store, and the contract-level fixture tests assert the JSON shape.
+ */
+export const PublishBytesSchema = z.array(z.number().int().min(0).max(255));
+
+/**
  * Publish accepts the four implemented artifact types AND the reserved
  * `html` literal — the reserved form parses here so the dispatcher can
  * detect it via `checkArtifactTypeSupported` and return the typed
@@ -24,7 +32,7 @@ export const PublishRequestSchema = BaseRequestSchema.extend({
   command: z.literal("publish"),
   artifactId: z.string().min(1),
   artifactType: PublishArtifactTypeSchema,
-  bytes: z.instanceof(Uint8Array),
+  bytes: PublishBytesSchema,
   note: z.string().nullable().optional(),
   parentRevisionId: z.string().min(1).nullable().optional(),
 });

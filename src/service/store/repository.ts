@@ -6,6 +6,7 @@ import {
   ProjectSchema,
   RenderRunSchema,
   RevisionSchema,
+  TemplateSchema,
   type Artifact,
   type ArtifactType,
   type Project,
@@ -35,7 +36,7 @@ interface PublishInput {
   readonly artifactId: string;
   readonly artifactType: ArtifactType | "html";
   readonly source: Uint8Array;
-  readonly note?: string;
+  readonly note?: string | null;
   readonly parentRevisionId?: string | null;
 }
 
@@ -57,6 +58,16 @@ interface WriteHookContext {
 interface RepositoryOptions {
   readonly onCommitted?: (revision: Revision) => void;
   readonly writeHook?: (context: WriteHookContext) => void;
+}
+
+interface ListArtifactsInput {
+  readonly projectId: string;
+  readonly slugPrefix?: string;
+  readonly limit?: number;
+}
+
+interface StatusForArtifactInput {
+  readonly artifactId: string;
 }
 
 type SqlRevision = Omit<
@@ -131,6 +142,168 @@ export class ArtifactRepository {
         .query("INSERT INTO projects(id, project_root, created_at) VALUES (?, ?, ?)")
         .run(value.id, value.projectRoot, value.createdAt);
       return ProjectSchema.parse(value);
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
+  getProjectById(id: string): Project | null {
+    try {
+      const row = this.db
+        .query("SELECT id, project_root, created_at FROM projects WHERE id = ?")
+        .get(id) as { id: string; project_root: string; created_at: string } | null;
+      if (!row) return null;
+      return ProjectSchema.parse({
+        id: row.id,
+        projectRoot: row.project_root,
+        createdAt: row.created_at,
+      });
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
+  /**
+   * Look up by id, creating the project on demand. The first lookup
+   * for a given id stamps it with the supplied root; subsequent lookups
+   * return the existing row. The synthesized root `${root}-${id}` keeps
+   * the `project_root` UNIQUE constraint satisfied while preserving
+   * the caller-chosen id for stable addressing.
+   */
+  getOrCreateProjectById(id: string, projectRoot: string): Project {
+    const existing = this.getProjectById(id);
+    if (existing) return existing;
+    const value = { id, projectRoot: `${projectRoot}-${id}`, createdAt: now() };
+    try {
+      this.db
+        .query("INSERT INTO projects(id, project_root, created_at) VALUES (?, ?, ?)")
+        .run(value.id, value.projectRoot, value.createdAt);
+      return ProjectSchema.parse(value);
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
+  listArtifacts(input: ListArtifactsInput): Artifact[] {
+    const limit = input.limit ?? 50;
+    const prefix = input.slugPrefix ?? "";
+    try {
+      const rows = this.db
+        .query(
+          "SELECT id, project_id, slug, title, created_at, updated_at FROM artifacts WHERE project_id = ? AND slug LIKE ? ORDER BY created_at DESC LIMIT ?",
+        )
+        .all(input.projectId, `${prefix}%`, limit) as Array<{
+        id: string;
+        project_id: string;
+        slug: string;
+        title: string;
+        created_at: string;
+        updated_at: string;
+      }>;
+      return rows.map((row) =>
+        ArtifactSchema.parse({
+          id: row.id,
+          projectId: row.project_id,
+          slug: row.slug,
+          title: row.title,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }),
+      );
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
+  listRenderRuns(input: { revisionId: string; tier: 0 | 1 }): RenderRun[] {
+    try {
+      const rows = this.db
+        .query(
+          "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC",
+        )
+        .all(input.revisionId, input.tier) as Array<{
+        id: string;
+        revision_id: string;
+        tier: number;
+        status: string;
+        expected_json: string;
+        observed_json: string;
+        screenshot_path: string | null;
+        console_path: string | null;
+        started_at: string;
+        finished_at: string;
+      }>;
+      return rows.map((row) =>
+        RenderRunSchema.parse({
+          id: row.id,
+          revisionId: row.revision_id,
+          tier: row.tier,
+          status: row.status,
+          expectedJson: row.expected_json,
+          observedJson: row.observed_json,
+          screenshotPath: row.screenshot_path,
+          consolePath: row.console_path,
+          startedAt: row.started_at,
+          finishedAt: row.finished_at,
+        }),
+      );
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
+  statusForArtifact(input: StatusForArtifactInput): {
+    revisionCount: number;
+    pinnedCount: number;
+    templateCount: number;
+  } {
+    try {
+      const revisionRow = this.db
+        .query("SELECT COUNT(*) AS count FROM revisions WHERE artifact_id = ?")
+        .get(input.artifactId) as { count: number };
+      const pinnedRow = this.db
+        .query("SELECT COUNT(*) AS count FROM revisions WHERE artifact_id = ? AND pinned = 1")
+        .get(input.artifactId) as { count: number };
+      const templateRow = this.db
+        .query(
+          "SELECT COUNT(*) AS count FROM templates t JOIN revisions r ON r.id = t.revision_id WHERE r.artifact_id = ?",
+        )
+        .get(input.artifactId) as { count: number };
+      return {
+        revisionCount: revisionRow.count,
+        pinnedCount: pinnedRow.count,
+        templateCount: templateRow.count,
+      };
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
+  findTemplateByName(name: string): Template | null {
+    try {
+      const row = this.db
+        .query(
+          "SELECT id, artifact_id, revision_id, name, description, promoted_by, promoted_at FROM templates WHERE name = ? ORDER BY promoted_at DESC LIMIT 1",
+        )
+        .get(name) as {
+        id: string;
+        artifact_id: string;
+        revision_id: string;
+        name: string;
+        description: string | null;
+        promoted_by: string;
+        promoted_at: string;
+      } | null;
+      if (!row) return null;
+      return TemplateSchema.parse({
+        id: row.id,
+        artifactId: row.artifact_id,
+        revisionId: row.revision_id,
+        name: row.name,
+        description: row.description,
+        promotedBy: row.promoted_by,
+        promotedAt: row.promoted_at,
+      });
     } catch (error) {
       throw asStoreError(error);
     }
@@ -217,6 +390,17 @@ export class ArtifactRepository {
       const row = this.db
         .query("SELECT * FROM revisions WHERE artifact_id = ? AND sha256 = ?")
         .get(artifactId, revisionSha) as SqlRevision | null;
+      return row ? mapRevision(row) : null;
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
+  getRevisionById(revisionId: string): Revision | null {
+    try {
+      const row = this.db
+        .query("SELECT * FROM revisions WHERE id = ?")
+        .get(revisionId) as SqlRevision | null;
       return row ? mapRevision(row) : null;
     } catch (error) {
       throw asStoreError(error);
