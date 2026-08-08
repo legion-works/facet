@@ -37,10 +37,6 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sysctl kernel.apparmor_restrict_unprivileged_userns
           unshare --map-current-user --user --net -- /bin/true
-      - name: isolate Bun server delivery after Tier 1 browser teardown
-        run: bun --config=scripts/repro-tier1-delivery-stall.bunfig.toml test --coverage ./scripts/repro-tier1-delivery-stall.ts
-        env:
-          FACET_TIER1_TRACE: "1"
       - run: bun run format:check
       - run: bun run lint
       - run: bun run typecheck
@@ -62,8 +58,6 @@ jobs:
           fi
       - run: bun test tests/unit tests/integration
       - run: bun test --coverage --coverage-reporter=lcov
-        env:
-          FACET_TIER1_TRACE: "1"
       - run: bun run coverage:check
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

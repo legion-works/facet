@@ -13,8 +13,6 @@
  * invalid input is rejected at parse time (typed `invalid_request`).
  */
 
-import { spawn } from "node:child_process";
-
 import {
   errEnvelope,
   parseEnvelope,
@@ -29,66 +27,13 @@ import {
 } from "../shared/contracts/commands";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
-const TIER1_TRACE_SOCKET_SNAPSHOT_MS = 10_000;
+export const FACET_CLIENT_COMMAND_TIMEOUT_MS = 75_000;
 
 function traceTier1Transport(stage: string): void {
   if (!TIER1_TRACE) return;
   process.stderr.write(`[tier1-transport] ${stage}\n`);
 }
 
-function startFetchDiagnostics(command: string, baseUrl: string): () => void {
-  if (!TIER1_TRACE || command !== "publish") return () => {};
-  let ticks = 0;
-  let lastTickAt = performance.now();
-  const heartbeat = setInterval(() => {
-    const now = performance.now();
-    ticks += 1;
-    traceTier1Transport(
-      `client:fetch:liveness command=${command} tick=${ticks} gapMs=${Math.round(now - lastTickAt)}`,
-    );
-    lastTickAt = now;
-  }, 1_000);
-  heartbeat.unref();
-  const servicePort = Number(new URL(baseUrl).port);
-  const snapshot = spawn(
-    "/bin/sh",
-    [
-      "-c",
-      `sleep ${TIER1_TRACE_SOCKET_SNAPSHOT_MS / 1_000}
-observed_at=$(date +%s%3N)
-printf '[tier1-transport] client:fetch:socket-snapshot command=%s observedAt=%s pid=%s servicePort=%s\\n' "$FACET_TRACE_COMMAND" "$observed_at" "$FACET_TRACE_PARENT_PID" "$FACET_TRACE_SERVICE_PORT" >&2
-for source in /proc/net/tcp /proc/net/tcp6; do
-  awk -v command="$FACET_TRACE_COMMAND" -v port="$FACET_TRACE_PORT_HEX" -v source="$source" 'NR > 1 { split($2, local, ":"); split($3, remote, ":"); if (toupper(local[2]) == port || toupper(remote[2]) == port) { row=$0; gsub(/[[:space:]]+/, " ", row); sub(/^ /, "", row); printf "[tier1-transport] client:fetch:socket-row command=%s source=%s raw=%s\\n", command, source, row > "/dev/stderr" } }' "$source"
-done
-for fd in /proc/$FACET_TRACE_PARENT_PID/fd/*; do
-  target=$(readlink "$fd" 2>/dev/null || true)
-  case "$target" in
-    socket:*) printf '[tier1-transport] client:fetch:socket-fd command=%s fd=%s target=%s\\n' "$FACET_TRACE_COMMAND" "\${fd##*/}" "$target" >&2 ;;
-  esac
-done`,
-    ],
-    {
-      stdio: ["ignore", "ignore", "inherit"],
-      env: {
-        ...process.env,
-        FACET_TRACE_COMMAND: command,
-        FACET_TRACE_PARENT_PID: String(process.pid),
-        FACET_TRACE_PORT_HEX: servicePort.toString(16).padStart(4, "0").toUpperCase(),
-        FACET_TRACE_SERVICE_PORT: String(servicePort),
-      },
-    },
-  );
-  snapshot.unref();
-  return () => {
-    clearInterval(heartbeat);
-    try {
-      snapshot.kill("SIGTERM");
-    } catch {
-      // Snapshot already exited.
-    }
-    traceTier1Transport(`client:fetch:liveness-stop command=${command} ticks=${ticks}`);
-  };
-}
 import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
@@ -96,6 +41,7 @@ import { isMutationMethod } from "../service/security/http-guards";
 export interface FacetClientOptions {
   readonly baseUrl: string;
   readonly installToken: string;
+  readonly commandTimeoutMs?: number;
   /** `fetch` indirection so tests can stub network. */
   readonly fetchImpl?: typeof fetch;
 }
@@ -110,11 +56,13 @@ export interface SendCommandOptions {
 export class FacetClient {
   readonly #baseUrl: string;
   readonly #installToken: string;
+  readonly #commandTimeoutMs: number;
   readonly #fetchImpl: typeof fetch;
 
   constructor(options: FacetClientOptions) {
     this.#baseUrl = options.baseUrl.replace(/\/$/, "");
     this.#installToken = options.installToken;
+    this.#commandTimeoutMs = options.commandTimeoutMs ?? FACET_CLIENT_COMMAND_TIMEOUT_MS;
     this.#fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -157,28 +105,43 @@ export class FacetClient {
     if (options.extraHeaders) {
       Object.assign(headers, options.extraHeaders);
     }
+    // Bun 1.3.14 can orphan a reused loopback fetch after a long response closes its socket.
+    headers.connection = "close";
     let res: Response;
-    const stopFetchDiagnostics = startFetchDiagnostics(parsed.command, this.#baseUrl);
+    let text: string;
+    const signal = AbortSignal.timeout(this.#commandTimeoutMs);
     try {
       traceTier1Transport(`client:fetch:start command=${parsed.command}`);
       res = await this.#fetchImpl(`${this.#baseUrl}/api/v1/commands`, {
         method: "POST",
         headers,
         body: JSON.stringify(envelope),
+        signal,
       });
       traceTier1Transport(`client:fetch:complete command=${parsed.command} status=${res.status}`);
+      traceTier1Transport(`client:body:start command=${parsed.command}`);
+      text = await res.text();
+      traceTier1Transport(`client:body:complete command=${parsed.command} bytes=${text.length}`);
     } catch (error) {
-      throw new FacetError("invalid_envelope", `Connection failed: ${(error as Error).message}`, {
-        retryable: true,
-        cause: error,
-        details: { reason: "connection_failed", host: this.#baseUrl },
-      });
-    } finally {
-      stopFetchDiagnostics();
+      const timedOut = signal.aborted;
+      throw new FacetError(
+        "invalid_envelope",
+        timedOut
+          ? `Connection timed out after ${this.#commandTimeoutMs}ms`
+          : `Connection failed: ${(error as Error).message}`,
+        {
+          retryable: true,
+          cause: error,
+          details: timedOut
+            ? {
+                reason: "connection_timeout",
+                host: this.#baseUrl,
+                timeoutMs: this.#commandTimeoutMs,
+              }
+            : { reason: "connection_failed", host: this.#baseUrl },
+        },
+      );
     }
-    traceTier1Transport(`client:body:start command=${parsed.command}`);
-    const text = await res.text();
-    traceTier1Transport(`client:body:complete command=${parsed.command} bytes=${text.length}`);
     let body: unknown;
     try {
       body = JSON.parse(text);

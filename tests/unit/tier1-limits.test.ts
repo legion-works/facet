@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { FACET_CLIENT_COMMAND_TIMEOUT_MS } from "../../src/cli/client";
 import {
   TIER1_CDP_CALL_WATCHDOG_MS,
   TIER1_RENDER_BARRIER_MS,
@@ -12,6 +13,7 @@ describe("Tier 1 budget ordering", () => {
 
     expect(TIER1_CDP_CALL_WATCHDOG_MS).toBeLessThan(TIER1_RENDER_BARRIER_MS);
     expect(TIER1_RENDER_BARRIER_MS).toBeLessThan(TIER1_TIMEOUT_MS);
-    expect(TIER1_TIMEOUT_MS).toBeLessThan(acceptanceTestBudgetMs);
+    expect(TIER1_TIMEOUT_MS).toBeLessThan(FACET_CLIENT_COMMAND_TIMEOUT_MS);
+    expect(FACET_CLIENT_COMMAND_TIMEOUT_MS).toBeLessThan(acceptanceTestBudgetMs);
   });
 });
