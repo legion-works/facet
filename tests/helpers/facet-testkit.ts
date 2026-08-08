@@ -77,6 +77,7 @@ export interface RunEgressPenetrationOptions {
 
 let env: AcceptanceEnv | null = null;
 let cleanupRegistered = false;
+const ACCEPTANCE_IDLE_TIMEOUT_MS = 120_000;
 
 interface AcceptanceEnv {
   readonly client: FacetClient;
@@ -84,9 +85,7 @@ interface AcceptanceEnv {
   readonly envDir: string;
 }
 
-async function ensureEnv(): Promise<AcceptanceEnv> {
-  if (env !== null) return env;
-  const envDir = mkdtempSync(join(tmpdir(), "facet-acceptance-"));
+async function startAcceptanceService(envDir: string): Promise<AcceptanceEnv> {
   const dbPath = join(envDir, "facet.sqlite");
   const installTokenPath = join(envDir, "install.token");
   const promoteTokenPath = join(envDir, "promote.token");
@@ -98,7 +97,7 @@ async function ensureEnv(): Promise<AcceptanceEnv> {
     installTokenPath,
     promoteTokenPath,
     lockPath,
-    idleTimeoutMs: 30_000,
+    idleTimeoutMs: ACCEPTANCE_IDLE_TIMEOUT_MS,
     logger: createQuietLogger({ component: "acceptance" }),
     tier0Runner: stubTier0Runner,
     tier1Runner: runTier1,
@@ -107,7 +106,35 @@ async function ensureEnv(): Promise<AcceptanceEnv> {
     baseUrl: service.url,
     installToken: service.installToken,
   });
-  env = { client, service, envDir };
+  return { client, service, envDir };
+}
+
+async function isServiceReachable(candidate: AcceptanceEnv): Promise<boolean> {
+  if (!Number.isInteger(candidate.service.pid) || candidate.service.pid <= 0) return false;
+  try {
+    process.kill(candidate.service.pid, 0);
+    const origin = new URL(candidate.service.url);
+    await fetch(candidate.service.url, {
+      headers: { host: origin.host },
+      signal: AbortSignal.timeout(1_000),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureEnv(): Promise<AcceptanceEnv> {
+  if (env !== null && (await isServiceReachable(env))) return env;
+
+  const previous = env;
+  if (previous !== null) {
+    env = null;
+    await previous.service.stop().catch(() => {});
+  }
+
+  const envDir = previous?.envDir ?? mkdtempSync(join(tmpdir(), "facet-acceptance-"));
+  env = await startAcceptanceService(envDir);
   if (!cleanupRegistered) {
     afterAll(async () => {
       if (env !== null) {
@@ -123,6 +150,10 @@ async function ensureEnv(): Promise<AcceptanceEnv> {
     cleanupRegistered = true;
   }
   return env;
+}
+
+export async function stopAcceptanceServiceForTests(): Promise<void> {
+  await env?.service.stop();
 }
 
 beforeAll(async () => {
