@@ -2,7 +2,7 @@
  * Wire-level regression: store errors must reach the client with their
  * typed code (not `invalid_envelope`) and the right HTTP status.
  *
- * Drift pass #2 found that `FacetError.from()` only recognised
+ * Regression guard: `FacetError.from()` once only recognised
  * `instanceof FacetError`, so `FacetStoreError` (the store layer's own
  * error class) collapsed to `invalid_envelope` on every wire response.
  * The router's `statusFor()` arms for `duplicate_revision`, `foreign_key`,
@@ -148,7 +148,7 @@ describe("store errors surface on the wire with typed codes", () => {
       if (dupBody.ok) throw new Error("expected error envelope");
       expect(dupBody.error.code).toBe("duplicate_revision");
       // Critically: NOT the old default invalid_envelope that the
-      // drift-pass-2 bug produced.
+      // original bridge bug produced.
       expect(dupBody.error.code).not.toBe("invalid_envelope");
     } finally {
       await env.cleanup();

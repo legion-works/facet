@@ -1,7 +1,7 @@
 /**
  * Regression: `FacetStoreError` → `FacetError.from()` → wire bridge.
  *
- * Drift pass #2 flagged that every `FacetStoreError` thrown by the
+ * Regression guard: every `FacetStoreError` thrown by the
  * store layer was collapsing to `invalid_envelope` on the wire because
  * `FacetError.from()` only recognised `instanceof FacetError`. The fix
  * makes `FacetStoreError` extend `FacetError`, so the bridge now
