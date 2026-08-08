@@ -5,9 +5,13 @@
  * same. The service normalizes "visual" to 1 via
  * `normalizeReadBackTier`. Default tier when omitted is 0 (the
  * browser-free parser path).
+ *
+ * Input-validation errors throw `FacetError("invalid_request", ...)`
+ * so the envelope preserves the typed `invalid_request` code.
  */
 
 import { generateRequestId } from "../../shared/util/time";
+import { FacetError } from "../../shared/errors/facet-error";
 import type { ReadBackRequest } from "../../shared/contracts/commands/requests";
 import type { ReadBackTier } from "../../shared/contracts/commands/_shared";
 
@@ -16,7 +20,9 @@ const TIER_VALUES = new Set(["0", "1", "visual"]);
 function parseTier(raw: string | boolean | undefined): ReadBackTier {
   if (typeof raw !== "string") return 0;
   if (!TIER_VALUES.has(raw)) {
-    throw new Error(`--tier must be one of: 0, 1, visual (got '${raw}')`);
+    throw new FacetError("invalid_request", `--tier must be one of: 0, 1, visual (got '${raw}')`, {
+      retryable: false,
+    });
   }
   if (raw === "visual") return "visual";
   return Number(raw) as 0 | 1;
@@ -28,10 +34,14 @@ export function buildReadBackRequest(
   const artifactId = args["artifact-id"];
   const revisionSha = args["revision-sha"];
   if (typeof artifactId !== "string" || artifactId.length === 0) {
-    throw new Error("--artifact-id is required for read-back");
+    throw new FacetError("invalid_request", "--artifact-id is required for read-back", {
+      retryable: false,
+    });
   }
   if (typeof revisionSha !== "string" || !/^[a-f0-9]{64}$/.test(revisionSha)) {
-    throw new Error("--revision-sha must be a 64-char hex sha256");
+    throw new FacetError("invalid_request", "--revision-sha must be a 64-char hex sha256", {
+      retryable: false,
+    });
   }
   return {
     command: "readBack",

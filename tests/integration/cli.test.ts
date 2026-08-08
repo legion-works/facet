@@ -432,6 +432,55 @@ describe("cli contract — wire", () => {
     expect(env1.ok).toBe(false);
     if (!env1.ok) expect(env1.error.code).toBe("invalid_request");
   }, 20_000);
+
+  test("every per-verb builder surfaces a typed invalid_request on missing args (not invalid_envelope)", async () => {
+    // Builders that throw on missing args must throw a FacetError
+    // with code="invalid_request" so the main catch passes the
+    // typed code through unchanged. A raw `new Error(...)` would
+    // be wrapped by `FacetError.from()` into the generic
+    // `invalid_envelope` code and break adapter-side branching.
+    const { env } = makeEnv("builder-codes");
+    const warmIo = makeIo();
+    await runCli(["list", "--project-id", "warm"], { ...warmIo, env });
+
+    const cases: { args: string[]; label: string }[] = [
+      { args: ["status"], label: "status missing --artifact-id" },
+      { args: ["list"], label: "list missing --project-id" },
+      { args: ["create", "--project-id", "p", "--slug", "s"], label: "create missing --title" },
+      { args: ["open", "--artifact-id", "x"], label: "open missing --revision-sha" },
+      { args: ["pin", "--pinned", "true"], label: "pin missing --revision-id" },
+      {
+        args: ["promote", "--revision-id", "r", "--name", "n"],
+        label: "promote missing --promoted-by",
+      },
+      {
+        args: ["instantiate", "--name", "n", "--new-slug", "s"],
+        label: "instantiate missing --promoted-by",
+      },
+      {
+        args: ["read-back", "--artifact-id", "x", "--revision-sha", "not-a-sha"],
+        label: "read-back malformed --revision-sha",
+      },
+    ];
+
+    for (const tc of cases) {
+      const io = makeIo();
+      const exit = await runCli(tc.args, { ...io, env });
+      // Typed error envelope; well-formed → exit 0 (envelope-first
+      // policy), NOT 64 (which is reserved for pre-parse usage
+      // errors the CLI cannot even envelope).
+      expect(exit.code).toBe(0);
+      const env1 = parseStdoutEnvelope(io.stdoutBuf.value);
+      expect(env1.ok).toBe(false);
+      if (!env1.ok) {
+        // The builder threw a typed FacetError; the main catch
+        // passed it through, preserving the `invalid_request` code
+        // — NOT the generic `invalid_envelope` that a raw
+        // `new Error(...)` would collapse to via FacetError.from().
+        expect(env1.error.code).toBe("invalid_request");
+      }
+    }
+  }, 60_000);
 });
 
 describe("cli contract — reserved + errors", () => {

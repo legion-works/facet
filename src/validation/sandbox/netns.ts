@@ -135,11 +135,11 @@ export function resolveUnsharePath(): string {
  */
 export function spawnNetnsWorker(args: readonly string[]): ChildProcess {
   const bunPath = process.execPath;
-  // Build the shell command string. Using `sh -c` because the wrapper
-  // needs to apply ulimit BEFORE exec-ing unshare; ulimit is a shell
-  // builtin and not exposed as a freestanding command. The final argv
-  // we hand unshare is `<bun> <args...>` so the worker is the bun
-  // subprocess inside the namespace, not `unshare` itself.
+  // Compose the shell command. `sh -c` is required because the wrapper
+  // applies `ulimit` before exec-ing unshare — ulimit is a shell builtin
+  // and has no freestanding form. After the wrapper runs, unshare
+  // execs into the bun binary with the caller-supplied args, so the
+  // long-running worker is the bun process (not unshare or sh).
   const tail = [quoteShell(bunPath), ...args.map(quoteShell)].join(" ");
   const shellCommand = `${NETNS_WRAPPER}${tail}`;
   return spawn("/bin/sh", ["-c", shellCommand], {
