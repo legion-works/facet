@@ -25,6 +25,7 @@ import {
   type CommandRequest,
   type CommandResult,
 } from "../shared/contracts/commands";
+import { request as httpRequest } from "node:http";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 export const FACET_CLIENT_COMMAND_TIMEOUT_MS = 75_000;
@@ -46,6 +47,69 @@ export interface FacetClientOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
+/**
+ * Command requests only need a buffered response. Keeping this transport on
+ * node:http avoids Bun fetch's orphaned loopback response path while leaving
+ * streaming consumers on the browser-compatible fetch implementation.
+ */
+export const nodeHttpFetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+  const url =
+    typeof input === "string" || input instanceof URL ? new URL(input) : new URL(input.url);
+  const headers = new Headers(init.headers);
+  const signal = init.signal ?? undefined;
+
+  return await new Promise<Response>((resolve, reject) => {
+    let settled = false;
+    const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    const req = httpRequest(
+      url,
+      {
+        method: init.method ?? "GET",
+        headers: Object.fromEntries(headers),
+        signal,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on("end", () => {
+          if (settled) return;
+          settled = true;
+          const responseHeaders = new Headers();
+          for (const [name, value] of Object.entries(res.headers)) {
+            if (value === undefined) continue;
+            responseHeaders.set(name, Array.isArray(value) ? value.join(", ") : value);
+          }
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: res.statusCode ?? 500,
+              headers: responseHeaders,
+            }),
+          );
+        });
+        res.on("error", fail);
+      },
+    );
+    req.on("error", fail);
+    if (signal?.aborted) {
+      req.destroy(signal.reason);
+      return;
+    }
+    if (signal !== undefined) {
+      signal.addEventListener("abort", () => req.destroy(signal.reason), { once: true });
+    }
+    if (init.body !== undefined && init.body !== null) {
+      req.write(typeof init.body === "string" ? init.body : Buffer.from(init.body as ArrayBuffer));
+    }
+    req.end();
+  });
+}) as unknown as typeof fetch;
+
 export interface SendCommandOptions {
   /** Set true for any state-changing verb (default: derived from verb name). */
   readonly isMutation?: boolean;
@@ -63,7 +127,7 @@ export class FacetClient {
     this.#baseUrl = options.baseUrl.replace(/\/$/, "");
     this.#installToken = options.installToken;
     this.#commandTimeoutMs = options.commandTimeoutMs ?? FACET_CLIENT_COMMAND_TIMEOUT_MS;
-    this.#fetchImpl = options.fetchImpl ?? fetch;
+    this.#fetchImpl = options.fetchImpl ?? nodeHttpFetch;
   }
 
   /**
@@ -105,6 +169,7 @@ export class FacetClient {
     if (options.extraHeaders) {
       Object.assign(headers, options.extraHeaders);
     }
+    headers.connection = "close";
     let res: Response;
     let text: string;
     const signal = AbortSignal.timeout(this.#commandTimeoutMs);
