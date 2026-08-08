@@ -22,7 +22,11 @@ export interface PromoteRevisionInput {
   readonly promotedAt?: string;
 }
 
-export function evictRevisions(db: Database, artifactId: string): void {
+export function evictRevisions(
+  db: Database,
+  artifactId: string,
+  protectedRevisionId?: string,
+): void {
   while (true) {
     const count = db
       .query("SELECT COUNT(*) AS count FROM revisions WHERE artifact_id = ?")
@@ -30,11 +34,18 @@ export function evictRevisions(db: Database, artifactId: string): void {
       count: number;
     };
     if (count.count <= 50) return;
-    const candidate = db
-      .query(
-        "SELECT id FROM revisions WHERE artifact_id = ? AND revision_number < (SELECT MAX(revision_number) FROM revisions WHERE artifact_id = ?) AND pinned = 0 AND NOT EXISTS (SELECT 1 FROM templates WHERE templates.revision_id = revisions.id) ORDER BY revision_number ASC LIMIT 1",
-      )
-      .get(artifactId, artifactId) as { id: string } | null;
+    const candidate =
+      protectedRevisionId === undefined
+        ? (db
+            .query(
+              "SELECT id FROM revisions WHERE artifact_id = ? AND pinned = 0 AND NOT EXISTS (SELECT 1 FROM templates WHERE templates.revision_id = revisions.id) ORDER BY revision_number ASC LIMIT 1",
+            )
+            .get(artifactId) as { id: string } | null)
+        : (db
+            .query(
+              "SELECT id FROM revisions WHERE artifact_id = ? AND id <> ? AND pinned = 0 AND NOT EXISTS (SELECT 1 FROM templates WHERE templates.revision_id = revisions.id) ORDER BY revision_number ASC LIMIT 1",
+            )
+            .get(artifactId, protectedRevisionId) as { id: string } | null);
     if (!candidate) {
       throw new FacetStoreError(
         "revision_capacity_pinned",
@@ -58,10 +69,10 @@ export function promoteRevision(db: Database, input: PromoteRevisionInput): Temp
     )?.artifact_id;
   if (!artifactId)
     throw new FacetStoreError("foreign_key", `Revision not found: ${input.revisionId}`);
-  return instantiateTemplate(db, { ...input, artifactId });
+  return createTemplate(db, { ...input, artifactId });
 }
 
-export function instantiateTemplate(db: Database, input: TemplateInput): Template {
+export function createTemplate(db: Database, input: TemplateInput): Template {
   const promotedAt = input.promotedAt ?? now();
   const value = {
     id: crypto.randomUUID(),

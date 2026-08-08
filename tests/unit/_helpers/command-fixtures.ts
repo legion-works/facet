@@ -158,7 +158,6 @@ export function validInstantiateRequest() {
     requestId: REQUEST_ID,
     name: "stable",
     newSlug: "instantiated-artifact",
-    promotedBy: "bob",
   };
 }
 export function validInstantiateResult() {

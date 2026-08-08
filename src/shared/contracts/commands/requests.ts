@@ -99,7 +99,6 @@ export const InstantiateRequestSchema = BaseRequestSchema.extend({
   command: z.literal("instantiate"),
   name: z.string().min(1),
   newSlug: z.string().min(1),
-  promotedBy: z.string().min(1),
   projectId: z.string().min(1).optional(),
 });
 export type InstantiateRequest = z.infer<typeof InstantiateRequestSchema>;

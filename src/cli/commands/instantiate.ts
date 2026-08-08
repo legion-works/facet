@@ -14,7 +14,6 @@ export function buildInstantiateRequest(
 ): InstantiateRequest {
   const name = args["name"];
   const newSlug = args["new-slug"];
-  const promotedBy = args["promoted-by"];
   if (typeof name !== "string" || name.length === 0) {
     throw new FacetError("invalid_request", "--name is required for instantiate", {
       retryable: false,
@@ -25,18 +24,12 @@ export function buildInstantiateRequest(
       retryable: false,
     });
   }
-  if (typeof promotedBy !== "string" || promotedBy.length === 0) {
-    throw new FacetError("invalid_request", "--promoted-by is required for instantiate", {
-      retryable: false,
-    });
-  }
   const projectId = args["project-id"];
   return {
     command: "instantiate",
     requestId: generateRequestId(),
     name,
     newSlug,
-    promotedBy,
     ...(typeof projectId === "string" ? { projectId } : {}),
   };
 }

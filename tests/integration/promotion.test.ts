@@ -6,10 +6,12 @@ import { tmpdir } from "node:os";
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
 import { ArtifactRepository } from "../../src/service/store/repository";
+import { evictRevisions } from "../../src/service/store/repository-lifecycle";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { dispatch } from "../../src/service/dispatcher";
+import { buildInstantiateRequest } from "../../src/cli/commands/instantiate";
 
 const databases: Array<{ close: () => void }> = [];
 const roots: string[] = [];
@@ -34,7 +36,7 @@ function makeStore() {
     slug: "source",
     title: "Source",
   });
-  return { repository, artifact };
+  return { db, repository, artifact };
 }
 
 afterEach(() => {
@@ -123,7 +125,6 @@ describe("promotion", () => {
         requestId: "req",
         name: template.name,
         newSlug: "copy",
-        promotedBy: "operator",
       },
       "req",
     )) as { artifact: { id: string } };
@@ -172,5 +173,41 @@ describe("promotion", () => {
         source: new Uint8Array([99]),
       }),
     ).toThrowError(expect.objectContaining({ code: "revision_capacity_pinned" }));
+  });
+
+  test("allows the newest revision to be evicted when it is the only eligible candidate", () => {
+    const { db, repository, artifact } = makeStore();
+    const revisions = Array.from({ length: 50 }, (_, index) =>
+      repository.publishRevision({
+        artifactId: artifact.id,
+        artifactType: "markdown",
+        source: new Uint8Array([index]),
+      }),
+    );
+    for (const revision of revisions) repository.pinRevision(revision.id);
+    const source = new Uint8Array([99]);
+    const sha256 = new Bun.CryptoHasher("sha256");
+    sha256.update(source);
+    const revisionId = crypto.randomUUID();
+    db.query(
+      "INSERT INTO revisions(id, artifact_id, revision_number, parent_revision_id, artifact_type, source, sha256, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      revisionId,
+      artifact.id,
+      51,
+      revisions[49]!.id,
+      "markdown",
+      source,
+      sha256.digest("hex"),
+      null,
+      new Date().toISOString(),
+    );
+    evictRevisions(db, artifact.id);
+    expect(repository.getRevisionById(revisionId)).toBeNull();
+  });
+
+  test("instantiate does not require or emit a promotion audit actor", () => {
+    const request = buildInstantiateRequest({ name: "stable", "new-slug": "copy" });
+    expect(request).not.toHaveProperty("promotedBy");
   });
 });

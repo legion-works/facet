@@ -18,7 +18,7 @@ import { now } from "../../shared/util/time";
 import { asStoreError, FacetStoreError, hardenDatabaseFiles } from "./database";
 import {
   evictRevisions,
-  instantiateTemplate as instantiateLifecycleTemplate,
+  createTemplate as createLifecycleTemplate,
   pinRevision as pinLifecycleRevision,
   promoteRevision as promoteLifecycleRevision,
   type PromoteRevisionInput,
@@ -379,7 +379,7 @@ export class ArtifactRepository {
           createdAt: timestamp,
         });
         this.options.writeHook?.({ phase: "after_insert" });
-        evictRevisions(this.db, input.artifactId);
+        evictRevisions(this.db, input.artifactId, revisionId);
 
         this.options.writeHook?.({ phase: "before_commit" });
         return revision;
@@ -506,7 +506,7 @@ export class ArtifactRepository {
   }
 
   instantiateTemplate(input: TemplateInput): Template {
-    return instantiateLifecycleTemplate(this.db, input);
+    return createLifecycleTemplate(this.db, input);
   }
 
   pinRevision(revisionId: string, pinned = true): void {

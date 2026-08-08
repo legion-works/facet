@@ -454,10 +454,6 @@ describe("cli contract — wire", () => {
         label: "promote missing --promoted-by",
       },
       {
-        args: ["instantiate", "--name", "n", "--new-slug", "s"],
-        label: "instantiate missing --promoted-by",
-      },
-      {
         args: ["read-back", "--artifact-id", "x", "--revision-sha", "not-a-sha"],
         label: "read-back malformed --revision-sha",
       },

@@ -78,7 +78,6 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly { flag: string; takesVal
     instantiate: [
       { flag: "--name", takesValue: true },
       { flag: "--new-slug", takesValue: true },
-      { flag: "--promoted-by", takesValue: true },
       { flag: "--project-id", takesValue: true },
     ],
     pin: [
