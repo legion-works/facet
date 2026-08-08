@@ -455,15 +455,16 @@ describe("evidence directory mode + retention", () => {
 
   test("per-run evidence directory lands at exactly 0700 under a hostile umask", () => {
     // Regression: the runner creates the per-run evidence directory
-    // with mkdirSync(mode: 0o700). Under a hostile umask (e.g. 0o022)
-    // mkdir's mode is masked and the directory lands at 0o755 — the
-    // secret-bearing screenshots/console become group-readable. The
-    // canonical helper must chmod the directory back to 0o700 so the
-    // post-mkdir stat reads 0o700 regardless of the process umask.
+    // with mkdirSync(mode: 0o700). A hostile umask that strips the
+    // owner execute bit (e.g. 0o177) leaves the directory at 0o600 —
+    // a worse failure than the 0o755 leak (no traversal by anyone,
+    // not even the owner). The canonical helper must chmod the
+    // directory back to 0o700 so the post-mkdir stat reads 0o700
+    // regardless of the process umask.
     const { ensureOwnerOnlyDirectory } =
       require("../../src/shared/util/dir-permissions") as typeof import("../../src/shared/util/dir-permissions");
     const scratchDir = join(scratchRoot, `umask-hostile-${crypto.randomUUID()}`);
-    const previousUmask = process.umask(0o022);
+    const previousUmask = process.umask(0o177);
     try {
       const created = ensureOwnerOnlyDirectory(scratchDir);
       expect(created).toBe(scratchDir);
