@@ -44,6 +44,13 @@ import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
 import type { ArtifactRepository } from "./store/repository";
 
+const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+
+function traceTier1Transport(stage: string): void {
+  if (!TIER1_TRACE) return;
+  process.stderr.write(`[tier1-transport] ${stage}\n`);
+}
+
 /**
  * Tier 0 runner contract lives in `shared/contracts/validation.ts` so
  * the service can depend on it as a TYPE without importing the
@@ -295,7 +302,9 @@ export async function dispatch(
           networkNamespace: "facet-tier1-egress-isolated",
         });
         const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input, command.artifactId);
+        traceTier1Transport(`publish:tier1-return status=${tier1Result.status}`);
         const enrichedTier1 = enrichTier1Verdict(tier1Result, command.artifactId, revision.sha256);
+        traceTier1Transport("publish:tier1-record:start");
         deps.repository.recordRenderRun({
           revisionId: revision.id,
           tier: 1,
@@ -307,6 +316,7 @@ export async function dispatch(
             : {}),
           ...(enrichedTier1.consolePath !== null ? { consolePath: enrichedTier1.consolePath } : {}),
         });
+        traceTier1Transport("publish:tier1-record:complete");
         tier1Verdict = enrichedTier1;
       }
       // 5. Write-path SSE seam: the revision is committed and its
@@ -370,6 +380,7 @@ export async function dispatch(
         status: runs[0]!.status,
         observed: observedJson,
       });
+      traceTier1Transport(`readback:build-complete status=${verdict.status}`);
       return { command: "readBack", requestId, verdict };
     }
     case "status": {

@@ -25,6 +25,13 @@ import {
   type CommandRequest,
   type CommandResult,
 } from "../shared/contracts/commands";
+
+const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+
+function traceTier1Transport(stage: string): void {
+  if (!TIER1_TRACE) return;
+  process.stderr.write(`[tier1-transport] ${stage}\n`);
+}
 import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
@@ -95,11 +102,13 @@ export class FacetClient {
     }
     let res: Response;
     try {
+      traceTier1Transport(`client:fetch:start command=${parsed.command}`);
       res = await this.#fetchImpl(`${this.#baseUrl}/api/v1/commands`, {
         method: "POST",
         headers,
         body: JSON.stringify(envelope),
       });
+      traceTier1Transport(`client:fetch:complete command=${parsed.command} status=${res.status}`);
     } catch (error) {
       throw new FacetError("invalid_envelope", `Connection failed: ${(error as Error).message}`, {
         retryable: true,
@@ -107,7 +116,9 @@ export class FacetClient {
         details: { reason: "connection_failed", host: this.#baseUrl },
       });
     }
+    traceTier1Transport(`client:body:start command=${parsed.command}`);
     const text = await res.text();
+    traceTier1Transport(`client:body:complete command=${parsed.command} bytes=${text.length}`);
     let body: unknown;
     try {
       body = JSON.parse(text);

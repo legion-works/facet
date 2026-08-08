@@ -28,6 +28,13 @@ import { startFacetService, type RunningService } from "../../src/service/server
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
 
+const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+
+function traceTier1Transport(stage: string): void {
+  if (!TIER1_TRACE) return;
+  process.stderr.write(`[tier1-transport] ${stage}\n`);
+}
+
 export type ArtifactType = "markdown" | "mermaid" | "svg" | "chart";
 export type Tier = 0 | 1;
 export type Launcher = "production";
@@ -161,6 +168,7 @@ beforeAll(async () => {
 });
 
 export async function publishFixture(opts: PublishFixtureOptions): Promise<PublishedArtifact> {
+  traceTier1Transport("test:publish:start");
   const bytes = await Bun.file(opts.fixturePath).arrayBuffer();
   const { client } = await ensureEnv();
   const result = await publishArtifact(client, {
@@ -168,16 +176,19 @@ export async function publishFixture(opts: PublishFixtureOptions): Promise<Publi
     bytes,
     ...(opts.slug !== undefined ? { slug: opts.slug } : {}),
   });
+  traceTier1Transport("test:publish:complete");
   return { artifactId: result.artifactId, revisionSha: result.revisionSha };
 }
 
 export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<AcceptanceVerdict> {
+  traceTier1Transport("test:readback:start");
   const { client } = await ensureEnv();
   const result = await readBack(client, {
     artifactId: opts.artifactId,
     revisionSha: opts.revisionSha,
     tier: opts.tier,
   });
+  traceTier1Transport(`test:readback:complete status=${result.status}`);
   return {
     status: result.status,
     tier: result.tier === "visual" ? 1 : result.tier,
