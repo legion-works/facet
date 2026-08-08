@@ -104,6 +104,8 @@ describe("facet status", () => {
     expect(readPidStartTimeTicks(process.pid)).toBe(ticks);
     expect(status.state).toBe("active");
     expect(status.process?.pid).toBe(process.pid);
+    expect(status.process?.rssBytes).toBeGreaterThan(0);
+    expect(status.process?.pssBytes).toBeGreaterThan(0);
     expect(status.dbBytes).toBe(2);
     expect(status.evidenceBytes).toBe(8);
     expect(status.activeLeases).toBe(2);

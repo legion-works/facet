@@ -47,16 +47,28 @@ function directoryBytes(path: string): number {
   return readdirSync(path).reduce((total, entry) => total + directoryBytes(`${path}/${entry}`), 0);
 }
 
+function readKbMetric(text: string, key: string): number | null {
+  const match = text.match(new RegExp(`^${key}:\\s+(\\d+)\\s+kB$`, "m"));
+  return match ? Number(match[1]) * 1024 : null;
+}
+
 function processMemory(pid: number): { rssBytes: number | null; pssBytes: number | null } {
   try {
-    const text = readFileSync(`/proc/${pid}/status`, "utf8");
-    const value = (key: string): number | null => {
-      const match = text.match(new RegExp(`^${key}:\\s+(\\d+)\\s+kB$`, "m"));
-      return match ? Number(match[1]) * 1024 : null;
+    const statusText = readFileSync(`/proc/${pid}/status`, "utf8");
+    const rollupText = readFileSync(`/proc/${pid}/smaps_rollup`, "utf8");
+    return {
+      rssBytes: readKbMetric(statusText, "VmRSS"),
+      pssBytes: readKbMetric(rollupText, "Pss"),
     };
-    return { rssBytes: value("VmRSS"), pssBytes: value("Pss") };
   } catch {
-    return { rssBytes: null, pssBytes: null };
+    let rssBytes: number | null = null;
+    try {
+      const statusText = readFileSync(`/proc/${pid}/status`, "utf8");
+      rssBytes = readKbMetric(statusText, "VmRSS");
+    } catch {
+      // The process may have exited or become unreadable between probes.
+    }
+    return { rssBytes, pssBytes: null };
   }
 }
 

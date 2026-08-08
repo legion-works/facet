@@ -10,7 +10,7 @@ import { computeFacetPaths } from "../src/shared/config/paths";
 interface Metric {
   readonly name: string;
   readonly observed: string | number;
-  readonly pass: boolean;
+  readonly status: "pass" | "fail" | "skipped";
 }
 
 const quick = process.argv.includes("--quick");
@@ -25,45 +25,45 @@ try {
     {
       name: "dormant process",
       observed: status.process === null ? 0 : 1,
-      pass: status.process === null,
+      status: status.process === null ? "pass" : "fail",
     },
     {
       name: "dormant port",
       observed: status.process === null ? 0 : 1,
-      pass: status.process === null,
+      status: status.process === null ? "pass" : "fail",
     },
     {
       name: "dormant watcher",
       observed: status.process === null ? 0 : 1,
-      pass: status.process === null,
+      status: status.process === null ? "pass" : "fail",
     },
     {
       name: "tier-0 status latency ms",
       observed: statusLatencyMs.toFixed(2),
-      pass: statusLatencyMs < 100,
+      status: statusLatencyMs < 100 ? "pass" : "fail",
     },
   ];
   if (!quick) {
     metrics.push(
       {
         name: "active RSS MiB",
-        observed: status.process?.rssBytes === null ? "null" : 0,
-        pass: true,
+        observed: "not measured (no active service)",
+        status: "skipped",
       },
-      { name: "active CPU percent", observed: "not measured", pass: true },
-      { name: "publish SSE p95 ms", observed: "not measured", pass: true },
-      { name: "replacement p95 ms", observed: "not measured", pass: true },
+      { name: "active CPU percent", observed: "not measured", status: "skipped" },
+      { name: "publish SSE p95 ms", observed: "not measured", status: "skipped" },
+      { name: "replacement p95 ms", observed: "not measured", status: "skipped" },
     );
   }
   for (const metric of metrics) {
-    console.log(`${metric.pass ? "PASS" : "FAIL"} ${metric.name}: observed=${metric.observed}`);
+    console.log(`${metric.status.toUpperCase()} ${metric.name}: observed=${metric.observed}`);
   }
   const clean = collectFacetStatus(computeFacetPaths({ facetHome: home }));
   const zombieFree = clean.process === null;
   console.log(
     `${zombieFree ? "PASS" : "FAIL"} zombie profile/process cleanup: observed=${zombieFree}`,
   );
-  if (metrics.some((metric) => !metric.pass) || !zombieFree) process.exitCode = 1;
+  if (metrics.some((metric) => metric.status === "fail") || !zombieFree) process.exitCode = 1;
 } finally {
   rmSync(home, { recursive: true, force: true });
 }
