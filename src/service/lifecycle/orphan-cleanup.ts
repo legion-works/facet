@@ -15,33 +15,68 @@
  * after a crash, not against a running peer.
  */
 
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, rmSync, unlinkSync } from "node:fs";
 
-import { isPidAlive, readLockMetadata } from "./process-lock";
+import { isPidAlive, readLockMetadata, readPidStartTimeTicks } from "./process-lock";
+
+export interface OrphanProfile {
+  readonly path: string;
+  readonly pid: number;
+  readonly startTime: number;
+}
+
+export interface OrphanProcess {
+  readonly pid: number;
+  readonly startTime: number;
+}
 
 export interface OrphanCleanupInput {
   readonly lockPath: string;
   readonly databasePath: string;
+  readonly profiles?: readonly OrphanProfile[];
+  readonly processes?: readonly OrphanProcess[];
 }
 
 export interface OrphanCleanupResult {
   readonly removed: {
     readonly lock: boolean;
     readonly walSidecars: readonly string[];
+    readonly profiles: readonly string[];
   };
+  readonly killedPids: readonly number[];
 }
 
 export function runOrphanCleanup(input: OrphanCleanupInput): OrphanCleanupResult {
   let removedLock = false;
   const removedSidecars: string[] = [];
+  const removedProfiles: string[] = [];
+  const killedPids: number[] = [];
 
   const lockMetadata = readLockMetadata(input.lockPath);
-  if (lockMetadata !== null && !isPidAlive(lockMetadata.pid)) {
+  if (lockMetadata !== null && (!isPidAlive(lockMetadata.pid) || isLockOwnerStale(lockMetadata))) {
     try {
       unlinkSync(input.lockPath);
       removedLock = true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+
+  for (const profile of input.profiles ?? []) {
+    if (isPidAlive(profile.pid) && readPidStartTimeTicks(profile.pid) === profile.startTime)
+      continue;
+    if (!existsSync(profile.path)) continue;
+    rmSync(profile.path, { recursive: true, force: true });
+    removedProfiles.push(profile.path);
+  }
+  for (const process of input.processes ?? []) {
+    if (!isPidAlive(process.pid) || readPidStartTimeTicks(process.pid) !== process.startTime)
+      continue;
+    try {
+      processKill(process.pid);
+      killedPids.push(process.pid);
+    } catch {
+      // The process may have exited between the identity check and the signal.
     }
   }
 
@@ -59,5 +94,20 @@ export function runOrphanCleanup(input: OrphanCleanupInput): OrphanCleanupResult
     }
   }
 
-  return { removed: { lock: removedLock, walSidecars: removedSidecars } };
+  return {
+    removed: { lock: removedLock, walSidecars: removedSidecars, profiles: removedProfiles },
+    killedPids,
+  };
+}
+
+function isLockOwnerStale(metadata: { pid: number; startTimeTicks?: number | null }): boolean {
+  return (
+    metadata.startTimeTicks !== undefined &&
+    metadata.startTimeTicks !== null &&
+    readPidStartTimeTicks(metadata.pid) !== metadata.startTimeTicks
+  );
+}
+
+function processKill(pid: number): void {
+  process.kill(pid, "SIGTERM");
 }

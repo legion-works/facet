@@ -7,7 +7,8 @@
  * inside a `details` block is scrubbed at the source.
  *
  * Required fields: level, event, component, timestamp, pid.
- * Optional fields: requestId, artifactId, revisionSha, durationMs, errorCode.
+ * Optional fields: requestId, artifactId, revisionSha, durationMs, errorCode,
+ * rssBytes, pssBytes, dbBytes, evidenceBytes.
  */
 
 import { redact } from "./redact";
@@ -20,6 +21,10 @@ export interface LoggerFields {
   readonly revisionSha?: string;
   readonly durationMs?: number;
   readonly errorCode?: string;
+  readonly rssBytes?: number | null;
+  readonly pssBytes?: number | null;
+  readonly dbBytes?: number;
+  readonly evidenceBytes?: number;
   readonly [key: string]: unknown;
 }
 

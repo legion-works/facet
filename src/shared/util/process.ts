@@ -57,8 +57,8 @@ export function readPidStartTimeTicks(pid: number): number | null {
     if (lastParen < 0) return null;
     const after = text.slice(lastParen + 1).trimStart();
     const fields = after.split(/\s+/);
-    // field index 21 (0-based after the comm close) is starttime.
-    const startTime = Number(fields[21]);
+    // The slice starts at field 3 (`state`), so field 22 is index 19.
+    const startTime = Number(fields[19]);
     if (!Number.isFinite(startTime)) return null;
     return startTime;
   } catch {

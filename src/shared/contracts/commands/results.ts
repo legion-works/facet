@@ -53,6 +53,24 @@ export const StatusResultSchema = BaseResultSchema.extend({
   revisionCount: z.number().int().nonnegative(),
   pinnedCount: z.number().int().nonnegative(),
   templateCount: z.number().int().nonnegative(),
+  state: z.enum(["dormant", "active"]).optional(),
+  process: z
+    .object({
+      pid: z.number().int().positive(),
+      uptimeMs: z.number().nonnegative(),
+      rssBytes: z.number().nonnegative().nullable(),
+      pssBytes: z.number().nonnegative().nullable(),
+    })
+    .nullable()
+    .optional(),
+  dbBytes: z.number().int().nonnegative().optional(),
+  evidenceBytes: z.number().int().nonnegative().optional(),
+  activeLeases: z.number().int().nonnegative().optional(),
+  activeJobs: z.number().int().nonnegative().optional(),
+  browserJobs: z.number().int().nonnegative().optional(),
+  idleDeadline: z.number().int().positive().nullable().optional(),
+  version: z.string().min(1).optional(),
+  contractVersion: z.string().min(1).optional(),
 });
 export type StatusResult = z.infer<typeof StatusResultSchema>;
 

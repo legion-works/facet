@@ -37,6 +37,7 @@ export { isPidAlive, readPidStartTimeTicks };
 export interface LockMetadata {
   readonly pid: number;
   readonly startTime: number;
+  readonly startTimeTicks?: number | null;
   readonly port: number;
   readonly contractVersion: string;
 }
@@ -65,6 +66,9 @@ export function isLockStale(metadata: LockMetadata): boolean {
       // Cannot verify the OS start time; be conservative and treat the
       // lock as LIVE so we never unlink a live foreign pid.
       return false;
+    }
+    if (metadata.startTimeTicks !== undefined && metadata.startTimeTicks !== null) {
+      return osStart !== metadata.startTimeTicks;
     }
     // The recorded startTime is wall-clock ms; compare the age in
     // ms against a coarse staleness budget. If a live pid's recorded
@@ -95,9 +99,11 @@ export function readLockMetadata(lockPath: string): LockMetadata | null {
     ) {
       return null;
     }
+    const startTimeTicks = typeof parsed.startTimeTicks === "number" ? parsed.startTimeTicks : null;
     return {
       pid: parsed.pid,
       startTime: parsed.startTime,
+      ...(startTimeTicks === null ? {} : { startTimeTicks }),
       port: parsed.port,
       contractVersion: parsed.contractVersion,
     };

@@ -36,6 +36,7 @@ import {
   acquireLock,
   releaseLock,
   writeLockMetadata,
+  readPidStartTimeTicks,
   type LockMetadata,
 } from "./lifecycle/process-lock";
 import { runOrphanCleanup } from "./lifecycle/orphan-cleanup";
@@ -114,6 +115,7 @@ export async function startFacetService(
   const lockMetadata: LockMetadata = {
     pid: process.pid,
     startTime: lockStartTime,
+    startTimeTicks: readPidStartTimeTicks(process.pid),
     port: 0,
     contractVersion: "facet.v1",
   };
