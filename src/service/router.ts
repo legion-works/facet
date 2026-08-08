@@ -35,7 +35,7 @@ import {
   type HostOriginResult,
 } from "./security/host-origin";
 import { dispatch, type DispatcherDeps } from "./dispatcher";
-import { handleStream } from "./stream";
+import { handleStream, type RevisionBroadcaster } from "./stream";
 import { envelopeResponse, generateRequestId, pickRequestId } from "./http-utils";
 import {
   INVALID_JSON,
@@ -62,6 +62,8 @@ export interface RouterDeps extends DispatcherDeps {
   readonly expectedHost: string | (() => string);
   readonly ownOrigin: string | (() => string);
   readonly startTime: number;
+  /** Per-artifact SSE fan-out the stream route registers into. */
+  readonly broadcaster: RevisionBroadcaster;
 }
 
 function statusForHostCheck(error: FacetError | undefined): number {

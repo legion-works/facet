@@ -12,6 +12,8 @@
  */
 
 import { MAX_MERMAID_BLOCKS, MAX_MERMAID_NODES } from "../../shared/config/limits";
+import type { ArtifactType } from "../../shared/contracts/artifact";
+import { countMermaidNodeDeclarations } from "../../shared/util/mermaid-nodes";
 
 export interface FencedBlockCounts {
   /** Total number of fenced blocks (any language) in the source. */
@@ -33,14 +35,16 @@ export interface LexicalExpectations {
   /**
    * Expected number of renderer-root SVGs. For markdown sources this
    * is the mermaid block count (each fenced mermaid block produces one
-   * renderer root); for other source types it is 0 (the verifier counts
-   * the actual SVGs itself).
+   * renderer root); for mermaid/svg/chart sources it is 1 (the whole
+   * document renders as one renderer-owned root). The verifier counts
+   * the actual SVGs and the verdict fails closed on any divergence.
    */
   readonly expectedRendererRoots: number;
   /**
-   * Lexical node count: `N<digits>[...]` declarations across all
-   * mermaid blocks. Bounds the verifier's expected observation
-   * independent of byte count.
+   * Lexical node count: identifier-`[` declarations (`N1[...]`,
+   * `A[...]`) across all mermaid blocks — the prediction the verdict
+   * compares against the renderer-owned `g.node` count. Bounds the
+   * verifier's expected observation independent of byte count.
    */
   readonly mermaidNodeCount: number;
   /** True iff the source exceeds MAX_MERMAID_BLOCKS or MAX_MERMAID_NODES. */
@@ -55,7 +59,6 @@ export interface LexicalExpectations {
  * is allowed and maps to the "" key.
  */
 const FENCE_OPENER_RE = /^[ ]{0,3}(`{3,}|~{3,})([^\n]*)$/gm;
-const FENCE_NODE_DECL_RE = /\bN\d+\[/g;
 
 interface FenceSpan {
   readonly start: number;
@@ -121,7 +124,7 @@ function countMermaidNodes(text: string, spans: readonly FenceSpan[]): number {
   for (const span of spans) {
     if (span.info !== "mermaid") continue;
     const body = text.slice(span.start, span.end);
-    count += (body.match(FENCE_NODE_DECL_RE) ?? []).length;
+    count += countMermaidNodeDeclarations(body);
   }
   return count;
 }
@@ -158,8 +161,17 @@ export function countMermaidBlocks(bytes: Uint8Array): number {
  * Compute the full lexical expectation surface for a source. The
  * shape is the one consumed later by Tier 0 / Tier 1 verifiers to
  * compare lexical expectations against observed counters.
+ *
+ * The expectations are artifact-type aware because the renderers are:
+ * markdown produces one renderer root per mermaid fence; mermaid,
+ * svg, and chart each render the whole document as ONE renderer-owned
+ * root. Node declarations are predicted only for the diagram-bearing
+ * types (markdown fences, mermaid documents).
  */
-export function computeLexicalExpectations(bytes: Uint8Array): LexicalExpectations {
+export function computeLexicalExpectations(
+  bytes: Uint8Array,
+  artifactType: ArtifactType,
+): LexicalExpectations {
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   const spans = findFenceSpans(text);
   const byLanguage = new Map<string, number>();
@@ -168,14 +180,15 @@ export function computeLexicalExpectations(bytes: Uint8Array): LexicalExpectatio
     byLanguage.set(span.info, (byLanguage.get(span.info) ?? 0) + 1);
     if (span.info === "mermaid") mermaid += 1;
   }
-  const mermaidNodeCount = countMermaidNodes(text, spans);
+  const mermaidNodeCount =
+    artifactType === "markdown"
+      ? countMermaidNodes(text, spans)
+      : artifactType === "mermaid"
+        ? countMermaidNodeDeclarations(text)
+        : 0;
   const exceedsComplexityBudget =
     mermaid > MAX_MERMAID_BLOCKS || mermaidNodeCount > MAX_MERMAID_NODES;
-  // The markdown path produces one renderer root per mermaid block.
-  // For other artifact types the verifier counts the actual SVGs and
-  // the lexical expectation is 0 (the verifier is the source of truth
-  // for non-mermaid artifacts).
-  const expectedRendererRoots = mermaid;
+  const expectedRendererRoots = artifactType === "markdown" ? mermaid : 1;
   return {
     totalFencedBlocks: spans.length,
     mermaidBlocks: mermaid,

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Inline data with zero rows renders zero marks",
+  "data": { "values": [] },
+  "mark": "bar",
+  "encoding": {
+    "x": { "field": "category", "type": "nominal" },
+    "y": { "field": "value", "type": "quantitative" }
+  }
+}

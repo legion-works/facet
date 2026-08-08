@@ -77,7 +77,7 @@ export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
   try {
     target = await browser.launch();
     hostHtmlPath = join(hostDir, "host.html");
-    const { html } = await buildHostPage(input.source, "render", hostDir);
+    const { html } = await buildHostPage(input.source, "render", hostDir, input.artifactType);
     writeFileSync(hostHtmlPath, html, "utf8");
     await target.session.send("Page.enable");
     await target.session.send("Page.navigate", { url: `file://${hostHtmlPath}` });
@@ -95,7 +95,7 @@ export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
         "(function(){" +
         "var host=window.__facetHostArtifact;" +
         "if(!host){return 'no-host-artifact';}" +
-        "host.ingress.postMessage({bytes:host.bytes,mode:host.mode});" +
+        "host.ingress.postMessage({bytes:host.bytes,mode:host.mode,artifactType:host.artifactType});" +
         "return 'delivered';" +
         "})()",
       returnByValue: true,
@@ -218,7 +218,7 @@ async function waitForRenderComplete(
         "})()",
       returnByValue: true,
     })) as { result: { value: string } };
-    let parsed: { bootReady: boolean; renderEvent: { pageReport?: PageShim } | null };
+    let parsed: { bootReady: boolean; renderEvent: { observed?: PageShim } | null };
     try {
       parsed = JSON.parse(result.result.value);
     } catch {
@@ -229,7 +229,7 @@ async function waitForRenderComplete(
       return {
         bootReady: parsed.bootReady,
         renderComplete: true,
-        pageShim: parsed.renderEvent.pageReport ?? null,
+        pageShim: parsed.renderEvent.observed ?? null,
       };
     }
     await new Promise((resolve) => setTimeout(resolve, 50));

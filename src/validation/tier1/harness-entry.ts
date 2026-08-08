@@ -1,50 +1,41 @@
 /**
  * Verifier harness — runs INSIDE the opaque-origin iframe.
  *
- * Bundled by `harness.ts` and embedded into the iframe srcdoc under
- * a per-build nonce. The CSP rejects any script that does not carry
- * that nonce, so this bundle is the only executable code reachable
- * inside the frame.
+ * Bundled by `harness.ts` and embedded into the iframe srcdoc under a
+ * per-build nonce. The CSP rejects any script that does not carry that
+ * nonce, so this bundle is the only executable code reachable inside
+ * the frame.
  *
  * Renderer pipeline:
- *   1. Wire `window.message` handshake (verifier transfers the
+ *   1. Wire the `window.message` handshake (verifier transfers the
  *      port2 ends via postMessage).
  *   2. Emit `boot-ready` on the control port.
  *   3. Receive the artifact on the ingress port (one-shot).
- *   4. Dispatch the artifact through the renderer pipeline:
- *        - test-adversary payloads run the matching scenario
- *          (the spike's monkeypatch / forge path lives here).
- *        - mermaid blocks inside a markdown document are rendered
- *          by a bundled lightweight renderer that emits one
- *          renderer-owned SVG per expected graph, with the right
- *          `g.node` structure. The renderer DOES NOT need to
- *          reproduce Mermaid's pixel-perfect layout — the
- *          acceptance gates only assert the renderer-OWNED root
- *          count and `g.node` count. A custom renderer keeps the
- *          bundle small (no 3.5MB Mermaid UMD) and avoids the
- *          CSP / file:// quirks that block sibling `<script src>`.
- *   5. Emit `render-complete` with a `pageReport` describing what
- *      the page world sees (renderer-owned roots, errors, …).
+ *   4. Dispatch through the SAME renderer registry the gallery frame
+ *      bundles (`gallery-web/frame/renderers`): the unfakeable gate
+ *      verifies the actual user-visible render, not a stand-in.
+ *      `test-adversary` payloads run the matching scenario instead
+ *      (the monkeypatch / forge paths live here).
+ *   5. Emit `render-complete` with the page-shim counts describing
+ *      what the page world sees (renderer-owned roots, errors, …).
  *
- * CSP NOTE: the iframe srcdoc declares `script-src 'nonce-<NONCE>'`
- * and `style-src 'unsafe-inline'`. Received artifact bytes never
- * become executable script; they are inserted via `innerHTML`
- * inside `raw` mode and via the parser inside `render` mode.
+ * The page shim counts through the page world's `querySelectorAll` ON
+ * PURPOSE: a hostile page can monkey-patch it and lie — the verdict
+ * layer detects that lie against the protocol authority.
  */
+
+import {
+  appendRenderError,
+  countPageShim,
+  dispatchRender,
+  getRendererRegistry,
+} from "../../gallery-web/frame/renderers/registry";
 
 type ArtifactMode = "raw" | "render";
 
-type ShimCounts = {
-  rendererRootSvgCount: number;
-  graphCount: number;
-  mermaidNodeCount: number;
-  visibleSvgCount: number;
-  errorCount: number;
-};
-
 type ControlEvent =
   | { type: "boot-ready" }
-  | { type: "render-complete"; pageReport: ShimCounts; mode: ArtifactMode };
+  | { type: "render-complete"; observed: ReturnType<typeof countPageShim>; mode: ArtifactMode };
 
 declare global {
   interface Window {
@@ -52,62 +43,17 @@ declare global {
   }
 }
 
-const container = document.getElementById("artifact");
-if (container === null) {
+const containerElement = document.getElementById("artifact");
+if (containerElement === null) {
   throw new Error("harness: #artifact container missing");
 }
+const container: HTMLElement = containerElement;
 
 (window as unknown as { facetHarnessLoaded?: boolean }).facetHarnessLoaded = true;
 
+const registry = getRendererRegistry();
+
 let controlPost: ((event: ControlEvent) => void) | null = null;
-
-function pageReport(): ShimCounts {
-  // The shim uses `document.querySelectorAll` so the protocol-observed
-  // divergence with the CDP-driven truth holds when an artifact
-  // monkey-patches the page world's selector (Test A). The shim
-  // intentionally lives in the page world so it can be lied to.
-  let svgResult: unknown;
-  try {
-    svgResult = document.querySelectorAll("svg");
-  } catch {
-    svgResult = [];
-  }
-  const svgLength =
-    svgResult !== null && typeof svgResult === "object" && "length" in svgResult
-      ? Number((svgResult as { length: number }).length)
-      : 0;
-  let errorResult: unknown;
-  try {
-    errorResult = document.querySelectorAll("[data-facet-error]");
-  } catch {
-    errorResult = [];
-  }
-  const errorLength =
-    errorResult !== null && typeof errorResult === "object" && "length" in errorResult
-      ? Number((errorResult as { length: number }).length)
-      : 0;
-  // The renderer-OWNED svg count follows the page shim's view: a
-  // forged shim claims the renderer owned 2 SVGs, the protocol
-  // authority says 0. That divergence is exactly the `tampered`
-  // signal the verdict taxonomy encodes.
-  const rendererRootSvgCount = svgLength;
-  const graphCount = svgLength;
-  const mermaidNodeCount = svgLength;
-  return {
-    rendererRootSvgCount,
-    graphCount,
-    mermaidNodeCount,
-    visibleSvgCount: svgLength,
-    errorCount: errorLength,
-  };
-}
-
-function appendError(message: string): void {
-  const el = document.createElement("facet-error");
-  el.setAttribute("data-facet-error", "true");
-  el.textContent = message;
-  container!.appendChild(el);
-}
 
 function adversarialMonkeypatch(): void {
   // Replace querySelectorAll so the page-shim's count diverges from
@@ -126,94 +72,38 @@ function adversarialMonkeypatch(): void {
   });
 }
 
-function extractMermaidFences(markdown: string): string[] {
-  const fences: string[] = [];
-  const re = /^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$/gm;
-  const candidates: { index: number; length: number; info: string; char: string }[] = [];
-  for (const match of markdown.matchAll(re)) {
-    const fence = match[1] ?? "";
-    const info = (match[2] ?? "").trim();
-    candidates.push({
-      index: match.index ?? 0,
-      length: fence.length,
-      info,
-      char: fence.startsWith("`") ? "`" : "~",
-    });
-  }
-  let open: (typeof candidates)[number] | null = null;
-  for (const candidate of candidates) {
-    if (open === null) {
-      open = candidate;
-      continue;
-    }
-    if (candidate.char === open.char && candidate.length >= open.length && candidate.info === "") {
-      const body = markdown.slice(open.index, candidate.index + candidate.length);
-      if (open.info === "mermaid") fences.push(body);
-      open = null;
-    }
-  }
-  return fences;
-}
-
-function countMermaidNodes(source: string): number {
-  // `N<digits>[...]` declarations inside a mermaid block.
-  const matches = source.match(/\bN\d+\[/g);
-  return matches === null ? 0 : matches.length;
-}
-
-function renderMermaidBlock(source: string): void {
-  // Lightweight verifier renderer: emit one renderer-OWNED svg per
-  // expected graph, with one `g.node` per declared node. This is the
-  // OBSERVABLE structure the verifier protocol probes; visual
-  // correctness is out of scope for the unfakeable gate.
-  const svgNs = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNs, "svg");
-  // The viewBox is non-degenerate so layout observability passes.
-  const nodeCount = countMermaidNodes(source);
-  const width = Math.max(100, nodeCount * 40);
-  const height = Math.max(60, nodeCount * 20);
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.setAttribute("width", String(width));
-  svg.setAttribute("height", String(height));
-  for (let i = 0; i < nodeCount; i += 1) {
-    const node = document.createElementNS(svgNs, "g");
-    node.setAttribute("class", "node");
-    const text = document.createElementNS(svgNs, "text");
-    text.textContent = `N${i + 1}`;
-    node.appendChild(text);
-    svg.appendChild(node);
-  }
-  container!.appendChild(svg);
-}
-
 async function renderAdversarialJson(payload: unknown): Promise<void> {
   if (typeof payload !== "object" || payload === null) {
-    appendError("adversarial: payload is not an object");
+    appendRenderError(container, "adversarial: payload is not an object");
     return;
   }
   const record = payload as Record<string, unknown>;
   if (record["type"] !== "test-adversary") {
-    appendError("adversarial: missing type=test-adversary");
+    appendRenderError(container, "adversarial: missing type=test-adversary");
     return;
   }
   const name = typeof record["name"] === "string" ? (record["name"] as string) : "";
   if (name === "hostile-monkeypatch") {
     adversarialMonkeypatch();
-    appendError("forced facet-error for monkeypatch scenario");
+    appendRenderError(container, "forced facet-error for monkeypatch scenario");
     return;
   }
   const source = typeof record["source"] === "string" ? (record["source"] as string) : null;
   if (source !== null) {
-    container!.innerHTML = source;
+    container.innerHTML = source;
     return;
   }
-  appendError(`adversarial: unknown name=${name}`);
+  appendRenderError(container, `adversarial: unknown name=${name}`);
 }
 
-async function renderArtifact(artifactBytes: Uint8Array, mode: ArtifactMode): Promise<void> {
+async function renderArtifact(
+  artifactBytes: Uint8Array,
+  mode: ArtifactMode,
+  artifactType: string,
+): Promise<void> {
   if (mode === "raw") {
     const text = new TextDecoder("utf-8", { fatal: false }).decode(artifactBytes);
-    container!.innerHTML = text;
+    container.innerHTML = text;
     return;
   }
   const text = new TextDecoder("utf-8", { fatal: false }).decode(artifactBytes);
@@ -228,16 +118,9 @@ async function renderArtifact(artifactBytes: Uint8Array, mode: ArtifactMode): Pr
       return;
     }
   } catch {
-    // not JSON — fall through to mermaid/markdown rendering
+    // not JSON — fall through to the typed renderer dispatch
   }
-  const fences = extractMermaidFences(text);
-  if (fences.length > 0) {
-    for (const fence of fences) {
-      renderMermaidBlock(fence);
-    }
-    return;
-  }
-  renderMermaidBlock(text);
+  await dispatchRender(registry, { container }, { artifactType, bytes: artifactBytes });
 }
 
 window.addEventListener(
@@ -255,23 +138,23 @@ window.addEventListener(
     // addEventListener("message"): the pinned chrome-headless-shell
     // 131.0.6778.204 silently drops events registered via
     // addEventListener, so the harness handshake would never fire.
-    // The setter form is what the MDN-recommended pattern is on
-    // platforms where MessagePort extends EventTarget; the lint rule
-    // only flags it because the linter can't tell the difference.
     // oxlint-disable-next-line unicorn/prefer-add-event-listener
     ingress.onmessage = async (sourceEvent: MessageEvent) => {
-      const payload = sourceEvent.data as { bytes: string; mode: ArtifactMode } | undefined;
+      const payload = sourceEvent.data as
+        | { bytes: string; mode: ArtifactMode; artifactType?: string }
+        | undefined;
       if (payload === undefined) return;
       ingress.close();
       const bytes = Uint8Array.from(atob(payload.bytes), (char) => char.charCodeAt(0));
       try {
-        await renderArtifact(bytes, payload.mode);
+        await renderArtifact(bytes, payload.mode, payload.artifactType ?? "markdown");
       } catch (error) {
-        appendError(error instanceof Error ? error.message : String(error));
+        appendRenderError(container, error instanceof Error ? error.message : String(error));
       }
-      const report = pageReport();
+      // Counts cross the control port ONLY after the render settled.
+      const report = countPageShim();
       try {
-        controlPost?.({ type: "render-complete", pageReport: report, mode: payload.mode });
+        controlPost?.({ type: "render-complete", observed: report, mode: payload.mode });
       } catch {
         // control channel already torn down — drop silently.
       }

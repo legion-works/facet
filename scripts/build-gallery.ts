@@ -17,6 +17,8 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { frameBundlePlugins } from "../src/shared/build/frame-bundle-plugins";
+
 const REPO_ROOT = import.meta.dir.replace(/\/scripts$/, "");
 const OUT_DIR = join(REPO_ROOT, "dist", "gallery");
 const FRAME_BOOTSTRAP_ENTRY = join(REPO_ROOT, "src", "gallery-web", "frame", "bootstrap.ts");
@@ -28,6 +30,7 @@ async function buildEntry(entry: string, name: string): Promise<void> {
     target: "browser",
     minify: false,
     naming: name,
+    plugins: frameBundlePlugins(),
   });
   if (!result.success) {
     const messages = result.logs.map((log) => log.message).join("\n");

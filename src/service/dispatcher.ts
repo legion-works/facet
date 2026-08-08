@@ -16,7 +16,9 @@ import {
   type ArtifactEnvelope,
   type CommandRequest,
 } from "../shared/contracts/commands";
-import type { Artifact } from "../shared/contracts/artifact";
+import type { Artifact, ArtifactType } from "../shared/contracts/artifact";
+import { ArtifactTypeSchema } from "../shared/contracts/artifact";
+import { RevisionCommittedEventSchema } from "../shared/contracts/events";
 import {
   Tier0InputSchema,
   Tier0ResultSchema,
@@ -60,6 +62,20 @@ export interface DispatcherDeps {
    * read-back of tier 1 surfaces `revision_not_found`.
    */
   readonly tier1Runner: Tier1Runner | undefined;
+  /**
+   * Write-path seam: called AFTER the revision is committed AND its
+   * Tier 0 (and configured Tier 1) runs are recorded, with the
+   * canonical `revision:committed` event. The server wires this to
+   * the SSE broadcaster so gallery leases see the revision land.
+   */
+  readonly onPublished?: (event: {
+    readonly type: "revision:committed";
+    readonly artifactId: string;
+    readonly revisionSha: string;
+    readonly revisionNumber: number;
+    readonly artifactType: ArtifactType;
+    readonly at: string;
+  }) => void;
 }
 
 function mapArtifact(a: Artifact): ArtifactEnvelope {
@@ -208,6 +224,9 @@ export async function dispatch(
     case "publish": {
       const unsupported = checkArtifactTypeSupported(command.artifactType);
       if (unsupported !== null) throw unsupported;
+      // The reserved-type gate above rejected `html`; re-parse so the
+      // rest of the publish path holds the narrowed supported type.
+      const artifactType: ArtifactType = ArtifactTypeSchema.parse(command.artifactType);
       // Decode the base64 string into a Uint8Array. The schema validates
       // base64 syntax; here we enforce the SOURCE_CAP_BYTES on the
       // decoded length BEFORE any further work, throwing a typed
@@ -224,7 +243,7 @@ export async function dispatch(
       // observation over those bytes, not a gate.
       const revision = deps.repository.publishRevision({
         artifactId: command.artifactId,
-        artifactType: command.artifactType,
+        artifactType,
         source: bytes,
         ...(command.note !== undefined ? { note: command.note } : {}),
         ...(command.parentRevisionId !== undefined
@@ -240,10 +259,10 @@ export async function dispatch(
       // partial run so the wire response can carry a verdict-shaped
       // body. A non-ok Tier0Result is normal: the parser rejected the
       // artifact and we persist that decision as a render_run.
-      const lexical = computeLexicalExpectations(bytes);
+      const lexical = computeLexicalExpectations(bytes, artifactType);
       const tier0Input = Tier0InputSchema.parse({
         revisionSha: revision.sha256,
-        artifactType: command.artifactType,
+        artifactType,
         source: bytes,
         lexical: {
           rendererRootSvgCount: lexical.expectedRendererRoots,
@@ -285,6 +304,19 @@ export async function dispatch(
         });
         tier1Verdict = enrichedTier1;
       }
+      // 5. Write-path SSE seam: the revision is committed and its
+      // verdict runs are recorded, so gallery streams bound to this
+      // artifact may now learn the exact revision to fetch + swap to.
+      deps.onPublished?.(
+        RevisionCommittedEventSchema.parse({
+          type: "revision:committed",
+          artifactId: command.artifactId,
+          revisionSha: revision.sha256,
+          revisionNumber: revision.revisionNumber,
+          artifactType,
+          at: new Date().toISOString(),
+        }),
+      );
       const { source: _source, ...envelope } = revision;
       void _source;
       return {

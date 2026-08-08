@@ -6,8 +6,12 @@
  * produces a typed `FacetError` with the matching `tier1_*` code.
  */
 
-/** Wall-clock budget for one Tier 1 verifier invocation. */
-export const TIER1_TIMEOUT_MS = 5_000;
+/**
+ * Wall-clock budget for one Tier 1 verifier invocation. The harness
+ * bundles the REAL renderers (mermaid + marked + vega, ~8 MB inline);
+ * parse + first render of a 40-node fixture needs real headroom.
+ */
+export const TIER1_TIMEOUT_MS = 60_000;
 
 /**
  * Path to the pinned `chrome-headless-shell` distribution. The release
@@ -25,13 +29,17 @@ export const TIER1_NETWORK_NAMESPACE = "facet-tier1-egress-isolated";
 export const TIER1_USER_DATA_DIR_MODE = 0o700;
 
 /**
- * Stderr/console cap for the verifier harness bundle. The bundle is
- * small (mermaid + harness); 256 KiB bounds anything pathological.
+ * Stderr/console cap for the verifier harness bundle. The bundle
+ * carries the real renderers (mermaid + marked + vega) inlined as
+ * ESM; 16 MiB bounds it with room for growth while still capping
+ * anything pathological.
  */
-export const TIER1_HARNESS_BUNDLE_CAP_BYTES = 256 * 1024;
+export const TIER1_HARNESS_BUNDLE_CAP_BYTES = 16 * 1024 * 1024;
 
 /**
  * Per-render timeout the verifier waits for the trusted
  * `render-complete` barrier before classifying the run as `timeout`.
+ * Sized for the real mermaid runtime: first-render initialization of
+ * the bundled runtime plus a 40-node layout must fit inside.
  */
-export const TIER1_RENDER_BARRIER_MS = 4_000;
+export const TIER1_RENDER_BARRIER_MS = 30_000;

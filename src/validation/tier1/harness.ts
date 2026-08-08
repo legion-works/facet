@@ -8,19 +8,20 @@
  *
  * Build pipeline:
  *   1. Bundle the bootstrap (`harness-entry.ts`) as ESM via bun.build.
+ *      The entry imports the SAME renderer registry the gallery frame
+ *      bundles (`gallery-web/frame/renderers`), so mermaid/markdown
+ *      run as real ESM inlined under the nonce — no sibling
+ *      `<script src>` for the file:// CSP to reject.
  *   2. Build the harness srcdoc with the bootstrap inlined under a
- *      per-frame nonce. The verifier uses a lightweight in-frame
- *      renderer (NOT a Mermaid UMD) so the bundle stays small and
- *      avoids the file:// CSP / sibling-`<script src>` mismatch
- *      that blocks external-script loading from a sandboxed
- *      iframe in the netns verifier.
+ *      per-frame nonce.
  *   3. The host page points its iframe at the harness srcdoc via
  *      file://. The bootstrap is the only executable code; the
- *      verifier renders mermaid blocks via a hand-written minimal
- *      renderer that emits one renderer-OWNED svg per fence.
+ *      verifier renders artifacts through the shared renderers.
  */
 
 import { build } from "bun";
+
+import { frameBundlePlugins } from "../../shared/build/frame-bundle-plugins";
 
 const HARNESS_ENTRY = `${import.meta.dir}/harness-entry.ts`;
 
@@ -52,14 +53,12 @@ function freshNonce(): string {
 }
 
 /**
- * Build the harness browser bundle (bootstrap only; uses the
- * hand-written minimal renderer in `harness-entry.ts` rather than
- * bundling a real Mermaid runtime). Returns the bundled JS plus its
- * byte length. The renderer is intentionally lightweight so the
- * bundle stays small enough to inline in a single script tag inside
- * the sandboxed iframe srcdoc — a 3.5 MB Mermaid UMD plus a CSP that
- * permits it as a sibling script would not survive the `file://`
- * origin / `'self'` mismatch that the netns verifier lives under.
+ * Build the harness browser bundle (bootstrap + the shared renderer
+ * registry, inlined as ESM). Returns the bundled JS plus its byte
+ * length. The bundle is inlined into the srcdoc under the per-frame
+ * nonce — the file:// CSP problem that blocks sibling `<script src>`
+ * does not apply to nonce-carrying inline script, so the REAL
+ * mermaid/markdown/vega renderers run inside the verifier frame.
  */
 async function buildBootstrapBundle(): Promise<{ readonly code: string; readonly bytes: number }> {
   const result = await build({
@@ -67,6 +66,7 @@ async function buildBootstrapBundle(): Promise<{ readonly code: string; readonly
     target: "browser",
     minify: false,
     format: "esm",
+    plugins: frameBundlePlugins(),
   });
   if (!result.success) {
     throw new Error(`harness bundle failed: ${result.logs.map((log) => log.message).join("\n")}`);
@@ -82,11 +82,18 @@ async function buildBootstrapBundle(): Promise<{ readonly code: string; readonly
 
 /**
  * Build the harness srcdoc with the bundled bootstrap inlined under
- * a per-frame nonce. The Mermaid-style rendering lives inside the
- * bundle itself (hand-written minimal renderer in `harness-entry.ts`)
- * so no external script is loaded. The CSP `script-src` only
- * needs `'nonce-<NONCE>'` because the artifact bytes are inserted
- * via `innerHTML` inside the page world (not as executable script).
+ * a per-frame nonce. The renderers live inside the bundle itself so
+ * no external script is loaded. The CSP `script-src` only needs
+ * `'nonce-<NONCE>'` because the artifact bytes are inserted via
+ * `innerHTML` inside the page world (not as executable script).
+ *
+ * The script tag is `type="module"` on purpose: Vega's bundled source
+ * declares `function addEventListener(...)` at the top level, and a
+ * classic `<script>` would hoist that into `window.addEventListener`,
+ * replacing the native one before the harness's own
+ * `window.addEventListener("message", ...)` listener could be
+ * registered. The module script keeps top-level function declarations
+ * in the module scope instead of the global one.
  */
 export async function buildHarnessSrcdoc(): Promise<{
   readonly srcdoc: string;
@@ -104,15 +111,17 @@ export async function buildHarnessSrcdoc(): Promise<{
     `<style>html,body,#artifact{margin:0;min-height:100%;background:transparent}</style>` +
     "</head><body>" +
     `<main id="artifact"></main>` +
-    `<script nonce="${nonce}">${escaped}</script>` +
+    `<script type="module" nonce="${nonce}">${escaped}</script>` +
     "</body></html>";
   return { srcdoc, nonce, bundleBytes: bytes };
 }
 
 /**
- * Write the harness srcdoc + Mermaid UMD bundle to `hostDir`. The
- * host page's iframe points at the srcdoc; the iframe's CSP allows
- * the Mermaid UMD via its precomputed SHA-256 hash.
+ * Write the harness srcdoc to `hostDir` and build the host page that
+ * transfers the artifact + ports into the frame. The host page's
+ * iframe points at the srcdoc; the artifact's declared type travels
+ * with the ingress payload so the harness dispatches the same
+ * renderer the gallery uses.
  */
 export interface HostPageInputs {
   readonly html: string;
@@ -124,6 +133,7 @@ export async function buildHostPage(
   artifactBytes: Uint8Array,
   artifactMode: "raw" | "render",
   hostDir: string,
+  artifactType: string,
 ): Promise<HostPageInputs> {
   const { srcdoc, bundleBytes: harnessBytes } = await buildHarnessSrcdoc();
   const harnessPath = `${hostDir}/harness.html`;
@@ -143,6 +153,9 @@ export async function buildHostPage(
     "var artifactMode=" +
     JSON.stringify(artifactMode) +
     ";" +
+    "var artifactType=" +
+    JSON.stringify(artifactType) +
+    ";" +
     "var harnessPath=" +
     JSON.stringify(harnessPath) +
     ";" +
@@ -158,7 +171,7 @@ export async function buildHostPage(
     "frame.contentWindow.postMessage({facetHandshake:'ports',nonce:''},'*',[ingress.port2,control.port2]);" +
     "});" +
     "document.getElementById('host-root').appendChild(frame);" +
-    "window.__facetHostArtifact={bytes:artifactB64,mode:artifactMode,ingress:ingress.port1,control:control.port1};" +
+    "window.__facetHostArtifact={bytes:artifactB64,mode:artifactMode,artifactType:artifactType,ingress:ingress.port1,control:control.port1};" +
     "})();" +
     "</script>" +
     "</body></html>";

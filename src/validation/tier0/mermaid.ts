@@ -18,6 +18,7 @@ import "./dom-shim";
 import mermaid from "mermaid";
 
 import type { DiscriminativeError, VerdictObserved } from "../../shared/contracts/validation";
+import { countMermaidNodeDeclarations } from "../../shared/util/mermaid-nodes";
 
 export interface MermaidParseOk {
   readonly status: "ok";
@@ -32,18 +33,16 @@ export interface MermaidParseFail {
 
 export type MermaidParseResult = MermaidParseOk | MermaidParseFail;
 
-const NODE_DECL_RE = /\bN\d+\[/g;
-
 /**
- * Count `N<digits>[...]` declarations across the source. This is the
- * lexical counter the parser agrees with when the parse succeeds and
- * disagrees with when a hostile artifact lies in its mermaid nodes; we
- * compute it here from the raw bytes as a defensive cross-check
- * against the mermaid-library count.
+ * Count node declarations across the source. This is the lexical
+ * counter the parser agrees with when the parse succeeds and disagrees
+ * with when a hostile artifact lies in its mermaid nodes; the canonical
+ * prediction lives in `shared/util/mermaid-nodes.ts` (the service-side
+ * expectations import the same one).
  */
 function countMermaidNodes(bytes: Uint8Array): number {
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-  return (text.match(NODE_DECL_RE) ?? []).length;
+  return countMermaidNodeDeclarations(text);
 }
 
 interface MermaidResolved {

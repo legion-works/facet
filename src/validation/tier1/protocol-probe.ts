@@ -53,17 +53,30 @@ function countByName(snapshot: SnapshotResponse, documentIndex: number, name: st
 }
 
 function countGNode(snapshot: SnapshotResponse, documentIndex: number): number {
+  // Count `g.node` via the per-node attribute walk: DOMSnapshot exposes
+  // attribute lists, so the protocol authority counts the SAME class
+  // the isolated world counts. The all-`<g>` census was an
+  // approximation from the stand-in-renderer era; with the real
+  // mermaid renderer (which emits edgePath/edgeLabel groups) it would
+  // diverge from the isolated-world `g.node` count and forge a
+  // `tampered` verdict on honest renders.
   const document = snapshot.documents[documentIndex];
   if (document === undefined) return 0;
+  const attributes = document.nodes.attributes ?? [];
   let count = 0;
-  for (const nodeNameIndex of document.nodes.nodeName) {
-    if (readString(snapshot.strings, nodeNameIndex).toLowerCase() === "g") {
-      count += 1;
+  for (let nodeIdx = 0; nodeIdx < document.nodes.nodeName.length; nodeIdx += 1) {
+    const tag = readString(snapshot.strings, document.nodes.nodeName[nodeIdx] ?? 0).toLowerCase();
+    if (tag !== "g") continue;
+    const attr = attributes[nodeIdx];
+    if (attr === undefined || attr.name === undefined || attr.value === undefined) continue;
+    for (let i = 0; i < attr.name.length; i += 1) {
+      const name = readString(snapshot.strings, attr.name[i] ?? 0);
+      if (name !== "class") continue;
+      const value = readString(snapshot.strings, attr.value[i] ?? 0);
+      if (value.split(/\s+/).includes("node")) count += 1;
+      break;
     }
   }
-  // Note: DOMSnapshot exposes tags only — distinguishing g.node requires
-  // an attribute walk. We approximate by counting all `<g>` children;
-  // the verdict taxonomy treats this as the lower-bound graph count.
   return count;
 }
 
@@ -208,7 +221,7 @@ export async function probeProtocolGetDocument(
   };
   let svgCount = 0;
   let errorCount = 0;
-  let graphCount = 0;
+  let gNodeCount = 0;
   const viewBoxes: string[] = [];
   const visit = (node: unknown): void => {
     if (node === null || typeof node !== "object") return;
@@ -222,7 +235,14 @@ export async function probeProtocolGetDocument(
     const name = (record.nodeName ?? "").toLowerCase();
     if (name === "svg") svgCount += 1;
     if (name === "facet-error") errorCount += 1;
-    if (name === "g") graphCount += 1;
+    if (name === "g" && Array.isArray(record.attributes)) {
+      // Class-aware g.node census — the same definition the isolated
+      // world and DOMSnapshot channels use.
+      const classAttr = record.attributes.find((attr) => attr.name === "class");
+      if (classAttr !== undefined && typeof classAttr.value === "string") {
+        if (classAttr.value.split(/\s+/).includes("node")) gNodeCount += 1;
+      }
+    }
     if (name === "svg" && Array.isArray(record.attributes)) {
       const vb = record.attributes.find((attr) => attr.name === "viewBox");
       if (vb !== undefined && typeof vb.value === "string") viewBoxes.push(vb.value);
@@ -234,8 +254,8 @@ export async function probeProtocolGetDocument(
   visit(result.root);
   return {
     rendererRootSvgCount: svgCount,
-    graphCount,
-    mermaidNodeCount: graphCount,
+    graphCount: svgCount,
+    mermaidNodeCount: gNodeCount,
     visibleSvgCount: viewBoxes.length,
     viewBoxes,
     errorCount,

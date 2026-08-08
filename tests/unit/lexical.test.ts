@@ -200,7 +200,7 @@ describe("countFencedBlocks — CommonMark closer semantics", () => {
 describe("computeLexicalExpectations — public shape", () => {
   test("returns total + per-language + expected renderer root count for mermaid", () => {
     const bytes = readBytes(FIXTURES.adversarial);
-    const expectations = computeLexicalExpectations(bytes);
+    const expectations = computeLexicalExpectations(bytes, "markdown");
     expect(expectations.totalFencedBlocks).toBe(2);
     expect(expectations.mermaidBlocks).toBe(2);
     expect(expectations.fencedBlocksByLanguage.get("mermaid")).toBe(2);
@@ -210,9 +210,68 @@ describe("computeLexicalExpectations — public shape", () => {
 
   test("expected renderer root count is zero for fixture with no mermaid blocks", () => {
     const bytes = readBytes(FIXTURES.rawHtml);
-    const expectations = computeLexicalExpectations(bytes);
+    const expectations = computeLexicalExpectations(bytes, "markdown");
     expect(expectations.totalFencedBlocks).toBe(0);
     expect(expectations.mermaidBlocks).toBe(0);
     expect(expectations.expectedRendererRoots).toBe(0);
+  });
+});
+
+describe("computeLexicalExpectations — node-declaration prediction (real-renderer semantics)", () => {
+  test("adversarial fixture predicts 40 nodes across its two mermaid fences", () => {
+    const bytes = readBytes(FIXTURES.adversarial);
+    const expectations = computeLexicalExpectations(bytes, "markdown");
+    expect(expectations.mermaidNodeCount).toBe(40);
+  });
+
+  test("any identifier-[ declaration counts, not just N<digits>[ (A[, B[)", () => {
+    const bytes = readBytes(FIXTURES.hostileSvg);
+    const expectations = computeLexicalExpectations(bytes, "markdown");
+    // `A[Node …]` and `B[End]` — the prediction the verdict compares
+    // against the renderer-owned g.node count of the REAL mermaid render.
+    expect(expectations.mermaidNodeCount).toBe(2);
+  });
+
+  test("edge references without brackets are not node declarations", () => {
+    const bytes = new TextEncoder().encode(
+      ["```mermaid", "flowchart TD", "  A --> B", "  B --> C", "```"].join("\n"),
+    );
+    expect(computeLexicalExpectations(bytes, "markdown").mermaidNodeCount).toBe(0);
+  });
+
+  test("node declarations outside mermaid fences are ignored", () => {
+    const bytes = new TextEncoder().encode(
+      ["A[fake] in prose is not a mermaid node.", "", "```typescript", "B[also not]", "```"].join(
+        "\n",
+      ),
+    );
+    expect(computeLexicalExpectations(bytes, "markdown").mermaidNodeCount).toBe(0);
+  });
+});
+
+describe("computeLexicalExpectations — artifact-type awareness", () => {
+  test("mermaid documents render as ONE root with whole-text node count", () => {
+    const bytes = new TextEncoder().encode(
+      ["flowchart TD", "  N1[Node 1] --> N2[Node 2]", "  N3[Node 3] --> N4[Node 4]"].join("\n"),
+    );
+    const expectations = computeLexicalExpectations(bytes, "mermaid");
+    expect(expectations.expectedRendererRoots).toBe(1);
+    expect(expectations.mermaidNodeCount).toBe(4);
+  });
+
+  test("svg artifacts expect one renderer root and zero mermaid nodes", () => {
+    const bytes = new TextEncoder().encode(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle r="4"/></svg>',
+    );
+    const expectations = computeLexicalExpectations(bytes, "svg");
+    expect(expectations.expectedRendererRoots).toBe(1);
+    expect(expectations.mermaidNodeCount).toBe(0);
+  });
+
+  test("chart artifacts expect one renderer root and zero mermaid nodes", () => {
+    const bytes = new TextEncoder().encode('{"mark":"bar"}');
+    const expectations = computeLexicalExpectations(bytes, "chart");
+    expect(expectations.expectedRendererRoots).toBe(1);
+    expect(expectations.mermaidNodeCount).toBe(0);
   });
 });

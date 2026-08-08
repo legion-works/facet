@@ -63,6 +63,13 @@ export function buildFrameSrcdoc(options: { nonce: string; bootstrapScript: stri
   // The bootstrap text has any literal `</script` escaped to `<\\/script`
   // so an attacker-controlled script (future renderer) cannot terminate
   // the parent <script> tag and break out of the nonce boundary.
+  //
+  // The script tag is `type="module"` on purpose: Vega's bundled source
+  // declares `function addEventListener(...)` at the top level, and a
+  // classic `<script>` would hoist that into `window.addEventListener`,
+  // replacing the native one before the frame's own message listener
+  // can be registered. The module script keeps top-level function
+  // declarations in the module scope instead of the global one.
   const escapedBootstrap = bootstrapScript.replace(/<\/script/gi, "<\\/script");
   const csp = FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce);
   return (
@@ -72,7 +79,7 @@ export function buildFrameSrcdoc(options: { nonce: string; bootstrapScript: stri
     `<style>html,body,#artifact{margin:0;min-height:100%;background:transparent}</style>` +
     "</head><body>" +
     `<main id="artifact"></main>` +
-    `<script nonce="${nonce}">${escapedBootstrap}</script>` +
+    `<script type="module" nonce="${nonce}">${escapedBootstrap}</script>` +
     "</body></html>"
   );
 }

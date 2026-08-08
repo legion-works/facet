@@ -16,7 +16,10 @@
 
 import { randomUUID } from "node:crypto";
 
+import type { z } from "zod";
+
 import { errEnvelope } from "../shared/contracts/envelope";
+import type { RevisionCommittedEventSchema } from "../shared/contracts/events";
 
 import { requireBearer } from "./security/auth";
 import { checkHostOrigin, resolveHost } from "./security/host-origin";
@@ -27,6 +30,59 @@ import { envelopeResponse, generateRequestId } from "./http-utils";
 
 const NO_STORE = "no-store";
 
+export type RevisionCommittedEvent = z.infer<typeof RevisionCommittedEventSchema>;
+
+/**
+ * Per-artifact fan-out for `revision:committed`. The write path
+ * (dispatcher, after commit + verdict runs) calls `emit`; every live
+ * SSE stream registered for that artifact receives the event. Sinks
+ * are isolated — one dead stream cannot wedge the others.
+ */
+export interface RevisionBroadcaster {
+  register(artifactId: string, send: (event: RevisionCommittedEvent) => void): () => void;
+  emit(event: RevisionCommittedEvent): void;
+  readonly size: number;
+}
+
+export function createRevisionBroadcaster(): RevisionBroadcaster {
+  const sinks = new Map<string, Set<(event: RevisionCommittedEvent) => void>>();
+  let size = 0;
+  return {
+    register(artifactId, send) {
+      let set = sinks.get(artifactId);
+      if (set === undefined) {
+        set = new Set();
+        sinks.set(artifactId, set);
+      }
+      set.add(send);
+      size += 1;
+      return () => {
+        const current = sinks.get(artifactId);
+        if (current === undefined) return;
+        if (current.delete(send)) size -= 1;
+        if (current.size === 0) sinks.delete(artifactId);
+      };
+    },
+    emit(event) {
+      const set = sinks.get(event.artifactId);
+      if (set === undefined) return;
+      // Spread snapshots the sinks so a callback that unregisters
+      // itself mid-fan-out does not skip the remaining peers.
+      // oxlint-disable-next-line unicorn/no-useless-spread
+      for (const send of [...set]) {
+        try {
+          send(event);
+        } catch {
+          // one dead stream must not wedge the fan-out
+        }
+      }
+    },
+    get size() {
+      return size;
+    },
+  };
+}
+
 export interface StreamHandlerDeps {
   readonly installToken: string;
   readonly leases: GalleryLeaseManager;
@@ -34,6 +90,7 @@ export interface StreamHandlerDeps {
   readonly logger: FacetLogger;
   readonly expectedHost: string | (() => string);
   readonly ownOrigin: string | (() => string);
+  readonly broadcaster: RevisionBroadcaster;
 }
 
 interface StreamParsedRequest {
@@ -120,9 +177,11 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
   // ReadableStream cancel handler both call this — calling it twice is
   // safe (the inner guards short-circuit).
   let closed = false;
+  let unregister: (() => void) | null = null;
   const releaseLease = (): void => {
     if (closed) return;
     closed = true;
+    unregister?.();
     deps.leases.release(leaseId);
     deps.idle.release(`stream:${streamId}`);
   };
@@ -137,6 +196,10 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
         }
       };
       send({ type: "stream:open", streamId, artifactId, at: new Date().toISOString() });
+
+      // Write-path fan-out: committed revisions for THIS artifact land
+      // on this stream. Unregistered on lease expiry / disconnect.
+      unregister = deps.broadcaster.register(artifactId, (event) => send(event));
 
       // Bind stream lifetime to lease lifetime. When the per-lease
       // timer fires, we close the stream + release the idle reason.

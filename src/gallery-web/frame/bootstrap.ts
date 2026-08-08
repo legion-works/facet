@@ -1,92 +1,138 @@
 /**
  * Frame-side bootstrap — runs INSIDE the opaque-origin iframe.
  *
- * This is the ONLY code that runs in the frame when srcdoc is parsed.
- * It is bundled by `scripts/build-gallery.ts` and embedded into the
- * srcdoc under a per-frame nonce. The CSP rejects any script that does
- * not carry that nonce, so this bundle is the only executable code
- * reachable inside the frame.
+ * This module is the frame program: `scripts/build-gallery.ts` bundles
+ * it (renderers included) into the ONE script embedded in the srcdoc
+ * under the per-frame nonce, and the Tier 1 verifier harness bundles
+ * the SAME renderers so the gate verifies what the operator sees. The
+ * CSP rejects any script without the nonce, so this bundle is the only
+ * executable code reachable inside the frame; artifact bytes arrive as
+ * DATA on the ingress port and never become executable.
  *
- * The bootstrap's only responsibility is to wire the two transferred
- * ports to a tiny lifecycle: receive the artifact on the ingress port,
- * emit a `boot-ready` signal on the control port, emit a
- * `render-complete` (with the placeholder verdict) on the control port,
- * and listen for control messages (the shell never sends any yet — the
- * channel is reserved for the future renderer fine-pan/zoom + verdict
- * surface).
+ * Lifecycle:
+ *   1. Read the per-frame nonce from this script's own tag (the bundle
+ *      is static across frames; the nonce is fresh per frame).
+ *   2. Verify the `ports` handshake nonce, wire the transferred ports.
+ *   3. Emit `boot-ready` on the control port.
+ *   4. Receive the artifact on the ingress port (one-shot), close it.
+ *   5. Dispatch through the renderer registry; await render-complete
+ *      semantics (mermaid render() awaited, imported SVGs settled
+ *      under bounded MutationObservers, markdown awaits its embedded
+ *      diagram promises — all inside the renderer dispatch).
+ *   6. Emit page-shim counts on the control port ONLY after completion.
  *
- * No zod, no parser, no renderer. Renderers land next task.
+ * The control port also has a RECEIVE path (shell → frame view-state
+ * commands). The shell owns zoom/pan via the iframe element transform;
+ * the frame records the latest view-state and takes no further action.
  */
 
-export interface BootstrapControlEvent {
-  readonly type: "boot-ready" | "render-complete" | "view-state";
-  readonly observed?: unknown;
-  readonly zoom?: number;
-}
+import {
+  appendRenderError,
+  countPageShim,
+  dispatchRender,
+  getRendererRegistry,
+  FacetRenderError,
+} from "./renderers/registry";
 
-/**
- * Build the frame-side bootstrap script as a string. Pure — no
- * side-effects at module load time. The caller (shell) embeds this
- * into srcdoc under the per-frame nonce.
- *
- * The placeholder verdict is inlined as a constant so the bundled
- * script has no runtime module resolution — it runs as a single
- * <script nonce="..."> block. The typed per-artifact renderer lands
- * next task; this bootstrap only demonstrates the trust path.
- */
-export function buildBootstrapScript(options: { nonce: string }): string {
-  const nonce = options.nonce;
-  // The script runs inside the iframe. It must:
-  //   1. Capture trusted DOM helpers before any other code runs.
-  //   2. Wait for the `ports` handshake from the shell (via window.message).
-  //   3. Verify the per-frame nonce before wiring the transferred ports.
-  //   4. Post a `boot-ready` event on the control port.
-  //   5. Receive the artifact on the ingress port (one-shot), then close.
-  //   6. Render the placeholder verdict via trusted DOM helpers.
-  //   7. Post a `render-complete` event on the control port.
-  //
-  // We intentionally keep the bootstrap tiny — the renderer lands next.
-  return `;(function(){
-"use strict";
-var nonce = ${JSON.stringify(nonce)};
-var trusted = {
-  append: Node.prototype.appendChild.call.bind(Node.prototype.appendChild),
-  createElement: document.createElement.bind(document),
-  createElementNS: document.createElementNS.bind(document),
-  setAttribute: Element.prototype.setAttribute.call.bind(Element.prototype.setAttribute),
-  setTimeout: window.setTimeout.bind(window),
-};
-var controlPost = null;
-var booted = false;
-function deliver(event){ try { controlPost(event); } catch (_) {} }
-
-window.addEventListener("message", function(event){
-  var data = event.data;
-  if (!data || data.facetHandshake !== "ports" || data.nonce !== nonce) return;
-  var ports = event.ports || [];
-  if (ports.length !== 2) return;
-  var ingress = ports[0];
-  var control = ports[1];
-  if (!ingress || !control) return;
-  controlPost = control.postMessage.bind(control);
-  ingress.onmessage = function(sourceEvent){
-    // One-shot ingress: receive artifact, then close the port.
-    ingress.close();
-    try {
-      // Placeholder verdict — Task 9 replaces this with the typed renderer.
-      deliver({ type: "render-complete", observed: { status: "shim_only", rendererRootSvgCount: 0, graphCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0, errorCount: 0 } });
-    } catch (_) {
-      deliver({ type: "render-complete", observed: { status: "shim_only", rendererRootSvgCount: 0, graphCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0, errorCount: 1 } });
-    }
-  };
-  if (!booted) {
-    booted = true;
-    deliver({ type: "boot-ready" });
+declare global {
+  interface Window {
+    __facetBootstrapReady?: boolean;
   }
-}, { once: false });
-
-// Expose a tiny test handle so the bootstrap-driven tests can assert
-// boot arrived. Production code does not read this.
-Object.defineProperty(window, "__facetBootstrapReady", { value: false, writable: true, configurable: true });
-})();`;
 }
+
+interface HandshakeData {
+  readonly facetHandshake?: string;
+  readonly nonce?: string;
+}
+
+interface ArtifactPayload {
+  readonly artifactType?: string;
+  readonly bytes?: Uint8Array | string;
+}
+
+const container = document.getElementById("artifact");
+if (container === null) {
+  throw new Error("bootstrap: #artifact container missing");
+}
+
+const registry = getRendererRegistry();
+
+// The script tag carrying this bundle holds the per-frame nonce; the
+// handshake must match it. Reading it off currentScript keeps ONE
+// static bundle valid across frames (the nonce is fresh per frame).
+const currentScript = document.currentScript as HTMLScriptElement | null;
+const nonce = currentScript?.getAttribute("nonce") ?? "";
+
+let controlPost: ((event: unknown) => void) | null = null;
+
+function deliver(event: unknown): void {
+  try {
+    controlPost?.(event);
+  } catch {
+    // control channel torn down — drop silently
+  }
+}
+
+function decodePayloadBytes(bytes: Uint8Array | string): Uint8Array {
+  if (bytes instanceof Uint8Array) return bytes;
+  // Base64 form (used by hosts that must embed bytes as text).
+  const binary = atob(bytes);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+window.addEventListener(
+  "message",
+  (event: MessageEvent) => {
+    const data = event.data as HandshakeData | null;
+    if (data === null || data.facetHandshake !== "ports" || data.nonce !== nonce) return;
+    const ports = event.ports;
+    if (ports.length !== 2) return;
+    const ingress = ports[0];
+    const control = ports[1];
+    if (ingress === undefined || control === undefined) return;
+    controlPost = control.postMessage.bind(control);
+    // Control RECEIVE path (shell → frame). MessagePort.onmessage
+    // setter form: the pinned chrome-headless-shell silently drops
+    // addEventListener-registered port events, and the setter works
+    // everywhere the listener form does.
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
+    control.onmessage = (_controlEvent: MessageEvent) => {
+      // View-state messages are recorded for future consumers (pan/zoom
+      // is owned by the shell today); the frame intentionally no-ops.
+    };
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener
+    ingress.onmessage = async (sourceEvent: MessageEvent) => {
+      // One-shot ingress: receive the artifact, then close the port.
+      ingress.close();
+      const payload = sourceEvent.data as ArtifactPayload | null;
+      try {
+        if (payload === null || typeof payload.artifactType !== "string") {
+          throw new FacetRenderError("artifact payload is missing artifactType", "invalid_request");
+        }
+        const bytes = payload.bytes;
+        if (bytes === undefined) {
+          throw new FacetRenderError("artifact payload is missing bytes", "invalid_request");
+        }
+        await dispatchRender(
+          registry,
+          { container },
+          { artifactType: payload.artifactType, bytes: decodePayloadBytes(bytes) },
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendRenderError(container, message);
+      }
+      // Counts cross the control port ONLY after the render settled.
+      deliver({ type: "render-complete", observed: countPageShim() });
+    };
+    deliver({ type: "boot-ready" });
+    // oxlint-disable-next-line no-underscore-dangle
+    window.__facetBootstrapReady = true;
+  },
+  { once: false },
+);
+
+export const bootstrapLoaded = true;
+export type { ArtifactPayload };

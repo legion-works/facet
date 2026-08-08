@@ -9,24 +9,39 @@
  *
  * DOM testing approach: pure-function-first. The channel lifecycle tests
  * use Bun's native `MessageChannel`; the hostname guard is a pure
- * boolean; the swap-ordering test asserts the produced plan. We do not
- * spin up a full iframe harness inside the test gate.
+ * boolean; the swap tests execute the real async swap against a
+ * recording FrameHost with REAL MessageChannels (the test plays the
+ * frame side by posting on the frame-held port ends). The SSE test
+ * runs a real service and drains the real stream.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   FROZEN_CSP_TEMPLATE,
   SHELL_EXPORTS,
   assertLoopbackHostname,
-  buildBootstrapScript,
   buildFrameAttributes,
   buildFrameSrcdoc,
+  createArtifactFrame,
   isLoopbackHostname,
   planSwap,
+  replaceArtifactFrame,
+  swapToRevision,
+  type CreatedArtifactFrame,
+  type FrameControlEvent,
+  type FrameHost,
+  type ShellDom,
   type SwapPlanStep,
+  type ViewState,
 } from "../../src/gallery-web/app";
 import { createChannelPair, type ChannelPair } from "../../src/gallery-web/frame/channels";
+import { startFacetService } from "../../src/service/server";
+import { createQuietLogger } from "../../src/shared/logging/logger";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const NONCE = "facet-nonce-abcd1234";
 const BOOTSTRAP_SCRIPT =
@@ -116,7 +131,10 @@ describe("gallery shell — srcdoc generation", () => {
       nonce: NONCE,
       bootstrapScript: BOOTSTRAP_SCRIPT,
     });
-    expect(srcdoc).toContain(`<script nonce="${NONCE}">`);
+    // `type="module"` keeps Vega's top-level `function addEventListener`
+    // out of the global scope (a classic script would hoist it into
+    // `window.addEventListener` and break the frame's own listener).
+    expect(srcdoc).toContain(`<script type="module" nonce="${NONCE}">`);
     expect(srcdoc).toContain(BOOTSTRAP_SCRIPT);
     expect(srcdoc).toContain("</script>");
   });
@@ -153,18 +171,35 @@ describe("gallery shell — srcdoc generation", () => {
   });
 });
 
-describe("gallery shell — bootstrap script", () => {
-  test("bootstrap script receives ports via postMessage with nonce check", () => {
-    const script = buildBootstrapScript({ nonce: NONCE });
-    expect(script).toContain(NONCE);
-    // Trust path is the transferred port — the bootstrap must NOT
-    // accept arbitrary window messages as capability.
-    expect(script).toContain("ports");
+describe("gallery frame program (bootstrap source)", () => {
+  // The frame program is bundled into the srcdoc at build time; these
+  // assertions pin its trust-path shape at the source level (the live
+  // render path is proven by the Tier 1 acceptance gates, which bundle
+  // the SAME renderers).
+  const bootstrapPath = new URL("../../src/gallery-web/frame/bootstrap.ts", import.meta.url)
+    .pathname;
+
+  test("verifies the handshake nonce against its own script tag", async () => {
+    const source = await Bun.file(bootstrapPath).text();
+    expect(source).toContain("facetHandshake");
+    expect(source).toContain("ports");
+    expect(source).toContain('getAttribute("nonce")');
   });
 
-  test("bootstrap signals boot-ready via the control port", () => {
-    const script = buildBootstrapScript({ nonce: NONCE });
-    expect(script).toContain("boot-ready");
+  test("signals boot-ready and render-complete via the control port", async () => {
+    const source = await Bun.file(bootstrapPath).text();
+    expect(source).toContain("boot-ready");
+    expect(source).toContain("render-complete");
+    // Counts cross the control port ONLY after the dispatch settled.
+    const dispatchIdx = source.indexOf("dispatchRender(");
+    const completeIdx = source.indexOf('"render-complete"');
+    expect(dispatchIdx).toBeGreaterThanOrEqual(0);
+    expect(completeIdx).toBeGreaterThan(dispatchIdx);
+  });
+
+  test("closes the ingress port one-shot on artifact receipt", async () => {
+    const source = await Bun.file(bootstrapPath).text();
+    expect(source).toContain("ingress.close()");
   });
 });
 
@@ -365,16 +400,25 @@ describe("gallery shell — public surface (single-artifact view, no list UI)", 
 
 describe("gallery shell — no zod in frame bundle (boundary check stays clean)", () => {
   // The boundary check enforces this at the gate. We assert here that
-  // the runtime frame module exports no zod-imported symbol (defence in
+  // the runtime frame modules export no zod-imported symbol (defence in
   // depth — a frame/<file>.ts accidentally `import { z } from "zod"`
   // would break the gate; this test catches it earlier at unit time).
-  test("frame/channels has no zod references", async () => {
-    const source = await Bun.file(
-      new URL("../../src/gallery-web/frame/channels.ts", import.meta.url).pathname,
-    ).text();
-    expect(source).not.toMatch(/from\s+["']zod["']/);
-    expect(source).not.toMatch(/require\(['"]zod['"]\)/);
-  });
+  const FRAME_FILES = [
+    "../../src/gallery-web/frame/channels.ts",
+    "../../src/gallery-web/frame/bootstrap.ts",
+    "../../src/gallery-web/frame/renderers/registry.ts",
+    "../../src/gallery-web/frame/renderers/markdown.ts",
+    "../../src/gallery-web/frame/renderers/mermaid.ts",
+    "../../src/gallery-web/frame/renderers/svg.ts",
+    "../../src/gallery-web/frame/renderers/chart.ts",
+  ];
+  for (const relative of FRAME_FILES) {
+    test(`${relative.split("/").pop()} has no zod references`, async () => {
+      const source = await Bun.file(new URL(relative, import.meta.url).pathname).text();
+      expect(source).not.toMatch(/from\s+["']zod["']/);
+      expect(source).not.toMatch(/require\(['"]zod['"]\)/);
+    });
+  }
 });
 
 describe("gallery shell — frame attributes type contract", () => {
@@ -439,4 +483,492 @@ describe("gallery shell — per-frame nonce freshness", () => {
     expect(nonceB).toBeDefined();
     expect(nonceA).not.toBe(nonceB);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Swap execution — the REAL async swap against a recording FrameHost.
+// The test plays the frame side: it posts boot-ready / render-complete
+// on the frame-held control port end and consumes the ingress payload,
+// exactly like the bundled bootstrap does in a real iframe.
+// ---------------------------------------------------------------------------
+
+interface HostCall {
+  readonly op: string;
+  readonly frameId: string;
+}
+
+interface RecordingHost {
+  readonly host: FrameHost;
+  readonly calls: HostCall[];
+  readonly badges: string[];
+  readonly viewStates: Map<string, ViewState>;
+  readonly mounted: Set<string>;
+}
+
+function createRecordingHost(): RecordingHost {
+  const calls: HostCall[] = [];
+  const badges: string[] = [];
+  const viewStates = new Map<string, ViewState>();
+  const mounted = new Set<string>();
+  const host: FrameHost = {
+    mountOffScreen(frameId) {
+      calls.push({ op: "mount-off-screen", frameId });
+      mounted.add(frameId);
+    },
+    setVisibility(frameId, visible) {
+      calls.push({ op: visible ? "show" : "hide", frameId });
+    },
+    unmount(frameId) {
+      calls.push({ op: "unmount", frameId });
+      mounted.delete(frameId);
+    },
+    applyViewState(frameId, viewState) {
+      calls.push({ op: "apply-view-state", frameId });
+      viewStates.set(frameId, viewState);
+    },
+    showErrorBadge(message) {
+      badges.push(message);
+    },
+  };
+  return { host, calls, badges, viewStates, mounted };
+}
+
+function createStubDom(): ShellDom {
+  const stubDocument = {
+    createElement(_tag: string): { setAttribute(name: string, value: string): void } {
+      return { setAttribute: () => {} };
+    },
+  };
+  return {
+    document: stubDocument as unknown as Document,
+    MessageChannel,
+    hostname: "127.0.0.1",
+    window: {},
+  };
+}
+
+interface SimulatedFrameOptions {
+  readonly errorCount?: number;
+  readonly omitBootReady?: boolean;
+  readonly omitRenderComplete?: boolean;
+}
+
+/**
+ * Post a control event on a frame-held MessagePort. MessagePort's
+ * `postMessage` takes a transfer list as its second argument, not a
+ * `targetOrigin` — the oxlint rule targets `window.postMessage`, so
+ * the rule is disabled at this helper.
+ */
+function postFrameControl(frame: CreatedArtifactFrame, event: FrameControlEvent): void {
+  // oxlint-disable-next-line unicorn/require-post-message-target-origin
+  frame.frameControlPort.postMessage(event);
+}
+
+/** Play the frame side of the protocol against a CreatedArtifactFrame. */
+function simulateFrameSide(
+  frame: CreatedArtifactFrame,
+  received: unknown[],
+  options: SimulatedFrameOptions = {},
+): void {
+  if (options.omitBootReady !== true) {
+    postFrameControl(frame, { type: "boot-ready" });
+  }
+  // oxlint-disable-next-line unicorn/prefer-add-event-listener
+  frame.frameIngressPort.onmessage = (event: MessageEvent) => {
+    received.push(event.data);
+    if (options.omitRenderComplete === true) return;
+    postFrameControl(frame, {
+      type: "render-complete",
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 1,
+        errorCount: options.errorCount ?? 0,
+      },
+    });
+  };
+}
+
+describe("gallery shell — real swap execution (double-buffered HMR)", () => {
+  const SOURCE = { artifactType: "markdown", bytes: new Uint8Array([1, 2, 3]) };
+
+  test("seamless swap: new frame renders BEFORE the old frame is removed", async () => {
+    const dom = createStubDom();
+    const recording = createRecordingHost();
+    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const next = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const received: unknown[] = [];
+    simulateFrameSide(next, received);
+
+    const result = await replaceArtifactFrame({
+      current,
+      next,
+      dom,
+      host: recording.host,
+      viewState: { zoom: 1.25 },
+      source: SOURCE,
+      readyTimeoutMs: 2_000,
+    });
+
+    expect(result.failedNewFrameReady).toBe(false);
+    expect(result.executedSteps).toEqual([
+      "build-new",
+      "open-new-control",
+      "new-frame-ready",
+      "swap",
+      "apply-view-state",
+      "close-old-control",
+      "remove-old",
+    ]);
+    const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
+    const mountNew = ops.indexOf(`mount-off-screen:${next.frameId}`);
+    const showNew = ops.indexOf(`show:${next.frameId}`);
+    const hideOld = ops.indexOf(`hide:${current.frameId}`);
+    const removeOld = ops.indexOf(`unmount:${current.frameId}`);
+    // Off-screen build first; the new frame is visible before the old
+    // frame is hidden, and the old frame is removed LAST.
+    expect(mountNew).toBe(0);
+    expect(showNew).toBeGreaterThan(mountNew);
+    expect(hideOld).toBeGreaterThan(showNew);
+    expect(removeOld).toBe(ops.length - 1);
+    // Bytes crossed the ingress exactly once.
+    expect(received).toEqual([SOURCE]);
+    // Old control channel is dead; the frame is gone from the host.
+    current.sendControl({ type: "probe" });
+    expect(recording.mounted.has(current.frameId)).toBe(false);
+    expect(recording.mounted.has(next.frameId)).toBe(true);
+    next.closeControl();
+  });
+
+  test("view state (zoom) is preserved across the swap", async () => {
+    const dom = createStubDom();
+    const recording = createRecordingHost();
+    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const next = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    simulateFrameSide(next, []);
+
+    const result = await replaceArtifactFrame({
+      current,
+      next,
+      dom,
+      host: recording.host,
+      viewState: { zoom: 1.75 },
+      source: SOURCE,
+      readyTimeoutMs: 2_000,
+    });
+
+    expect(result.failedNewFrameReady).toBe(false);
+    expect(recording.viewStates.get(next.frameId)).toEqual({ zoom: 1.75 });
+    next.closeControl();
+  });
+
+  test("every revision gets a FRESH opaque frame — no artifact-JS carryover", async () => {
+    const dom = createStubDom();
+    const recording = createRecordingHost();
+    const first = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const second = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    // Fresh nonce + fresh srcdoc per frame — an old bootstrap cannot
+    // survive into a new CSP window, and no source bytes ride srcdoc.
+    expect(first.nonce).not.toBe(second.nonce);
+    expect(first.attrs.srcdoc).not.toBe(second.attrs.srcdoc);
+    expect(first.attrs.srcdoc).toContain(first.nonce);
+    expect(second.attrs.srcdoc).toContain(second.nonce);
+    expect(first.attrs.srcdoc).not.toContain(ARTIFACT_SENTINEL);
+    expect(second.attrs.srcdoc).not.toContain(ARTIFACT_SENTINEL);
+
+    // Two consecutive swaps: rev1 → rev2. The second swap's frame is
+    // distinct and receives ITS bytes once; the first frame's ingress
+    // is already closed (one-shot) and its control dies at replacement.
+    const receivedFirst: unknown[] = [];
+    simulateFrameSide(first, receivedFirst);
+    const seed = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const swapOne = await replaceArtifactFrame({
+      current: seed,
+      next: first,
+      dom,
+      host: recording.host,
+      viewState: { zoom: 1 },
+      source: { artifactType: "markdown", bytes: new Uint8Array([1]) },
+      readyTimeoutMs: 2_000,
+    });
+    expect(swapOne.failedNewFrameReady).toBe(false);
+
+    const receivedSecond: unknown[] = [];
+    simulateFrameSide(second, receivedSecond);
+    const swapTwo = await replaceArtifactFrame({
+      current: first,
+      next: second,
+      dom,
+      host: recording.host,
+      viewState: { zoom: 1 },
+      source: { artifactType: "markdown", bytes: new Uint8Array([2]) },
+      readyTimeoutMs: 2_000,
+    });
+    expect(swapTwo.failedNewFrameReady).toBe(false);
+    expect(receivedFirst).toHaveLength(1);
+    expect(receivedSecond).toHaveLength(1);
+    expect((receivedSecond[0] as { bytes: Uint8Array }).bytes).toEqual(new Uint8Array([2]));
+    // Replay attempt on the spent ingress is a no-op (one-shot).
+    first.deliverSource({ artifactType: "markdown", bytes: new Uint8Array([9, 9]) });
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    expect(receivedFirst).toHaveLength(1);
+    second.closeControl();
+  });
+
+  test("failed new render keeps the last-good frame + error badge", async () => {
+    const dom = createStubDom();
+    const recording = createRecordingHost();
+    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const next = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    // The frame boots but its render reports errors.
+    simulateFrameSide(next, [], { errorCount: 1 });
+
+    const result = await replaceArtifactFrame({
+      current,
+      next,
+      dom,
+      host: recording.host,
+      viewState: { zoom: 1 },
+      source: SOURCE,
+      readyTimeoutMs: 2_000,
+    });
+
+    expect(result.failedNewFrameReady).toBe(true);
+    expect(result.executedSteps).toEqual(["build-new", "open-new-control"]);
+    // Old frame untouched: no hide, no unmount.
+    const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
+    expect(ops).not.toContain(`unmount:${current.frameId}`);
+    expect(ops).not.toContain(`hide:${current.frameId}`);
+    // Failed new frame torn down (channels + element) and badged.
+    expect(ops).toContain(`unmount:${next.frameId}`);
+    expect(recording.badges).toHaveLength(1);
+    expect(recording.badges[0]).toContain("keeping last good revision");
+  });
+
+  test("new frame that never boots keeps the last-good frame (timeout path)", async () => {
+    const dom = createStubDom();
+    const recording = createRecordingHost();
+    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const next = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    // No boot-ready at all.
+    simulateFrameSide(next, [], { omitBootReady: true, omitRenderComplete: true });
+
+    const result = await replaceArtifactFrame({
+      current,
+      next,
+      dom,
+      host: recording.host,
+      viewState: { zoom: 1 },
+      source: SOURCE,
+      readyTimeoutMs: 50,
+    });
+
+    expect(result.failedNewFrameReady).toBe(true);
+    const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
+    expect(ops).not.toContain(`unmount:${current.frameId}`);
+    expect(recording.badges).toHaveLength(1);
+  });
+
+  test("swapToRevision fetches the exact revision and swaps to a fresh frame", async () => {
+    const dom = createStubDom();
+    const recording = createRecordingHost();
+    const current = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const fetched: { artifactId: string; revisionSha: string }[] = [];
+    const bytes = new Uint8Array([7, 7, 7]);
+    const received: unknown[] = [];
+
+    const { frame, result } = await swapToRevision(
+      {
+        dom,
+        host: recording.host,
+        bootstrapScript: BOOTSTRAP_SCRIPT,
+        fetchRevision: async (artifactId, revisionSha) => {
+          fetched.push({ artifactId, revisionSha });
+          return { artifactType: "markdown", bytes };
+        },
+        onFrameCreated: (next) => simulateFrameSide(next, received),
+        readyTimeoutMs: 2_000,
+      },
+      current,
+      { artifactId: "art-1", revisionSha: "sha-1" },
+      { zoom: 2 },
+    );
+
+    expect(fetched).toEqual([{ artifactId: "art-1", revisionSha: "sha-1" }]);
+    expect(result.failedNewFrameReady).toBe(false);
+    expect(frame).not.toBe(current);
+    expect(received).toEqual([{ artifactType: "markdown", bytes }]);
+    expect(recording.viewStates.get(frame.frameId)).toEqual({ zoom: 2 });
+    expect(recording.mounted.has(current.frameId)).toBe(false);
+    frame.closeControl();
+  });
+});
+
+describe("gallery shell — control-port RECEIVE path", () => {
+  test("onControlEvent receives frame→shell events posted on the frame-held end", async () => {
+    const dom = createStubDom();
+    const frame = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const events: FrameControlEvent[] = [];
+    const unsubscribe = frame.onControlEvent((event) => events.push(event));
+    postFrameControl(frame, { type: "boot-ready" });
+    postFrameControl(frame, {
+      type: "render-complete",
+      observed: {
+        rendererRootSvgCount: 2,
+        graphCount: 2,
+        mermaidNodeCount: 40,
+        visibleSvgCount: 2,
+        errorCount: 0,
+      },
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    expect(events.map((event) => event.type)).toEqual(["boot-ready", "render-complete"]);
+    expect(events[1]?.observed?.rendererRootSvgCount).toBe(2);
+    unsubscribe();
+    frame.closeControl();
+  });
+
+  test("awaitControlEvent resolves on the matching type and times out to null", async () => {
+    const dom = createStubDom();
+    const frame = createArtifactFrame({ bootstrapScript: BOOTSTRAP_SCRIPT, dom });
+    const pending = frame.awaitControlEvent("boot-ready", 1_000);
+    postFrameControl(frame, { type: "boot-ready" });
+    expect(await pending).toMatchObject({ type: "boot-ready" });
+    // No render-complete coming — the wait must bound itself.
+    expect(await frame.awaitControlEvent("render-complete", 50)).toBeNull();
+    frame.closeControl();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Write path → SSE: a committed publish emits revision:committed on the
+// live stream bound to the artifact's gallery lease.
+// ---------------------------------------------------------------------------
+
+describe("service write path — revision SSE emit", () => {
+  test("committed publish emits revision:committed with the exact sha to the leased stream", async () => {
+    const envDir = mkdtempSync(join(tmpdir(), "facet-sse-emit-"));
+    const service = await startFacetService({
+      dbPath: join(envDir, "facet.sqlite"),
+      installTokenPath: join(envDir, "install.token"),
+      promoteTokenPath: join(envDir, "promote.token"),
+      lockPath: join(envDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "sse-emit-test" }),
+      tier0Runner: stubTier0Runner,
+    });
+    const headers = {
+      "content-type": "application/json",
+      authorization: `Bearer ${service.installToken}`,
+      host: `127.0.0.1:${service.port}`,
+    };
+    const command = async (requestId: string, data: Record<string, unknown>) => {
+      const res = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          schemaVersion: "facet.v1",
+          requestId,
+          ok: true,
+          data: { requestId, ...data },
+        }),
+      });
+      return (await res.json()) as { data: Record<string, unknown> };
+    };
+    let streamBody: ReadableStream<Uint8Array> | null = null;
+    try {
+      const created = await command("r-c", {
+        command: "create",
+        projectId: "p",
+        slug: "sse-emit",
+        title: "SSE emit",
+      });
+      const artifactId = (created.data.artifact as { id: string }).id;
+
+      // Publish rev 1 first so `open` can issue a real lease.
+      const published = await command("r-p1", {
+        command: "publish",
+        artifactId,
+        artifactType: "markdown",
+        bytes: Buffer.from("# rev one\n").toString("base64"),
+      });
+      const revisionSha = (published.data.revision as { sha256: string }).sha256;
+      const openedReal = await command("r-o2", {
+        command: "open",
+        artifactId,
+        revisionSha,
+      });
+      const leaseId = (openedReal.data.lease as { leaseId: string }).leaseId;
+
+      const streamRes = await fetch(`${service.url}/api/v1/stream`, {
+        headers: {
+          authorization: `Bearer ${service.installToken}`,
+          host: `127.0.0.1:${service.port}`,
+          "x-gallery-lease": leaseId,
+          "x-gallery-artifact": artifactId,
+        },
+      });
+      expect(streamRes.status).toBe(200);
+      streamBody = streamRes.body;
+      const reader = streamRes.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const events: Record<string, unknown>[] = [];
+      const readUntil = async (type: string, timeoutMs: number) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const found = events.find((event) => event.type === type);
+          if (found !== undefined) return found;
+          const next = await Promise.race([
+            reader.read(),
+            new Promise<{ done: true; value: undefined }>((resolve) =>
+              setTimeout(() => resolve({ done: true, value: undefined }), deadline - Date.now()),
+            ),
+          ]);
+          if (next.value !== undefined) {
+            buffer += decoder.decode(next.value, { stream: true });
+            let end = buffer.indexOf("\n\n");
+            while (end >= 0) {
+              const block = buffer.slice(0, end);
+              buffer = buffer.slice(end + 2);
+              end = buffer.indexOf("\n\n");
+              if (block.startsWith("data: ")) {
+                try {
+                  events.push(JSON.parse(block.slice("data: ".length)) as Record<string, unknown>);
+                } catch {
+                  // partial — ignore
+                }
+              }
+            }
+          }
+        }
+        return events.find((event) => event.type === type);
+      };
+      // Stream opens, then the NEXT publish lands as revision:committed.
+      await readUntil("stream:open", 5_000);
+      const publishTwo = command("r-p2", {
+        command: "publish",
+        artifactId,
+        artifactType: "markdown",
+        bytes: Buffer.from("# rev two\n").toString("base64"),
+      });
+      const committed = await readUntil("revision:committed", 10_000);
+      await publishTwo;
+      expect(committed).toBeDefined();
+      expect(committed?.artifactId).toBe(artifactId);
+      expect(committed?.revisionNumber).toBe(2);
+      expect(committed?.artifactType).toBe("markdown");
+      expect(committed?.revisionSha).toMatch(/^[a-f0-9]{64}$/);
+      expect(committed?.revisionSha).not.toBe(revisionSha);
+    } finally {
+      await streamBody?.cancel().catch(() => {});
+      await service.stop();
+      try {
+        rmSync(envDir, { recursive: true, force: true });
+      } catch {
+        // best-effort
+      }
+    }
+  }, 30_000);
 });

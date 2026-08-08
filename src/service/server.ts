@@ -31,6 +31,7 @@ import { ArtifactRepository } from "./store/repository";
 import { buildRouter } from "./router";
 import { createInstallTokenStore, createPromoteTokenStore } from "./security/token-store";
 import { createLeaseManager, type GalleryLeaseManager } from "./security/leases";
+import { createRevisionBroadcaster } from "./stream";
 import type { Tier0Runner, Tier1Runner } from "../shared/contracts/validation";
 import {
   acquireLock,
@@ -205,6 +206,10 @@ export async function startFacetService(
     }
     const tier0Runner: Tier0Runner = options.tier0Runner;
     const tier1Runner: Tier1Runner | undefined = options.tier1Runner;
+    // Write-path → SSE seam: the dispatcher emits the canonical
+    // revision:committed event after commit + verdict runs; the
+    // broadcaster fans it out to the live gallery streams.
+    const broadcaster = createRevisionBroadcaster();
     const router = buildRouter({
       ...(tier1Runner !== undefined ? { tier1Runner } : {}),
       repository,
@@ -218,6 +223,8 @@ export async function startFacetService(
       startTime: lockStartTime,
       tier0Runner,
       tier1Runner,
+      broadcaster,
+      onPublished: (event) => broadcaster.emit(event),
     });
     let server: ReturnType<typeof Bun.serve>;
     try {

@@ -5,8 +5,7 @@
  * + status line, zoom/reset/fullscreen controls, the iframe canvas,
  * a terse error badge. ONE active-artifact view (no sidebar, no list).
  * The shell transforms the iframe ELEMENT for zoom/pan; fine pan/zoom
- * commands to the artifact cross ONLY the private control port (when
- * renderers land).
+ * commands to the artifact cross ONLY the private control port.
  *
  * Pure helpers live in sibling modules (`frame-html.ts`, `swap.ts`,
  * `frame/bootstrap.ts`) so the security invariants are testable
@@ -15,6 +14,13 @@
  *
  * The shell rejects a non-loopback hostname BEFORE any capability-bearing
  * code runs — DNS-rebinding defense at the trust boundary, not after.
+ *
+ * Swap model (double-buffered HMR): the new frame is built OFF-SCREEN,
+ * the shell waits for its `boot-ready`, transfers the artifact bytes
+ * ONCE over the one-shot ingress, waits for `render-complete`, and
+ * only then swaps visibility, applies the preserved view state, closes
+ * the old control port, and removes the old frame. A failed new frame
+ * keeps the last-good frame visible and surfaces an error badge.
  */
 
 import {
@@ -28,7 +34,6 @@ import { planSwap, type SwapPlanStep } from "./swap";
 
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
-export { buildBootstrapScript } from "./frame/bootstrap";
 export {
   FROZEN_CSP_TEMPLATE,
   assertLoopbackHostname,
@@ -39,6 +44,7 @@ export {
   type FrameAttributes,
 } from "./frame-html";
 export { planSwap, type SwapPlanStep } from "./swap";
+export { connectRevisionStream } from "./sse-client";
 
 /**
  * Public surface of the shell — names only. Used by the gate test to
@@ -62,10 +68,40 @@ export interface ShellDom {
   readonly window: { postMessage?: unknown };
 }
 
+/** View state the shell preserves across a swap. */
+export interface ViewState {
+  readonly zoom: number;
+}
+
+/**
+ * Control-port events the frame emits to the shell. The frame's
+ * page-shim counts ride `render-complete.observed`.
+ */
+export interface FrameControlEvent {
+  readonly type: string;
+  readonly observed?: {
+    readonly rendererRootSvgCount?: number;
+    readonly graphCount?: number;
+    readonly mermaidNodeCount?: number;
+    readonly visibleSvgCount?: number;
+    readonly errorCount?: number;
+  };
+}
+
 export interface CreateArtifactFrameOptions {
   readonly bootstrapScript: string;
   readonly dom: ShellDom;
   readonly nonce?: string;
+}
+
+/**
+ * Host-side element handle. `raw` is the real HTMLIFrameElement in
+ * production; the FrameHost adapter is the only surface that touches
+ * it, so test hosts can substitute a recording stub.
+ */
+export interface FrameElementHandle {
+  setAttribute(name: string, value: string): void;
+  readonly raw: unknown;
 }
 
 export interface CreatedArtifactFrame {
@@ -79,11 +115,39 @@ export interface CreatedArtifactFrame {
   readonly deliverSource: (payload: unknown) => void;
   readonly sendControl: (payload: unknown) => void;
   readonly closeControl: () => void;
+  /** Control-port RECEIVE path (frame → shell). Returns an unsubscribe. */
+  readonly onControlEvent: (handler: (event: FrameControlEvent) => void) => () => void;
   /**
-   * Element wired with the attributes above. The caller appends it
-   * into the host DOM. Kept abstract here so the test gate can stub.
+   * Resolve with the next control event of the given type, or null on
+   * timeout. This is the async boot-ready / render-complete wait.
    */
-  readonly element: { setAttribute(name: string, value: string): void };
+  readonly awaitControlEvent: (
+    type: string,
+    timeoutMs: number,
+  ) => Promise<FrameControlEvent | null>;
+  /**
+   * Element wired with the attributes above. The caller mounts it via
+   * a FrameHost. Kept abstract so the test gate can stub.
+   */
+  readonly element: FrameElementHandle;
+}
+
+/**
+ * DOM adapter the swap executes against. Production binds it to the
+ * real document; tests bind a recording stub. The shell never touches
+ * the iframe element outside this surface.
+ */
+export interface FrameHost {
+  /** Mount a frame element off-screen (loaded, but not visible). */
+  mountOffScreen(frameId: string, element: unknown): void;
+  /** Swap visibility. */
+  setVisibility(frameId: string, visible: boolean): void;
+  /** Remove the frame element from the document. */
+  unmount(frameId: string): void;
+  /** Apply the preserved view state (zoom transform) to the frame element. */
+  applyViewState(frameId: string, viewState: ViewState): void;
+  /** Terse error badge — failed swaps keep the last-good frame. */
+  showErrorBadge(message: string): void;
 }
 
 /**
@@ -117,6 +181,20 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   element.setAttribute("title", attrs.title);
   element.setAttribute("srcdoc", srcdoc);
   const frameId = `frame-${crypto.randomUUID()}`;
+
+  // Control-port RECEIVE path. MessagePort.onmessage setter form with
+  // a handler registry: one port listener, many subscribers.
+  const controlHandlers = new Set<(event: FrameControlEvent) => void>();
+  // oxlint-disable-next-line unicorn/prefer-add-event-listener
+  control.port1.onmessage = (event: MessageEvent) => {
+    const data = event.data as FrameControlEvent | null;
+    if (data === null || typeof data !== "object" || typeof data.type !== "string") return;
+    // Spread snapshots the handler set so a handler that unsubscribes
+    // itself mid-dispatch does not skip the remaining peers.
+    // oxlint-disable-next-line unicorn/no-useless-spread
+    for (const handler of [...controlHandlers]) handler(data);
+  };
+
   return {
     frameId,
     nonce,
@@ -153,10 +231,37 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
         // already closed
       }
     },
+    onControlEvent(handler) {
+      controlHandlers.add(handler);
+      return () => {
+        controlHandlers.delete(handler);
+      };
+    },
+    awaitControlEvent(type, timeoutMs) {
+      return new Promise<FrameControlEvent | null>((resolve) => {
+        let unsubscribe: (() => void) | null = null;
+        const timer = setTimeout(() => {
+          unsubscribe?.();
+          resolve(null);
+        }, timeoutMs);
+        unsubscribe = ((handler: (event: FrameControlEvent) => void) => {
+          controlHandlers.add(handler);
+          return () => {
+            controlHandlers.delete(handler);
+          };
+        })((event) => {
+          if (event.type !== type) return;
+          clearTimeout(timer);
+          unsubscribe?.();
+          resolve(event);
+        });
+      });
+    },
     element: {
       setAttribute(name: string, value: string): void {
         element.setAttribute(name, value);
       },
+      raw: element,
     },
   };
 }
@@ -165,39 +270,150 @@ export interface ReplaceArtifactFrameOptions {
   readonly current: CreatedArtifactFrame;
   readonly next: CreatedArtifactFrame;
   readonly dom: ShellDom;
-  readonly viewState: { readonly zoom: number };
+  readonly host: FrameHost;
+  readonly viewState: ViewState;
+  /** Artifact payload transferred to the new frame exactly once. */
+  readonly source?: unknown;
+  /** Per-barrier wait window (boot-ready, then render-complete). */
+  readonly readyTimeoutMs?: number;
 }
 
 export interface ReplaceArtifactFrameResult {
-  readonly plan: readonly SwapPlanStep[];
+  readonly executedSteps: readonly SwapPlanStep["name"][];
   readonly failedNewFrameReady: boolean;
 }
 
+const DEFAULT_READY_TIMEOUT_MS = 10_000;
+
+function observedErrorCount(event: FrameControlEvent): number {
+  const count = event.observed?.errorCount;
+  return typeof count === "number" ? count : 0;
+}
+
 /**
- * Plan + execute a double-buffered HMR swap. The new frame reaches
- * ready (the bootstrap posts `boot-ready` on the control port) BEFORE
- * the old frame is removed. View state is preserved across the swap.
- * If the new frame fails to reach ready within `readyTimeoutMs`, the
- * old frame stays visible with an error badge.
+ * Execute a double-buffered HMR swap against the real DOM. Ordering
+ * invariant: the new frame is built off-screen, reaches boot-ready +
+ * render-complete, and only THEN swaps in — the old frame is removed
+ * last. View state is preserved across the swap. If the new frame
+ * fails to reach a clean render-complete within the wait window, the
+ * old frame stays visible with an error badge and the failed new
+ * frame's channels + element are torn down.
  */
-export function replaceArtifactFrame(
+export async function replaceArtifactFrame(
   options: ReplaceArtifactFrameOptions,
-): ReplaceArtifactFrameResult {
-  const { current, next, dom, viewState } = options;
+): Promise<ReplaceArtifactFrameResult> {
+  const { current, next, dom, host, viewState } = options;
+  const readyTimeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
   assertLoopbackHostname(dom.hostname);
-  // Build the new frame off-screen — the caller is responsible for
-  // not appending it until step `swap` runs. We simulate the "ready"
-  // signal here: in production, `swap` runs only AFTER the next
-  // frame's `boot-ready` arrives on its control port.
-  const ready = next.sendControl.length >= 0; // sanity: control wired
-  const failNewFrameReady = !ready;
-  void failNewFrameReady;
   const plan = planSwap({
     currentFrameId: current.frameId,
     nextFrameId: next.frameId,
     viewState,
-    ...(failNewFrameReady ? { failNewFrameReady: true } : {}),
   });
-  for (const step of plan) step.run();
-  return { plan, failedNewFrameReady: failNewFrameReady };
+  const executed: SwapPlanStep["name"][] = [];
+  // The plan's step list executes against the real DOM through these
+  // runners; the async boot-ready/render-complete barrier runs between
+  // `open-new-control` and `new-frame-ready`.
+  const runners: Record<SwapPlanStep["name"], () => void> = {
+    "build-new": () => host.mountOffScreen(next.frameId, next.element.raw),
+    "open-new-control": () => {
+      // The control channel opens at frame creation and stays open
+      // across the swap; nothing to do here.
+    },
+    "new-frame-ready": () => {
+      // Awaited below; this step records the barrier passed.
+    },
+    swap: () => {
+      host.setVisibility(next.frameId, true);
+      host.setVisibility(current.frameId, false);
+    },
+    "apply-view-state": () => host.applyViewState(next.frameId, viewState),
+    "close-old-control": () => current.closeControl(),
+    "remove-old": () => host.unmount(current.frameId),
+  };
+  const runStep = (step: SwapPlanStep): void => {
+    runners[step.name]();
+    executed.push(step.name);
+  };
+
+  // build-new + open-new-control run BEFORE the barrier: the iframe
+  // must be mounted off-screen to load and boot.
+  for (const step of plan.slice(0, 2)) runStep(step);
+
+  // Async boot-ready WAIT before the swap.
+  const bootReady = await next.awaitControlEvent("boot-ready", readyTimeoutMs);
+  let renderComplete: FrameControlEvent | null = null;
+  if (bootReady !== null) {
+    if (options.source !== undefined) next.deliverSource(options.source);
+    renderComplete = await next.awaitControlEvent("render-complete", readyTimeoutMs);
+  }
+  const ready =
+    bootReady !== null && renderComplete !== null && observedErrorCount(renderComplete) === 0;
+
+  if (!ready) {
+    // Failed new frame: keep the last-good frame visible, surface the
+    // badge, and tear the failed frame down (channels + element).
+    host.showErrorBadge("new revision failed to render; keeping last good revision");
+    next.closeControl();
+    host.unmount(next.frameId);
+    return { executedSteps: executed, failedNewFrameReady: true };
+  }
+
+  // new-frame-ready → … → remove-old: the rest of the plan, in order.
+  for (const step of plan.slice(2)) runStep(step);
+  return { executedSteps: executed, failedNewFrameReady: false };
+}
+
+export interface RevisionFetchResult {
+  readonly artifactType: string;
+  readonly bytes: Uint8Array;
+}
+
+export interface SwapToRevisionDeps {
+  readonly dom: ShellDom;
+  readonly host: FrameHost;
+  readonly bootstrapScript: string;
+  /** Fetch the exact revision bytes the SSE event named. */
+  readonly fetchRevision: (artifactId: string, revisionSha: string) => Promise<RevisionFetchResult>;
+  readonly readyTimeoutMs?: number;
+  /**
+   * Called with the fresh frame BEFORE the swap runs — production
+   * uses it to transfer the port ends into the iframe once the load
+   * event fires; tests use it to play the frame side.
+   */
+  readonly onFrameCreated?: (frame: CreatedArtifactFrame) => void;
+}
+
+export interface RevisionEvent {
+  readonly artifactId: string;
+  readonly revisionSha: string;
+}
+
+/**
+ * publish→visible, one revision at a time: fetch the exact revision
+ * the committed event named, build a FRESH opaque frame for it, and
+ * run the double-buffered swap. The returned frame becomes `current`
+ * for the next revision. Bytes cross the ingress exactly once; every
+ * revision gets its own nonce, srcdoc, and channels — no artifact-JS
+ * carryover between revisions.
+ */
+export async function swapToRevision(
+  deps: SwapToRevisionDeps,
+  current: CreatedArtifactFrame,
+  event: RevisionEvent,
+  viewState: ViewState,
+): Promise<{ readonly frame: CreatedArtifactFrame; readonly result: ReplaceArtifactFrameResult }> {
+  const revision = await deps.fetchRevision(event.artifactId, event.revisionSha);
+  const next = createArtifactFrame({ bootstrapScript: deps.bootstrapScript, dom: deps.dom });
+  deps.onFrameCreated?.(next);
+  const result = await replaceArtifactFrame({
+    current,
+    next,
+    dom: deps.dom,
+    host: deps.host,
+    viewState,
+    source: { artifactType: revision.artifactType, bytes: revision.bytes },
+    ...(deps.readyTimeoutMs !== undefined ? { readyTimeoutMs: deps.readyTimeoutMs } : {}),
+  });
+  return { frame: result.failedNewFrameReady ? current : next, result };
 }
