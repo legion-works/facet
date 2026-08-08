@@ -8,9 +8,12 @@ bun run format:check
 bun run typecheck
 bun test
 bun run check:boundaries
+bun run verify-adapter-size
 ```
 
-Changes to CSP, iframe sandboxing, or network namespaces require rerunning the egress and forgery gates. Install the native gitleaks binary; package wrappers are not accepted.
+The `ci` and `security-egress` checks are required branch-protection checks. Changes to shell launchers, CSP, iframe sandboxing, token handling, or network namespaces must include passing evidence from both the egress and gate-forgery acceptance tests. `security-egress` always reports a status: irrelevant paths pass without running the expensive probes; relevant paths run them on the named self-hosted runner with user namespaces enabled. It may not be relabeled optional because a hosted image lacks namespaces — move the check to the named runner instead.
+
+Install the native gitleaks binary; package wrappers are not accepted.
 
 Test, build, and boundary gates activate as their trees land in later stages.
 

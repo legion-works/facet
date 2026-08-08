@@ -1,3 +1,6 @@
 [test]
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
+coverageThreshold = { lines = 0.9, functions = 0.9, statements = 0.9 }
+# Keep process wiring and generated bundles out; security gates remain mandatory.
+coveragePathIgnorePatterns = ["dist/", "**/main.ts"]
