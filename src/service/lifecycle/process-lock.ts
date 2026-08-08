@@ -30,9 +30,9 @@ import { join } from "node:path";
 
 import { FacetError } from "../../shared/errors/facet-error";
 import { FACET_SCHEMA_VERSION } from "../../shared/contracts/envelope";
-import { isPidAlive } from "../../shared/util/process";
+import { isPidAlive, readPidStartTimeTicks } from "../../shared/util/process";
 
-export { isPidAlive };
+export { isPidAlive, readPidStartTimeTicks };
 
 export interface LockMetadata {
   readonly pid: number;
@@ -44,43 +44,6 @@ export interface LockMetadata {
 export type AcquireResult = { ok: true; metadata: LockMetadata } | { ok: false; error: FacetError };
 
 const LOCK_RETRY_ATTEMPTS = 5;
-
-/**
- * Probe whether `pid` is alive. The single canonical implementation
- * lives in `shared/util/process`; this module re-exports it for
- * back-compat with existing service-side callers.
- */
-function legacyIsPidAlive(pid: number): boolean {
-  return isPidAlive(pid);
-}
-void legacyIsPidAlive;
-
-/**
- * Read the OS-recorded process start time (clock ticks since boot,
- * field 22 of /proc/<pid>/stat) for a live pid. Returns null when the
- * pid is unreadable. The Linux start-time field is monotonic and
- * stable across the lifetime of the process, which makes it a far
- * stronger staleness signal than wall-clock time.
- */
-function readPidStartTimeTicks(pid: number): number | null {
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  try {
-    const text = readFileSync(`/proc/${pid}/stat`, "utf8");
-    // /proc/<pid>/stat: "pid (comm) state ppid ..." — the comm field
-    // can contain spaces or parens, so find the LAST `)` and parse
-    // from there.
-    const lastParen = text.lastIndexOf(")");
-    if (lastParen < 0) return null;
-    const after = text.slice(lastParen + 1).trimStart();
-    const fields = after.split(/\s+/);
-    // field index 21 (0-based after the comm close) is starttime.
-    const startTime = Number(fields[21]);
-    if (!Number.isFinite(startTime)) return null;
-    return startTime;
-  } catch {
-    return null;
-  }
-}
 
 const STALE_LOCK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 

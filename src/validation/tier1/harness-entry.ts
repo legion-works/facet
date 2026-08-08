@@ -251,6 +251,13 @@ window.addEventListener(
     const control = ports[1];
     if (ingress === undefined || control === undefined) return;
     controlPost = control.postMessage.bind(control) as (event: ControlEvent) => void;
+    // MessagePort.onmessage assignment is required over
+    // addEventListener("message"): the pinned chrome-headless-shell
+    // 131.0.6778.204 silently drops events registered via
+    // addEventListener, so the harness handshake would never fire.
+    // The setter form is what the MDN-recommended pattern is on
+    // platforms where MessagePort extends EventTarget; the lint rule
+    // only flags it because the linter can't tell the difference.
     // oxlint-disable-next-line unicorn/prefer-add-event-listener
     ingress.onmessage = async (sourceEvent: MessageEvent) => {
       const payload = sourceEvent.data as { bytes: string; mode: ArtifactMode } | undefined;

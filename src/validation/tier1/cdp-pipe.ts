@@ -27,6 +27,7 @@ import {
   type VerifierCdpSession,
   type VerifierTarget,
 } from "./browser-process";
+import { readPidStartTimeTicks } from "../../shared/util/process";
 
 class PuppeteerCdpSessionAdapter implements VerifierCdpSession {
   constructor(private readonly inner: CDPSession) {}
@@ -64,7 +65,20 @@ class PuppeteerVerifierTarget implements VerifierTarget {
   }
 
   get startTime(): number {
-    return Date.now();
+    // Read the OS-recorded monotonic start time (field 22 of
+    // /proc/<pid>/stat) so this record is byte-identical with the
+    // canonical lock-metadata start time in
+    // `service/lifecycle/process-lock.ts`. A future orphan-cleanup
+    // hook that cross-references the two with `isPidAlive` and
+    // start-time ticks will see the same value here as the lock
+    // metadata recorded at the parent's startup. Falls back to
+    // `Date.now()` only when the browser process is unreachable
+    // (e.g. closed before probe); the runner treats the
+    // (pid, startTime) pair as a best-effort identity key.
+    const proc = this.browser.process();
+    const pid = proc?.pid;
+    if (pid === undefined || !Number.isInteger(pid) || pid <= 0) return Date.now();
+    return readPidStartTimeTicks(pid) ?? Date.now();
   }
 
   async getFrameTree(): Promise<unknown> {

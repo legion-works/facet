@@ -99,15 +99,19 @@ function buildVerdict(input: {
  * `discriminativeErrors[].code` so the read-back verdict carries the
  * typed reason.
  */
-async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tier0Result> {
+async function runTier0Safe(
+  runner: Tier0Runner,
+  input: Tier0Input,
+  artifactId: string,
+): Promise<Tier0Result> {
   try {
     return await runner(input);
   } catch (error) {
     const facet = FacetError.from(error);
-    return {
+    return Tier0ResultSchema.parse({
       tier: 0,
       status: "error",
-      artifactId: "",
+      artifactId,
       revisionSha: input.revisionSha,
       expected: input.lexical,
       observed: {
@@ -115,10 +119,11 @@ async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tie
         graphCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        viewBoxes: [],
         errorCount: 1,
         discriminativeErrors: [{ code: facet.code, message: facet.message }],
       },
-    };
+    });
   }
 }
 
@@ -143,7 +148,11 @@ function enrichVerdict(result: Tier0Result, artifactId: string, revisionSha: str
  * the verifier could not even obtain a verdict, so the run row
  * carries the typed code via `discriminativeErrors[].code`.
  */
-async function runTier1Safe(runner: Tier1Runner, input: Tier1Input): Promise<Tier1Result> {
+async function runTier1Safe(
+  runner: Tier1Runner,
+  input: Tier1Input,
+  artifactId: string,
+): Promise<Tier1Result> {
   try {
     return await runner(input);
   } catch (error) {
@@ -151,7 +160,7 @@ async function runTier1Safe(runner: Tier1Runner, input: Tier1Input): Promise<Tie
     return Tier1ResultSchema.parse({
       tier: 1,
       status: "error",
-      artifactId: "",
+      artifactId,
       revisionSha: input.revisionSha,
       expected: input.lexical,
       observed: {
@@ -242,7 +251,7 @@ export async function dispatch(
           visibleSvgCount: 0,
         },
       });
-      const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input);
+      const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input, command.artifactId);
       // 3. Bind the verdict to (artifactId, revisionSha) via the
       // canonical render_run row so read-back returns it later.
       const enriched = enrichVerdict(tier0Result, command.artifactId, revision.sha256);
@@ -265,7 +274,7 @@ export async function dispatch(
           launcherVersion: "131.0.6778.204",
           networkNamespace: "facet-tier1-egress-isolated",
         });
-        const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input);
+        const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input, command.artifactId);
         const enrichedTier1 = enrichTier1Verdict(tier1Result, command.artifactId, revision.sha256);
         deps.repository.recordRenderRun({
           revisionId: revision.id,

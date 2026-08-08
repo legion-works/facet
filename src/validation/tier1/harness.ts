@@ -21,16 +21,15 @@
  */
 
 import { build } from "bun";
-import { dirname } from "node:path";
 
 const HARNESS_ENTRY = `${import.meta.dir}/harness-entry.ts`;
 
 /**
  * Frozen CSP the harness srcdoc ships with. Identical directive
  * shape to the gallery frame's CSP so the harness has the same
- * script-authority boundary: only the bundled bootstrap + the
- * pinned Mermaid UMD are executable; received artifact bytes
- * never become executable script.
+ * script-authority boundary: only the bundled bootstrap (under the
+ * per-frame nonce) is executable; received artifact bytes never
+ * become executable script.
  */
 export const HARNESS_CSP =
   "default-src 'none'; " +
@@ -53,8 +52,14 @@ function freshNonce(): string {
 }
 
 /**
- * Build the harness browser bundle (bootstrap only — Mermaid is a
- * sibling script). Returns the bundled JS plus its byte length.
+ * Build the harness browser bundle (bootstrap only; uses the
+ * hand-written minimal renderer in `harness-entry.ts` rather than
+ * bundling a real Mermaid runtime). Returns the bundled JS plus its
+ * byte length. The renderer is intentionally lightweight so the
+ * bundle stays small enough to inline in a single script tag inside
+ * the sandboxed iframe srcdoc — a 3.5 MB Mermaid UMD plus a CSP that
+ * permits it as a sibling script would not survive the `file://`
+ * origin / `'self'` mismatch that the netns verifier lives under.
  */
 async function buildBootstrapBundle(): Promise<{ readonly code: string; readonly bytes: number }> {
   const result = await build({
@@ -76,10 +81,12 @@ async function buildBootstrapBundle(): Promise<{ readonly code: string; readonly
 }
 
 /**
- * Build the harness srcdoc with the bundled bootstrap + sibling
- * Mermaid UMD. Both are loaded under the same per-frame nonce;
- * Mermaid is additionally approved by its SHA-256 hash so the
- * CSP doesn't depend on `'self'` for file:// origins.
+ * Build the harness srcdoc with the bundled bootstrap inlined under
+ * a per-frame nonce. The Mermaid-style rendering lives inside the
+ * bundle itself (hand-written minimal renderer in `harness-entry.ts`)
+ * so no external script is loaded. The CSP `script-src` only
+ * needs `'nonce-<NONCE>'` because the artifact bytes are inserted
+ * via `innerHTML` inside the page world (not as executable script).
  */
 export async function buildHarnessSrcdoc(): Promise<{
   readonly srcdoc: string;
@@ -155,6 +162,5 @@ export async function buildHostPage(
     "})();" +
     "</script>" +
     "</body></html>";
-  void dirname;
   return { html, harnessBytes, harnessPath };
 }
