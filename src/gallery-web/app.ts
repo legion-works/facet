@@ -31,6 +31,7 @@ import {
   type FrameAttributes,
 } from "./frame-html";
 import { planSwap, type SwapPlanStep } from "./swap";
+import { connectRevisionStream } from "./sse-client";
 
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
@@ -133,7 +134,7 @@ export interface ShellDom {
 
 /** View state the shell preserves across a swap. */
 export interface ViewState {
-  readonly zoom: number;
+  zoom: number;
 }
 
 /**
@@ -479,4 +480,189 @@ export async function swapToRevision(
     ...(deps.readyTimeoutMs !== undefined ? { readyTimeoutMs: deps.readyTimeoutMs } : {}),
   });
   return { frame: result.failedNewFrameReady ? current : next, result };
+}
+
+interface GallerySourceResponse {
+  readonly artifactType: string;
+  readonly source: string;
+}
+
+async function fetchGallerySource(
+  baseUrl: string,
+  handoff: BootstrapHandoff,
+  revisionSha: string,
+): Promise<RevisionFetchResult> {
+  const url = new URL(`${baseUrl.replace(/\/$/, "")}/api/v1/gallery/source`);
+  assertLoopbackHostname(url.hostname);
+  url.searchParams.set("revisionSha", revisionSha);
+  const response = await fetch(url, {
+    headers: {
+      authorization: handoff.authorization,
+      "x-gallery-lease": handoff.lease.leaseId,
+      "x-gallery-artifact": handoff.artifactId,
+    },
+  });
+  if (!response.ok) throw new Error(`Gallery source fetch failed (${response.status})`);
+  const payload = (await response.json()) as GallerySourceResponse;
+  return { artifactType: payload.artifactType, bytes: new TextEncoder().encode(payload.source) };
+}
+
+function setGalleryStatus(status: string): void {
+  const target = document.getElementById("facet-status-line");
+  if (target !== null) target.textContent = status;
+}
+
+function setGalleryError(message: string): void {
+  const target = document.getElementById("facet-error");
+  if (target !== null) target.textContent = message;
+}
+
+function armFrameLoad(
+  frame: CreatedArtifactFrame,
+  mount: (frame: CreatedArtifactFrame) => void,
+): Promise<FrameControlEvent | null> {
+  const element = frame.element.raw as HTMLIFrameElement;
+  return new Promise((resolve) => {
+    element.addEventListener(
+      "load",
+      () => {
+        element.contentWindow?.postMessage({ facetHandshake: "ports", nonce: frame.nonce }, "*", [
+          frame.frameIngressPort,
+          frame.frameControlPort,
+        ]);
+        mount(frame);
+        void frame.awaitControlEvent("boot-ready", DEFAULT_READY_TIMEOUT_MS).then(resolve);
+      },
+      { once: true },
+    );
+  });
+}
+
+export async function startGallery(): Promise<void> {
+  const baseUrl = window.location.origin;
+  const handoff = await consumeBootstrapHandoff({
+    location: window.location.href,
+    clearFragment: () => history.replaceState(null, "", window.location.pathname),
+  });
+  const title = document.getElementById("facet-title");
+  const revision = document.getElementById("facet-revision");
+  if (title !== null) title.textContent = "facet";
+  if (revision !== null) revision.textContent = handoff.revisionSha.slice(0, 12);
+  setGalleryStatus("loading");
+  const bootstrapResponse = await fetch(`${baseUrl}/gallery/frame/bootstrap.js`);
+  if (!bootstrapResponse.ok)
+    throw new Error(`Gallery frame bootstrap failed (${bootstrapResponse.status})`);
+  const bootstrapScript = await bootstrapResponse.text();
+  const canvas = document.getElementById("facet-canvas");
+  if (!(canvas instanceof HTMLElement)) throw new Error("Gallery canvas is missing");
+  const viewState: ViewState = { zoom: 1 };
+  const host: FrameHost = {
+    mountOffScreen(frameId, element) {
+      const iframe = element as HTMLIFrameElement;
+      iframe.dataset.frameId = frameId;
+      iframe.style.visibility = "hidden";
+      iframe.style.transformOrigin = "center center";
+      canvas.appendChild(iframe);
+    },
+    setVisibility(frameId, visible) {
+      const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`);
+      if (iframe !== null) iframe.style.visibility = visible ? "visible" : "hidden";
+    },
+    unmount(frameId) {
+      canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`)?.remove();
+    },
+    applyViewState(frameId, state) {
+      const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`);
+      if (iframe !== null) iframe.style.transform = `scale(${state.zoom})`;
+    },
+    showErrorBadge: setGalleryError,
+  };
+  const dom: ShellDom = { document, MessageChannel, hostname: window.location.hostname, window };
+  const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha);
+  let current = createArtifactFrame({ bootstrapScript, dom });
+  const boot = await armFrameLoad(current, (frame) =>
+    host.mountOffScreen(frame.frameId, frame.element.raw),
+  );
+  if (boot === null) throw new Error("Gallery frame failed to boot");
+  current.deliverSource({ artifactType: source.artifactType, bytes: source.bytes });
+  const initialEvent = await current.awaitControlEvent("render-complete", DEFAULT_READY_TIMEOUT_MS);
+  if (initialEvent === null || observedErrorCount(initialEvent) !== 0)
+    throw new Error("Gallery artifact failed to render");
+  host.setVisibility(current.frameId, true);
+  host.applyViewState(current.frameId, viewState);
+  setGalleryStatus("ok");
+  const stream = connectRevisionStream({
+    baseUrl,
+    bearer: handoff.authorization.replace(/^Bearer\s+/i, ""),
+    leaseId: handoff.lease.leaseId,
+    artifactId: handoff.artifactId,
+    hostname: window.location.hostname,
+    onCommit: (event) => {
+      void swapToRevision(
+        {
+          dom,
+          host,
+          bootstrapScript,
+          fetchRevision: (_artifactId, revisionSha) =>
+            fetchGallerySource(baseUrl, handoff, revisionSha),
+          onFrameCreated: (next) => {
+            void armFrameLoad(next, (frame) =>
+              host.mountOffScreen(frame.frameId, frame.element.raw),
+            );
+          },
+        },
+        current,
+        event,
+        viewState,
+      )
+        .then(({ frame, result }) => {
+          current = frame;
+          if (!result.failedNewFrameReady) {
+            if (revision !== null) revision.textContent = event.revisionSha.slice(0, 12);
+            setGalleryStatus("ok");
+          }
+        })
+        .catch((error: unknown) =>
+          setGalleryError(error instanceof Error ? error.message : String(error)),
+        );
+    },
+    onClose: () => setGalleryStatus("closed"),
+  });
+  const shutdown = (): void => {
+    stream.close();
+    void releaseDisplayLease({
+      baseUrl,
+      authorization: handoff.authorization,
+      artifactId: handoff.artifactId,
+      leaseId: handoff.lease.leaseId,
+    });
+  };
+  window.addEventListener("beforeunload", shutdown, { once: true });
+  for (const [id, delta] of [
+    ["facet-zoom-in", 0.1],
+    ["facet-zoom-out", -0.1],
+  ] as const) {
+    document.getElementById(id)?.addEventListener("click", () => {
+      viewState.zoom = Math.max(0.25, Math.min(3, viewState.zoom + delta));
+      host.applyViewState(current.frameId, viewState);
+    });
+  }
+  document.getElementById("facet-zoom-reset")?.addEventListener("click", () => {
+    viewState.zoom = 1;
+    host.applyViewState(current.frameId, viewState);
+  });
+  document
+    .getElementById("facet-fullscreen")
+    ?.addEventListener("click", () => void canvas.requestFullscreen());
+}
+
+if (
+  typeof document !== "undefined" &&
+  typeof window !== "undefined" &&
+  document.getElementById("facet-canvas") !== null
+) {
+  void startGallery().catch((error: unknown) => {
+    setGalleryStatus("error");
+    setGalleryError(error instanceof Error ? error.message : String(error));
+  });
 }

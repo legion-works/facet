@@ -25,6 +25,7 @@ All cross-process and cross-language communication travels through a single enve
 - The read-back tier accepts `0 | 1 | "visual"` at the public surface (where `"visual"` is sugar for `1`); the verifier only ever sees the normalized numeric tier.
 - A single canonical `VerdictSchema` in `src/shared/contracts/validation.ts` is the source of truth for every read-back response, every Tier 0 result, and every Tier 1 result. Tier results extend it (Tier 0 adds `expected`; Tier 1 adds screenshot/console paths); the read-back response embeds it directly. `RenderStatusSchema` is a closed enum so a forged `status: "kinda_ok"` is rejected, not silently accepted as a Tier 1 verdict.
 - Stream events (`src/shared/contracts/events.ts`) and validation results share the same primitive-only details contract so a single error-body serializer covers every surface.
+- Gallery bootstrap, lease-gated source reads, release, and revision SSE use loopback-only routes; lease and artifact capabilities remain headers.
 
 Untrusted boundaries (worker stdout, HTTP bodies, SSE frames, CLI argv) parse via `parseEnvelope` and `.safeParse`; the typed `FacetError` (`src/shared/errors/facet-error.ts`) is the only error class that ever crosses the boundary. Renderer complexity limits and the source-byte cap live in `src/shared/config/limits.ts` (the `SOURCE_CAP_BYTES` value is the ADR 0001 D2 hard cap); XDG-style runtime paths live in `src/shared/config/paths.ts`.
 

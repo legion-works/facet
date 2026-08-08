@@ -54,6 +54,7 @@ const ROUTE_STREAM = "/api/v1/stream";
 const ROUTE_GALLERY = "/gallery";
 const ROUTE_BOOTSTRAP = "/api/v1/gallery/bootstrap";
 const ROUTE_RELEASE = "/api/v1/gallery/release";
+const ROUTE_SOURCE = "/api/v1/gallery/source";
 
 // Re-export so `import { RAW_BODY_CAP_BYTES } from "./router"` keeps
 // working — the constant moved to `router-guards.ts` for size reasons.
@@ -409,6 +410,51 @@ export function buildRouter(deps: RouterDeps): {
           deps.idle.release(`lease:${leaseId}`);
         }
         return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+      }
+      if (path === ROUTE_SOURCE && req.method.toUpperCase() === "GET") {
+        const meta = readRequestMeta(req);
+        const hostCheck = checkHostOrigin({
+          method: meta.method,
+          host: meta.host,
+          origin: meta.origin,
+          secFetchSite: meta.secFetchSite,
+          expectedHost: resolveHost(deps.expectedHost),
+          ownOrigin: resolveHost(deps.ownOrigin),
+        });
+        if (!hostCheck.ok)
+          return new Response(null, { status: statusForHostCheck(hostCheck.error) });
+        const auth = requireAnyBearer(meta.authorization, [deps.installToken]);
+        const leaseId = meta.headers.get("x-gallery-lease");
+        const artifactId = meta.headers.get("x-gallery-artifact");
+        if (!auth.ok || leaseId === null || artifactId === null) {
+          return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
+        }
+        const lease = deps.leases
+          .list()
+          .find((entry) => entry.leaseId === leaseId && entry.artifactId === artifactId);
+        if (lease === undefined) {
+          return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
+        }
+        const revisionSha = new URL(req.url).searchParams.get("revisionSha");
+        if (revisionSha === null || revisionSha.length === 0) {
+          return new Response(null, { status: 400, headers: { "cache-control": "no-store" } });
+        }
+        const revision = deps.repository.getRevisionBySha(artifactId, revisionSha);
+        if (revision === null) {
+          return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
+        }
+        return new Response(
+          JSON.stringify({
+            artifactId,
+            revisionSha: revision.sha256,
+            artifactType: revision.artifactType,
+            source: new TextDecoder().decode(revision.source),
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json", "cache-control": "no-store" },
+          },
+        );
       }
       if (path === ROUTE_API) return handleCommand({ ...deps, galleryBootstrap: bootstrap }, req);
       if (path === ROUTE_STREAM) {
