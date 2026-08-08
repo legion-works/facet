@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov",
-    "check:boundaries": "bun scripts/check-boundaries.ts"
+    "check:boundaries": "bun scripts/check-boundaries.ts",
+    "perf-gate": "bun scripts/perf-gate.ts",
+    "perf-gate:quick": "bun scripts/perf-gate.ts --quick"
   },
   "dependencies": {
     "fast-xml-parser": "5.10.1",

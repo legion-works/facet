@@ -104,8 +104,9 @@ export const INVALID_JSON = Symbol.for("invalid_json");
  * Map a `FacetError.code` to its HTTP status. Store codes that share
  * a status with non-store codes (e.g. `constraint` and `duplicate_revision`
  * both 409) are grouped so the switch arms stay flat. The default 500
- * covers unrecognized codes — every known code has an explicit arm so
- * an untyped 500 only fires for a code the catalogue does not cover.
+ * covers unrecognized codes; tier1_* failures are handled in runTier1Safe
+ * before reaching this function, while other codes without an explicit arm
+ * fall through to 500.
  */
 export function statusFor(error: FacetError): number {
   switch (error.code) {
