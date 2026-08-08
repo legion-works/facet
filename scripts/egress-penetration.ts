@@ -246,9 +246,6 @@ export async function runEgressPenetration(
       sinkHits: [...sink.hits],
       udpPackets: sink.udpPackets(),
     };
-  } catch (error) {
-    void error;
-    return { attemptedChannels: [], sinkHits: [...sink.hits], udpPackets: sink.udpPackets() };
   } finally {
     await browser?.close().catch(() => {});
     await sink.close();
