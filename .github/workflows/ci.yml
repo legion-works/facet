@@ -37,6 +37,43 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sysctl kernel.apparmor_restrict_unprivileged_userns
           unshare --map-current-user --user --net -- /bin/true
+      - name: diagnose Tier 0 worker lifecycle
+        shell: bash
+        run: |
+          # This probe is diagnostic only: capture whether enabling nested user namespaces
+          # makes the lazy service's Tier 0 worker unavailable or kill the service.
+          set +e
+          echo "plain netns probe:"
+          unshare --map-current-user --net -- /bin/true
+          echo "plain netns exit: $?"
+          home="$(mktemp -d)"
+          stderr_file="$(mktemp)"
+          create_file="$(mktemp)"
+          FACET_HOME="$home" timeout 45s bun src/cli/main.ts create --project-id /ci --slug userns-probe --title userns-probe --json >"$create_file" 2>"$stderr_file"
+          echo "create exit: $?"
+          echo "service stderr:"
+          cat "$stderr_file"
+          artifact_id="$(jq -r '.data.artifact.id // empty' "$create_file")"
+          echo "artifact id: ${artifact_id:-<none>}"
+          start_ms="$(date +%s%3N)"
+          printf 'graph TD\n  A --> B\n' | FACET_HOME="$home" timeout 45s bun src/cli/main.ts publish --artifact-id "$artifact_id" --type mermaid --file - --json >>"$create_file" 2>>"$stderr_file"
+          publish_exit=$?
+          end_ms="$(date +%s%3N)"
+          echo "publish exit: $publish_exit"
+          echo "publish duration ms: $((end_ms - start_ms))"
+          echo "publish output:"
+          tail -n 5 "$create_file"
+          echo "service stderr after publish:"
+          cat "$stderr_file"
+          lock_file="$(find "$home" -name facet.lock -print -quit)"
+          if [[ -n "$lock_file" ]]; then
+            jq '{pid, port}' "$lock_file"
+            pid="$(jq -r '.pid // empty' "$lock_file")"
+            if [[ -n "$pid" ]]; then kill -0 "$pid" 2>/dev/null; echo "service alive exit: $?"; fi
+          else
+            echo "service lock: <none>"
+          fi
+          exit 0
       - run: bun run format:check
       - run: bun run lint
       - run: bun run typecheck

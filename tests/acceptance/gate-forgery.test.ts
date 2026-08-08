@@ -20,7 +20,7 @@ test("monkeypatched in-page shim cannot forge the verdict: protocol authority wi
     tier: 1,
   });
   expect(verdict.status).toBe("tampered");
-}, 150_000);
+}, 30_000);
 
 test('nested-SVG forgery probe: one renderer-root SVG and one g.node graph even with an embedded <svg id="forged">', async () => {
   const published = await publishFixture({
