@@ -54,6 +54,20 @@ function ensureTightPermissions(path: string): void {
   }
 }
 
+export function recoverInstallTokenAfterWriteFailure(path: string, error: unknown): string {
+  try {
+    writeFileSync("/dev/null", "");
+  } catch {}
+  if (existsSync(path)) {
+    const value = readFileSync(path, "utf8").trim();
+    if (value.length > 0) {
+      ensureTightPermissions(path);
+      return value;
+    }
+  }
+  throw error;
+}
+
 export function createInstallTokenStore(options: InstallTokenStoreOptions): InstallTokenStore {
   let cached: string | null = null;
 
@@ -79,20 +93,7 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
       ensureTightPermissions(options.tokenPath);
       return fresh;
     } catch (error) {
-      // Best-effort cleanup of the tmp file before the loser fallback
-      try {
-        writeFileSync("/dev/null", "");
-      } catch {}
-      // If rename failed because the destination already exists (another
-      // starter won), or because the tmpPath collided, re-read.
-      if (existsSync(options.tokenPath)) {
-        const value = readFileSync(options.tokenPath, "utf8").trim();
-        if (value.length > 0) {
-          ensureTightPermissions(options.tokenPath);
-          return value;
-        }
-      }
-      throw error;
+      return recoverInstallTokenAfterWriteFailure(options.tokenPath, error);
     }
   }
 

@@ -21,6 +21,7 @@ import { parseMermaid } from "../../src/validation/tier0/mermaid";
 import { parseMarkdown } from "../../src/validation/tier0/markdown";
 import { parseSvg } from "../../src/validation/tier0/svg";
 import { parseChart } from "../../src/validation/tier0/chart";
+import { domShimInstalled } from "../../src/validation/tier0/dom-shim";
 import { runTier0, _parseWorkerStdout } from "../../src/validation/tier0/runner";
 import { probeNetnsSupport } from "../../src/validation/sandbox/netns";
 import { TIER0_TIMEOUT_MS } from "../../src/validation/sandbox/limits";
@@ -53,6 +54,13 @@ function lexicalCounters(_bytes: Uint8Array) {
 }
 
 describe("Tier 0 mermaid parser", () => {
+  test("installs a structural document implementation for import-time renderer checks", () => {
+    expect(domShimInstalled).toBe(true);
+    const document = (globalThis as unknown as { document: Document }).document;
+    const parsed = document.implementation.createHTMLDocument("<p>shim</p>");
+    expect(parsed.querySelector("p")?.textContent).toBe("shim");
+  });
+
   test("parses a clean mermaid body and surfaces lexical node count", async () => {
     const body = new TextEncoder().encode(
       ["flowchart TD", "  N1[Node 1] --> N2[Node 2]", "  N3[Node 3] --> N4[Node 4]"].join("\n"),

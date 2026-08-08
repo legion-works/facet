@@ -59,7 +59,7 @@ export const EGRESS_CHANNELS = [
 export type EgressChannel = (typeof EGRESS_CHANNELS)[number];
 
 /** Read the first non-loopback IPv4 address; the sink binds here. */
-function hostAddress(): string {
+export function hostAddress(): string {
   for (const addresses of Object.values(networkInterfaces())) {
     for (const address of addresses ?? []) {
       if (address.family === "IPv4" && !address.internal) return address.address;

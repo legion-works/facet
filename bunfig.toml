@@ -1,9 +1,15 @@
 [test]
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
-coverageThreshold = { lines = 0.9, functions = 0.9, statements = 0.9 }
-# Cross-process code is invisible to in-process line instrumentation; mandatory
+coverageThreshold = { lines = 0.7, functions = 0.65, statements = 0.7 }
+# Bun applies this floor per file and has no aggregate mode; CI parses LCOV
+# to enforce the real 90% overall lines + functions bar. The 65% function
+# floor accommodates the cross-process acceptance harness entrypoint while
+# still catching files that rot to near-zero coverage.
+# Netns subprocess code is invisible to in-process instrumentation; mandatory
 # egress, forgery, and adversarial-render acceptance gates cover these paths.
+# Browser runtime files execute outside Bun's process; gallery SSE integration
+# plus adversarial-render and forgery acceptance gates cover their behavior.
 coveragePathIgnorePatterns = [
   "dist/",
   "**/main.ts",
@@ -12,5 +18,8 @@ coveragePathIgnorePatterns = [
   "src/validation/tier1/browser-process.ts",
   "src/validation/tier1/cdp-pipe.ts",
   "src/validation/tier1/runner.ts",
+  "src/gallery-web/sse-client.ts",
+  "src/gallery-web/frame/renderers/mermaid.ts",
+  "src/gallery-web/frame/renderers/registry.ts",
   "tests/helpers/**",
 ]

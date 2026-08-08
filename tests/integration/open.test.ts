@@ -8,7 +8,7 @@ import {
   consumeBootstrapHandoff,
   releaseDisplayLease,
 } from "../../src/gallery-web/app";
-import { launchDisplay, type OpenLauncher } from "../../src/cli/commands/open";
+import { buildOpenRequest, launchDisplay, type OpenLauncher } from "../../src/cli/commands/open";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
@@ -29,6 +29,39 @@ describe("tier 2 display open", () => {
     expect(new URL(calls[0]!).hostname).toBe("127.0.0.1");
     expect(calls[0]).not.toContain("install-secret");
     expect(new URL(calls[0]!).search).toBe("");
+  });
+
+  test("rejects a display URL that leaks the install token", async () => {
+    await expect(
+      launchDisplay(
+        { frameUrl: "http://127.0.0.1:43123/gallery?token=secret", installToken: "secret" },
+        () => undefined,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_envelope" });
+  });
+
+  test("rejects non-loopback display URLs", async () => {
+    await expect(
+      launchDisplay({ frameUrl: "https://evil.example/gallery" }, () => undefined),
+    ).rejects.toMatchObject({ code: "invalid_envelope" });
+  });
+
+  test("validates the open command request fields", () => {
+    const request = buildOpenRequest({
+      "artifact-id": "artifact-1",
+      "revision-sha": "a".repeat(64),
+    });
+    expect(request).toMatchObject({
+      command: "open",
+      artifactId: "artifact-1",
+      revisionSha: "a".repeat(64),
+    });
+    expect(() => buildOpenRequest({ "artifact-id": "", "revision-sha": "a".repeat(64) })).toThrow(
+      expect.objectContaining({ code: "invalid_request" }),
+    );
+    expect(() => buildOpenRequest({ "artifact-id": "artifact-1", "revision-sha": "bad" })).toThrow(
+      expect.objectContaining({ code: "invalid_request" }),
+    );
   });
 
   test("shell exchanges the one-time fragment and uses header leases", async () => {

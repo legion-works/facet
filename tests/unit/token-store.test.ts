@@ -16,6 +16,7 @@ import {
   createInstallTokenStore,
   createPromoteTokenStore,
   generateInstallToken,
+  recoverInstallTokenAfterWriteFailure,
 } from "../../src/service/security/token-store";
 
 const scratchDir = join(tmpdir(), `facet-token-${crypto.randomUUID()}`);
@@ -108,6 +109,34 @@ describe("createInstallTokenStore", () => {
     expect(store.read()).toBe("preexisting-token-value-here-that-is-long-enough");
     const stat = require("node:fs").statSync(path);
     expect(stat.mode & 0o777).toBe(0o600);
+  });
+
+  test("replaces an empty existing token file", () => {
+    const path = freshPath("empty-install");
+    writeFileSync(path, "\n", { mode: 0o600 });
+    const store = createInstallTokenStore({ tokenPath: path });
+    expect(store.read()).not.toBe("");
+    expect(readFileSync(path, "utf8").trim()).not.toBe("");
+  });
+
+  test("keeps cached token readable when the file is removed", () => {
+    const path = freshPath("cached-install");
+    const store = createInstallTokenStore({ tokenPath: path });
+    const token = store.read();
+    rmSync(path, { force: true });
+    expect(store.read()).toBe(token);
+  });
+
+  test("recovers the winner token after an atomic-write collision", () => {
+    const path = freshPath("collision-install");
+    writeFileSync(path, "winner-token", { mode: 0o600 });
+    expect(recoverInstallTokenAfterWriteFailure(path, new Error("collision"))).toBe("winner-token");
+  });
+
+  test("rethrows an atomic-write failure when no winner token exists", () => {
+    const path = freshPath("failed-install");
+    const error = new Error("no winner");
+    expect(() => recoverInstallTokenAfterWriteFailure(path, error)).toThrow(error);
   });
 });
 

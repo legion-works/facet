@@ -8,6 +8,7 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +17,7 @@ import {
   runOrphanCleanup,
   type OrphanCleanupInput,
 } from "../../src/service/lifecycle/orphan-cleanup";
+import { readPidStartTimeTicks } from "../../src/service/lifecycle/process-lock";
 
 const scratchDir = join(tmpdir(), `facet-orphan-${crypto.randomUUID()}`);
 
@@ -93,5 +95,24 @@ describe("runOrphanCleanup", () => {
     expect(result.removed.walSidecars).toEqual([]);
     expect(existsSync(`${input.databasePath}-wal`)).toBe(true);
     expect(existsSync(`${input.databasePath}-shm`)).toBe(true);
+  });
+
+  test("terminates a live orphan process with the matching start time", async () => {
+    const input = setup();
+    const child = spawn("sleep", ["30"], { stdio: "ignore" });
+    try {
+      const pid = child.pid;
+      if (pid === undefined) throw new Error("sleep child did not expose a pid");
+      expect(pid).toBeGreaterThan(0);
+      const startTime = readPidStartTimeTicks(pid);
+      expect(startTime).not.toBeNull();
+      const result = runOrphanCleanup({
+        ...input,
+        processes: [{ pid, startTime: startTime! }],
+      });
+      expect(result.killedPids).toEqual([pid]);
+    } finally {
+      child.kill("SIGKILL");
+    }
   });
 });

@@ -13,6 +13,8 @@ import {
   checkMutationSecurityHeaders,
   constantTimeEqual,
   parseBearer,
+  requireAnyBearer,
+  requireBearer,
 } from "../../src/service/security/auth";
 import { checkHost, checkHostOrigin } from "../../src/service/security/host-origin";
 
@@ -213,5 +215,30 @@ describe("checkMutationSecurityHeaders (Content-Type enforcement)", () => {
         contentType: null,
       }).ok,
     ).toBe(true);
+  });
+});
+
+describe("bearer authorization", () => {
+  test("rejects missing configured tokens", () => {
+    const result = requireAnyBearer("Bearer token", []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("internal");
+    const install = requireBearer("Bearer token", "");
+    expect(install.ok).toBe(false);
+    if (!install.ok) expect(install.error.code).toBe("internal");
+  });
+
+  test("rejects malformed and mismatched tokens", () => {
+    expect(requireAnyBearer(null, ["token"]).ok).toBe(false);
+    const mismatch = requireAnyBearer("Bearer wrong", ["", "token"]);
+    expect(mismatch.ok).toBe(false);
+    if (!mismatch.ok) expect(mismatch.error.code).toBe("invalid_envelope");
+    expect(requireBearer("Bearer wrong", "token").ok).toBe(false);
+  });
+
+  test("matches the final valid candidate and the install token", () => {
+    const any = requireAnyBearer("Bearer token", ["", "other", "token"]);
+    expect(any).toMatchObject({ ok: true, matchedIndex: 2 });
+    expect(requireBearer("Bearer token", "token")).toEqual({ ok: true });
   });
 });
