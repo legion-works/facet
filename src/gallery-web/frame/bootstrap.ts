@@ -2,7 +2,7 @@
  * Frame-side bootstrap — runs INSIDE the opaque-origin iframe.
  *
  * This module is the frame program: `scripts/build-gallery.ts` bundles
- * it (renderers included) into the ONE script embedded in the srcdoc
+ * it (renderers included) into the ONE script the frame document loads
  * under the per-frame nonce, and the Tier 1 verifier harness bundles
  * the SAME renderers so the gate verifies what the operator sees. The
  * CSP rejects any script without the nonce, so this bundle is the only
@@ -10,8 +10,8 @@
  * DATA on the ingress port and never become executable.
  *
  * Lifecycle:
- *   1. Read the per-frame nonce from this script's own tag (the bundle
- *      is static across frames; the nonce is fresh per frame).
+ *   1. Read the per-frame nonce from the frame document's own URL (the
+ *      bundle is static across frames; the nonce is fresh per frame).
  *   2. Verify the `ports` handshake nonce, wire the transferred ports.
  *   3. Emit `boot-ready` on the control port.
  *   4. Receive the artifact on the ingress port (one-shot), close it.
@@ -57,11 +57,13 @@ if (container === null) {
 
 const registry = getRendererRegistry();
 
-// The script tag carrying this bundle holds the per-frame nonce; the
-// handshake must match it. Reading it off currentScript keeps ONE
-// static bundle valid across frames (the nonce is fresh per frame).
-const currentScript = document.currentScript as HTMLScriptElement | null;
-const nonce = currentScript?.getAttribute("nonce") ?? "";
+// The frame document's own URL carries the per-frame nonce (the service
+// validates its shape before echoing it into the CSP header), and the
+// handshake must match it. Read it from `location` rather than the script
+// tag: `document.currentScript` is ALWAYS null in a module script, and a
+// nonce content attribute is hidden from DOM reads. Keeping the nonce off
+// the bundle URL leaves ONE cacheable bundle valid across frames.
+const nonce = new URLSearchParams(location.search).get("nonce") ?? "";
 
 let controlPost: ((event: unknown) => void) | null = null;
 

@@ -172,11 +172,17 @@ describe("gallery frame program (bootstrap source)", () => {
   const bootstrapPath = new URL("../../src/gallery-web/frame/bootstrap.ts", import.meta.url)
     .pathname;
 
-  test("verifies the handshake nonce against its own script tag", async () => {
+  test("verifies the handshake nonce against its own frame-document url", async () => {
     const source = await Bun.file(bootstrapPath).text();
     expect(source).toContain("facetHandshake");
     expect(source).toContain("ports");
-    expect(source).toContain('getAttribute("nonce")');
+    // The nonce is read from the frame document's URL, NOT the script tag:
+    // `document.currentScript` is always null in a module script, so the
+    // tag read silently yielded "" and no handshake ever matched.
+    expect(source).toContain('URLSearchParams(location.search).get("nonce")');
+    expect(source).not.toContain('getAttribute("nonce")');
+    // The handshake still gates on an exact nonce match.
+    expect(source).toContain("data.nonce !== nonce");
   });
 
   test("signals boot-ready and render-complete via the control port", async () => {
