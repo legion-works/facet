@@ -31,7 +31,7 @@ import { ArtifactRepository } from "./store/repository";
 import { buildRouter } from "./router";
 import { createInstallTokenStore, createPromoteTokenStore } from "./security/token-store";
 import { createLeaseManager, type GalleryLeaseManager } from "./security/leases";
-import type { Tier0Runner } from "../shared/contracts/validation";
+import type { Tier0Runner, Tier1Runner } from "../shared/contracts/validation";
 import {
   acquireLock,
   releaseLock,
@@ -62,6 +62,13 @@ export interface StartServiceOptions {
    * know which module implements it.
    */
   readonly tier0Runner?: Tier0Runner;
+  /**
+   * Optional Tier 1 verifier. When present, publish records BOTH a
+   * Tier 0 and a Tier 1 render_run; read-back of tier 1 returns the
+   * Tier 1 verdict. When absent, tier 1 is never recorded and
+   * read-back of tier 1 surfaces `revision_not_found`.
+   */
+  readonly tier1Runner?: Tier1Runner;
 }
 
 export interface RunningService {
@@ -197,7 +204,9 @@ export async function startFacetService(
       );
     }
     const tier0Runner: Tier0Runner = options.tier0Runner;
+    const tier1Runner: Tier1Runner | undefined = options.tier1Runner;
     const router = buildRouter({
+      ...(tier1Runner !== undefined ? { tier1Runner } : {}),
       repository,
       installToken,
       promoteToken,
@@ -208,6 +217,7 @@ export async function startFacetService(
       ownOrigin: () => `http://${hostState.value ?? "127.0.0.1:0"}`,
       startTime: lockStartTime,
       tier0Runner,
+      tier1Runner,
     });
     let server: ReturnType<typeof Bun.serve>;
     try {

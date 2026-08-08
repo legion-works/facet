@@ -30,6 +30,9 @@ import { join } from "node:path";
 
 import { FacetError } from "../../shared/errors/facet-error";
 import { FACET_SCHEMA_VERSION } from "../../shared/contracts/envelope";
+import { isPidAlive } from "../../shared/util/process";
+
+export { isPidAlive };
 
 export interface LockMetadata {
   readonly pid: number;
@@ -43,26 +46,14 @@ export type AcquireResult = { ok: true; metadata: LockMetadata } | { ok: false; 
 const LOCK_RETRY_ATTEMPTS = 5;
 
 /**
- * Probe whether `pid` is alive. Returns true when `process.kill(pid, 0)`
- * succeeds OR returns EPERM (the pid exists but we lack permission to
- * signal it — treat as alive so we never reclaim a foreign-pid lock
- * whose ownership we cannot independently prove). False for non-positive
- * / non-integer pids, for ESRCH (pid does not exist), and for any
- * other error code (conservative: assume alive is impossible to prove,
- * so we report not-alive and let the caller decide; in practice every
- * other kill-0 failure is a real "dead" signal).
+ * Probe whether `pid` is alive. The single canonical implementation
+ * lives in `shared/util/process`; this module re-exports it for
+ * back-compat with existing service-side callers.
  */
-export function isPidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "EPERM") return true;
-    return false;
-  }
+function legacyIsPidAlive(pid: number): boolean {
+  return isPidAlive(pid);
 }
+void legacyIsPidAlive;
 
 /**
  * Read the OS-recorded process start time (clock ticks since boot,

@@ -37,6 +37,19 @@ export const FacetErrorCodes = {
   tier0_worker_died: true,
   tier0_output_cap: true,
   tier0_unavailable: true,
+  // Tier 1 verifier-level failures. Mirrors the Tier 0 worker set:
+  // the parent cannot obtain a Tier1Result at all (the netns wrapper
+  // is missing, the pinned shell binary is missing, the CDP pipe
+  // died, the probe timed out, or the verifier could not parse the
+  // browser protocol payload). Verdict-level divergences — page-shim
+  // lying, missing frame, missing render-complete — surface as
+  // `tampered` / `shim_only` / `timeout` / `probe_only` inside a
+  // Tier1Result, NOT as a throw.
+  tier1_unavailable: true,
+  tier1_browser_died: true,
+  tier1_protocol_error: true,
+  tier1_timeout: true,
+  tier1_launcher_missing: true,
   // Generic catch-alls.
   internal: true,
 } as const;

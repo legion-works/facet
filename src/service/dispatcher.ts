@@ -20,11 +20,16 @@ import type { Artifact } from "../shared/contracts/artifact";
 import {
   Tier0InputSchema,
   Tier0ResultSchema,
+  Tier1InputSchema,
+  Tier1ResultSchema,
   VerdictObservedSchema,
   VerdictSchema,
   type Tier0Input,
   type Tier0Result,
   type Tier0Runner,
+  type Tier1Input,
+  type Tier1Result,
+  type Tier1Runner,
   type Verdict,
 } from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
@@ -48,6 +53,13 @@ export interface DispatcherDeps {
   readonly leases: GalleryLeaseManager;
   readonly idle: IdleController;
   readonly tier0Runner: Tier0Runner;
+  /**
+   * Optional Tier 1 verifier. When present, publish records BOTH a
+   * Tier 0 and a Tier 1 render_run; read-back of tier 1 returns the
+   * Tier 1 verdict. When absent, tier 1 is never recorded and
+   * read-back of tier 1 surfaces `revision_not_found`.
+   */
+  readonly tier1Runner: Tier1Runner | undefined;
 }
 
 function mapArtifact(a: Artifact): ArtifactEnvelope {
@@ -118,6 +130,51 @@ async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tie
  */
 function enrichVerdict(result: Tier0Result, artifactId: string, revisionSha: string): Tier0Result {
   return Tier0ResultSchema.parse({
+    ...result,
+    artifactId,
+    revisionSha,
+  });
+}
+
+/**
+ * Map a Tier 1 runner failure into a synthetic Tier1Result with
+ * `status: "error"`. The publish path ALWAYS records a tier 1 run
+ * when a Tier1Runner is configured; a thrown FacetError here means
+ * the verifier could not even obtain a verdict, so the run row
+ * carries the typed code via `discriminativeErrors[].code`.
+ */
+async function runTier1Safe(runner: Tier1Runner, input: Tier1Input): Promise<Tier1Result> {
+  try {
+    return await runner(input);
+  } catch (error) {
+    const facet = FacetError.from(error);
+    return Tier1ResultSchema.parse({
+      tier: 1,
+      status: "error",
+      artifactId: "",
+      revisionSha: input.revisionSha,
+      expected: input.lexical,
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        viewBoxes: [],
+        errorCount: 1,
+        discriminativeErrors: [{ code: facet.code, message: facet.message }],
+      },
+      screenshotPath: null,
+      consolePath: null,
+    });
+  }
+}
+
+function enrichTier1Verdict(
+  result: Tier1Result,
+  artifactId: string,
+  revisionSha: string,
+): Tier1Result {
+  return Tier1ResultSchema.parse({
     ...result,
     artifactId,
     revisionSha,
@@ -196,6 +253,29 @@ export async function dispatch(
         expected: enriched.expected,
         observed: enriched.observed,
       });
+      // 4. Tier 1 (optional). When configured, run the headless-shell
+      // verifier over the SAME bytes and record a separate render_run.
+      // Acceptance tests gate on the Tier 1 verdict (forgery +
+      // layout); integration tests skip this branch entirely because
+      // they inject no Tier1Runner.
+      let tier1Verdict: Tier1Result | null = null;
+      if (deps.tier1Runner !== undefined) {
+        const tier1Input: Tier1Input = Tier1InputSchema.parse({
+          ...tier0Input,
+          launcherVersion: "131.0.6778.204",
+          networkNamespace: "facet-tier1-egress-isolated",
+        });
+        const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input);
+        const enrichedTier1 = enrichTier1Verdict(tier1Result, command.artifactId, revision.sha256);
+        deps.repository.recordRenderRun({
+          revisionId: revision.id,
+          tier: 1,
+          status: enrichedTier1.status,
+          expected: enrichedTier1.expected,
+          observed: enrichedTier1.observed,
+        });
+        tier1Verdict = enrichedTier1;
+      }
       const { source: _source, ...envelope } = revision;
       void _source;
       return {
@@ -203,6 +283,7 @@ export async function dispatch(
         requestId,
         revision: envelope,
         verdict: enriched,
+        ...(tier1Verdict !== null ? { tier1Verdict } : {}),
       };
     }
     case "list": {

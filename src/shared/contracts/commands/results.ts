@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { VerdictSchema } from "../validation";
+import { Tier1ResultSchema, VerdictSchema } from "../validation";
 
 import {
   ArtifactEnvelopeSchema,
@@ -18,6 +18,13 @@ export type CreateResult = z.infer<typeof CreateResultSchema>;
 export const PublishResultSchema = BaseResultSchema.extend({
   command: z.literal("publish"),
   revision: RevisionEnvelopeSchema,
+  /**
+   * Tier 1 verdict surfaced alongside the publish envelope when the
+   * service was configured with a Tier1Runner. The shape is the
+   * canonical VerdictSchema (Tier 1 extends it); `.nullable()` lets
+   * the wire response carry `null` when no Tier1Runner is wired.
+   */
+  tier1Verdict: Tier1ResultSchema.nullable().optional(),
 });
 export type PublishResult = z.infer<typeof PublishResultSchema>;
 

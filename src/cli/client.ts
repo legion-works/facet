@@ -21,6 +21,7 @@ import {
 } from "../shared/contracts/envelope";
 import {
   CommandRequestSchema,
+  CommandResultSchema,
   type CommandRequest,
   type CommandResult,
 } from "../shared/contracts/commands";
@@ -150,4 +151,134 @@ export function wrapTransportError(requestId: string, error: unknown): FacetEnve
   const facet = error instanceof FacetError ? error : FacetError.from(error);
   const body: FacetErrorBody = facet.toBody();
   return errEnvelope(requestId, body);
+}
+
+/**
+ * Result of a successful publish. `artifactId` and `revisionSha` are
+ * the canonical IDs every downstream verb (read-back, status, open)
+ * carries. The `tier1Verdict` field is populated only when the
+ * service was started with a Tier1Runner configured; otherwise it
+ * is `null`.
+ */
+export interface PublishArtifactResult {
+  readonly artifactId: string;
+  readonly revisionSha: string;
+  readonly tier1Status: string | null;
+}
+
+export interface PublishArtifactOptions {
+  readonly artifactType: "markdown" | "mermaid" | "svg" | "chart";
+  readonly bytes: ArrayBuffer;
+  readonly slug?: string;
+  readonly note?: string;
+}
+
+/**
+ * Publish a new revision through an existing FacetClient. Resolves
+ * the artifact (create-then-publish) and returns the canonical IDs.
+ * Used by the acceptance test fixture helper, which needs to spawn
+ * a service via the existing CLI infrastructure.
+ */
+export async function publishArtifact(
+  client: FacetClient,
+  options: PublishArtifactOptions,
+): Promise<PublishArtifactResult> {
+  const slug = options.slug ?? `acceptance-${crypto.randomUUID().slice(0, 8)}`;
+  const createRes = await client.sendCommand({
+    command: "create",
+    requestId: generateRequestId(),
+    projectId: "/facet",
+    slug,
+    title: slug,
+  });
+  if (!createRes.ok) {
+    throw FacetError.from(createRes.error);
+  }
+  const parsed = CommandResultSchema.parse(createRes.data);
+  if (parsed.command !== "create") {
+    throw new FacetError("invalid_envelope", `expected create result, got ${parsed.command}`);
+  }
+  const artifactId = parsed.artifact.id;
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(options.bytes)));
+  const publishRes = await client.sendCommand({
+    command: "publish",
+    requestId: generateRequestId(),
+    artifactId,
+    artifactType: options.artifactType,
+    bytes: base64,
+    ...(options.note !== undefined ? { note: options.note } : {}),
+  });
+  if (!publishRes.ok) {
+    throw FacetError.from(publishRes.error);
+  }
+  const parsedPublish = CommandResultSchema.parse(publishRes.data);
+  if (parsedPublish.command !== "publish") {
+    throw new FacetError(
+      "invalid_envelope",
+      `expected publish result, got ${parsedPublish.command}`,
+    );
+  }
+  // The dispatcher only embeds `tier1Verdict` on the wire response
+  // when a Tier1Runner is configured; otherwise the field is null.
+  const tier1Status = parsedPublish.tier1Verdict?.status ?? null;
+  return {
+    artifactId,
+    revisionSha: parsedPublish.revision.sha256,
+    tier1Status,
+  };
+}
+
+export interface ReadBackOptions {
+  readonly artifactId: string;
+  readonly revisionSha: string;
+  readonly tier: 0 | 1 | "visual";
+}
+
+/**
+ * Run `readBack` against an existing FacetClient and return the
+ * typed verdict. The service normalizes "visual" → 1 internally.
+ */
+export async function readBack(
+  client: FacetClient,
+  options: ReadBackOptions,
+): Promise<{
+  readonly status: string;
+  readonly tier: 0 | 1 | "visual";
+  readonly artifactId: string;
+  readonly revisionSha: string;
+  readonly observed: {
+    readonly rendererRootSvgCount: number;
+    readonly graphCount: number;
+    readonly mermaidNodeCount: number;
+    readonly visibleSvgCount: number;
+    readonly errorCount: number;
+  };
+}> {
+  const res = await client.sendCommand({
+    command: "readBack",
+    requestId: generateRequestId(),
+    artifactId: options.artifactId,
+    revisionSha: options.revisionSha,
+    tier: options.tier,
+  });
+  if (!res.ok) {
+    throw FacetError.from(res.error);
+  }
+  const parsed = CommandResultSchema.parse(res.data);
+  if (parsed.command !== "readBack") {
+    throw new FacetError("invalid_envelope", `expected readBack result, got ${parsed.command}`);
+  }
+  return {
+    status: parsed.verdict.status,
+    tier: parsed.verdict.tier,
+    artifactId: parsed.verdict.artifactId,
+    revisionSha: parsed.verdict.revisionSha,
+    observed: {
+      rendererRootSvgCount: parsed.verdict.observed.rendererRootSvgCount,
+      graphCount: parsed.verdict.observed.graphCount,
+      mermaidNodeCount: parsed.verdict.observed.mermaidNodeCount,
+      visibleSvgCount: parsed.verdict.observed.visibleSvgCount,
+      errorCount: parsed.verdict.observed.errorCount,
+    },
+  };
 }

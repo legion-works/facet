@@ -123,6 +123,16 @@ export const Tier1InputSchema = Tier0InputSchema.extend({
 });
 export type Tier1Input = z.infer<typeof Tier1InputSchema>;
 
+/**
+ * The parent-side Tier 1 runner contract. The default implementation
+ * lives in `src/validation/tier1/runner.ts` (an ephemeral netns'd
+ * `chrome-headless-shell` driven via CDP pipe). Like `Tier0Runner`,
+ * only THIS TYPE is imported by the service — the implementation is
+ * constructed by callers (`src/cli/`, tests) and injected so
+ * `src/service/**` stays byte-dumb.
+ */
+export type Tier1Runner = (input: Tier1Input) => Promise<Tier1Result>;
+
 /** Tier 1 result: extends Tier 0 with screenshot/console paths. */
 export const Tier1ResultSchema = Tier0ResultSchema.extend({
   tier: z.literal(1),
@@ -130,3 +140,21 @@ export const Tier1ResultSchema = Tier0ResultSchema.extend({
   consolePath: z.string().nullable(),
 });
 export type Tier1Result = z.infer<typeof Tier1ResultSchema>;
+
+/**
+ * The renderer-OWNED root count the verifier expects from one Tier 1
+ * run. Counts ONE top-level renderer-owned root per expected
+ * (revision, fence) pair — NOT every descendant `<svg>`. A nested
+ * `<svg id="forged">` inside a Mermaid label does NOT inflate this
+ * count; that probe is the gate-forgery acceptance contract.
+ */
+export const ProtocolObservationSchema = z.object({
+  rendererRootSvgCount: z.number().int().nonnegative(),
+  graphCount: z.number().int().nonnegative(),
+  mermaidNodeCount: z.number().int().nonnegative(),
+  visibleSvgCount: z.number().int().nonnegative(),
+  viewBoxes: z.array(z.string()),
+  errorCount: z.number().int().nonnegative(),
+  discriminativeErrors: z.array(DiscriminativeErrorSchema),
+});
+export type ProtocolObservation = z.infer<typeof ProtocolObservationSchema>;

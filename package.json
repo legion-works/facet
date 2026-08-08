@@ -21,6 +21,7 @@
     "linkedom": "0.18.13",
     "marked": "18.0.9",
     "mermaid": "11.16.1",
+    "puppeteer-core": "25.5.0",
     "vega": "6.3.1",
     "vega-lite": "6.4.3",
     "zod": "3.24.1"
