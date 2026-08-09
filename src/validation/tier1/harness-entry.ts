@@ -32,7 +32,7 @@ import {
   type RendererRegistry,
 } from "../../gallery-web/frame/renderers/registry";
 import type { Renderer } from "../../shared/contracts/renderers";
-import { validateTier1Renderer } from "../../gallery-web/frame/renderer-validation";
+import { validateRenderer } from "../../gallery-web/frame/renderer-validation";
 
 type ArtifactMode = "raw" | "render";
 
@@ -154,7 +154,7 @@ export function startTier1Harness(registry: RendererRegistry): void {
         ingress.close();
         const bytes = Uint8Array.from(atob(payload.bytes), (char) => char.charCodeAt(0));
         try {
-          const renderer = validateTier1Renderer(payload.renderer);
+          const renderer = validateRenderer(payload.renderer);
           await renderArtifact(
             registry,
             bytes,

@@ -18,6 +18,7 @@ import {
   RESERVED_COMMANDS,
   type CommandName,
 } from "../shared/contracts/commands/names";
+import { RENDERERS } from "../shared/contracts/renderers";
 
 /**
  * Parsed CLI invocation. `verb === null` for the meta-commands
@@ -55,7 +56,7 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
   publish: [
     { flag: "--artifact-id", takesValue: true },
     { flag: "--type", takesValue: true },
-    { flag: "--renderer", takesValue: true, values: ["svg", "canvas"] },
+    { flag: "--renderer", takesValue: true, values: [...RENDERERS] },
     { flag: "--file", takesValue: true },
     { flag: "--note", takesValue: true },
     { flag: "--parent-revision-id", takesValue: true },
