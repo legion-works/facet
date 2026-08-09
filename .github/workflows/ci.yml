@@ -50,6 +50,28 @@ jobs:
             echo "| service boundaries | ${BOUNDARIES:-not-run} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Catches a flaky test AS IT IS INTRODUCED — the only flake still cheap to
+  # prevent. Deterministic by construction: it stresses only test files the diff
+  # modified, and excludes tests/acceptance (browser flakiness is a runtime
+  # property, so stressing it would measure Bun rather than the change).
+  changed-test-stress:
+    runs-on: ubuntu-latest
+    steps:
+      # v4.2.2 — 11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-bun
+      - name: stress changed tests
+        shell: bash
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [[ -z "$base" || "$base" == "0000000000000000000000000000000000000000" ]]; then
+            echo "SKIP no usable base ref (first push on this ref)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          bun scripts/stress-changed-tests.ts "$base" | tee -a "$GITHUB_STEP_SUMMARY"
+
   unit:
     runs-on: ubuntu-latest
     steps:
