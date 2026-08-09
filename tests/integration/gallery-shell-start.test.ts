@@ -91,7 +91,10 @@ class FakeIframe extends FakeElement {
   };
 }
 
-function createRuntime(viewModeEvent: unknown = { type: "view-mode", mode: "native" }) {
+function createRuntime(
+  viewModeEvent: unknown = { type: "view-mode", mode: "native" },
+  verdict: Record<string, unknown> | null = null,
+) {
   const elements = new Map<string, FakeElement>();
   for (const id of [
     "facet-title",
@@ -113,9 +116,9 @@ function createRuntime(viewModeEvent: unknown = { type: "view-mode", mode: "nati
     "facet-fullscreen",
   ])
     elements.set(id, new FakeElement());
-  const verdict = new FakeElement();
-  verdict.attach(".tier", new FakeElement());
-  elements.set("facet-verdict", verdict);
+  const verdictBadge = new FakeElement();
+  verdictBadge.attach(".tier", new FakeElement());
+  elements.set("facet-verdict", verdictBadge);
   const swapbar = new FakeElement();
   swapbar.attach(".bar", new FakeElement());
   elements.set("facet-swapbar", swapbar);
@@ -158,7 +161,7 @@ function createRuntime(viewModeEvent: unknown = { type: "view-mode", mode: "nati
         revisionSha: "a".repeat(64),
         artifactType: "markdown",
         source: "# shell",
-        verdict: null,
+        verdict,
       });
     if (url.endsWith("/stream")) return new Response(new ReadableStream());
     return new Response(null, { status: 204 });
@@ -183,6 +186,49 @@ function createRuntime(viewModeEvent: unknown = { type: "view-mode", mode: "nati
 }
 
 describe("gallery shell startup", () => {
+  test("labels opaque and layout partial verdicts and reports opaque evidence", async () => {
+    const harness = createRuntime(undefined, {
+      status: "partial:opaque_content",
+      tier: 1,
+      revisionSha: "a".repeat(64),
+      artifactId: "artifact-1",
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 1,
+        errorCount: 0,
+      },
+    });
+    await startGallery(harness.runtime);
+
+    const badge = harness.elements.get("facet-verdict")!;
+    expect(badge.childNodes[0]?.textContent).toBe("partial");
+    expect(badge.querySelector<FakeElement>(".tier")?.textContent).toBe("· opaque · T1");
+    expect(badge.dataset["status"]).toBe("partial:opaque_content");
+    expect(harness.elements.get("facet-evidence-counts")?.textContent).toContain("opaque 1");
+
+    const layoutHarness = createRuntime(undefined, {
+      status: "partial:layout_unverified",
+      tier: 1,
+      revisionSha: "a".repeat(64),
+      artifactId: "artifact-1",
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+    });
+    await startGallery(layoutHarness.runtime);
+    expect(
+      layoutHarness.elements.get("facet-verdict")?.querySelector<FakeElement>(".tier")?.textContent,
+    ).toBe("· layout · T1");
+  });
+
   test("boots one frame, renders source, binds controls, and releases its lease", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);

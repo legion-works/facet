@@ -59,6 +59,25 @@ describe("CLI presenter envelopes", () => {
     ]);
   });
 
+  test("opaque partial output keeps its distinct glyph and status label", () => {
+    const readBack = validReadBackResult();
+    const publish = {
+      ...validPublishResult(),
+      tier1Verdict: {
+        ...readBack.verdict,
+        status: "partial:opaque_content" as const,
+        observed: {
+          ...readBack.verdict.observed,
+          opaqueRegionCount: 1,
+        },
+      },
+    };
+
+    expect(presentEnvelope(okEnvelope("request-1", publish), plain)).toContain(
+      `◐ partial · opaque_content · tier 1 · art-1 @ ${"a".repeat(8)}`,
+    );
+  });
+
   test("read-back, status, and fallback commands stay terse", () => {
     expect(presentEnvelope(okEnvelope("request-1", validReadBackResult()), plain)[0]).toBe(
       `✓ ok · tier 1 · art-1 @ ${"a".repeat(8)}`,

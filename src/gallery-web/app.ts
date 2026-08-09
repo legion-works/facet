@@ -621,11 +621,19 @@ function setGalleryVerdict(document: Document, verdict: Verdict | null): void {
   }
   badge.dataset.status = verdict.status;
   badge.childNodes[0]!.textContent = verdict.status.split(":")[0] ?? verdict.status;
-  if (tier !== null) tier.textContent = `· T${verdict.tier}`;
+  if (tier !== null) {
+    const detail =
+      verdict.status === "partial:opaque_content"
+        ? "opaque"
+        : verdict.status === "partial:layout_unverified"
+          ? "layout"
+          : null;
+    tier.textContent = detail === null ? `· T${verdict.tier}` : `· ${detail} · T${verdict.tier}`;
+  }
   const observed = verdict.observed;
   const counts = document.getElementById("facet-evidence-counts");
   if (counts !== null)
-    counts.textContent = `svg ${observed.rendererRootSvgCount} · graphs ${observed.graphCount} · nodes ${observed.mermaidNodeCount} · errors ${observed.errorCount}`;
+    counts.textContent = `svg ${observed.rendererRootSvgCount} · graphs ${observed.graphCount} · nodes ${observed.mermaidNodeCount} · opaque ${observed.opaqueRegionCount} · errors ${observed.errorCount}`;
   const channels = document.getElementById("facet-evidence-channels");
   if (channels !== null) {
     channels.dataset.agree = verdict.status === "tampered" ? "false" : "true";
