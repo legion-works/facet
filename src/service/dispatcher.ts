@@ -37,7 +37,7 @@ import {
   type Verdict,
 } from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
-import { SOURCE_CAP_BYTES } from "../shared/config/limits";
+import { SOURCE_CAP_BYTES, TIER1_PINNED_VERSION } from "../shared/config/limits";
 import { computeLexicalExpectations } from "./lexical/expectations";
 
 import type { GalleryLeaseManager } from "./security/leases";
@@ -298,7 +298,7 @@ export async function dispatch(
       if (deps.tier1Runner !== undefined) {
         const tier1Input: Tier1Input = Tier1InputSchema.parse({
           ...tier0Input,
-          launcherVersion: "151.0.7922.77",
+          launcherVersion: TIER1_PINNED_VERSION,
           networkNamespace: "facet-tier1-egress-isolated",
         });
         const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input, command.artifactId);
