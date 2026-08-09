@@ -518,11 +518,12 @@ async function fetchGallerySource(
   baseUrl: string,
   handoff: BootstrapHandoff,
   revisionSha: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<RevisionFetchResult> {
   const url = new URL(`${baseUrl.replace(/\/$/, "")}/api/v1/gallery/source`);
   assertLoopbackHostname(url.hostname);
   url.searchParams.set("revisionSha", revisionSha);
-  const response = await fetch(url, {
+  const response = await fetchImpl(url, {
     headers: {
       authorization: handoff.authorization,
       "x-gallery-lease": handoff.lease.leaseId,
@@ -538,17 +539,17 @@ async function fetchGallerySource(
   };
 }
 
-function setGalleryStatus(status: string): void {
+function setGalleryStatus(document: Document, status: string): void {
   const target = document.getElementById("facet-status-line");
   if (target !== null) target.textContent = status;
 }
 
-function setGalleryError(message: string): void {
+function setGalleryError(document: Document, message: string): void {
   const target = document.getElementById("facet-error");
   if (target !== null) target.textContent = message;
 }
 
-function setGalleryVerdict(verdict: Verdict | null): void {
+function setGalleryVerdict(document: Document, verdict: Verdict | null): void {
   const badge = document.getElementById("facet-verdict");
   const evidence = document.getElementById("facet-evidence");
   if (badge === null || badge === undefined) return;
@@ -591,14 +592,18 @@ function setGalleryVerdict(verdict: Verdict | null): void {
   if (evidence !== null) evidence.hidden = false;
 }
 
-function setLiveState(state: "idle" | "connecting" | "live"): void {
+function setLiveState(document: Document, state: "idle" | "connecting" | "live"): void {
   const live = document.getElementById("facet-live");
   const label = document.getElementById("facet-live-label");
   if (live !== null) live.dataset.state = state;
   if (label !== null) label.textContent = state;
 }
 
-function setSwapBar(state: "start" | "ready" | "complete" | "failed"): void {
+function setSwapBar(
+  document: Document,
+  window: Window,
+  state: "start" | "ready" | "complete" | "failed",
+): void {
   const swapbar = document.getElementById("facet-swapbar");
   const bar = swapbar?.querySelector<HTMLElement>(".bar");
   if (swapbar === null || swapbar === undefined || bar === null || bar === undefined) return;
@@ -647,18 +652,41 @@ function armFrameLoad(
   });
 }
 
-export async function startGallery(): Promise<void> {
+export interface GalleryRuntime {
+  readonly window: Window;
+  readonly document: Document;
+  readonly history: History;
+  readonly HTMLElement: typeof HTMLElement;
+  readonly MessageChannel: typeof MessageChannel;
+  readonly fetch: typeof fetch;
+}
+
+function browserGalleryRuntime(): GalleryRuntime {
+  return { window, document, history, HTMLElement, MessageChannel, fetch };
+}
+
+export async function startGallery(runtime = browserGalleryRuntime()): Promise<void> {
+  const { window, document, history, HTMLElement, MessageChannel, fetch } = runtime;
+  const updateGalleryStatus = (status: string): void => setGalleryStatus(document, status);
+  const updateGalleryError = (message: string): void => setGalleryError(document, message);
+  const updateGalleryVerdict = (verdict: Verdict | null): void =>
+    setGalleryVerdict(document, verdict);
+  const updateLiveState = (state: "idle" | "connecting" | "live"): void =>
+    setLiveState(document, state);
+  const updateSwapBar = (state: "start" | "ready" | "complete" | "failed"): void =>
+    setSwapBar(document, window, state);
   const baseUrl = window.location.origin;
   const handoff = await consumeBootstrapHandoff({
     location: window.location.href,
     clearFragment: () => history.replaceState(null, "", window.location.pathname),
+    fetchImpl: fetch,
   });
   const title = document.getElementById("facet-title");
   const revision = document.getElementById("facet-revision");
   if (title !== null) title.textContent = "facet";
   if (revision !== null) revision.textContent = handoff.revisionSha.slice(0, 12);
-  setGalleryStatus("idle");
-  setLiveState("connecting");
+  updateGalleryStatus("idle");
+  updateLiveState("connecting");
   const bootstrapUrl = `${baseUrl}/gallery/frame/bootstrap.js`;
   const frameUrl = `${baseUrl}/gallery/frame`;
   const canvas = document.getElementById("facet-canvas");
@@ -687,10 +715,10 @@ export async function startGallery(): Promise<void> {
       if (iframe !== null)
         iframe.style.transform = `translate(${state.panX ?? 0}px, ${state.panY ?? 0}px) scale(${state.zoom})`;
     },
-    showErrorBadge: setGalleryError,
+    showErrorBadge: updateGalleryError,
   };
   const dom: ShellDom = { document, MessageChannel, hostname: window.location.hostname, window };
-  const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha);
+  const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
   let current = createArtifactFrame({ bootstrapUrl, frameUrl, dom });
   const boot = await armFrameLoad(current, (frame) =>
     host.mountOffScreen(frame.frameId, frame.element.raw),
@@ -702,20 +730,20 @@ export async function startGallery(): Promise<void> {
     throw new Error("Gallery artifact failed to render");
   host.setVisibility(current.frameId, true);
   host.applyViewState(current.frameId, viewState);
-  setGalleryVerdict(source.verdict ?? null);
-  setGalleryStatus("displayed");
-  setLiveState("live");
+  updateGalleryVerdict(source.verdict ?? null);
+  updateGalleryStatus("displayed");
+  updateLiveState("live");
   const stream = connectRevisionStream({
     baseUrl,
     bearer: handoff.authorization.replace(/^Bearer\s+/i, ""),
     leaseId: handoff.lease.leaseId,
     artifactId: handoff.artifactId,
     hostname: window.location.hostname,
-    onState: setLiveState,
+    onState: updateLiveState,
     onCommit: (event) => {
-      setGalleryStatus("swapping");
-      setSwapBar("start");
-      setGalleryVerdict(null);
+      updateGalleryStatus("swapping");
+      updateSwapBar("start");
+      updateGalleryVerdict(null);
       void swapToRevision(
         {
           dom,
@@ -723,14 +751,14 @@ export async function startGallery(): Promise<void> {
           bootstrapUrl,
           frameUrl,
           fetchRevision: (_artifactId, revisionSha) =>
-            fetchGallerySource(baseUrl, handoff, revisionSha),
+            fetchGallerySource(baseUrl, handoff, revisionSha, fetch),
           onFrameCreated: (next) => {
             bindFrameIntents(next);
             void armFrameLoad(next, (frame) =>
               host.mountOffScreen(frame.frameId, frame.element.raw),
             );
           },
-          onProgress: (state) => setSwapBar(state),
+          onProgress: updateSwapBar,
         },
         current,
         event,
@@ -740,24 +768,24 @@ export async function startGallery(): Promise<void> {
           current = frame;
           if (!result.failedNewFrameReady) {
             if (revision !== null) revision.textContent = event.revisionSha.slice(0, 12);
-            setGalleryVerdict(verdict);
-            setGalleryStatus("displayed");
-            setSwapBar("complete");
+            updateGalleryVerdict(verdict);
+            updateGalleryStatus("displayed");
+            updateSwapBar("complete");
           } else {
-            setSwapBar("failed");
-            setGalleryVerdict(null);
-            setGalleryStatus("displayed");
+            updateSwapBar("failed");
+            updateGalleryVerdict(null);
+            updateGalleryStatus("displayed");
           }
         })
         .catch((error: unknown) => {
-          setSwapBar("failed");
-          setGalleryStatus("displayed");
-          setGalleryError(error instanceof Error ? error.message : String(error));
+          updateSwapBar("failed");
+          updateGalleryStatus("displayed");
+          updateGalleryError(error instanceof Error ? error.message : String(error));
         });
     },
     onClose: () => {
-      setLiveState("idle");
-      setGalleryStatus("idle");
+      updateLiveState("idle");
+      updateGalleryStatus("idle");
     },
   });
   const shutdown = (): void => {
@@ -767,6 +795,7 @@ export async function startGallery(): Promise<void> {
       authorization: handoff.authorization,
       artifactId: handoff.artifactId,
       leaseId: handoff.lease.leaseId,
+      fetchImpl: fetch,
     });
   };
   window.addEventListener("beforeunload", shutdown, { once: true });
@@ -898,7 +927,7 @@ if (
   document.getElementById("facet-canvas") !== null
 ) {
   void startGallery().catch((error: unknown) => {
-    setGalleryStatus("error");
-    setGalleryError(error instanceof Error ? error.message : String(error));
+    setGalleryStatus(document, "error");
+    setGalleryError(document, error instanceof Error ? error.message : String(error));
   });
 }
