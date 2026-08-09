@@ -186,6 +186,7 @@ export async function probeProtocolSnapshot(
       visibleSvgCount: 0,
       viewBoxes: [],
       errorCount: 0,
+      opaqueRegionCount: 0,
       discriminativeErrors: [],
     };
   }
@@ -210,6 +211,7 @@ export async function probeProtocolSnapshot(
     graphCount,
     mermaidNodeCount: countGNode(snapshot, documentIndex),
     visibleSvgCount,
+    opaqueRegionCount: 0,
     viewBoxes,
     errorCount,
     discriminativeErrors: discriminativeErrors.map((entry) => ({
@@ -285,6 +287,7 @@ export async function probeProtocolGetDocument(
     graphCount: svgCount,
     mermaidNodeCount: gNodeCount,
     visibleSvgCount: viewBoxes.length,
+    opaqueRegionCount: 0,
     viewBoxes,
     errorCount,
     discriminativeErrors:

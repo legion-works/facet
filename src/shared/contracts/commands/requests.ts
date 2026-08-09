@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ArtifactTypeSchema, ReservedArtifactTypeSchema } from "../artifact";
+import { ArtifactTypeSchema, RendererSchema, ReservedArtifactTypeSchema } from "../artifact";
 import { MAX_LIST_LIMIT } from "../../config/limits";
 
 import { BaseRequestSchema, ReadBackTierSchema } from "./_shared";
@@ -51,6 +51,7 @@ export const PublishRequestSchema = BaseRequestSchema.extend({
   command: z.literal("publish"),
   artifactId: z.string().min(1),
   artifactType: PublishArtifactTypeSchema,
+  renderer: RendererSchema.default("svg"),
   bytes: PublishBytesSchema,
   note: z.string().nullable().optional(),
   parentRevisionId: z.string().min(1).nullable().optional(),

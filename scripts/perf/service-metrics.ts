@@ -215,6 +215,7 @@ async function publishRevision(
     requestId: crypto.randomUUID(),
     artifactId,
     artifactType: "markdown",
+    renderer: "svg",
     bytes: Buffer.from(content).toString("base64"),
   });
   if (!response.ok || response.data.command !== "publish") throw new Error("publish failed");
@@ -330,6 +331,7 @@ export async function measureTier0Spawn(): Promise<{
         rendererRootSvgCount: lexical.expectedRendererRoots,
         mermaidNodeCount: lexical.mermaidNodeCount,
         visibleSvgCount: 0,
+        opaqueRegionCount: 0,
       },
     });
     if (result.status !== "ok") throw new Error(`Tier 0 perf verdict was ${result.status}`);

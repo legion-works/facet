@@ -50,6 +50,7 @@ function lexicalCounters(_bytes: Uint8Array) {
     rendererRootSvgCount: 0,
     mermaidNodeCount: 0,
     visibleSvgCount: 0,
+    opaqueRegionCount: 0,
   });
 }
 
@@ -465,11 +466,13 @@ describe("Tier 0 protocol-boundary unit cases (no subprocess required)", () => {
           artifactId: "",
           revisionSha: "0".repeat(64),
           expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
+          opaqueRegionCount: 0,
           observed: {
             rendererRootSvgCount: 0,
             graphCount: 0,
             mermaidNodeCount: 0,
             visibleSvgCount: 0,
+            opaqueRegionCount: 0,
             errorCount: 0,
           },
         });
@@ -510,12 +513,18 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
     status: "ok",
     artifactId: "artifact-test",
     revisionSha: "0".repeat(64),
-    expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
+    expected: {
+      rendererRootSvgCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+    },
     observed: {
       rendererRootSvgCount: 0,
       graphCount: 0,
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
+      opaqueRegionCount: 0,
       errorCount: 0,
     },
   });
@@ -532,12 +541,18 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
       tier: 0,
       status: "ok",
       revisionSha: "0".repeat(64),
-      expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
+      expected: {
+        rendererRootSvgCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+      },
       observed: {
         rendererRootSvgCount: 0,
         graphCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        opaqueRegionCount: 0,
         errorCount: 0,
       },
     });

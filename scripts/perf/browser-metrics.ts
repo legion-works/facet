@@ -75,6 +75,7 @@ async function publishSvg(
     requestId: crypto.randomUUID(),
     artifactId,
     artifactType: "svg",
+    renderer: "svg",
     bytes: Buffer.from(bytes).toString("base64"),
   });
   if (!response.ok || response.data.command !== "publish") throw new Error("publish failed");
@@ -145,6 +146,7 @@ export async function measureColdReadBack(): Promise<{
             rendererRootSvgCount: lexical.expectedRendererRoots,
             mermaidNodeCount: lexical.mermaidNodeCount,
             visibleSvgCount: 0,
+            opaqueRegionCount: 0,
           },
           launcherVersion: TIER1_PINNED_VERSION,
           networkNamespace: TIER1_NETWORK_NAMESPACE,

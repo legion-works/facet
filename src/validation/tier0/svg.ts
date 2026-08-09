@@ -129,6 +129,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -154,6 +155,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [{ code: "svg_xml_error", message }],
     };
@@ -188,6 +190,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -206,6 +209,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -224,6 +228,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -243,6 +248,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: ctx.scriptElements,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -261,6 +267,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: ctx.eventHandlerAttributes,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -279,6 +286,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: ctx.externalRefAttributes,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -297,6 +305,7 @@ export function parseSvg(bytes: Uint8Array): SvgParseResult {
       mermaidNodeCount: 0,
       visibleSvgCount: ctx.rootSvgCount,
       errorCount: 0,
+      opaqueRegionCount: 0,
     },
     viewBoxes: ctx.viewBoxes,
   };

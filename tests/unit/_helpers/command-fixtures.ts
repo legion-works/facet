@@ -43,6 +43,7 @@ export const VERDICT_OBSERVED = {
   mermaidNodeCount: 2,
   visibleSvgCount: 1,
   errorCount: 0,
+  opaqueRegionCount: 0,
 };
 
 export function validCreateRequest() {
@@ -64,6 +65,7 @@ export function validPublishRequest() {
     requestId: REQUEST_ID,
     artifactId: "art-1",
     artifactType: "markdown" as const,
+    renderer: "svg" as const,
     bytes: "aGk=",
     note: null,
   };

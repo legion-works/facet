@@ -222,6 +222,7 @@ export async function publishArtifact(
     requestId: generateRequestId(),
     artifactId,
     artifactType: options.artifactType,
+    renderer: "svg",
     bytes: base64,
     ...(options.note !== undefined ? { note: options.note } : {}),
   });

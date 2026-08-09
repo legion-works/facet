@@ -1,9 +1,12 @@
 import { z } from "zod";
 
 import { ARTIFACT_TYPES } from "./artifact-types";
+import { RENDERERS } from "./renderers";
 
 export { ARTIFACT_TYPES, type ArtifactType } from "./artifact-types";
+export { RENDERERS, type Renderer } from "./renderers";
 export const ArtifactTypeSchema = z.enum(ARTIFACT_TYPES);
+export const RendererSchema = z.enum(RENDERERS);
 
 /** HTML identifies a reserved format and is deliberately excluded from ArtifactTypeSchema and store writes. */
 export const RESERVED_ARTIFACT_TYPE = "html" as const;

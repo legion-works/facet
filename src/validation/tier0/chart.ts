@@ -90,6 +90,7 @@ export function parseChart(bytes: Uint8Array): ChartParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [{ code: "chart_json_error", message }],
     };
@@ -108,6 +109,7 @@ export function parseChart(bytes: Uint8Array): ChartParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: topLevel.error.issues.slice(0, 5).map((issue) => ({
         code: issue.code === "invalid_type" ? "chart_invalid_type" : "chart_invalid_spec",
@@ -126,6 +128,7 @@ export function parseChart(bytes: Uint8Array): ChartParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -148,6 +151,7 @@ export function parseChart(bytes: Uint8Array): ChartParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 1,
         errorCount: 0,
+        opaqueRegionCount: 0,
       },
     };
   } catch (error) {
@@ -160,6 +164,7 @@ export function parseChart(bytes: Uint8Array): ChartParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [{ code: "chart_compile_error", message }],
     };

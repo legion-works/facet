@@ -139,6 +139,7 @@ async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tie
         graphCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        opaqueRegionCount: 0,
         viewBoxes: [],
         errorCount: 1,
         discriminativeErrors: [{ code: facet.code, message: facet.message }],
@@ -192,6 +193,7 @@ async function runTier1Safe(
         graphCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        opaqueRegionCount: 0,
         viewBoxes: [],
         errorCount: 1,
         discriminativeErrors: [{ code: facet.code, message: facet.message }],
@@ -276,6 +278,7 @@ export async function dispatch(
           rendererRootSvgCount: lexical.expectedRendererRoots,
           mermaidNodeCount: lexical.mermaidNodeCount,
           visibleSvgCount: 0,
+          opaqueRegionCount: 0,
         },
       });
       const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input);

@@ -6,12 +6,15 @@ import {
   type FacetErrorCode,
 } from "../../src/shared/errors/facet-error";
 import {
+  LexicalCountersSchema,
+  ProtocolObservationSchema,
   RenderStatusSchema,
   Tier0ResultSchema,
   Tier1ResultSchema,
   ValidationTierSchema,
   VerdictSchema,
 } from "../../src/shared/contracts/validation";
+import { checkRendererSupported } from "../../src/shared/contracts/commands";
 import { SOURCE_CAP_BYTES } from "../../src/shared/config/limits";
 
 describe("FacetError", () => {
@@ -73,6 +76,7 @@ describe("validation tier and render status", () => {
       "ok",
       "error",
       "partial:layout_unverified",
+      "partial:opaque_content",
       "tampered",
       "timeout",
       "shim_only",
@@ -82,6 +86,34 @@ describe("validation tier and render status", () => {
       expect(RenderStatusSchema.safeParse(status).success).toBe(true);
     }
     expect(RenderStatusSchema.safeParse("unknown").success).toBe(false);
+  });
+
+  test("checkRendererSupported only permits canvas for charts", () => {
+    expect(checkRendererSupported("chart", "canvas")).toBeNull();
+    expect(checkRendererSupported("markdown", "canvas")).toMatchObject({ code: "invalid_request" });
+  });
+
+  test("opaque region counters reject negative values", () => {
+    expect(
+      LexicalCountersSchema.safeParse({
+        rendererRootSvgCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: -1,
+      }).success,
+    ).toBe(false);
+    expect(
+      ProtocolObservationSchema.safeParse({
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        viewBoxes: [],
+        errorCount: 0,
+        discriminativeErrors: [],
+        opaqueRegionCount: -1,
+      }).success,
+    ).toBe(false);
   });
 });
 
@@ -98,6 +130,7 @@ describe("canonical verdict / unified observed shape", () => {
         mermaidNodeCount: 40,
         visibleSvgCount: 2,
         errorCount: 0,
+        opaqueRegionCount: 0,
       },
     };
     expect(VerdictSchema.safeParse(sample).success).toBe(true);
@@ -116,6 +149,7 @@ describe("canonical verdict / unified observed shape", () => {
         visibleSvgCount: 1,
         viewBoxes: ["0 0 100 100"],
         errorCount: 0,
+        opaqueRegionCount: 0,
         discriminativeErrors: [{ code: "forged", message: "page tried to override report" }],
       },
     };
@@ -134,6 +168,7 @@ describe("canonical verdict / unified observed shape", () => {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 0,
+        opaqueRegionCount: 0,
       },
     };
     expect(VerdictSchema.safeParse(sample).success).toBe(false);
@@ -147,13 +182,19 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
       tier: 0 as const,
       status: "ok" as const,
       artifactId: "art-1",
-      expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
+      expected: {
+        rendererRootSvgCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+      },
       observed: {
         rendererRootSvgCount: 0,
         graphCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 0,
+        opaqueRegionCount: 0,
       },
     };
     expect(Tier0ResultSchema.safeParse(sample).success).toBe(true);
@@ -165,17 +206,55 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
       tier: 1 as const,
       status: "ok" as const,
       artifactId: "art-1",
-      expected: { rendererRootSvgCount: 1, mermaidNodeCount: 2, visibleSvgCount: 1 },
+      expected: {
+        rendererRootSvgCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+      },
       observed: {
         rendererRootSvgCount: 1,
         graphCount: 1,
         mermaidNodeCount: 2,
         visibleSvgCount: 1,
         errorCount: 0,
+        opaqueRegionCount: 0,
       },
       screenshotPath: null,
       consolePath: null,
     };
     expect(Tier1ResultSchema.safeParse(sample).success).toBe(true);
+  });
+
+  test("Tier1ResultSchema requires screenshots for every partial status", () => {
+    const base = {
+      revisionSha: "a".repeat(64),
+      tier: 1 as const,
+      artifactId: "art-1",
+      expected: {
+        rendererRootSvgCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+      },
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        errorCount: 0,
+        opaqueRegionCount: 0,
+      },
+      consolePath: null,
+    };
+    for (const status of ["partial:layout_unverified", "partial:opaque_content"] as const) {
+      expect(Tier1ResultSchema.safeParse({ ...base, status, screenshotPath: null }).success).toBe(
+        false,
+      );
+      expect(
+        Tier1ResultSchema.safeParse({ ...base, status, screenshotPath: "/tmp/screenshot.png" })
+          .success,
+      ).toBe(true);
+    }
   });
 });

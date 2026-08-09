@@ -24,6 +24,7 @@ export const stubTier0Runner = async (input: Tier0Input): Promise<Tier0Result> =
       graphCount: 0,
       mermaidNodeCount: input.lexical.mermaidNodeCount,
       visibleSvgCount: 0,
+      opaqueRegionCount: 0,
       errorCount: 0,
     },
   };
@@ -41,6 +42,7 @@ export const errorTier0Runner = async (input: Tier0Input): Promise<Tier0Result> 
       graphCount: 0,
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
+      opaqueRegionCount: 0,
       errorCount: 1,
       discriminativeErrors: [
         {

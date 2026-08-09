@@ -182,6 +182,7 @@ const placeholderIdentityTier1Runner: Tier1Runner = async (
       graphCount: 0,
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
+      opaqueRegionCount: 0,
       errorCount: 0,
     },
     screenshotPath: null,
@@ -228,6 +229,7 @@ function buildStubTier1(input: {
         graphCount: 0,
         mermaidNodeCount: t1Input.lexical.mermaidNodeCount,
         visibleSvgCount: 0,
+        opaqueRegionCount: 0,
         errorCount: 0,
       },
       screenshotPath,
@@ -410,7 +412,12 @@ describe("screenshot mandate for partial:layout_unverified", () => {
   });
 
   test("Tier1ResultSchema refine rejects partial-without-screenshot directly (parse-level guard)", () => {
-    const lexical = { rendererRootSvgCount: 1, mermaidNodeCount: 1, visibleSvgCount: 1 };
+    const lexical = {
+      rendererRootSvgCount: 1,
+      mermaidNodeCount: 1,
+      visibleSvgCount: 1,
+      opaqueRegionCount: 0,
+    };
     const base = {
       tier: 1 as const,
       status: "partial:layout_unverified" as const,
@@ -422,6 +429,7 @@ describe("screenshot mandate for partial:layout_unverified", () => {
         graphCount: 0,
         mermaidNodeCount: 1,
         visibleSvgCount: 0,
+        opaqueRegionCount: 0,
         errorCount: 0,
       },
     };
@@ -513,6 +521,7 @@ describe("evidence directory mode + retention", () => {
           graphCount: 0,
           mermaidNodeCount: 0,
           visibleSvgCount: 0,
+          opaqueRegionCount: 0,
           errorCount: 0,
         },
         screenshotPath,
@@ -638,12 +647,18 @@ describe("cleanup-after-failure leaves no orphan evidence files", () => {
           revisionId: fakeRevisionId,
           tier: 1,
           status: "ok",
-          expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
+          expected: {
+            rendererRootSvgCount: 0,
+            mermaidNodeCount: 0,
+            visibleSvgCount: 0,
+            opaqueRegionCount: 0,
+          },
           observed: {
             rendererRootSvgCount: 0,
             graphCount: 0,
             mermaidNodeCount: 0,
             visibleSvgCount: 0,
+            opaqueRegionCount: 0,
             errorCount: 0,
           },
           screenshotPath,
@@ -708,12 +723,18 @@ describe("retained rows are exempt from retention eviction", () => {
           revisionId: revision.id,
           tier: 0,
           status: "ok",
-          expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
+          expected: {
+            rendererRootSvgCount: 0,
+            mermaidNodeCount: 0,
+            visibleSvgCount: 0,
+            opaqueRegionCount: 0,
+          },
           observed: {
             rendererRootSvgCount: 0,
             graphCount: 0,
             mermaidNodeCount: 0,
             visibleSvgCount: 0,
+            opaqueRegionCount: 0,
             errorCount: 0,
           },
           screenshotPath: evidenceFile,

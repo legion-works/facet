@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { RESERVED_ARTIFACT_TYPE } from "../artifact";
+import type { Renderer } from "../renderers";
 import { FacetError } from "../../errors/facet-error";
 
 import {
@@ -46,6 +47,20 @@ export function checkArtifactTypeSupported(type: string): FacetError | null {
       "unsupported_reserved_type",
       `Artifact type '${type}' is reserved and not supported in this build`,
       { retryable: false, details: { artifactType: type } },
+    );
+  }
+  return null;
+}
+
+export function checkRendererSupported(
+  artifactType: string,
+  renderer: Renderer,
+): FacetError | null {
+  if (renderer === "canvas" && artifactType !== "chart") {
+    return new FacetError(
+      "invalid_request",
+      `Renderer '${renderer}' is only supported for artifact type 'chart'`,
+      { retryable: false, details: { artifactType, renderer } },
     );
   }
   return null;

@@ -119,6 +119,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [{ code: "markdown_lex_error", message }],
     };
@@ -136,6 +137,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -154,6 +156,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -172,6 +175,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
       },
       errors: [
         {
@@ -190,6 +194,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
       errorCount: 0,
+      opaqueRegionCount: 0,
     },
   };
 }

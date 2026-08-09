@@ -57,6 +57,14 @@ describe("command round-trips", () => {
     expect(PublishResultSchema.parse(validPublishResult())).toEqual(validPublishResult());
   });
 
+  test("publish request defaults renderer to svg and accepts canvas", () => {
+    const request = validPublishRequest();
+    const { renderer: _renderer, ...withoutRenderer } = request;
+    expect(PublishRequestSchema.parse(withoutRenderer).renderer).toBe("svg");
+    expect(PublishRequestSchema.safeParse({ ...request, renderer: "canvas" }).success).toBe(true);
+    expect(PublishRequestSchema.safeParse({ ...request, renderer: "webgl" }).success).toBe(false);
+  });
+
   test("list request and result round-trip", () => {
     expect(ListRequestSchema.parse(validListRequest())).toEqual(validListRequest());
     expect(ListResultSchema.parse(validListResult())).toEqual(validListResult());

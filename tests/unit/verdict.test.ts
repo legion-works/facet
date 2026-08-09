@@ -33,6 +33,7 @@ const lex = (overrides: Partial<LexicalCounters> = {}): LexicalCounters =>
     rendererRootSvgCount: 1,
     mermaidNodeCount: 1,
     visibleSvgCount: 1,
+    opaqueRegionCount: 0,
     ...overrides,
   });
 
@@ -43,6 +44,7 @@ const protocol = (overrides: Partial<ProtocolObservation> = {}): ProtocolObserva
   visibleSvgCount: 1,
   viewBoxes: ["0 0 100 100"],
   errorCount: 0,
+  opaqueRegionCount: 0,
   discriminativeErrors: [],
   ...overrides,
 });
@@ -85,6 +87,7 @@ describe("deriveVerdict — tamper detection (page shim is untrusted)", () => {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         errorCount: 1,
+        opaqueRegionCount: 0,
         discriminativeErrors: [{ code: "facet_error", message: "broken" }],
       }),
       protocol({ rendererRootSvgCount: 0, graphCount: 0, errorCount: 1 }),
@@ -188,6 +191,7 @@ describe("deriveVerdict — lifecycle and timing", () => {
       lex(),
       protocol({
         errorCount: 1,
+        opaqueRegionCount: 0,
         discriminativeErrors: [{ code: "mermaid_parse_error", message: "bad graph" }],
       }),
       protocol({ errorCount: 1 }),

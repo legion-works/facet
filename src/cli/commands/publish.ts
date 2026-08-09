@@ -74,6 +74,7 @@ export function buildPublishRequest(
     requestId: generateRequestId(),
     artifactId,
     artifactType: type as ArtifactType,
+    renderer: "svg",
     bytes: Buffer.from(sourceBytes).toString("base64"),
     ...(typeof noteValue === "string" ? { note: noteValue } : {}),
     ...(typeof parentValue === "string" ? { parentRevisionId: parentValue } : {}),

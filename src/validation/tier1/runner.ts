@@ -269,6 +269,7 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
         visibleSvgCount: observed.visibleSvgCount,
         viewBoxes: observed.viewBoxes,
         errorCount: observed.errorCount,
+        opaqueRegionCount: 0,
         discriminativeErrors: observed.discriminativeErrors,
       },
       screenshotPath: captured.screenshotPath,
@@ -450,6 +451,7 @@ function mergeProtocol(
     visibleSvgCount: snapshot.visibleSvgCount,
     viewBoxes: snapshot.viewBoxes,
     errorCount: snapshot.errorCount,
+    opaqueRegionCount: 0,
     discriminativeErrors: errors,
   };
 }

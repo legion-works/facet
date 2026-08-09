@@ -74,7 +74,11 @@ import {
   type ReservedExportResult,
   type StatusResult,
 } from "./results";
-import { checkArtifactTypeSupported, checkCommandImplemented } from "./guards";
+import {
+  checkArtifactTypeSupported,
+  checkCommandImplemented,
+  checkRendererSupported,
+} from "./guards";
 
 /**
  * Discriminated union of every command request the protocol parses.
@@ -153,6 +157,7 @@ export {
   // guards
   checkCommandImplemented,
   checkArtifactTypeSupported,
+  checkRendererSupported,
 };
 
 export type { CommandName };

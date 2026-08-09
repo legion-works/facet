@@ -19,6 +19,7 @@ export const RenderStatusSchema = z.enum([
   "ok",
   "error",
   "partial:layout_unverified",
+  "partial:opaque_content",
   "tampered",
   "timeout",
   "shim_only",
@@ -45,6 +46,7 @@ export const LexicalCountersSchema = z.object({
   rendererRootSvgCount: z.number().int().nonnegative(),
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
+  opaqueRegionCount: z.number().int().nonnegative(),
 });
 export type LexicalCounters = z.infer<typeof LexicalCountersSchema>;
 
@@ -65,6 +67,7 @@ export const VerdictObservedSchema = z.object({
   graphCount: z.number().int().nonnegative(),
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
+  opaqueRegionCount: z.number().int().nonnegative(),
   viewBoxes: z.array(z.string()).optional(),
   errorCount: z.number().int().nonnegative(),
   discriminativeErrors: z.array(DiscriminativeErrorSchema).optional(),
@@ -158,13 +161,10 @@ export const Tier1ResultSchema = Tier0ResultSchema.extend({
   tier: z.literal(1),
   screenshotPath: z.string().nullable(),
   consolePath: z.string().nullable(),
-}).refine(
-  (value) => value.status !== "partial:layout_unverified" || value.screenshotPath !== null,
-  {
-    message: "partial:layout_unverified verdict requires a non-null screenshotPath",
-    path: ["screenshotPath"],
-  },
-);
+}).refine((value) => !value.status.startsWith("partial:") || value.screenshotPath !== null, {
+  message: "partial verdict requires a non-null screenshotPath",
+  path: ["screenshotPath"],
+});
 export type Tier1Result = z.infer<typeof Tier1ResultSchema>;
 
 /**
@@ -179,6 +179,7 @@ export const ProtocolObservationSchema = z.object({
   graphCount: z.number().int().nonnegative(),
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
+  opaqueRegionCount: z.number().int().nonnegative(),
   viewBoxes: z.array(z.string()),
   errorCount: z.number().int().nonnegative(),
   discriminativeErrors: z.array(DiscriminativeErrorSchema),
