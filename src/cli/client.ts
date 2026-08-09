@@ -266,6 +266,7 @@ export async function readBack(
 ): Promise<{
   readonly status: string;
   readonly tier: 0 | 1 | "visual";
+  readonly renderer: Renderer;
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly observed: {
@@ -294,6 +295,7 @@ export async function readBack(
   return {
     status: parsed.verdict.status,
     tier: parsed.verdict.tier,
+    renderer: parsed.renderer,
     artifactId: parsed.verdict.artifactId,
     revisionSha: parsed.verdict.revisionSha,
     observed: {

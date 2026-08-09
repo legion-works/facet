@@ -4,6 +4,8 @@ import { publishFixture, readBackFixture } from "../helpers/facet-testkit";
 
 const MONKEYPATCH_FIXTURE = `${import.meta.dir}/../fixtures/hostile-monkeypatch.json`;
 const NESTED_SVG_FIXTURE = `${import.meta.dir}/../fixtures/hostile-svg-label.md`;
+const CANVAS_SMUGGLE_FIXTURE = `${import.meta.dir}/../fixtures/hostile-canvas-smuggle.json`;
+const CANVAS_MONKEYPATCH_FIXTURE = `${import.meta.dir}/../fixtures/hostile-canvas-monkeypatch.json`;
 
 // Explicit budget ordering: the Tier 1 render barrier (30s) must report
 // before the overall verifier budget (60s), and this test must remain alive
@@ -21,6 +23,36 @@ test("monkeypatched in-page shim cannot forge the verdict: protocol authority wi
     tier: 1,
   });
   expect(verdict.status).toBe("tampered");
+}, 90_000);
+
+test("undeclared canvas smuggling is capped as opaque content", async () => {
+  const published = await publishFixture({
+    fixturePath: CANVAS_SMUGGLE_FIXTURE,
+    artifactType: "markdown",
+    slug: "hostile-canvas-smuggle",
+  });
+  const verdict = await readBackFixture({
+    artifactId: published.artifactId,
+    revisionSha: published.revisionSha,
+    tier: 1,
+  });
+  expect(verdict.status).toBe("partial:opaque_content");
+  expect(verdict.observed.opaqueRegionCount).toBe(1);
+}, 90_000);
+
+test("forged page-world canvas count is tampered", async () => {
+  const published = await publishFixture({
+    fixturePath: CANVAS_MONKEYPATCH_FIXTURE,
+    artifactType: "markdown",
+    slug: "hostile-canvas-monkeypatch",
+  });
+  const verdict = await readBackFixture({
+    artifactId: published.artifactId,
+    revisionSha: published.revisionSha,
+    tier: 1,
+  });
+  expect(verdict.status).toBe("tampered");
+  expect(verdict.observed.opaqueRegionCount).toBe(1);
 }, 90_000);
 
 test('nested-SVG forgery probe: one renderer-root SVG and one g.node graph even with an embedded <svg id="forged">', async () => {

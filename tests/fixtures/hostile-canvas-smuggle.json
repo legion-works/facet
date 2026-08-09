@@ -1,0 +1,5 @@
+{
+  "type": "test-adversary",
+  "name": "hostile-canvas-smuggle",
+  "description": "Constructs an undeclared canvas for verifier coverage."
+}

@@ -53,6 +53,7 @@ export interface AcceptanceVerdictObserved {
 export interface AcceptanceVerdict {
   readonly status: string;
   readonly tier: Tier;
+  readonly renderer: Renderer;
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly observed: AcceptanceVerdictObserved;
@@ -201,6 +202,7 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
   return {
     status: result.status,
     tier: result.tier === "visual" ? 1 : result.tier,
+    renderer: result.renderer,
     artifactId: result.artifactId,
     revisionSha: result.revisionSha,
     observed: {

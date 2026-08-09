@@ -71,6 +71,24 @@ function adversarialMonkeypatch(): void {
   });
 }
 
+function appendAdversarialCanvas(): void {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  container.appendChild(canvas);
+}
+
+function adversarialCanvasCountMonkeypatch(): void {
+  const originalQuerySelectorAll = document.querySelectorAll.bind(document);
+  Object.defineProperty(document, "querySelectorAll", {
+    value: function (selectors: string) {
+      if (selectors === "*") return { length: 0 } as unknown as NodeListOf<Element>;
+      return originalQuerySelectorAll(selectors);
+    },
+    configurable: true,
+  });
+}
+
 async function renderAdversarialJson(payload: unknown): Promise<void> {
   if (typeof payload !== "object" || payload === null) {
     appendRenderError(container, "adversarial: payload is not an object");
@@ -85,6 +103,15 @@ async function renderAdversarialJson(payload: unknown): Promise<void> {
   if (name === "hostile-monkeypatch") {
     adversarialMonkeypatch();
     appendRenderError(container, "forced facet-error for monkeypatch scenario");
+    return;
+  }
+  if (name === "hostile-canvas-smuggle") {
+    appendAdversarialCanvas();
+    return;
+  }
+  if (name === "hostile-canvas-monkeypatch") {
+    appendAdversarialCanvas();
+    adversarialCanvasCountMonkeypatch();
     return;
   }
   const source = typeof record["source"] === "string" ? (record["source"] as string) : null;

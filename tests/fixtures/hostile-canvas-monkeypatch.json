@@ -1,0 +1,5 @@
+{
+  "type": "test-adversary",
+  "name": "hostile-canvas-monkeypatch",
+  "description": "Constructs a canvas and forges the page-world count."
+}

@@ -17,5 +17,6 @@ test("canvas chart records an opaque-content Tier 1 verdict with screenshot evid
   });
   expect(verdict.status).toBe("partial:opaque_content");
   expect(verdict.observed.opaqueRegionCount).toBeGreaterThanOrEqual(1);
+  expect(verdict.renderer).toBe("canvas");
   expect(published.tier1ScreenshotPath).not.toBeNull();
 }, 90_000);
