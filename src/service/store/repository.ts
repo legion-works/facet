@@ -14,6 +14,7 @@ import {
   type Revision,
   type Template,
 } from "../../shared/contracts/artifact";
+import { DEFAULT_LIST_LIMIT } from "../../shared/config/limits";
 import { now } from "../../shared/util/time";
 import { asStoreError, FacetStoreError, hardenDatabaseFiles } from "./database";
 import {
@@ -195,7 +196,7 @@ export class ArtifactRepository {
   }
 
   listArtifacts(input: ListArtifactsInput): Artifact[] {
-    const limit = input.limit ?? 50;
+    const limit = input.limit ?? DEFAULT_LIST_LIMIT;
     const prefix = input.slugPrefix ?? "";
     try {
       const rows = this.db

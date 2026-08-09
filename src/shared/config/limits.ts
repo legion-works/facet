@@ -23,6 +23,10 @@ export const MAX_MERMAID_BLOCKS = 64;
  */
 export const MAX_MERMAID_NODES = 10_000;
 
+/** Default in-memory cap for list responses. */
+export const DEFAULT_LIST_LIMIT = 50;
+export const MAX_LIST_LIMIT = 500;
+
 /**
  * Lexical guard: max bytes in a single SVG artifact. Bounds the render
  * time on the Tier 1 verifier independent of the source cap (an SVG

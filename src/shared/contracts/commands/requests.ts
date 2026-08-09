@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ArtifactTypeSchema, ReservedArtifactTypeSchema } from "../artifact";
+import { MAX_LIST_LIMIT } from "../../config/limits";
 
 import { BaseRequestSchema, ReadBackTierSchema } from "./_shared";
 
@@ -60,7 +61,7 @@ export const ListRequestSchema = BaseRequestSchema.extend({
   command: z.literal("list"),
   projectId: z.string().min(1),
   slugPrefix: z.string().optional(),
-  limit: z.number().int().positive().max(500).optional(),
+  limit: z.number().int().positive().max(MAX_LIST_LIMIT).optional(),
 });
 export type ListRequest = z.infer<typeof ListRequestSchema>;
 
