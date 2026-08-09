@@ -29,14 +29,6 @@ export const TIER1_NETWORK_NAMESPACE = "facet-tier1-egress-isolated";
 export const TIER1_USER_DATA_DIR_MODE = 0o700;
 
 /**
- * Stderr/console cap for the verifier harness bundle. The bundle
- * carries the real renderers (mermaid + marked + vega) inlined as
- * ESM; 16 MiB bounds it with room for growth while still capping
- * anything pathological.
- */
-export const TIER1_HARNESS_BUNDLE_CAP_BYTES = 16 * 1024 * 1024;
-
-/**
  * Per-render timeout the verifier waits for the trusted
  * `render-complete` barrier before classifying the run as `timeout`.
  * Sized for the real mermaid runtime: first-render initialization of

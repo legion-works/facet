@@ -61,21 +61,9 @@ export const EXIT_CODES = {
   INTERNAL: 70,
 } as const;
 
-export type ExitCode = (typeof EXIT_CODES)[keyof typeof EXIT_CODES];
-
 export interface CliWriter {
   write(chunk: string | Uint8Array): boolean;
 }
-
-/**
- * Pretty-print the exit-code table for `--help`. Stable string used
- * by both the help text and the test that asserts it appears.
- */
-export const EXIT_CODE_TABLE: readonly { code: number; meaning: string }[] = [
-  { code: EXIT_CODES.OK, meaning: "ok (any well-formed envelope on stdout)" },
-  { code: EXIT_CODES.USAGE, meaning: "usage error (pre-parse: unknown verb, bad flag)" },
-  { code: EXIT_CODES.INTERNAL, meaning: "internal (unhandled non-FacetError throw)" },
-];
 
 /**
  * Print the envelope to stdout as a single JSON line. Newline

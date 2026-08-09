@@ -13,12 +13,7 @@
  * invalid input is rejected at parse time (typed `invalid_request`).
  */
 
-import {
-  errEnvelope,
-  parseEnvelope,
-  type FacetEnvelope,
-  type FacetErrorBody,
-} from "../shared/contracts/envelope";
+import { errEnvelope, parseEnvelope, type FacetEnvelope } from "../shared/contracts/envelope";
 import {
   CommandRequestSchema,
   CommandResultSchema,
@@ -173,16 +168,6 @@ function isMutationMethodFor(_command: CommandRequest["command"]): boolean {
   // classification stays single-sourced.
   void isMutationMethod;
   return true;
-}
-
-/**
- * Build a typed CLI-side error envelope for a `FacetError` thrown
- * before or during the wire round-trip (e.g. a connection failure).
- */
-export function wrapTransportError(requestId: string, error: unknown): FacetEnvelope<never> {
-  const facet = error instanceof FacetError ? error : FacetError.from(error);
-  const body: FacetErrorBody = facet.toBody();
-  return errEnvelope(requestId, body);
 }
 
 /**

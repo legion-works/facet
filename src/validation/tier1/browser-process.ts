@@ -18,7 +18,7 @@ import { join } from "node:path";
 
 import { FacetError } from "../../shared/errors/facet-error";
 
-import { TIER1_USER_DATA_DIR_MODE, TIER1_PINNED_VERSION } from "./limits";
+import { TIER1_USER_DATA_DIR_MODE } from "./limits";
 import { resolveLauncher, type ResolvedLauncher } from "./launcher";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
@@ -50,17 +50,6 @@ export interface VerifierTarget {
   /** Browser pid — the orphan cleanup key. */
   readonly pid: number;
   readonly startTime: number;
-}
-
-export interface Tier1Browser {
-  /** Launch a new ephemeral browser under the netns launcher. */
-  launch(): Promise<VerifierTarget>;
-  /**
-   * Probe whether the netns wrapper + pinned shell are reachable
-   * without actually launching a browser. Used by `probeNetnsSupport`
-   * so the verifier can surface `tier1_unavailable` early.
-   */
-  probeAvailability(): Promise<{ available: boolean; reason: string | null }>;
 }
 
 /**
@@ -151,14 +140,6 @@ export async function probeLauncherAvailability(
       resolve({ available: false, reason: `launcher spawn failed: ${error.message}` });
     });
   });
-}
-
-/**
- * Resolve the version label the parent recorded with this run. The
- * runner reads `TIER1_PINNED_VERSION`; tests inject an override.
- */
-export function pinnedVersion(overrides: { readonly version?: string } = {}): string {
-  return overrides.version ?? TIER1_PINNED_VERSION;
 }
 
 void FacetError;

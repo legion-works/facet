@@ -83,12 +83,6 @@ export function probeNetnsSupport(): NetnsProbe {
   }
 }
 
-/** Reset the cached probe. Test-only; production code never invalidates it. */
-// oxlint-disable-next-line no-underscore-dangle
-export function _resetNetnsProbeForTests(): void {
-  cachedProbe = null;
-}
-
 /**
  * Returns the path to the `unshare` binary, asserting it exists.
  * Surfacing a typed error here (rather than letting `spawn` fail with

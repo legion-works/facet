@@ -26,8 +26,6 @@ export const StreamEventSchema = z.discriminatedUnion("type", [
     reason: z.string().min(1),
   }),
 ]);
-export type StreamEvent = z.infer<typeof StreamEventSchema>;
-
 /**
  * Emitted whenever a revision commits to the store. The sha is the
  * authoritative identifier clients use to address the revision; the

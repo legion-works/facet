@@ -24,13 +24,6 @@ export const MAX_MERMAID_BLOCKS = 64;
 export const MAX_MERMAID_NODES = 10_000;
 
 /**
- * Lexical guard: max nesting depth for any single fenced block. Catches
- * hostile inputs that use deeply-nested markdown lists to inflate the
- * parser tree.
- */
-export const MAX_NESTING_DEPTH = 50;
-
-/**
  * Lexical guard: max bytes in a single SVG artifact. Bounds the render
  * time on the Tier 1 verifier independent of the source cap (an SVG
  * can be small in bytes but enormous in DOM).
@@ -43,7 +36,3 @@ export const MAX_SVG_BYTES = 1 * 1024 * 1024;
  * the verifier's own SVG count past the lexical expectation.
  */
 export const MAX_SVG_ROOTS = 16;
-
-/** Default in-memory cap for list responses. */
-export const DEFAULT_LIST_LIMIT = 50;
-export const MAX_LIST_LIMIT = 500;

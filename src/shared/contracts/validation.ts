@@ -7,7 +7,6 @@ import { z } from "zod";
  * `RenderRun`.
  */
 export const ValidationTierSchema = z.union([z.literal(0), z.literal(1)]);
-export type ValidationTier = z.infer<typeof ValidationTierSchema>;
 
 /**
  * Closed set of render status codes the verifier can produce. The

@@ -2,7 +2,7 @@
  * `facet list` — list artifacts for a project.
  *
  * Supports optional `--slug-prefix` and `--limit` filters. The
- * service applies its own `MAX_LIST_LIMIT` cap, so the CLI does
+ * service applies its own 500-item cap, so the CLI does
  * NOT clamp — a too-large limit surfaces as a typed `invalid_request`
  * from the service and the envelope carries the typed code.
  *

@@ -32,7 +32,7 @@ import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
 
 import { asStoreError } from "../../shared/errors/store-error";
-import { ensureOwnerOnlyDirectory, OWNER_ONLY_MODE } from "../../shared/util/dir-permissions";
+import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
 /**
  * Default retention depth per artifact. Tuned to bound the on-disk
@@ -40,9 +40,6 @@ import { ensureOwnerOnlyDirectory, OWNER_ONLY_MODE } from "../../shared/util/dir
  * regression: every artifact keeps the last ten runs.
  */
 export const EVIDENCE_LAST_N_PER_ARTIFACT = 10;
-
-/** Mode for the evidence root and per-run subdirectories — re-exported for callers that already import it. */
-export const EVIDENCE_DIR_MODE = OWNER_ONLY_MODE;
 
 export interface EnforceRetentionOptions {
   readonly db: Database;

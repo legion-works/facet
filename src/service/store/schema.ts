@@ -67,10 +67,3 @@ CREATE TABLE templates(
 export const V2_SCHEMA_FRAGMENT = `
 ALTER TABLE render_runs ADD COLUMN retained INTEGER NOT NULL DEFAULT 0;
 `;
-
-/**
- * The full DDL for a fresh v2-or-later database. Useful for tests
- * that skip the migration ledger; production code MUST go through
- * `runMigrations` so the version ledger stays authoritative.
- */
-export const FULL_SCHEMA_V2 = `${INITIAL_SCHEMA}${V2_SCHEMA_FRAGMENT}`;

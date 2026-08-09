@@ -222,20 +222,6 @@ async function coldStart(
 }
 
 /**
- * Exported for the non-vacuous concurrency test: cold-start
- * without consulting the in-process inflight map. 20 concurrent
- * calls with the same options produce 20 spawns (the test
- * asserts this delta to prove the inflight map is what makes
- * `ensureService` produce exactly one).
- */
-export async function coldStartService(
-  options: SpawnServiceOptions,
-  hooks: ServiceHooks = {},
-): Promise<ResolvedService> {
-  return coldStart(options, hooks);
-}
-
-/**
  * Ensure a live, contract-version-matching service is running. If
  * one is already running, return its info; if not, lazily start one
  * and share the wait across concurrent callers.
