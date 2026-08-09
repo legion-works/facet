@@ -54,3 +54,10 @@ export const TIER1_RENDER_BARRIER_MS = 30_000;
  * treats the typed rejection as retryable and relaunches once.
  */
 export const TIER1_CDP_CALL_WATCHDOG_MS = 10_000;
+
+/** Deterministic viewport used for Tier 1 layout and screenshot evidence. */
+export const TIER1_VIEWPORT_WIDTH = 1280;
+export const TIER1_VIEWPORT_HEIGHT = 800;
+
+/** Full-page evidence above this size falls back to the viewport capture. */
+export const TIER1_SCREENSHOT_CAP_BYTES = 8 * 1024 * 1024;

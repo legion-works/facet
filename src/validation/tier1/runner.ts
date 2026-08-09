@@ -30,6 +30,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Buffer } from "node:buffer";
 
 import {
   Tier1ResultSchema,
@@ -47,8 +48,13 @@ import { resolveLauncher } from "./launcher";
 import { createIsolatedWorld, resolveSrcdocChildFrame } from "./frame-target";
 import { probeProtocolGetDocument, probeProtocolSnapshot } from "./protocol-probe";
 import { probeIsolatedCounts } from "./isolated-probe";
-import { TIER1_RENDER_BARRIER_MS } from "./limits";
-import { type VerifierTarget } from "./browser-process";
+import {
+  TIER1_RENDER_BARRIER_MS,
+  TIER1_SCREENSHOT_CAP_BYTES,
+  TIER1_VIEWPORT_HEIGHT,
+  TIER1_VIEWPORT_WIDTH,
+} from "./limits";
+import { type VerifierCdpSession, type VerifierTarget } from "./browser-process";
 import { deriveVerdict, type PageShim } from "./verdict";
 import { readPidStartTimeTicks } from "../../shared/util/process";
 
@@ -175,6 +181,8 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
     traceTier1("cdp:enable:start", startedAt);
     await target.session.send("Page.enable");
     traceTier1("cdp:enable:complete", startedAt);
+    await configureTier1Viewport(target.session);
+    traceTier1("viewport:configured", startedAt);
     traceTier1("navigate:start", startedAt);
     await target.session.send("Page.navigate", { url: `file://${hostHtmlPath}` });
     traceTier1("navigate:complete", startedAt);
@@ -471,6 +479,34 @@ interface EvidenceCapture {
  * two, two runs over the same artifact differ byte-for-byte in font
  * loading order + animation timing (perf-spike finding).
  */
+export async function configureTier1Viewport(session: VerifierCdpSession): Promise<void> {
+  await session.send("Emulation.setDeviceMetricsOverride", {
+    width: TIER1_VIEWPORT_WIDTH,
+    height: TIER1_VIEWPORT_HEIGHT,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+}
+
+export async function captureScreenshotWithFallback(
+  session: VerifierCdpSession,
+): Promise<Buffer | null> {
+  const capture = async (captureBeyondViewport: boolean): Promise<Buffer | null> => {
+    const shot = (await session.send("Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport,
+    })) as { data?: string };
+    if (typeof shot.data !== "string" || shot.data.length === 0) return null;
+    return Buffer.from(shot.data, "base64");
+  };
+
+  const fullScreenshot = await capture(true);
+  if (fullScreenshot === null || fullScreenshot.byteLength <= TIER1_SCREENSHOT_CAP_BYTES) {
+    return fullScreenshot;
+  }
+  return capture(false);
+}
+
 async function captureEvidence(
   target: VerifierTarget,
   options: {
@@ -496,12 +532,9 @@ async function captureEvidence(
       awaitPromise: true,
       returnByValue: true,
     });
-    const shot = (await target.session.send("Page.captureScreenshot", {
-      format: "png",
-      captureBeyondViewport: false,
-    })) as { data?: string };
-    if (typeof shot.data === "string" && shot.data.length > 0) {
-      writeFileSync(options.screenshotPath, Buffer.from(shot.data, "base64"));
+    const screenshot = await captureScreenshotWithFallback(target.session);
+    if (screenshot !== null) {
+      writeFileSync(options.screenshotPath, screenshot);
       screenshotPath = options.screenshotPath;
     }
   } catch {
