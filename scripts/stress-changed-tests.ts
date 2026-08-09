@@ -43,7 +43,7 @@ export function selectChangedTests(changedPaths: readonly string[]): {
   return { selected, totalChanged: changedPaths.length };
 }
 
-function changedPathsSince(baseRef: string): string[] {
+export function changedPathsSince(baseRef: string): string[] {
   const result = spawnSync("git", ["diff", "--name-only", `${baseRef}...HEAD`], {
     encoding: "utf8",
   });
@@ -53,7 +53,7 @@ function changedPathsSince(baseRef: string): string[] {
   return result.stdout.split("\n").filter((line) => line.length > 0);
 }
 
-function stressOne(file: string): boolean {
+export function stressOne(file: string): boolean {
   for (let run = 1; run <= STRESS_COUNT; run += 1) {
     const result = spawnSync(process.execPath, ["test", file], { stdio: "inherit" });
     if (result.status !== 0) {
@@ -65,11 +65,17 @@ function stressOne(file: string): boolean {
   return true;
 }
 
-export function main(argv: readonly string[]): number {
+export interface StressRuntime {
+  readonly changedPathsSince?: (baseRef: string) => string[];
+  readonly exists?: (path: string) => boolean;
+  readonly stressOne?: (file: string) => boolean;
+}
+
+export function main(argv: readonly string[], runtime: StressRuntime = {}): number {
   const baseRef = argv[2] ?? process.env["FACET_STRESS_BASE"] ?? "origin/main";
   let changed: string[];
   try {
-    changed = changedPathsSince(baseRef);
+    changed = (runtime.changedPathsSince ?? changedPathsSince)(baseRef);
   } catch (error) {
     console.error(`ERROR ${error instanceof Error ? error.message : String(error)}`);
     return 1;
@@ -88,14 +94,14 @@ export function main(argv: readonly string[]): number {
   }
 
   // A selected file that vanished is a pure deletion; nothing to stress.
-  const present = selected.filter((file) => existsSync(file));
+  const present = selected.filter((file) => (runtime.exists ?? existsSync)(file));
   if (present.length === 0) {
     console.log(`SKIP every changed test file was deleted (${selected.length} deletion(s))`);
     return 0;
   }
 
   console.log(`stressing ${present.length} changed test file(s) × ${STRESS_COUNT}`);
-  const failures = present.filter((file) => !stressOne(file));
+  const failures = present.filter((file) => !(runtime.stressOne ?? stressOne)(file));
   if (failures.length > 0) {
     console.error(`ERROR ${failures.length} changed test file(s) are flaky under stress`);
     return 1;

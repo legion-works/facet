@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import {
   isStressableTestFile,
+  changedPathsSince,
+  main,
   selectChangedTests,
   STRESS_COUNT,
   STRESS_ROOTS,
+  stressOne,
 } from "../../scripts/stress-changed-tests";
 
 describe("changed-test stress selection", () => {
@@ -56,5 +59,70 @@ describe("changed-test stress selection", () => {
   test("stress count and roots are pinned to the documented contract", () => {
     expect(STRESS_COUNT).toBe(5);
     expect([...STRESS_ROOTS]).toEqual(["tests/unit/", "tests/integration/"]);
+  });
+
+  test("main uses supplied diff and stress fixtures instead of live repository state", () => {
+    const stressed: string[] = [];
+    const runtime = {
+      changedPathsSince: () => ["tests/unit/fixture.test.ts"],
+      exists: () => true,
+      stressOne: (file: string) => {
+        stressed.push(file);
+        return true;
+      },
+    };
+
+    expect(main(["bun", "stress-changed-tests.ts", "fixture-base"], runtime)).toBe(0);
+    expect(stressed).toEqual(["tests/unit/fixture.test.ts"]);
+  });
+
+  test("main reports an unusable diff without reading live repository state", () => {
+    expect(
+      main(["bun", "stress-changed-tests.ts", "fixture-base"], {
+        changedPathsSince: () => {
+          throw new Error("fixture diff failed");
+        },
+      }),
+    ).toBe(1);
+  });
+
+  test("main rejects an empty diff", () => {
+    expect(
+      main(["bun", "stress-changed-tests.ts", "fixture-base"], {
+        changedPathsSince: () => [],
+      }),
+    ).toBe(1);
+  });
+
+  test("main skips a diff without stressable tests", () => {
+    expect(
+      main(["bun", "stress-changed-tests.ts", "fixture-base"], {
+        changedPathsSince: () => ["src/service/router.ts"],
+      }),
+    ).toBe(0);
+  });
+
+  test("main skips deleted stressable tests", () => {
+    expect(
+      main(["bun", "stress-changed-tests.ts", "fixture-base"], {
+        changedPathsSince: () => ["tests/unit/deleted.test.ts"],
+        exists: () => false,
+      }),
+    ).toBe(0);
+  });
+
+  test("main reports failed stress runs", () => {
+    expect(
+      main(["bun", "stress-changed-tests.ts", "fixture-base"], {
+        changedPathsSince: () => ["tests/unit/fixture.test.ts"],
+        exists: () => true,
+        stressOne: () => false,
+      }),
+    ).toBe(1);
+  });
+
+  test("stressOne survives a stable test file and HEAD diff is fixture-independent", () => {
+    expect(changedPathsSince("HEAD")).toEqual([]);
+    expect(stressOne("tests/unit/check-format.test.ts")).toBe(true);
   });
 });
