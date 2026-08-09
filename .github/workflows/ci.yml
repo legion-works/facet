@@ -34,24 +34,26 @@ jobs:
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           unshare --map-current-user --user --net -- /bin/true
-      - name: A - gate-forgery alone, NO coverage
-        shell: bash
-        run: |
-          echo "::group::A"
-          timeout 200 bun test tests/acceptance/gate-forgery.test.ts; echo "A_EXIT=$?"
-          echo "::endgroup::"
-      - name: B - gate-forgery alone, WITH coverage
-        shell: bash
-        run: |
-          echo "::group::B"
-          timeout 200 bun test --coverage --coverage-reporter=lcov tests/acceptance/gate-forgery.test.ts; echo "B_EXIT=$?"
-          echo "::endgroup::"
+      # set +e: these are DIAGNOSTICS, not gates — each variant must record its
+      # own exit code and let the next one run. The `ci` job remains the gate.
       - name: C - full acceptance dir, NO coverage
         shell: bash
         run: |
-          echo "::group::C"
-          timeout 400 bun test tests/acceptance/; echo "C_EXIT=$?"
-          echo "::endgroup::"
+          set +e
+          timeout 400 bun test tests/acceptance/ 2>&1 | tail -25
+          echo "C_EXIT=${PIPESTATUS[0]}"
+      - name: D - egress then gate-forgery only (pairwise)
+        shell: bash
+        run: |
+          set +e
+          timeout 400 bun test tests/acceptance/egress.test.ts tests/acceptance/gate-forgery.test.ts 2>&1 | tail -25
+          echo "D_EXIT=${PIPESTATUS[0]}"
+      - name: E - adversarial then gate-forgery only (pairwise control)
+        shell: bash
+        run: |
+          set +e
+          timeout 400 bun test tests/acceptance/adversarial-render.test.ts tests/acceptance/gate-forgery.test.ts 2>&1 | tail -25
+          echo "E_EXIT=${PIPESTATUS[0]}"
 
   ci:
     runs-on: ubuntu-latest
