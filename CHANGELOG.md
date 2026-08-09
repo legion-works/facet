@@ -19,7 +19,7 @@
 * define facet v1 contract ([c75f9ef](https://github.com/legion-works/facet/commit/c75f9ef5414d92e243e40d4aba418550d51317f9))
 * expose facet health and budgets ([b0f2083](https://github.com/legion-works/facet/commit/b0f20836393ec7507b6374a4b17954c1640301b0))
 * persist revision-bound read-back evidence ([5e2967c](https://github.com/legion-works/facet/commit/5e2967c1545dd0b86a41e778857c6708f939d926))
-* render structured facet artifacts (mermaid tier1 sanitize blocker documented) ([424c34d](https://github.com/legion-works/facet/commit/424c34d7d420f92cce6bbec965db34abeb7424fc))
+* render structured facet artifacts ([424c34d](https://github.com/legion-works/facet/commit/424c34d7d420f92cce6bbec965db34abeb7424fc))
 * wire no-spawn service status to the cli ([4987510](https://github.com/legion-works/facet/commit/49875108aff04989bee41ba7cf29d98c679d991e))
 
 
@@ -35,7 +35,6 @@
 * exempt release-generated changelog from the format gate ([6fb842d](https://github.com/legion-works/facet/commit/6fb842d8e243bfb036d2f9dc83b8bd24779653e9))
 * harden service auth, locking, and lease lifecycle ([4552825](https://github.com/legion-works/facet/commit/4552825281907c9bcf580afdb4bb44499d6e243a))
 * harden store commit path and permissions ([f9058ac](https://github.com/legion-works/facet/commit/f9058ac0f9ea5447be241f85a0f76932cd2426b6))
-* isolate command transport connections ([762992a](https://github.com/legion-works/facet/commit/762992af51dd444251057868afefcc8ccb3fc700))
 * launch the gallery probe browser only when the live gate runs ([e3e55c5](https://github.com/legion-works/facet/commit/e3e55c5c5a39ebcf255a61a6ecc69c4d7c6980fc))
 * load the frame bootstrap by url so the gallery frame boots ([740c3f0](https://github.com/legion-works/facet/commit/740c3f0a96bed322663cfc8c838291b27edd045c))
 * mount the frame before awaiting load and read the nonce from the frame url ([fefe6cd](https://github.com/legion-works/facet/commit/fefe6cd97c73409752e21a675c1705bc5a163953))
@@ -45,7 +44,7 @@
 * remove query-lease acceptance and harden host guard ([ad0a7b7](https://github.com/legion-works/facet/commit/ad0a7b778b06c0569b748ac4c339024e4a62a1ab))
 * render legible artifacts — svg text labels, dark theme, csp-safe charts, fit to frame ([728fbf9](https://github.com/legion-works/facet/commit/728fbf9b2956241e8494a07c260c1e7ca444939d))
 * resolve service entrypoint absolute so the cli works from any cwd ([bdccc1b](https://github.com/legion-works/facet/commit/bdccc1b2e0ff227e8233307107c82f2d991b5aee))
-* retain bounded command timeout ([745d52f](https://github.com/legion-works/facet/commit/745d52fa11cfee8d965f17e89a54ce06d1cb256e))
+* bound cli command requests with a typed timeout instead of hanging ([745d52f](https://github.com/legion-works/facet/commit/745d52fa11cfee8d965f17e89a54ce06d1cb256e))
 * sanitize CSS url/expression in imported SVG ([1dd9bb3](https://github.com/legion-works/facet/commit/1dd9bb30eeb04e6c7296d414a767a9602405fb4d))
 * serve the frame document from a loopback url so the frozen csp applies ([1c22eab](https://github.com/legion-works/facet/commit/1c22eab06509b7bf35b90868b654cd02d59aec26))
 * serve the real gallery shell at /gallery (build-on-demand) + route coverage ([519c68e](https://github.com/legion-works/facet/commit/519c68eccef671bcbf407fcf1a651b45f2eb3465))
@@ -53,6 +52,5 @@
 * tighten facet v1 contract validation ([3723d50](https://github.com/legion-works/facet/commit/3723d507ec8a2276883d7f819ac8ea262c5aa2a3))
 * unblock mermaid tier1 render so acceptance gates pass ([ed4391b](https://github.com/legion-works/facet/commit/ed4391bdd9d2767d80fa1062a80c1d7dd715b7cd))
 * use invalid_request for cli input validation errors ([e53b5a0](https://github.com/legion-works/facet/commit/e53b5a0988fed062980c3b0c9c35215215e06b12))
-* use node:http for cli command transport ([374f2e9](https://github.com/legion-works/facet/commit/374f2e96e5a2bb7844d2186aab43b2832e2be008))
 * use umask 0o177 in evidence dir test to actually trigger it ([adba2a0](https://github.com/legion-works/facet/commit/adba2a0f6fe9432f4804eeca8d63cdc268cd8745))
 * whitelist url(#fragment) in svg css sanitizer ([6595a1c](https://github.com/legion-works/facet/commit/6595a1c1a27d12501a5ea87988b667547be41072))
