@@ -189,6 +189,48 @@ describe("boundary check — gallery frame zod guard", () => {
   });
 });
 
+describe("boundary check — allowlist fails closed on unlisted packages", () => {
+  // The guard used to be a DENYLIST, which could only reject packages someone
+  // had remembered to list. Proven against the real repo before this changed:
+  // `src/service/` importing `fast-xml-parser` — an XML parser, inside the
+  // component defined by not parsing — reported "service boundary clean".
+  // These tests pin the inverted direction: unknown external = rejected.
+  test("an unlisted parser package is rejected even though no denylist names it", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "p.ts", `import { XMLParser } from "fast-xml-parser";\n`);
+    const v = runBoundaryCheck(root);
+    expect(v).toHaveLength(1);
+    expect(v[0]?.reason).toContain("not on the service allowlist");
+  });
+
+  test("a scoped package outside the allowlist is rejected", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "p.ts", `import x from "@scope/renderer";\n`);
+    expect(runBoundaryCheck(root)).toHaveLength(1);
+  });
+
+  test("a subpath of an allowed package stays allowed", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "p.ts", `import { z } from "zod/v4";\n`);
+    expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
+
+  test("prose in comments is not scanned as an import specifier", () => {
+    // A doc comment reading `distinguishes "no host" from "wrong host"` matched
+    // the re-export regex and produced a false positive the moment the check
+    // began failing closed. A guard that cries wolf gets overridden.
+    const root = makeRoot();
+    writeServiceFile(
+      root,
+      "c.ts",
+      `/**\n * Distinguishes "no host" from "wrong host" \u2014 both fail closed.\n */\n` +
+        `// see the note above, copied from "some-package"\n` +
+        `import { Database } from "bun:sqlite";\n`,
+    );
+    expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
+});
+
 describe("boundary check — clean surface", () => {
   test("the repository entrypoint reports a clean boundary", () => {
     expect(main()).toBe(0);

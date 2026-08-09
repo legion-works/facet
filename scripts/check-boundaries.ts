@@ -18,6 +18,32 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
+/**
+ * External packages `src/service/**` MAY import. This is an ALLOWLIST, and the
+ * direction is the point.
+ *
+ * A denylist of known renderers can only reject what someone remembered to
+ * list, so every dependency added after the list was written escapes it
+ * silently — and the guard reporting "clean" is precisely why nobody re-checks.
+ * Proven, not theorised: with the old denylist in place, `src/service/` could
+ * `import { XMLParser } from "fast-xml-parser"` — a real XML parser, in the
+ * component whose defining rule is that it does not parse — and the guard
+ * printed "service boundary clean" and exited 0.
+ *
+ * Inverting it makes the check enforce the PROPERTY (the service touches only
+ * bytes, storage, and crypto) instead of a snapshot of one afternoon's package
+ * list. A new dependency now fails closed and has to be justified here.
+ */
+export const SERVICE_ALLOWED_PACKAGES = new Set(["bun:sqlite", "zod"]);
+
+/** Node builtins the service may use — filesystem, crypto, path, process. */
+export const SERVICE_ALLOWED_BUILTIN_PREFIX = "node:";
+
+/**
+ * Retained for the explicit-diagnostic path and the unit test: these names get
+ * a targeted "forbidden package" message rather than the generic allowlist
+ * rejection. Being absent from this set no longer implies a package is allowed.
+ */
 export const FORBIDDEN_PACKAGES = new Set([
   "marked",
   "mermaid",
@@ -131,9 +157,26 @@ function resolveWorkspaceTarget(specifier: string, file: string, repoRoot: strin
   return null;
 }
 
+function isRelativeSpecifier(specifier: string): boolean {
+  return specifier.startsWith("./") || specifier.startsWith("../") || specifier.startsWith("/");
+}
+
 function checkServiceSpecifier(specifier: string, file: string, repoRoot: string): string | null {
   if (isForbiddenPackage(specifier)) {
     return `forbidden package import: ${specifier}`;
+  }
+  // Fail CLOSED on anything external that is not explicitly allowed. Relative
+  // specifiers fall through to the workspace check below, which owns them.
+  if (!isRelativeSpecifier(specifier)) {
+    const isBuiltin = specifier.startsWith(SERVICE_ALLOWED_BUILTIN_PREFIX);
+    if (!isBuiltin && !SERVICE_ALLOWED_PACKAGES.has(specifier)) {
+      const base = specifier.startsWith("@")
+        ? specifier.split("/").slice(0, 2).join("/")
+        : (specifier.split("/")[0] ?? specifier);
+      if (!SERVICE_ALLOWED_PACKAGES.has(base)) {
+        return `package not on the service allowlist: ${specifier} (the service is byte-dumb \u2014 add it to SERVICE_ALLOWED_PACKAGES only if it neither renders nor parses)`;
+      }
+    }
   }
   const workspaceHit = resolveWorkspaceTarget(specifier, file, repoRoot);
   if (workspaceHit !== null) {
@@ -149,7 +192,24 @@ function checkFrameSpecifier(specifier: string): string | null {
   return null;
 }
 
-function collectSpecifiers(line: string): string[] {
+/**
+ * Strip line comments and the leading `*` of a block-comment body before
+ * scanning. Prose routinely contains `from "..."` (e.g. a doc comment reading
+ * `distinguishes "no host" from "wrong host"`), which the re-export regex reads
+ * as an import specifier. The old denylist hid this — prose never happens to
+ * name `mermaid` — so the weakness only surfaced when the check was inverted to
+ * fail closed. A scanner that reads comments as code is a false-positive
+ * generator, and a guard people learn to override is worse than no guard.
+ */
+function stripComments(line: string): string {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return "";
+  const lineComment = line.indexOf("//");
+  return lineComment === -1 ? line : line.slice(0, lineComment);
+}
+
+function collectSpecifiers(rawLine: string): string[] {
+  const line = stripComments(rawLine);
   const found = new Set<string>();
   IMPORT_SPECIFIER_RE.lastIndex = 0;
   for (const match of line.matchAll(IMPORT_SPECIFIER_RE)) {
