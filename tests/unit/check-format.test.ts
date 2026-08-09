@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 
-import { FORMAT_EXTENSIONS, runFormatCheck, selectFormatPaths } from "../../scripts/check-format";
+import {
+  FORMAT_EXTENSIONS,
+  FORMATTER_EXECUTABLE,
+  runFormatCheck,
+  selectFormatPaths,
+} from "../../scripts/check-format";
 
 describe("format surface", () => {
   test("includes every oxfmt-supported extension used by the repo", () => {
@@ -50,7 +56,14 @@ describe("format surface", () => {
     ).toBe(0);
   });
 
-  test("invokes the installed formatter for an explicit repo file", () => {
-    expect(runFormatCheck(["src/gallery-web/index.html"])).toBe(0);
+  test("invokes the project formatter without relying on a global PATH", () => {
+    expect(FORMATTER_EXECUTABLE).toBe(resolve("node_modules/.bin/oxfmt"));
+    const path = process.env["PATH"];
+    process.env["PATH"] = "/nonexistent";
+    try {
+      expect(runFormatCheck(["src/gallery-web/index.html"])).toBe(0);
+    } finally {
+      process.env["PATH"] = path;
+    }
   });
 });

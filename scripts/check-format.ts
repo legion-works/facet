@@ -1,6 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { extname } from "node:path";
+import { extname, resolve } from "node:path";
+
+export const FORMATTER_EXECUTABLE = resolve("node_modules/.bin/oxfmt");
 
 export const FORMAT_EXTENSIONS = new Set([
   ".css",
@@ -40,7 +42,8 @@ const defaultDeps: FormatCheckDeps = {
   trackedPaths: () =>
     execFileSync("git", ["ls-files", "-z"]).toString().split("\0").filter(Boolean),
   pathExists: existsSync,
-  invoke: (paths) => spawnSync("oxfmt", ["--check", ...paths], { stdio: "inherit" }).status ?? 1,
+  invoke: (paths) =>
+    spawnSync(FORMATTER_EXECUTABLE, ["--check", ...paths], { stdio: "inherit" }).status ?? 1,
 };
 
 export function runFormatCheck(
