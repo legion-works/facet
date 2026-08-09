@@ -43,6 +43,11 @@ The pipe transport is required because WebSocket CDP cannot connect inside
 a network namespace where loopback is down — the pipe survives that
 configuration, which is the default for Facet's egress-isolated runs.
 
+Amendment (2026-08-09): the active D3 pin is `chrome-headless-shell`
+151.0.7922.77; the release manifest and CI cache/install keys were updated
+with a verified Chrome for Testing archive. The pinning and driver-isolation
+decisions above remain unchanged.
+
 ## D4: Operator capability provisioning
 
 Decision: promotion uses a separate promote-capability token, distinct from

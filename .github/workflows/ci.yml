@@ -222,9 +222,9 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cache/puppeteer
-          key: puppeteer-${{ runner.os }}-${{ runner.arch }}-chrome-headless-shell-131.0.6778.204
+          key: puppeteer-${{ runner.os }}-${{ runner.arch }}-chrome-headless-shell-151.0.7922.77
       - name: install pinned chrome-headless-shell
-        run: bunx --bun puppeteer browsers install chrome-headless-shell@131.0.6778.204
+        run: bunx --bun puppeteer browsers install chrome-headless-shell@151.0.7922.77
       - name: permit Chromium nested user namespaces
         shell: bash
         run: |
@@ -267,10 +267,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cache/puppeteer
-          key: puppeteer-${{ runner.os }}-${{ runner.arch }}-chrome-headless-shell-131.0.6778.204
+          key: puppeteer-${{ runner.os }}-${{ runner.arch }}-chrome-headless-shell-151.0.7922.77
       - id: browser-install
         name: install pinned chrome-headless-shell
-        run: bunx --bun puppeteer browsers install chrome-headless-shell@131.0.6778.204
+        run: bunx --bun puppeteer browsers install chrome-headless-shell@151.0.7922.77
       - id: sandbox
         name: permit Chromium nested user namespaces
         shell: bash

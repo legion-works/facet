@@ -298,7 +298,7 @@ export async function dispatch(
       if (deps.tier1Runner !== undefined) {
         const tier1Input: Tier1Input = Tier1InputSchema.parse({
           ...tier0Input,
-          launcherVersion: "131.0.6778.204",
+          launcherVersion: "151.0.7922.77",
           networkNamespace: "facet-tier1-egress-isolated",
         });
         const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input, command.artifactId);

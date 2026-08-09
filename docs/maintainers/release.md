@@ -2,7 +2,7 @@
 
 Facet releases are driven by Conventional Commits through release-please. The workflow updates `package.json`, changelog, tag, and GitHub release metadata; maintainers merge the generated release pull request rather than editing versions by hand.
 
-Release assets include the source archive, the built CLI and gallery, and a browser manifest for the frozen `chrome-headless-shell` version `131.0.6778.204`. The manifest records the exact Chrome for Testing URL and the SHA-256 computed from that pinned archive. A release must never download an unversioned or latest browser.
+Release assets include the source archive, the built CLI and gallery, and a browser manifest for the frozen `chrome-headless-shell` version `151.0.7922.77`. The manifest records the exact Chrome for Testing URL and the SHA-256 computed from that pinned archive. A release must never download an unversioned or latest browser.
 
 ## Required checks
 

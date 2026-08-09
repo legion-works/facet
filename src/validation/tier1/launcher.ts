@@ -105,7 +105,7 @@ export function resolveNetnsWrapper(overrides: { readonly wrapperPath?: string }
  *
  * `--single-process --no-zygote` are NOT used. The Phase-0 fidelity
  * spike relied on them to bound the process tree, but the pinned
- * 131.0.6778.204 build aborts the CDP target during `newPage()` when
+ * 151.0.7922.77 build aborts the CDP target during `newPage()` when
  * those flags are present (verified empirically against the wrapper).
  * The multi-process model is fine inside an isolated verifier run
  * because every renderer lives under the same netns pid and exits

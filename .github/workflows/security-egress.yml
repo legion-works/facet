@@ -32,9 +32,9 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.cache/puppeteer
-          key: puppeteer-chrome-headless-shell-131.0.6778.204
+          key: puppeteer-chrome-headless-shell-151.0.7922.77
       - name: install pinned chrome-headless-shell
-        run: bunx --bun puppeteer browsers install chrome-headless-shell@131.0.6778.204
+        run: bunx --bun puppeteer browsers install chrome-headless-shell@151.0.7922.77
       - name: detect relevant security paths
         id: paths
         shell: bash

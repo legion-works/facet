@@ -14,7 +14,7 @@
 # demonstrated that 12 of 12 attempted channels block under this
 # wrapper on the same chromium-build family.
 #
-# Sandbox-flag trade (pinned chrome-headless-shell 131.0.6778.204):
+# Sandbox-flag trade (pinned chrome-headless-shell 151.0.7922.77):
 #
 #   We DELIBERATELY keep Chromium's browser sandbox (`--no-sandbox` is
 #   NOT added). The fidelity spike ran with `--no-sandbox` because it
@@ -42,7 +42,7 @@ if [ -z "${FACET_TIER1_BROWSER_CACHE:-}" ]; then
 fi
 
 if [ -z "${FACET_TIER1_PINNED_VERSION:-}" ]; then
-  FACET_TIER1_PINNED_VERSION="131.0.6778.204"
+  FACET_TIER1_PINNED_VERSION="151.0.7922.77"
 fi
 
 # Resolve the pinned shell binary inside the cache. The wrapper does

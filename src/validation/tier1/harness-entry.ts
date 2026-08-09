@@ -139,7 +139,7 @@ export function startTier1Harness(registry: RendererRegistry): void {
       controlPost = control.postMessage.bind(control) as (event: ControlEvent) => void;
       // MessagePort.onmessage assignment is required over
       // addEventListener("message"): the pinned chrome-headless-shell
-      // 131.0.6778.204 silently drops events registered via
+      // 151.0.7922.77 silently drops events registered via
       // addEventListener, so the harness handshake would never fire.
       // oxlint-disable-next-line unicorn/prefer-add-event-listener
       ingress.onmessage = async (sourceEvent: MessageEvent) => {

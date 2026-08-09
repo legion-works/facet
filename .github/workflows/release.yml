@@ -45,9 +45,9 @@ jobs:
           tar -czf "release-assets/facet-${RELEASE_TAG}-source.tar.gz" --exclude=.git --exclude=release-assets .
           tar -czf "release-assets/facet-${RELEASE_TAG}-gallery.tar.gz" dist/gallery
           curl -fsSL -o release-assets/browser/chrome-headless-shell-linux64.zip \
-            https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.204/linux64/chrome-headless-shell-linux64.zip
+             https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.77/linux64/chrome-headless-shell-linux64.zip
           sha256=$(sha256sum release-assets/browser/chrome-headless-shell-linux64.zip | cut -d' ' -f1)
-          printf '{"version":"131.0.6778.204","platform":"linux64","url":"https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.204/linux64/chrome-headless-shell-linux64.zip","sha256":"%s"}\n' "$sha256" > release-assets/browser/chrome-headless-shell-manifest.json
+           printf '{"version":"151.0.7922.77","platform":"linux64","url":"https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.77/linux64/chrome-headless-shell-linux64.zip","sha256":"%s"}\n' "$sha256" > release-assets/browser/chrome-headless-shell-manifest.json
       - name: upload release assets
         env:
           GH_TOKEN: ${{ github.token }}

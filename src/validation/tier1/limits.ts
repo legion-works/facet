@@ -20,7 +20,7 @@ export const TIER1_TIMEOUT_MS = 60_000;
  * a custom resolver so the path does not become load-bearing on a
  * specific dev workstation.
  */
-export const TIER1_PINNED_VERSION = "131.0.6778.204";
+export const TIER1_PINNED_VERSION = "151.0.7922.77";
 
 /** Network namespace label recorded with each Tier 1 run. */
 export const TIER1_NETWORK_NAMESPACE = "facet-tier1-egress-isolated";
