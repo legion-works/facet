@@ -31,9 +31,15 @@ publish→revision-committed p95 ≤200 ms (validation-inclusive product commitm
 revision-committed→SSE-delivered p95 ≤25 ms (notification regression detector),
 publish→visible p95 <300 ms (product commitment), cold read-back max-of-5 <1500 ms
 (stable-machine product commitment), and browser exit max-of-20 ≤100 ms (stable-machine
-regression detector). CI enforces browser-free budgets and records browser-dependent results;
-stable local runs additionally enforce cold read-back and browser exit. Publish→visible remains
-recorded-not-enforced until its measured p95 is below the commitment with headroom.
+regression detector). Enforcement splits on HOST SENSITIVITY, not on whether a browser is
+involved: budgets whose wall-clock is dominated by process spawn or browser launch are
+enforced only on a stable machine and recorded in CI, because a 2-core hosted runner measures
+publish→revision-committed at 439 ms against 151-159 ms on a 16-core host, and cold read-back
+at 2919 ms against 833 ms. Gating those in CI would gate Facet on runner size rather than on
+its own regressions. CI enforces the host-invariant budgets — RSS absolute and delta, idle CPU,
+dormancy, SSE delivery (1.00 ms on both hosts, since no spawn sits in that path), and zombie
+cleanup. Publish→visible remains recorded-not-enforced everywhere until its measured p95 is
+below the commitment with headroom.
 • Code-split the 8.55 MB fresh-frame bootstrap bundle. It accounts for about 108 ms (36%) of
 publish→visible p95 and is the named blocker to enforcing the 300 ms commitment.
 

@@ -82,9 +82,21 @@ regression cannot pass behind validation time. Publish→visible is likewise sta
 frame built ~156 ms, 8.55 MB bootstrap loaded/parsed ~258 ms, and visible ~300 ms. Fresh-frame bundle
 load and parse accounts for about 108 ms (36%) and is the named remediation before enforcement.
 
-CI enforces browser-free budgets. Hosted-runner browser measurements are recorded but never labeled
-as passing gates; stable local runs enforce cold read-back and browser exit. Publish→visible remains
-recorded on every machine until code-splitting creates enough headroom for a credible non-flapping gate.
+Enforcement splits on host sensitivity rather than on browser involvement. The first CI run of the
+recalibrated gate proved why: `publish → revision committed p95` measured 439 ms on a 2-core hosted
+runner against 151-159 ms on the 16-core development host, and cold read-back measured 2919 ms
+against 833 ms. Both are dominated by process spawn — Tier 0's netns subprocess and Chromium's
+launch — which is what a small shared runner is worst at, so gating them in CI would gate Facet on
+runner size instead of on its own regressions. Those budgets are therefore enforced only on a stable
+machine and recorded in CI. CI enforces the host-invariant budgets: RSS absolute and delta, idle CPU,
+dormancy, `revision committed → SSE delivered` (1.00 ms on BOTH hosts, because no spawn sits in that
+path — the clearest evidence the split is real), and zombie cleanup. Publish→visible remains recorded
+on every machine until code-splitting creates enough headroom for a credible non-flapping gate.
+
+Browser measurements on the pinned runtime additionally hit oven-sh/bun#37230: the harness wedges
+2/2 on Bun 1.3.14 and completes 1/1 clean on 1.4.0-canary. A wedge records UNMEASURED instead of
+aborting the run, so an upstream runtime defect cannot masquerade as a Facet regression. Expect those
+discards to reach zero after the 1.4.0 bump; if they do not, a second unknown defect exists.
 
 ## Roadmap freeze
 
