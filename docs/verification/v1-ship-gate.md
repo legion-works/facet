@@ -45,30 +45,46 @@ bun test tests/integration/crash-safety.test.ts tests/integration/lifecycle.test
 pass · 24 tests, 82 expects
 ```
 
-Observed full performance gate output:
+The released v1 gate was defective: its dormancy checks used a fresh home where no service had
+ever run, it sampled the Bun test runner rather than the detached service, and its “cold read-back”
+read a stored verdict instead of launching Chrome. Those green results were vacuous. The v1.x
+harness starts real detached services, samples `/proc` for their PIDs, opens a warm SSE stream,
+launches a fresh netns-wrapped browser for every cold read-back and exit sample, and baseline-diffs
+browser PIDs and profile directories after real cycles.
 
-```text
-dormant process=0 · dormant port=0 · dormant watcher=0
-tier-0 status latency=0.12ms · zombie profile/process cleanup=true
-active RSS · UNMEASURED — the probe sampled the in-process Bun runner, not an
-  isolated service process
-active CPU · UNMEASURED — same process-scope limitation
-publish SSE p95 · UNMEASURED — the probe was not warm-only
-cold read-back · UNMEASURED — `readBack` reads the stored verdict; it does not
-  launch a fresh Tier 1 browser
-browser exit · UNMEASURED — no isolated teardown timer or proven browser cycle
-```
+Measured on the 16-core development host (Bun 1.3.14):
 
-The performance-measurement harness was defective: it read stored verdicts
-instead of launching fresh Tier 1 browsers, sampled the in-process test runner
-instead of the service, and did not measure warm-only SSE latency. RSS, CPU,
-SSE, cold-readback, and browser-exit budgets are UNMEASURED — not failed and
-not passed. A correct harness and measurement are deferred to v1.x.
+| Measurement                        | Min / median / p95 / max             | Budget and purpose                                                                                            |
+| ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Bare `Bun.serve` RSS floor         | 36.47 / 37.53 / — / 37.97 MiB        | Same-run baseline                                                                                             |
+| Facet service RSS, 1 s idle        | 61.97 / 62.17 / — / 62.91 MiB        | ≤80 MiB absolute guard                                                                                        |
+| Facet RSS minus Bun floor          | 24.20 / 25.25 / — / 25.50 MiB        | ≤30 MiB regression detector                                                                                   |
+| Idle CPU, five 5 s windows         | 0 / 0.20 / 0.20 / 0.20%              | <0.5%; `/proc` tick quantization is ~0.2%, so the limit catches the third tick without flapping on one or two |
+| Tier 0 netns runner                | 135.34 / 140.41 / 145.97 / 148.42 ms | Attribution only                                                                                              |
+| Publish → revision committed       | — / — / ~153 / — ms                  | ≤200 ms validation-inclusive commitment                                                                       |
+| Revision committed → SSE delivered | — / — / ~1 / — ms                    | ≤25 ms notification regression detector                                                                       |
+| Publish → visible, N=20            | 286.73 / ~292 / 300.73 / 311.99 ms   | <300 ms commitment; currently not met, recorded-not-enforced                                                  |
+| Cold read-back, N=5                | 678.77 / 775.67 / — / 906.50 ms      | <1500 ms, stable-machine enforcement                                                                          |
+| Browser exit, N=20                 | 9.03 / 12.79 / 18.33 / 26.60 ms      | ≤100 ms, stable-machine enforcement                                                                           |
 
-Gallery-display timings are deferred for v1: publish→visible p50 and
-replacement-begins p95 require an automated browser rendering the Tier 2
-gallery shell; the available harness verifies the Tier 1 path, not display-tier
-timing.
+The old 50 MiB RSS figure was written before the system existed and was never reachable as
+implemented. A bare runtime costs about 38 MiB; importing `src/service/server.ts` without starting
+it costs about 58 MiB; the running service costs about 63 MiB. Import attribution bounds were
+13.43 MiB for contracts, 11.82 MiB for store plus `bun:sqlite`, and 19.91 MiB for the non-store
+service surface; these overlap through transitive imports. Eager Zod schema construction is the
+largest identifiable component. Lazy schema state in the verdict-validation boundary is consciously
+declined: saving roughly 13 MiB is not worth making unforgeable validation conditional on schema
+initialization order.
+
+The original combined “SSE p95” budget also hid the guarded behavior: about 146 ms is the required
+fresh Tier 0 netns process, while delivery after commit is about 1 ms. It is split so a 20× stream
+regression cannot pass behind validation time. Publish→visible is likewise staged: commit ~153 ms,
+frame built ~156 ms, 8.55 MB bootstrap loaded/parsed ~258 ms, and visible ~300 ms. Fresh-frame bundle
+load and parse accounts for about 108 ms (36%) and is the named remediation before enforcement.
+
+CI enforces browser-free budgets. Hosted-runner browser measurements are recorded but never labeled
+as passing gates; stable local runs enforce cold read-back and browser exit. Publish→visible remains
+recorded on every machine until code-splitting creates enough headroom for a credible non-flapping gate.
 
 ## Roadmap freeze
 

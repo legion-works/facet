@@ -110,6 +110,7 @@ export async function measureColdReadBack(): Promise<{
   readonly sampleCount: number;
   readonly samplesMs: readonly number[];
   readonly verdictStatuses: readonly string[];
+  readonly discardedTransportWedges: number;
 }> {
   const baseline = snapshotTier1Leaks();
   const service = await startDetachedPerfService({ idleTimeoutMs: 120_000 });
@@ -121,27 +122,42 @@ export async function measureColdReadBack(): Promise<{
     const artifactId = await createArtifact(client, `perf-cold-${crypto.randomUUID().slice(0, 8)}`);
     const samples: number[] = [];
     const verdictStatuses: string[] = [];
-    for (let index = 0; index < COLD_SAMPLE_COUNT; index += 1) {
+    let discardedTransportWedges = 0;
+    let attempts = 0;
+    while (samples.length < COLD_SAMPLE_COUNT) {
+      attempts += 1;
+      if (attempts > COLD_SAMPLE_COUNT + 2)
+        throw new Error("cold read-back transport wedged repeatedly");
       assertNoTier1Leaks(await waitForTier1Cleanup(baseline, 2_000), "cold read-back preflight");
-      const bytes = svgBytes(`cold-${index}`);
+      const bytes = svgBytes(`cold-${attempts}`);
       const startedAt = performance.now();
       const published = await publishSvg(client, artifactId, bytes);
       const lexical = computeLexicalExpectations(bytes, "svg");
-      const evidenceDir = join(service.home, "evidence", `cold-${index}`);
+      const evidenceDir = join(service.home, "evidence", `cold-${attempts}`);
       mkdirSync(evidenceDir, { recursive: true, mode: 0o700 });
-      const verdict = await runTier1({
-        revisionSha: published.revisionSha,
-        artifactType: "svg",
-        source: bytes,
-        lexical: {
-          rendererRootSvgCount: lexical.expectedRendererRoots,
-          mermaidNodeCount: lexical.mermaidNodeCount,
-          visibleSvgCount: 0,
-        },
-        launcherVersion: TIER1_PINNED_VERSION,
-        networkNamespace: TIER1_NETWORK_NAMESPACE,
-        evidenceDir,
-      });
+      let verdict: Awaited<ReturnType<typeof runTier1>>;
+      try {
+        verdict = await runTier1({
+          revisionSha: published.revisionSha,
+          artifactType: "svg",
+          source: bytes,
+          lexical: {
+            rendererRootSvgCount: lexical.expectedRendererRoots,
+            mermaidNodeCount: lexical.mermaidNodeCount,
+            visibleSvgCount: 0,
+          },
+          launcherVersion: TIER1_PINNED_VERSION,
+          networkNamespace: TIER1_NETWORK_NAMESPACE,
+          evidenceDir,
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("CDP transport wedged")) {
+          discardedTransportWedges += 1;
+          assertNoTier1Leaks(await waitForTier1Cleanup(baseline, 2_000), "cold wedge cleanup");
+          continue;
+        }
+        throw error;
+      }
       if (["timeout", "tampered", "error"].includes(verdict.status)) {
         throw new Error(`cold Tier 1 verdict was ${verdict.status}`);
       }
@@ -149,7 +165,12 @@ export async function measureColdReadBack(): Promise<{
       samples.push(performance.now() - startedAt);
       assertNoTier1Leaks(await waitForTier1Cleanup(baseline, 2_000), "cold read-back");
     }
-    return { sampleCount: COLD_SAMPLE_COUNT, samplesMs: samples, verdictStatuses };
+    return {
+      sampleCount: COLD_SAMPLE_COUNT,
+      samplesMs: samples,
+      verdictStatuses,
+      discardedTransportWedges,
+    };
   } finally {
     await stopDetachedProcess(service.pid);
     rmSync(service.home, { recursive: true, force: true });

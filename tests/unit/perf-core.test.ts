@@ -7,6 +7,7 @@ import {
   parseProcStatCpuTicks,
   summarize,
 } from "../../scripts/perf/core";
+import { PERF_BUDGETS, enforcementForPolicy } from "../../scripts/perf/budgets";
 
 describe("performance gate statistics", () => {
   test("nearest-rank p95 over 40 samples selects the 38th ordered value", () => {
@@ -27,15 +28,22 @@ describe("performance gate statistics", () => {
 
 describe("performance gate mutation checks", () => {
   test.each([
-    ["absolute RSS", 80.01, 80, "at-most"],
-    ["RSS delta", 30.01, 30, "at-most"],
-    ["idle CPU", 0.5, 0.5, "less-than"],
-    ["SSE p95", 100.01, 100, "at-most"],
-    ["publish visible", 300, 300, "less-than"],
-    ["cold read-back", 3_000, 3_000, "less-than"],
-    ["browser exit", 2_000.01, 2_000, "at-most"],
-  ] as const)("%s turns red when the guarded budget is broken", (_name, observed, limit, mode) => {
-    expect(assessLimit(observed, limit, mode)).toBe("fail");
+    ["absolute RSS", 80.01, PERF_BUDGETS.rssAbsolute],
+    ["RSS delta", 30.01, PERF_BUDGETS.rssDelta],
+    ["idle CPU", 0.5, PERF_BUDGETS.idleCpu],
+    ["publish commit", 200.01, PERF_BUDGETS.publishCommitted],
+    ["SSE delivery", 25.01, PERF_BUDGETS.sseDelivery],
+    ["publish visible", 300, PERF_BUDGETS.publishVisible],
+    ["cold read-back", 1_500, PERF_BUDGETS.coldReadBack],
+    ["browser exit", 100.01, PERF_BUDGETS.browserExit],
+  ] as const)("%s turns red when the guarded budget is broken", (_name, observed, budget) => {
+    expect(assessLimit(observed, budget.limit, budget.mode)).toBe("fail");
+  });
+
+  test("CI enforces browser-free budgets and records browser-dependent budgets", () => {
+    expect(enforcementForPolicy("always", "ci")).toBe(true);
+    expect(enforcementForPolicy("stable", "ci")).toBe(false);
+    expect(enforcementForPolicy("record-only", "ci")).toBe(false);
   });
 
   test("cleanup turns red for every leaked resource class", () => {

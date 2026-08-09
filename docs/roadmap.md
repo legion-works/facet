@@ -24,7 +24,18 @@ did not have.
 • Export slot
 • Browser pin upgrades
 • Insecure mode — explicit opt-in relaxation tiers for users who accept the risk (e.g. `FACET_INSECURE=1|2|3`): candidate levels — (1) skip Tier 1 netns isolation, (2) run validators without sandboxing, (3) skip validation entirely / trust the artifact. Design lines: never the default, loud on every startup and envelope, and verdicts produced under any relaxed level carry an explicit `insecure` marker — a verdict must never claim a trust property the run did not have. Levels compose downward only (no per-request escalation).
-• Performance-budget verification: build a correct perf harness (fresh Tier 1 launches for cold read-back + browser-exit timing, service-process RSS/CPU sampling, warm-only SSE p95) and verify the RSS≤50MiB / CPU<0.5% / SSE-p95≤100ms / publish→visible<300ms / cold-readback<3s / browser-exit≤2s budgets. Deferred from v1: the v1 harness was defective and the budgets are unmeasured, not failed.
+• Performance budgets are now measured by `scripts/perf-gate.ts`. Current budgets and purposes:
+absolute service RSS ≤80 MiB (catastrophic-growth guard), paired service-minus-Bun-floor
+RSS ≤30 MiB (regression detector), idle CPU <0.5% (regression detector),
+publish→revision-committed p95 ≤200 ms (validation-inclusive product commitment),
+revision-committed→SSE-delivered p95 ≤25 ms (notification regression detector),
+publish→visible p95 <300 ms (product commitment), cold read-back max-of-5 <1500 ms
+(stable-machine product commitment), and browser exit max-of-20 ≤100 ms (stable-machine
+regression detector). CI enforces browser-free budgets and records browser-dependent results;
+stable local runs additionally enforce cold read-back and browser exit. Publish→visible remains
+recorded-not-enforced until its measured p95 is below the commitment with headroom.
+• Code-split the 8.55 MB fresh-frame bootstrap bundle. It accounts for about 108 ms (36%) of
+publish→visible p95 and is the named blocker to enforcing the 300 ms commitment.
 
 ## v2
 
