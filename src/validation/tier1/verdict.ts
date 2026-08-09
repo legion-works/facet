@@ -79,11 +79,13 @@ export interface LifecycleSummary {
  *   4. Channel availability: both shim AND isolated missing → `probe_only`
  *   5. Channel availability: only shim missing → `probe_only`
  *   6. Channel availability: only isolated missing → `shim_only`
- *   7. Layout observability: protocol visibleSvgCount === 0 AND every
+ *   7. Opaque content: expected > 0 but protocol observed 0 → `error`
+ *   8. Opaque content: protocol observed > 0 → `partial:opaque_content`
+ *   9. Layout observability: protocol visibleSvgCount === 0 AND every
  *      viewBox is zeroed → `partial:layout_unverified`
- *   8. Counts: protocol discriminativeErrors non-empty → `error`
- *   9. Counts: protocol observed !== expected lexical → `error`
- *  10. Otherwise → `ok`
+ *  10. Counts: protocol discriminativeErrors non-empty → `error`
+ *  11. Counts: protocol observed !== expected lexical → `error`
+ *  12. Otherwise → `ok`
  *
  * Tampered wins over partial: a forge attempt that hides layout
  * observability (no viewBoxes) is still a forge attempt.
@@ -107,6 +109,11 @@ export function deriveVerdict(
   if (!shimAvailable && !isolatedAvailable) return "probe_only";
   if (!shimAvailable) return "probe_only";
   if (!isolatedAvailable) return "shim_only";
+
+  if (expected.opaqueRegionCount > 0 && protocolObservation.opaqueRegionCount === 0) {
+    return "error";
+  }
+  if (protocolObservation.opaqueRegionCount > 0) return "partial:opaque_content";
 
   if (!layoutObservable(protocolObservation)) return "partial:layout_unverified";
 
@@ -160,6 +167,9 @@ function countsDiffer(left: ProtocolObservation, right: ProtocolObservation): bo
 function matchesExpected(expected: LexicalCounters, protocol: ProtocolObservation): boolean {
   if (expected.rendererRootSvgCount !== protocol.rendererRootSvgCount) return false;
   if (expected.mermaidNodeCount !== protocol.mermaidNodeCount) return false;
+  // Opaque observations above zero return partial:opaque_content before this
+  // comparison; this check covers the ordinary expected=0 / observed=0 path.
+  if (expected.opaqueRegionCount !== protocol.opaqueRegionCount) return false;
   // visibleSvgCount is a protocol-only observation; the lexical
   // counter for markdown/mermaid sources is 0 (the dispatcher does
   // not count it). The verdict cannot punish the renderer for

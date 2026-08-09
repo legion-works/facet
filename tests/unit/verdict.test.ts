@@ -173,6 +173,95 @@ describe("deriveVerdict — partial channel failures", () => {
     const status = deriveVerdict(lex(), protocol(), null, null, lifecycle());
     expect(status).toBe("probe_only");
   });
+
+  test("channel-missing statuses still win over opaque-content cap", () => {
+    expect(
+      deriveVerdict(
+        lex(),
+        protocol({ opaqueRegionCount: 1 }),
+        null,
+        shim({ opaqueRegionCount: 1 }),
+        lifecycle(),
+      ),
+    ).toBe("shim_only");
+    expect(deriveVerdict(lex(), protocol({ opaqueRegionCount: 1 }), null, null, lifecycle())).toBe(
+      "probe_only",
+    );
+  });
+});
+
+describe("deriveVerdict — opaque content", () => {
+  test("declared-canvas-healthy: expected opaque 1 and observed opaque 1 → partial:opaque_content", () => {
+    expect(
+      deriveVerdict(
+        lex({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 1, visibleSvgCount: 0, viewBoxes: [] }),
+        protocol({ opaqueRegionCount: 1, visibleSvgCount: 0, viewBoxes: [] }),
+        shim({ opaqueRegionCount: 1, visibleSvgCount: 0 }),
+        lifecycle(),
+      ),
+    ).toBe("partial:opaque_content");
+  });
+
+  test("undeclared-smuggled: observed opaque 1 caps mismatched ordinary counts → partial:opaque_content", () => {
+    expect(
+      deriveVerdict(
+        lex({ opaqueRegionCount: 0 }),
+        protocol({ opaqueRegionCount: 1, rendererRootSvgCount: 0, mermaidNodeCount: 0 }),
+        protocol({ opaqueRegionCount: 1, rendererRootSvgCount: 0, mermaidNodeCount: 0 }),
+        shim({ opaqueRegionCount: 1, rendererRootSvgCount: 0, mermaidNodeCount: 0 }),
+        lifecycle(),
+      ),
+    ).toBe("partial:opaque_content");
+  });
+
+  test("declared-canvas-zero-rendered: expected opaque 1 and observed opaque 0 → error", () => {
+    expect(
+      deriveVerdict(
+        lex({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 0 }),
+        protocol({ opaqueRegionCount: 0 }),
+        shim({ opaqueRegionCount: 0 }),
+        lifecycle(),
+      ),
+    ).toBe("error");
+  });
+
+  test("opaque shim divergence → tampered", () => {
+    expect(
+      deriveVerdict(
+        lex(),
+        protocol({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 1 }),
+        shim({ opaqueRegionCount: 0 }),
+        lifecycle(),
+      ),
+    ).toBe("tampered");
+  });
+
+  test("isolated opaque divergence → tampered", () => {
+    expect(
+      deriveVerdict(
+        lex(),
+        protocol({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 0 }),
+        shim({ opaqueRegionCount: 1 }),
+        lifecycle(),
+      ),
+    ).toBe("tampered");
+  });
+
+  test("timeout still wins with opaque observed", () => {
+    expect(
+      deriveVerdict(
+        lex({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 1 }),
+        shim({ opaqueRegionCount: 1 }),
+        lifecycle({ renderComplete: false }),
+      ),
+    ).toBe("timeout");
+  });
 });
 
 describe("deriveVerdict — lifecycle and timing", () => {

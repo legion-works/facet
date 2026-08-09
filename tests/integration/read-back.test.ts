@@ -377,64 +377,66 @@ describe("read-back revision binding", () => {
 });
 
 describe("screenshot mandate for partial:layout_unverified", () => {
-  test("partial verdict WITHOUT screenshot path is rejected at parse — publish fails", async () => {
-    const tier1Runner = buildStubTier1({
-      evidenceDir: scratchRoot,
-      status: "partial:layout_unverified",
-      withScreenshot: false,
+  for (const status of ["partial:layout_unverified", "partial:opaque_content"] as const) {
+    test(`${status} WITHOUT screenshot path is rejected at parse — publish fails`, async () => {
+      const tier1Runner = buildStubTier1({
+        evidenceDir: scratchRoot,
+        status,
+        withScreenshot: false,
+      });
+      const env = await startEnv({ tier1Runner });
+      try {
+        const artifactId = await createArtifact(env, "partial-no-shot");
+        const res = await envelopeRequest(env, {
+          command: "publish",
+          artifactId,
+          artifactType: "markdown",
+          bytes: Buffer.from("hi", "utf8").toString("base64"),
+        });
+        const envelope = FacetEnvelopeSchema.parse(JSON.parse(await res.text()));
+        if (envelope.ok) throw new Error("expected error envelope");
+        // The Tier1Result refine throws ZodError which FacetError.from
+        // maps to invalid_envelope on the wire.
+        expect(envelope.error.code).toBe("invalid_envelope");
+      } finally {
+        await env.cleanup();
+      }
     });
-    const env = await startEnv({ tier1Runner });
-    try {
-      const artifactId = await createArtifact(env, "partial-no-shot");
-      const res = await envelopeRequest(env, {
-        command: "publish",
-        artifactId,
-        artifactType: "markdown",
-        bytes: Buffer.from("hi", "utf8").toString("base64"),
-      });
-      const envelope = FacetEnvelopeSchema.parse(JSON.parse(await res.text()));
-      if (envelope.ok) throw new Error("expected error envelope");
-      // The Tier1Result refine throws ZodError which FacetError.from
-      // maps to invalid_envelope on the wire.
-      expect(envelope.error.code).toBe("invalid_envelope");
-    } finally {
-      await env.cleanup();
-    }
-  });
 
-  test("partial verdict WITH screenshot path is accepted; verdict reachable via read-back tier 1", async () => {
-    const tier1Runner = buildStubTier1({
-      evidenceDir: scratchRoot,
-      status: "partial:layout_unverified",
-      withScreenshot: true,
+    test(`${status} WITH screenshot path is accepted; verdict reachable via read-back tier 1`, async () => {
+      const tier1Runner = buildStubTier1({
+        evidenceDir: scratchRoot,
+        status,
+        withScreenshot: true,
+      });
+      const env = await startEnv({ tier1Runner });
+      try {
+        const artifactId = await createArtifact(env, "partial-with-shot");
+        const publishResult = await envelopeOk(env, {
+          command: "publish",
+          artifactId,
+          artifactType: "markdown",
+          bytes: Buffer.from("hi", "utf8").toString("base64"),
+        });
+        if (publishResult.command !== "publish") throw new Error("expected publish");
+        expect(publishResult.tier1Verdict).not.toBeNull();
+        if (publishResult.tier1Verdict === null || publishResult.tier1Verdict === undefined) return;
+        expect(publishResult.tier1Verdict.status).toBe(status);
+        expect(publishResult.tier1Verdict.screenshotPath).not.toBeNull();
+
+        const readback = await envelopeOk(env, {
+          command: "readBack",
+          artifactId,
+          revisionSha: publishResult.revision.sha256,
+          tier: 1,
+        });
+        if (readback.command !== "readBack") throw new Error("expected readBack");
+        expect(readback.verdict.status).toBe(status);
+      } finally {
+        await env.cleanup();
+      }
     });
-    const env = await startEnv({ tier1Runner });
-    try {
-      const artifactId = await createArtifact(env, "partial-with-shot");
-      const publishResult = await envelopeOk(env, {
-        command: "publish",
-        artifactId,
-        artifactType: "markdown",
-        bytes: Buffer.from("hi", "utf8").toString("base64"),
-      });
-      if (publishResult.command !== "publish") throw new Error("expected publish");
-      expect(publishResult.tier1Verdict).not.toBeNull();
-      if (publishResult.tier1Verdict === null || publishResult.tier1Verdict === undefined) return;
-      expect(publishResult.tier1Verdict.status).toBe("partial:layout_unverified");
-      expect(publishResult.tier1Verdict.screenshotPath).not.toBeNull();
-
-      const readback = await envelopeOk(env, {
-        command: "readBack",
-        artifactId,
-        revisionSha: publishResult.revision.sha256,
-        tier: 1,
-      });
-      if (readback.command !== "readBack") throw new Error("expected readBack");
-      expect(readback.verdict.status).toBe("partial:layout_unverified");
-    } finally {
-      await env.cleanup();
-    }
-  });
+  }
 
   test("Tier1ResultSchema refine rejects partial-without-screenshot directly (parse-level guard)", () => {
     const lexical = {
