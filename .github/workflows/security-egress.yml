@@ -1,8 +1,15 @@
 name: security-egress
 
+# The egress-penetration gate needs unprivileged user/net namespaces AND a
+# routable sink, so it only runs on a self-hosted runner. Until one is
+# registered, `push`/`pull_request` triggers would queue a check that never
+# completes and block every merge — 43 runs, 0 completions before this change.
+# Manual + scheduled triggers keep the gate real without gating the queue: it
+# runs the moment a runner exists, and `workflow_dispatch` proves it on demand.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
 
 permissions:
   contents: read
