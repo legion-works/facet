@@ -10,7 +10,7 @@
     "build": "bun scripts/build-gallery.ts",
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt",
-    "format:check": "oxfmt --check",
+    "format:check": "bun scripts/check-format.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov",

@@ -7,8 +7,8 @@ pre-commit:
       glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
       run: oxlint --deny-warnings {staged_files}
     format:
-      glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,md,yaml,yml,toml}"
-      run: oxfmt --check {staged_files}
+      glob: "*"
+      run: bun run format:check -- {staged_files}
     typecheck:
       run: bun run typecheck
     secrets:
