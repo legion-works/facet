@@ -203,6 +203,15 @@ describe("service API integration", () => {
       };
       expect(body.ok).toBe(false);
       expect(body.error.code).toBe("invalid_request");
+      const statusRes = await envelopeRequest(env, {
+        command: "status",
+        artifactId: createBody.data.artifact.id,
+      });
+      const statusBody = parseEnvelopeStrict(await statusRes.text()) as {
+        ok: true;
+        data: { revisionCount: number };
+      };
+      expect(statusBody.data.revisionCount).toBe(0);
     } finally {
       await env.cleanup();
     }

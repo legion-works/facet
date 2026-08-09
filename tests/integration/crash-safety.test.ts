@@ -4,6 +4,7 @@ import { chmodSync, existsSync, readFileSync, statSync, unlinkSync, writeFileSyn
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
 import { ArtifactRepository } from "../../src/service/store/repository";
+import { INITIAL_SCHEMA, V2_SCHEMA_FRAGMENT } from "../../src/service/store/schema";
 
 const databasePaths: string[] = [];
 const connections: Array<{ close: () => void }> = [];
@@ -165,4 +166,51 @@ test("interrupted migration rolls back its version and recovers on retry", () =>
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'projects'").get()).toEqual({
     name: "projects",
   });
+});
+
+test("upgrades a populated v2 database and backfills renderer with the default", () => {
+  const databasePath = pathFor("migration-v2-upgrade");
+  const db = openDatabase({ databasePath });
+  connections.push(db);
+  db.exec(INITIAL_SCHEMA);
+  db.exec(V2_SCHEMA_FRAGMENT);
+  db.exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
+  const timestamp = new Date().toISOString();
+  db.query("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?), (?, ?)").run(
+    1,
+    timestamp,
+    2,
+    timestamp,
+  );
+  db.query("INSERT INTO projects(id, project_root, created_at) VALUES (?, ?, ?)").run(
+    "project-v2",
+    "/tmp/facet-v2-upgrade",
+    timestamp,
+  );
+  db.query(
+    "INSERT INTO artifacts(id, project_id, slug, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run("artifact-v2", "project-v2", "v2", "V2", timestamp, timestamp);
+  db.query(
+    "INSERT INTO revisions(id, artifact_id, revision_number, artifact_type, source, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    "revision-v2",
+    "artifact-v2",
+    1,
+    "markdown",
+    new Uint8Array([1, 2, 3]),
+    "a".repeat(64),
+    timestamp,
+  );
+
+  runMigrations(db);
+
+  expect(db.query("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
+    { version: 1 },
+    { version: 2 },
+    { version: 3 },
+  ]);
+  expect(db.query("SELECT renderer FROM revisions WHERE id = ?").get("revision-v2")).toEqual({
+    renderer: "svg",
+  });
+  expect(new ArtifactRepository(db).getRevisionById("revision-v2")?.renderer).toBe("svg");
 });

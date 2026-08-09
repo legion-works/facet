@@ -222,6 +222,7 @@ describe("GET /gallery", () => {
     expect(sourceBody).toMatchObject({
       artifactId: first.artifactId,
       artifactType: "mermaid",
+      renderer: "svg",
     });
     expect(sourceBody.verdict).toMatchObject({
       artifactId: first.artifactId,

@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/service/store/database";
 import { ArtifactRepository } from "../../src/service/store/repository";
 import { runMigrations } from "../../src/service/store/migrations";
+import { V3_SCHEMA_FRAGMENT } from "../../src/service/store/schema";
+import { RENDERERS } from "../../src/shared/contracts/renderers";
 
 const databases: Array<{ close: () => void }> = [];
 
@@ -25,6 +27,10 @@ afterEach(() => {
 });
 
 describe("artifact store", () => {
+  test("v3 renderer CHECK constraint stays in parity with the renderer contract", () => {
+    const expected = RENDERERS.map((renderer) => `'${renderer}'`).join(",");
+    expect(V3_SCHEMA_FRAGMENT).toContain(`CHECK(renderer IN (${expected}))`);
+  });
   test("enables WAL, busy timeout, and foreign key enforcement", () => {
     const db = openDatabase({ databasePath: `/tmp/facet-wal-${crypto.randomUUID()}.sqlite` });
     databases.push(db);
