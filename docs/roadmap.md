@@ -38,10 +38,19 @@ publish→revision-committed at 439 ms against 151-159 ms on a 16-core host, and
 at 2919 ms against 833 ms. Gating those in CI would gate Facet on runner size rather than on
 its own regressions. CI enforces the host-invariant budgets — RSS absolute and delta, idle CPU,
 dormancy, SSE delivery (1.00 ms on both hosts, since no spawn sits in that path), and zombie
-cleanup. Publish→visible remains recorded-not-enforced everywhere until its measured p95 is
-below the commitment with headroom.
-• Code-split the 8.55 MB fresh-frame bootstrap bundle. It accounts for about 108 ms (36%) of
-publish→visible p95 and is the named blocker to enforcing the 300 ms commitment.
+cleanup. Publish→visible remains recorded-not-enforced, but for a DIFFERENT reason than when
+that status was set: it is now MET, not missed. The frame code-split (af46b64) cut fresh-frame
+load+parse from ~119 ms to ~8 ms and took p95 from 354 ms to 253 ms — 47 ms inside the
+commitment. The remaining blocker is measurement, not performance: publish→visible needs a
+browser, and on the pinned Bun 1.3.14 the CDP transport wedges every time (3/3), so the number
+is only reproducible on the 1.4.0 line. Enforcement is therefore gated on the Bun bump rather
+on than any Facet change — re-measure and enforce when 1.4.0 ships stable.
+✦ DONE (af46b64) — Code-split the 8.55 MB fresh-frame bootstrap bundle. Type-specific static
+entries: markdown 8,553,143 B → 60,788 B initial static graph (140×), svg → 14,326 B (597×);
+only chart still carries the Vega runtime, and only chart artifacts pay for it. Gallery and
+Tier 1 verifier still execute the SAME renderer modules — enforced by a Bun-metafile parity
+check with both divergence directions pinned as tests, so the unfakeable gate keeps verifying
+exactly what the operator sees.
 
 ## v2
 
