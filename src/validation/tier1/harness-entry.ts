@@ -137,8 +137,11 @@ export function startTier1Harness(registry: RendererRegistry): void {
       const control = ports[1];
       if (ingress === undefined || control === undefined) return;
       controlPost = control.postMessage.bind(control) as (event: ControlEvent) => void;
-      // MessagePort.onmessage is required over addEventListener("message"): verified
-      // on the pinned chrome-headless-shell build, which silently drops those events.
+      // MessagePort.onmessage is required over addEventListener("message"):
+      // per spec a MessagePort queues messages until start() is called, and
+      // only the onmessage setter starts the port implicitly — with
+      // addEventListener alone the handshake never fires (verified on the
+      // pinned shell build; addEventListener+start() would also work).
       // oxlint-disable-next-line unicorn/prefer-add-event-listener
       ingress.onmessage = async (sourceEvent: MessageEvent) => {
         const payload = sourceEvent.data as
