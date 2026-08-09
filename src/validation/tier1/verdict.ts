@@ -167,9 +167,9 @@ function countsDiffer(left: ProtocolObservation, right: ProtocolObservation): bo
 function matchesExpected(expected: LexicalCounters, protocol: ProtocolObservation): boolean {
   if (expected.rendererRootSvgCount !== protocol.rendererRootSvgCount) return false;
   if (expected.mermaidNodeCount !== protocol.mermaidNodeCount) return false;
-  // Opaque observations above zero return partial:opaque_content before this
-  // comparison; this check covers the ordinary expected=0 / observed=0 path.
-  if (expected.opaqueRegionCount !== protocol.opaqueRegionCount) return false;
+  // opaqueRegionCount is not compared here: expected > 0 / observed 0 returns
+  // error above, observed > 0 returns partial:opaque_content above, and 0 / 0
+  // is the only reachable ordinary path.
   // visibleSvgCount is a protocol-only observation; the lexical
   // counter for markdown/mermaid sources is 0 (the dispatcher does
   // not count it). The verdict cannot punish the renderer for

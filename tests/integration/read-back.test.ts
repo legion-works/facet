@@ -376,7 +376,7 @@ describe("read-back revision binding", () => {
   });
 });
 
-describe("screenshot mandate for partial:layout_unverified", () => {
+describe("screenshot mandate for partial verdicts", () => {
   for (const status of ["partial:layout_unverified", "partial:opaque_content"] as const) {
     test(`${status} WITHOUT screenshot path is rejected at parse — publish fails`, async () => {
       const tier1Runner = buildStubTier1({

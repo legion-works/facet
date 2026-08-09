@@ -150,9 +150,9 @@ export type Tier1Runner = (input: Tier1Input) => Promise<Tier1Result>;
 /**
  * Tier 1 result: extends Tier 0 with screenshot/console paths.
  *
- * `partial:layout_unverified` is the ONLY status that REQUIRES a
- * screenshot path: the verdict is partial precisely because layout
- * could not be confirmed, and the screenshot is the audit trail that
+ * Any `partial:` status REQUIRES a screenshot path: the verdict is partial
+ * precisely because the verifier could not fully confirm the render, and
+ * the screenshot is the audit trail that
  * lets a human (or a future re-verification) see what the verifier
  * saw. A partial verdict without a screenshot is rejected at the
  * parse boundary so it can never reach the DB or the wire.

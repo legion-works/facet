@@ -227,6 +227,18 @@ describe("deriveVerdict — opaque content", () => {
     ).toBe("error");
   });
 
+  test("declared-zero-rendered beats degenerate-layout partial → error", () => {
+    expect(
+      deriveVerdict(
+        lex({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 0, visibleSvgCount: 0, viewBoxes: [] }),
+        protocol({ opaqueRegionCount: 0, visibleSvgCount: 0, viewBoxes: [] }),
+        shim({ opaqueRegionCount: 0, visibleSvgCount: 0 }),
+        lifecycle(),
+      ),
+    ).toBe("error");
+  });
+
   test("opaque shim divergence → tampered", () => {
     expect(
       deriveVerdict(
