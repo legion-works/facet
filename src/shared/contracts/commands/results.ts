@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { Tier1ResultSchema, VerdictSchema } from "../validation";
+import { RendererSchema } from "../artifact";
 
 import {
   ArtifactEnvelopeSchema,
@@ -43,6 +44,7 @@ export type ListResult = z.infer<typeof ListResultSchema>;
  */
 export const ReadBackResultSchema = BaseResultSchema.extend({
   command: z.literal("readBack"),
+  renderer: RendererSchema,
   verdict: VerdictSchema,
 });
 export type ReadBackResult = z.infer<typeof ReadBackResultSchema>;

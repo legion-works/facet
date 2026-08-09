@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ArtifactTypeSchema, TemplateSchema } from "../artifact";
+import { ArtifactTypeSchema, RendererSchema, TemplateSchema } from "../artifact";
 
 /**
  * Shared wire-envelope schemas reused by every command verb's request
@@ -23,6 +23,7 @@ export const RevisionEnvelopeSchema = z.object({
   revisionNumber: z.number().int().positive(),
   parentRevisionId: z.string().min(1).nullable(),
   artifactType: ArtifactTypeSchema,
+  renderer: RendererSchema,
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   note: z.string().nullable(),
   pinned: z.boolean(),

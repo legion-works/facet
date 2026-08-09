@@ -52,6 +52,7 @@ export function checkArtifactTypeSupported(type: string): FacetError | null {
   return null;
 }
 
+/** Returns `invalid_request` when a renderer is incompatible with the artifact type. */
 export function checkRendererSupported(
   artifactType: string,
   renderer: Renderer,

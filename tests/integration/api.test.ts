@@ -135,8 +135,74 @@ describe("service API integration", () => {
       expect(publishBody.data.command).toBe("publish");
       if (publishBody.data.command === "publish") {
         expect(publishBody.data.revision.artifactType).toBe("markdown");
+        expect(publishBody.data.revision.renderer).toBe("svg");
         expect(publishBody.data.revision.sha256).toMatch(/^[a-f0-9]{64}$/);
       }
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  test("publish preserves an explicitly requested canvas renderer", async () => {
+    const env = await startService();
+    try {
+      const createRes = await envelopeRequest(env, {
+        command: "create",
+        projectId: "project-1",
+        slug: "chart",
+        title: "Chart",
+      });
+      const createBody = parseEnvelopeStrict(await createRes.text()) as {
+        ok: true;
+        data: { artifact: { id: string } };
+      };
+      const publishRes = await envelopeRequest(env, {
+        command: "publish",
+        artifactId: createBody.data.artifact.id,
+        artifactType: "chart",
+        renderer: "canvas",
+        bytes: Buffer.from("{}", "utf8").toString("base64"),
+      });
+      const publishBody = parseEnvelopeStrict(await publishRes.text()) as {
+        ok: true;
+        data: CommandResult;
+      };
+      expect(publishBody.ok).toBe(true);
+      if (publishBody.data.command === "publish") {
+        expect(publishBody.data.revision.renderer).toBe("canvas");
+      }
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  test("rejects canvas renderer for non-chart publish", async () => {
+    const env = await startService();
+    try {
+      const createRes = await envelopeRequest(env, {
+        command: "create",
+        projectId: "project-1",
+        slug: "markdown-canvas",
+        title: "Markdown canvas",
+      });
+      const createBody = parseEnvelopeStrict(await createRes.text()) as {
+        ok: true;
+        data: { artifact: { id: string } };
+      };
+      const res = await envelopeRequest(env, {
+        command: "publish",
+        artifactId: createBody.data.artifact.id,
+        artifactType: "markdown",
+        renderer: "canvas",
+        bytes: Buffer.from("hello", "utf8").toString("base64"),
+      });
+      expect(res.status).toBe(400);
+      const body = parseEnvelopeStrict(await res.text()) as {
+        ok: false;
+        error: { code: string };
+      };
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe("invalid_request");
     } finally {
       await env.cleanup();
     }

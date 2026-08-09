@@ -67,3 +67,8 @@ CREATE TABLE templates(
 export const V2_SCHEMA_FRAGMENT = `
 ALTER TABLE render_runs ADD COLUMN retained INTEGER NOT NULL DEFAULT 0;
 `;
+
+/** The v3 DDL fragment adds renderer persistence without rewriting existing rows. */
+export const V3_SCHEMA_FRAGMENT = `
+ALTER TABLE revisions ADD COLUMN renderer TEXT NOT NULL DEFAULT 'svg' CHECK(renderer IN ('svg','canvas'));
+`;

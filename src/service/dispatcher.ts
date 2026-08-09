@@ -12,6 +12,7 @@
 
 import {
   checkArtifactTypeSupported,
+  checkRendererSupported,
   normalizeReadBackTier,
   type ArtifactEnvelope,
   type CommandRequest,
@@ -234,6 +235,8 @@ export async function dispatch(
     case "publish": {
       const unsupported = checkArtifactTypeSupported(command.artifactType);
       if (unsupported !== null) throw unsupported;
+      const rendererError = checkRendererSupported(command.artifactType, command.renderer);
+      if (rendererError !== null) throw rendererError;
       // The reserved-type gate above rejected `html`; re-parse so the
       // rest of the publish path holds the narrowed supported type.
       const artifactType: ArtifactType = ArtifactTypeSchema.parse(command.artifactType);
@@ -254,6 +257,7 @@ export async function dispatch(
       const revision = deps.repository.publishRevision({
         artifactId: command.artifactId,
         artifactType,
+        renderer: command.renderer,
         source: bytes,
         ...(command.note !== undefined ? { note: command.note } : {}),
         ...(command.parentRevisionId !== undefined
@@ -385,7 +389,7 @@ export async function dispatch(
         observed: observedJson,
       });
       traceTier1Transport(`readback:build-complete status=${verdict.status}`);
-      return { command: "readBack", requestId, verdict };
+      return { command: "readBack", requestId, renderer: revision.renderer, verdict };
     }
     case "status": {
       const counts = deps.repository.statusForArtifact({ artifactId: command.artifactId });
@@ -463,6 +467,7 @@ export async function dispatch(
       deps.repository.publishRevision({
         artifactId: artifact.id,
         artifactType: source.artifactType,
+        renderer: source.renderer,
         source: new Uint8Array(source.source),
         note: `Instantiated from template ${template.name}`,
       });

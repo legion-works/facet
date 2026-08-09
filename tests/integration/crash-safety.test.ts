@@ -160,6 +160,7 @@ test("interrupted migration rolls back its version and recovers on retry", () =>
   expect(db.query("SELECT version FROM schema_migrations").all()).toEqual([
     { version: 1 },
     { version: 2 },
+    { version: 3 },
   ]);
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'projects'").get()).toEqual({
     name: "projects",

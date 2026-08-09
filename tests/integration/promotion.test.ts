@@ -105,12 +105,13 @@ describe("promotion", () => {
     }
   });
 
-  test("instantiation copies immutable source bytes and artifact type", async () => {
+  test("instantiation copies immutable source bytes, artifact type, and renderer", async () => {
     const { repository, artifact } = makeStore();
     const source = new Uint8Array([0, 255, 7]);
     const revision = repository.publishRevision({
       artifactId: artifact.id,
-      artifactType: "svg",
+      artifactType: "chart",
+      renderer: "canvas",
       source,
     });
     const template = repository.promoteRevision({
@@ -129,7 +130,8 @@ describe("promotion", () => {
       "req",
     )) as { artifact: { id: string } };
     const copiedRevision = repository.getRevisionBySha(result.artifact.id, revision.sha256);
-    expect(copiedRevision?.artifactType).toBe("svg");
+    expect(copiedRevision?.artifactType).toBe("chart");
+    expect(copiedRevision?.renderer).toBe("canvas");
     expect(Array.from(copiedRevision?.source ?? [])).toEqual(Array.from(source));
     expect(copiedRevision?.artifactId).not.toBe(revision.artifactId);
   });

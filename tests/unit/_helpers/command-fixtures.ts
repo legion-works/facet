@@ -21,6 +21,7 @@ export const REVISION = {
   revisionNumber: 1,
   parentRevisionId: null,
   artifactType: "markdown" as const,
+  renderer: "svg" as const,
   sha256: "a".repeat(64),
   note: null,
   pinned: false,
@@ -71,7 +72,12 @@ export function validPublishRequest() {
   };
 }
 export function validPublishResult() {
-  return { command: "publish" as const, requestId: REQUEST_ID, revision: REVISION };
+  return {
+    command: "publish" as const,
+    requestId: REQUEST_ID,
+    revision: REVISION,
+    tier1Verdict: null,
+  };
 }
 export function validListRequest() {
   return { command: "list" as const, requestId: REQUEST_ID, projectId: "project-1" };
@@ -92,6 +98,7 @@ export function validReadBackResult() {
   return {
     command: "readBack" as const,
     requestId: REQUEST_ID,
+    renderer: "svg" as const,
     verdict: {
       status: "ok" as const,
       tier: 1 as const,

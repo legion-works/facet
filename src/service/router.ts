@@ -573,6 +573,7 @@ export function buildRouter(deps: RouterDeps): {
             artifactId,
             revisionSha: revision.sha256,
             artifactType: revision.artifactType,
+            renderer: revision.renderer,
             source: new TextDecoder().decode(revision.source),
             verdict: latestStoredVerdict(deps.repository, revision),
           }),

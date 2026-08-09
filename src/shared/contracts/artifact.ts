@@ -41,6 +41,7 @@ export const RevisionSchema = z.object({
   revisionNumber: z.number().int().positive(),
   parentRevisionId: IdSchema.nullable(),
   artifactType: ArtifactTypeSchema,
+  renderer: RendererSchema,
   source: ByteSourceSchema,
   sha256: Sha256Schema,
   note: z.string().nullable(),

@@ -9,6 +9,7 @@ import {
   TemplateSchema,
   type Artifact,
   type ArtifactType,
+  type Renderer,
   type Project,
   type RenderRun,
   type Revision,
@@ -38,6 +39,7 @@ interface ArtifactInput {
 interface PublishInput {
   readonly artifactId: string;
   readonly artifactType: ArtifactType | "html";
+  readonly renderer?: Renderer;
   readonly source: Uint8Array;
   readonly note?: string | null;
   readonly parentRevisionId?: string | null;
@@ -99,6 +101,7 @@ type SqlRevision = Omit<
   revision_number: number;
   parent_revision_id: string | null;
   artifact_type: string;
+  renderer: string;
   source: Uint8Array | ArrayBuffer;
   note: string | null;
   pinned: number;
@@ -132,6 +135,7 @@ function mapRevision(row: SqlRevision): Revision {
     revisionNumber: row.revision_number,
     parentRevisionId: row.parent_revision_id,
     artifactType: row.artifact_type,
+    renderer: row.renderer,
     source: bytes(row.source),
     sha256: row.sha256,
     note: row.note,
@@ -353,7 +357,7 @@ export class ArtifactRepository {
         const revisionNumber = (previous?.revision_number ?? 0) + 1;
         this.db
           .query(
-            "INSERT INTO revisions(id, artifact_id, revision_number, parent_revision_id, artifact_type, source, sha256, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO revisions(id, artifact_id, revision_number, parent_revision_id, artifact_type, renderer, source, sha256, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           )
           .run(
             revisionId,
@@ -361,6 +365,7 @@ export class ArtifactRepository {
             revisionNumber,
             input.parentRevisionId === undefined ? (previous?.id ?? null) : input.parentRevisionId,
             input.artifactType,
+            input.renderer ?? "svg",
             source,
             sha,
             input.note ?? null,
@@ -373,6 +378,7 @@ export class ArtifactRepository {
           parentRevisionId:
             input.parentRevisionId === undefined ? (previous?.id ?? null) : input.parentRevisionId,
           artifactType: input.artifactType,
+          renderer: input.renderer ?? "svg",
           source,
           sha256: sha,
           note: input.note ?? null,

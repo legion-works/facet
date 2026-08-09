@@ -349,6 +349,31 @@ describe("read-back revision binding", () => {
       await env.cleanup();
     }
   });
+
+  test("read-back exposes the revision renderer", async () => {
+    const env = await startEnv();
+    try {
+      const artifactId = await createArtifact(env, "canvas-readback");
+      const published = await envelopeOk(env, {
+        command: "publish",
+        artifactId,
+        artifactType: "chart",
+        renderer: "canvas",
+        bytes: Buffer.from("{}", "utf8").toString("base64"),
+      });
+      if (published.command !== "publish") throw new Error("expected publish");
+      const readback = await envelopeOk(env, {
+        command: "readBack",
+        artifactId,
+        revisionSha: published.revision.sha256,
+        tier: 0,
+      });
+      if (readback.command !== "readBack") throw new Error("expected readBack");
+      expect(readback.renderer).toBe("canvas");
+    } finally {
+      await env.cleanup();
+    }
+  });
 });
 
 describe("screenshot mandate for partial:layout_unverified", () => {

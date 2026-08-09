@@ -125,6 +125,28 @@ describe("artifact store", () => {
     ).toThrowError(expect.objectContaining({ code: "foreign_key" }));
   });
 
+  test("persists the renderer with svg default and explicit canvas", () => {
+    const { db, repository, artifact } = makeStore();
+    const svg = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([1]),
+    });
+    const canvas = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "chart",
+      renderer: "canvas",
+      source: new Uint8Array([2]),
+    });
+
+    expect(svg.renderer).toBe("svg");
+    expect(canvas.renderer).toBe("canvas");
+    expect(db.query("SELECT renderer FROM revisions ORDER BY revision_number").all()).toEqual([
+      { renderer: "svg" },
+      { renderer: "canvas" },
+    ]);
+  });
+
   test("evicts oldest unpinned revisions beyond the 50 revision ring", () => {
     const { repository, artifact } = makeStore();
     const revisions = Array.from({ length: 55 }, (_, index) =>

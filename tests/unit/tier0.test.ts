@@ -466,7 +466,6 @@ describe("Tier 0 protocol-boundary unit cases (no subprocess required)", () => {
           artifactId: "",
           revisionSha: "0".repeat(64),
           expected: { rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 },
-          opaqueRegionCount: 0,
           observed: {
             rendererRootSvgCount: 0,
             graphCount: 0,

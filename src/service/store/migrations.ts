@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import { asStoreError, FacetStoreError } from "./database";
-import { INITIAL_SCHEMA, V2_SCHEMA_FRAGMENT } from "./schema";
+import { INITIAL_SCHEMA, V2_SCHEMA_FRAGMENT, V3_SCHEMA_FRAGMENT } from "./schema";
 
 export interface MigrationOptions {
   readonly beforeRecordVersion?: (version: number) => void;
@@ -27,6 +27,12 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
       // from the last-N cleanup policy. Default 0 (not retained) keeps
       // every existing row eligible for eviction.
       db.exec(V2_SCHEMA_FRAGMENT);
+    },
+  },
+  {
+    version: 3,
+    apply: (db) => {
+      db.exec(V3_SCHEMA_FRAGMENT);
     },
   },
 ];
