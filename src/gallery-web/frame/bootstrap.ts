@@ -20,8 +20,8 @@
  *   6. Emit page-shim counts on the control port ONLY after completion.
  *
  * The control port also has a RECEIVE path (shell → frame view-state
- * commands). The shell owns zoom/pan via the iframe element transform;
- * input over the opaque frame is forwarded as numeric intent only.
+ * commands). The shell owns canonical zoom/pan; SVG roots apply it through
+ * their viewBox while other artifacts retain the shell CSS fallback.
  */
 
 import {
@@ -31,6 +31,7 @@ import {
   FacetRenderError,
   type RendererRegistry,
 } from "./renderers/registry";
+import { applySvgViewBox, type SvgViewBox } from "./view-box";
 
 declare global {
   interface Window {
@@ -66,6 +67,10 @@ let controlPost: ((event: unknown) => void) | null = null;
 
 let drag: { x: number; y: number } | null = null;
 
+let renderedSvg: SVGSVGElement | null = null;
+let originalViewBox: SvgViewBox | null = null;
+let viewModeReported = false;
+
 function deliver(event: unknown): void {
   try {
     controlPost?.(event);
@@ -81,6 +86,71 @@ function decodePayloadBytes(bytes: Uint8Array | string): Uint8Array {
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
   return out;
+}
+
+function parseViewBox(value: string | null): SvgViewBox | null {
+  if (value === null) return null;
+  const values = value
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (
+    values.length !== 4 ||
+    values.some((entry) => !Number.isFinite(entry)) ||
+    values[2]! <= 0 ||
+    values[3]! <= 0
+  )
+    return null;
+  return { minX: values[0]!, minY: values[1]!, width: values[2]!, height: values[3]! };
+}
+
+function cacheRenderedSvg(): void {
+  const root = container.children.length === 1 ? container.firstElementChild : null;
+  if (!(root instanceof SVGSVGElement)) return;
+  const viewBox = parseViewBox(root.getAttribute("viewBox"));
+  if (viewBox === null) return;
+  renderedSvg = root;
+  originalViewBox = viewBox;
+}
+
+function receiveViewState(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  const event = value as Record<string, unknown>;
+  if (
+    event.kind !== "view-state" ||
+    typeof event.zoom !== "number" ||
+    !Number.isFinite(event.zoom) ||
+    event.zoom <= 0 ||
+    typeof event.panX !== "number" ||
+    !Number.isFinite(event.panX) ||
+    typeof event.panY !== "number" ||
+    !Number.isFinite(event.panY)
+  )
+    return;
+  if (renderedSvg === null || originalViewBox === null) {
+    if (!viewModeReported) {
+      viewModeReported = true;
+      deliver({ kind: "view-mode", mode: "css" });
+    }
+    return;
+  }
+  if (!viewModeReported) {
+    viewModeReported = true;
+    deliver({ kind: "view-mode", mode: "native" });
+  }
+  const width = renderedSvg.clientWidth;
+  const height = renderedSvg.clientHeight;
+  if (width <= 0 || height <= 0) return;
+  const next = applySvgViewBox(
+    originalViewBox,
+    { width, height },
+    {
+      zoom: event.zoom,
+      panX: event.panX,
+      panY: event.panY,
+    },
+  );
+  renderedSvg.setAttribute("viewBox", `${next.minX} ${next.minY} ${next.width} ${next.height}`);
 }
 
 export function startGalleryFrame(registry: RendererRegistry): void {
@@ -100,7 +170,7 @@ export function startGalleryFrame(registry: RendererRegistry): void {
       // addEventListener-registered port events, and the setter works
       // everywhere the listener form does.
       // oxlint-disable-next-line unicorn/prefer-add-event-listener
-      control.onmessage = (_controlEvent: MessageEvent) => {};
+      control.onmessage = (controlEvent: MessageEvent) => receiveViewState(controlEvent.data);
       container.addEventListener(
         "wheel",
         (wheelEvent) => {
@@ -159,6 +229,7 @@ export function startGalleryFrame(registry: RendererRegistry): void {
           const message = error instanceof Error ? error.message : String(error);
           appendRenderError(container, message);
         }
+        cacheRenderedSvg();
         // Counts cross the control port ONLY after the render settled.
         deliver({ type: "render-complete", observed: countPageShim() });
       };

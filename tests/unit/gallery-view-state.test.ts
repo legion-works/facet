@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   clampZoom,
   resetViewState,
+  validateViewMode,
   validateViewIntent,
   zoomAtPoint,
   type ViewIntent,
@@ -47,5 +48,12 @@ describe("gallery view state", () => {
         rect: { w: 800, h: 600 },
       }),
     ).toBeNull();
+  });
+
+  test("accepts only native and css frame view modes", () => {
+    expect(validateViewMode({ type: "view-mode", mode: "native" })).toBe("native");
+    expect(validateViewMode({ type: "view-mode", mode: "css" })).toBe("css");
+    expect(validateViewMode({ type: "view-mode", mode: "script" })).toBeNull();
+    expect(validateViewMode({ type: "view-mode", mode: "native", zoom: 8 })).toBeNull();
   });
 });

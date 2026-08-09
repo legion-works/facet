@@ -12,7 +12,7 @@ class FakeElement {
   textContent = "";
   hidden = false;
   private readonly listeners = new Map<string, Listener[]>();
-  private readonly children: FakeElement[] = [];
+  readonly children: FakeElement[] = [];
   private tier: FakeElement | null = null;
   private bar: FakeElement | null = null;
 
@@ -65,6 +65,7 @@ class FakeIframe extends FakeElement {
     postMessage: (_message: unknown, _origin: string, ports: MessagePort[]) => {
       const [ingress, control] = ports;
       ingress!.addEventListener("message", () => {
+        control!.postMessage({ kind: "view-mode", mode: "native" }, []);
         control!.postMessage(
           {
             type: "render-complete",
@@ -204,5 +205,16 @@ describe("gallery shell startup", () => {
     expect(prevented).toBe(true);
     expect(harness.elements.get("facet-canvas")?.dataset["fullscreen"]).toBe("yes");
     expect(harness.requests.some(({ url }) => url.endsWith("/api/v1/gallery/release"))).toBe(true);
+  });
+
+  test("clears iframe CSS transforms after a frame selects native SVG viewBox zoom", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    await Promise.resolve();
+
+    const canvas = harness.elements.get("facet-canvas")!;
+    const iframe = canvas.children[0] as FakeIframe;
+    expect(canvas.dataset["viewMode"]).toBe("native");
+    expect(iframe.style["transform"]).toBe("");
   });
 });

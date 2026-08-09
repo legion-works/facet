@@ -7,6 +7,8 @@ export interface ViewState {
   panY?: number;
 }
 
+export type ViewMode = "native" | "css";
+
 export type ViewIntent =
   | {
       readonly type: "view-intent";
@@ -90,4 +92,13 @@ export function validateViewIntent(value: unknown): ViewIntent | null {
     cursorY: event.cursorY,
     rect: { w: dimensions.w, h: dimensions.h },
   };
+}
+
+export function validateViewMode(value: unknown): ViewMode | null {
+  if (value === null || typeof value !== "object") return null;
+  const event = value as Record<string, unknown>;
+  if (event.type !== "view-mode") return null;
+  if (event.mode !== "native" && event.mode !== "css") return null;
+  if (Object.keys(event).length !== 2) return null;
+  return event.mode;
 }

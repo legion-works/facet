@@ -35,8 +35,10 @@ import {
   clampZoom,
   resetViewState,
   validateViewIntent,
+  validateViewMode,
   zoomAtPoint,
   type ViewIntent,
+  type ViewMode,
   type ViewState,
 } from "./view-state";
 import type { Verdict } from "../shared/contracts/validation";
@@ -148,7 +150,9 @@ export type { ViewIntent, ViewState } from "./view-state";
  * page-shim counts ride `render-complete.observed`.
  */
 export interface FrameControlEvent {
-  readonly type: string;
+  readonly type?: string;
+  readonly kind?: string;
+  readonly mode?: string;
   readonly observed?: {
     readonly rendererRootSvgCount?: number;
     readonly graphCount?: number;
@@ -259,7 +263,12 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   // oxlint-disable-next-line unicorn/prefer-add-event-listener
   control.port1.onmessage = (event: MessageEvent) => {
     const data = event.data as FrameControlEvent | null;
-    if (data === null || typeof data !== "object" || typeof data.type !== "string") return;
+    if (
+      data === null ||
+      typeof data !== "object" ||
+      (typeof data.type !== "string" && typeof data.kind !== "string")
+    )
+      return;
     // Spread snapshots the handler set so a handler that unsubscribes
     // itself mid-dispatch does not skip the remaining peers.
     // oxlint-disable-next-line unicorn/no-useless-spread
@@ -362,6 +371,15 @@ function observedErrorCount(event: FrameControlEvent): number {
   return typeof count === "number" ? count : 0;
 }
 
+function viewStateMessage(state: ViewState): {
+  readonly kind: "view-state";
+  readonly zoom: number;
+  readonly panX: number;
+  readonly panY: number;
+} {
+  return { kind: "view-state", zoom: state.zoom, panX: state.panX ?? 0, panY: state.panY ?? 0 };
+}
+
 /**
  * Execute a double-buffered HMR swap against the real DOM. Ordering
  * invariant: the new frame is built off-screen, reaches boot-ready +
@@ -399,7 +417,10 @@ export async function replaceArtifactFrame(
       host.setVisibility(next.frameId, true);
       host.setVisibility(current.frameId, false);
     },
-    "apply-view-state": () => host.applyViewState(next.frameId, viewState),
+    "apply-view-state": () => {
+      next.sendControl(viewStateMessage(viewState));
+      host.applyViewState(next.frameId, viewState);
+    },
     "close-old-control": () => current.closeControl(),
     "remove-old": () => host.unmount(current.frameId),
   };
@@ -695,6 +716,8 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   const canvas = document.getElementById("facet-canvas");
   if (!(canvas instanceof HTMLElement)) throw new Error("Gallery canvas is missing");
   const viewState: ViewState = { zoom: 1, panX: 0, panY: 0 };
+  const viewModes = new Map<string, ViewMode>();
+  let activeFrameId: string | null = null;
   const host: FrameHost = {
     mountOffScreen(frameId, element) {
       const iframe = element as HTMLIFrameElement;
@@ -709,14 +732,21 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     setVisibility(frameId, visible) {
       const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`);
       if (iframe !== null) iframe.style.visibility = visible ? "visible" : "hidden";
+      if (visible) {
+        activeFrameId = frameId;
+        canvas.dataset.viewMode = viewModes.get(frameId) ?? "css";
+      }
     },
     unmount(frameId) {
       canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`)?.remove();
     },
     applyViewState(frameId, state) {
       const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`);
-      if (iframe !== null)
-        iframe.style.transform = `translate(${state.panX ?? 0}px, ${state.panY ?? 0}px) scale(${state.zoom})`;
+      if (iframe === null) return;
+      iframe.style.transform =
+        viewModes.get(frameId) === "native"
+          ? ""
+          : `translate(${state.panX ?? 0}px, ${state.panY ?? 0}px) scale(${state.zoom})`;
     },
     showErrorBadge: updateGalleryError,
   };
@@ -728,6 +758,16 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     frameUrl,
     dom,
   });
+  const bindFrameMode = (frame: CreatedArtifactFrame): void => {
+    frame.onControlEvent((event) => {
+      const mode = validateViewMode({ type: event.kind, mode: event.mode });
+      if (mode === null) return;
+      viewModes.set(frame.frameId, mode);
+      if (activeFrameId === frame.frameId) canvas.dataset.viewMode = mode;
+      host.applyViewState(frame.frameId, viewState);
+    });
+  };
+  bindFrameMode(current);
   const boot = await armFrameLoad(current, (frame) =>
     host.mountOffScreen(frame.frameId, frame.element.raw),
   );
@@ -737,6 +777,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   if (initialEvent === null || observedErrorCount(initialEvent) !== 0)
     throw new Error("Gallery artifact failed to render");
   host.setVisibility(current.frameId, true);
+  current.sendControl(viewStateMessage(viewState));
   host.applyViewState(current.frameId, viewState);
   updateGalleryVerdict(source.verdict ?? null);
   updateGalleryStatus("displayed");
@@ -761,6 +802,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
           fetchRevision: (_artifactId, revisionSha) =>
             fetchGallerySource(baseUrl, handoff, revisionSha, fetch),
           onFrameCreated: (next) => {
+            bindFrameMode(next);
             bindFrameIntents(next);
             void armFrameLoad(next, (frame) =>
               host.mountOffScreen(frame.frameId, frame.element.raw),
@@ -819,6 +861,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         zoomAtPoint(viewState, clampZoom(viewState.zoom * factor), intent.cursorX, intent.cursorY),
       );
     }
+    current.sendControl(viewStateMessage(viewState));
     host.applyViewState(current.frameId, viewState);
   };
   const forwardCanvasIntent = (intent: ViewIntent): void => applyIntent(intent);
@@ -893,6 +936,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     } else if (event.key === "0") {
       event.preventDefault();
       Object.assign(viewState, resetViewState(viewState));
+      current.sendControl(viewStateMessage(viewState));
       host.applyViewState(current.frameId, viewState);
     } else if (
       event.key === "ArrowLeft" ||
@@ -917,11 +961,13 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         viewState,
         zoomAtPoint(viewState, viewState.zoom + delta, rect.width / 2, rect.height / 2),
       );
+      current.sendControl(viewStateMessage(viewState));
       host.applyViewState(current.frameId, viewState);
     });
   }
   document.getElementById("facet-zoom-reset")?.addEventListener("click", () => {
     Object.assign(viewState, resetViewState(viewState));
+    current.sendControl(viewStateMessage(viewState));
     host.applyViewState(current.frameId, viewState);
   });
   document

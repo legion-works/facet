@@ -145,6 +145,30 @@ test.skipIf(!liveGateEnabled || !availability.available)(
       // code-split: a mermaid artifact must load the mermaid entry bundle.
       expect(result?.frameSrc).toContain("type=mermaid");
       expect(result?.revision).toContain(published.revisionSha.slice(0, 7));
+
+      const nativeView = await target.session.send<{
+        result?: { value?: { mode: string; transform: string } };
+      }>("Runtime.evaluate", {
+        returnByValue: true,
+        awaitPromise: true,
+        expression: `new Promise((resolve) => {
+           document.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }));
+           const deadline = Date.now() + 7000;
+           const inspect = () => {
+             const iframe = document.querySelector('iframe');
+             const mode = document.querySelector('#facet-canvas')?.dataset.viewMode ?? '';
+             const transform = iframe?.style.transform ?? '';
+             if (mode === 'native' || Date.now() >= deadline) {
+               resolve({ mode, transform });
+               return;
+             }
+             setTimeout(inspect, 50);
+           };
+           inspect();
+         })`,
+      });
+      expect(nativeView.result?.value?.mode).toBe("native");
+      expect(nativeView.result?.value?.transform).toBe("");
     } finally {
       await target?.close();
       await service.stop();
