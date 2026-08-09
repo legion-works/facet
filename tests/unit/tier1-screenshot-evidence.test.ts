@@ -36,19 +36,35 @@ describe("Tier 1 screenshot evidence", () => {
   });
 
   test("falls back to viewport-only capture when the full screenshot exceeds the cap", async () => {
-    const oversized = Buffer.alloc(TIER1_SCREENSHOT_CAP_BYTES + 1, 1).toString("base64");
+    const oversized = "A".repeat(Math.ceil((TIER1_SCREENSHOT_CAP_BYTES * 4) / 3) + 5);
+    const viewportOnly = Buffer.from("viewport screenshot").toString("base64");
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
     const session = {
       send: async <T = unknown>(method: string, params?: Record<string, unknown>) => {
         calls.push(params === undefined ? { method } : { method, params });
-        return { data: oversized } as T;
+        return { data: calls.length === 1 ? oversized : viewportOnly } as T;
       },
       detach: async () => {},
     };
 
-    const result = await captureScreenshotWithFallback(session);
+    const bufferSpy = Buffer as unknown as {
+      from(value: unknown, encoding?: BufferEncoding): Buffer;
+    };
+    const decode = bufferSpy.from;
+    let decodedOversizedPayload = false;
+    bufferSpy.from = (value: unknown, encoding?: BufferEncoding) => {
+      if (value === oversized) decodedOversizedPayload = true;
+      return decode(value, encoding);
+    };
+    let result: Buffer | null;
+    try {
+      result = await captureScreenshotWithFallback(session);
+    } finally {
+      bufferSpy.from = decode;
+    }
 
-    expect(result).toEqual(Buffer.alloc(TIER1_SCREENSHOT_CAP_BYTES + 1, 1));
+    expect(result).toEqual(Buffer.from("viewport screenshot"));
+    expect(decodedOversizedPayload).toBe(false);
     expect(calls).toHaveLength(2);
     expect(calls[0]?.params?.captureBeyondViewport).toBe(true);
     expect(calls[1]?.params?.captureBeyondViewport).toBe(false);

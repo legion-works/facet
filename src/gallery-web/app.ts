@@ -760,7 +760,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   });
   const bindFrameMode = (frame: CreatedArtifactFrame): void => {
     frame.onControlEvent((event) => {
-      const mode = validateViewMode({ type: event.kind, mode: event.mode });
+      const mode = validateViewMode(event);
       if (mode === null) return;
       viewModes.set(frame.frameId, mode);
       if (activeFrameId === frame.frameId) canvas.dataset.viewMode = mode;

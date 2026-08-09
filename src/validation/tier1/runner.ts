@@ -491,20 +491,29 @@ export async function configureTier1Viewport(session: VerifierCdpSession): Promi
 export async function captureScreenshotWithFallback(
   session: VerifierCdpSession,
 ): Promise<Buffer | null> {
-  const capture = async (captureBeyondViewport: boolean): Promise<Buffer | null> => {
+  const capture = async (
+    captureBeyondViewport: boolean,
+  ): Promise<{ readonly screenshot: Buffer | null; readonly oversized: boolean }> => {
     const shot = (await session.send("Page.captureScreenshot", {
       format: "png",
       captureBeyondViewport,
     })) as { data?: string };
-    if (typeof shot.data !== "string" || shot.data.length === 0) return null;
-    return Buffer.from(shot.data, "base64");
+    if (typeof shot.data !== "string" || shot.data.length === 0)
+      return { screenshot: null, oversized: false };
+    if (shot.data.length > (TIER1_SCREENSHOT_CAP_BYTES * 4) / 3 + 4)
+      return { screenshot: null, oversized: true };
+    return { screenshot: Buffer.from(shot.data, "base64"), oversized: false };
   };
 
   const fullScreenshot = await capture(true);
-  if (fullScreenshot === null || fullScreenshot.byteLength <= TIER1_SCREENSHOT_CAP_BYTES) {
-    return fullScreenshot;
+  if (
+    !fullScreenshot.oversized &&
+    (fullScreenshot.screenshot === null ||
+      fullScreenshot.screenshot.byteLength <= TIER1_SCREENSHOT_CAP_BYTES)
+  ) {
+    return fullScreenshot.screenshot;
   }
-  return capture(false);
+  return (await capture(false)).screenshot;
 }
 
 async function captureEvidence(

@@ -61,11 +61,15 @@ class FakeElement {
 }
 
 class FakeIframe extends FakeElement {
+  constructor(private readonly viewModeEvent: unknown) {
+    super();
+  }
+
   readonly contentWindow = {
     postMessage: (_message: unknown, _origin: string, ports: MessagePort[]) => {
       const [ingress, control] = ports;
       ingress!.addEventListener("message", () => {
-        control!.postMessage({ kind: "view-mode", mode: "native" }, []);
+        control!.postMessage(this.viewModeEvent, []);
         control!.postMessage(
           {
             type: "render-complete",
@@ -85,7 +89,7 @@ class FakeIframe extends FakeElement {
   };
 }
 
-function createRuntime() {
+function createRuntime(viewModeEvent: unknown = { kind: "view-mode", mode: "native" }) {
   const elements = new Map<string, FakeElement>();
   for (const id of [
     "facet-title",
@@ -117,7 +121,8 @@ function createRuntime() {
   const documentListeners = new Map<string, Listener>();
   const document = {
     getElementById: (id: string) => elements.get(id) ?? null,
-    createElement: (tag: string) => (tag === "iframe" ? new FakeIframe() : new FakeElement()),
+    createElement: (tag: string) =>
+      tag === "iframe" ? new FakeIframe(viewModeEvent) : new FakeElement(),
     addEventListener: (type: string, listener: Listener) => documentListeners.set(type, listener),
   };
   const windowListeners = new Map<string, Listener>();
@@ -216,5 +221,16 @@ describe("gallery shell startup", () => {
     const iframe = canvas.children[0] as FakeIframe;
     expect(canvas.dataset["viewMode"]).toBe("native");
     expect(iframe.style["transform"]).toBe("");
+  });
+
+  test("ignores a forged view-mode event with extra fields", async () => {
+    const harness = createRuntime({ kind: "view-mode", mode: "native", forged: true });
+    await startGallery(harness.runtime);
+    await Promise.resolve();
+
+    const canvas = harness.elements.get("facet-canvas")!;
+    const iframe = canvas.children[0] as FakeIframe;
+    expect(canvas.dataset["viewMode"]).toBe("css");
+    expect(iframe.style["transform"]).toBe("translate(0px, 0px) scale(1)");
   });
 });
