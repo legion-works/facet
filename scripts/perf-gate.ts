@@ -202,6 +202,35 @@ async function main(): Promise<void> {
     method: "not gated because validation cost would hide a stream-delivery regression",
   });
 
+  // A required PR-path job must not be able to go red for a reason the author
+  // could not have caused. In `ci` the browser budgets are RECORDED, never
+  // enforced, so running them buys no enforcement — while the pinned runtime's
+  // fd-reuse bug (oven-sh/bun#37230) wedges the CDP transport often enough to
+  // fail the job on an unrelated change. Zero value, real false-red rate: skip
+  // the browser phases entirely in CI and enforce them on the stable path,
+  // which is the only place their budgets bind anyway.
+  if (policy === "ci") {
+    for (const name of [
+      "publish \u2192 visible",
+      "cold read-back",
+      "browser exit",
+      "zombie browser/profile cleanup",
+    ] as const) {
+      metrics.push({
+        name,
+        observed: "NOT RUN: browser budgets are stable-machine scope",
+        status: "skipped",
+        enforced: false,
+        method:
+          "ci policy runs host-invariant budgets only \u2014 run `perf-gate` locally to enforce these",
+      });
+    }
+    printResults();
+    writeOutputs();
+    const ciFailed = metrics.some((metric) => metric.enforced && metric.status === "fail");
+    process.exit(ciFailed ? 1 : 0);
+  }
+
   console.error("perf phase: browser-probe");
   const availability = await probeBrowserAvailability();
   measurements.browserAvailability = availability;
