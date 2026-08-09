@@ -1,11 +1,9 @@
 [test]
 coverageReporter = ["text", "lcov"]
 coverageDir = "coverage"
-coverageThreshold = { lines = 0.7, functions = 0.65, statements = 0.7 }
-# Bun applies this floor per file and has no aggregate mode; CI parses LCOV
-# to enforce the real 90% overall lines + functions bar. The 65% function
-# floor accommodates the cross-process acceptance harness entrypoint while
-# still catching files that rot to near-zero coverage.
+# Coverage enforcement lives in scripts/check-coverage.ts so a test command's
+# exit status reports test failures only. CI merges tier LCOV before applying
+# the aggregate and per-file floors.
 # Netns subprocess code is invisible to in-process instrumentation; mandatory
 # egress, forgery, and adversarial-render acceptance gates cover these paths.
 # Browser runtime files execute outside Bun's process; gallery SSE integration
