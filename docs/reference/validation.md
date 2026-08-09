@@ -28,10 +28,10 @@ rejected at the schema parse boundary.
 
 ## Evidence captured per tier
 
-| tier | evidence retained                                                                                                                         |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | DB row only (expected + observed JSON, status, timing). No on-disk evidence.                                                              |
-| 1    | DB row + per-run directory under `<evidence>/tier1/<revisionSha>/<runId>/`: `screenshot.png`, `console.txt`, `protocol-observation.json`. |
+| tier | evidence retained                                                                                                                                                                                                                                                                                                                  |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | DB row only (expected + observed JSON, status, timing). No on-disk evidence.                                                                                                                                                                                                                                                       |
+| 1    | DB row + per-run directory under `<evidence>/tier1/<revisionSha>/<runId>/`: `screenshot.png`, `console.txt`, `protocol-observation.json`. Screenshots use a deterministic 1280×800 viewport; capture requests the full artifact with `captureBeyondViewport`, then falls back to viewport-only when the PNG exceeds the 8 MiB cap. |
 
 The evidence root is the XDG state path `paths.evidence` (or the
 `FACET_HOME/evidence` override). Every directory the runner creates is
@@ -39,10 +39,12 @@ mode 0700 — the canonical secret-bearing layout matches the DB file
 permissions.
 
 Tier 1 capture happens AFTER the verdict is derived so the
-`partial:layout_unverified` screenshot mandate is honored. Before the
-capture the runner emulates `prefers-reduced-motion: reduce` and
-awaits `document.fonts.ready`; without those two pre-flights two runs
-over the same artifact differ byte-for-byte (perf-spike finding).
+`partial:layout_unverified` screenshot mandate is honored. The runner
+uses a deterministic 1280×800 viewport, requests full-artifact capture
+with `captureBeyondViewport`, and falls back to viewport-only when the
+PNG exceeds the 8 MiB cap. Before capture it emulates
+`prefers-reduced-motion: reduce` and awaits `document.fonts.ready`; these
+pre-flights keep repeated captures byte-identical (perf-spike finding).
 
 ## Retention policy
 
