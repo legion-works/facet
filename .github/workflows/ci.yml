@@ -224,7 +224,16 @@ jobs:
           retention-days: 14
 
   acceptance-tier1:
-    needs: [static, unit, integration, security, build, performance]
+    # Depend ONLY on the jobs that make acceptance MEANINGLESS if they fail:
+    # `static` (it cannot typecheck, so the code under test is not the code we
+    # think) and `build` (acceptance loads dist/gallery). The others were cost
+    # control — cheaper-to-run-first is not a reason for a hard dependency, and
+    # treating it as one has a failure mode we hit on af46b64: a browser-launch
+    # flake in `performance` (oven-sh/bun#37230 on the pinned runtime) reported
+    # as "acceptance never ran" rather than "performance is flaky", hiding the
+    # real signal behind a skip. A flaky sibling must not be able to silence the
+    # acceptance gate.
+    needs: [static, build]
     runs-on: ubuntu-latest
     steps:
       # v4.2.2 — 11bd71901bbe5b1630ceea73d27597364c9af683
