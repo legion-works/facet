@@ -1,3 +1,7 @@
+import type { ArtifactType } from "../../../shared/contracts/artifact-types";
+
+export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/artifact-types";
+
 /**
  * Frame-side renderer registry — keyed by ArtifactType.
  *
@@ -9,9 +13,6 @@
  *
  * No zod in the frame bundle: the wire shape is plain JS here.
  */
-
-export const ARTIFACT_TYPES = ["markdown", "mermaid", "svg", "chart"] as const;
-export type ArtifactType = (typeof ARTIFACT_TYPES)[number];
 
 export interface RenderContext {
   readonly container: HTMLElement;

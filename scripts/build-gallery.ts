@@ -18,11 +18,11 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { frameBundlePlugins } from "../src/shared/build/frame-bundle-plugins";
+import { ARTIFACT_TYPES } from "../src/shared/contracts/artifact-types";
 
 const REPO_ROOT = import.meta.dir.replace(/\/scripts$/, "");
 const OUT_DIR = join(REPO_ROOT, "dist", "gallery");
 const FRAME_ENTRY_DIR = join(REPO_ROOT, "src", "gallery-web", "frame", "entries");
-const ARTIFACT_TYPES = ["markdown", "mermaid", "svg", "chart"] as const;
 
 async function buildEntry(entry: string, name: string, splitting = false): Promise<void> {
   const result = await Bun.build({

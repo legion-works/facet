@@ -1,7 +1,9 @@
 import { z } from "zod";
 
-export const ArtifactTypeSchema = z.enum(["markdown", "mermaid", "svg", "chart"]);
-export type ArtifactType = z.infer<typeof ArtifactTypeSchema>;
+import { ARTIFACT_TYPES } from "./artifact-types";
+
+export { ARTIFACT_TYPES, type ArtifactType } from "./artifact-types";
+export const ArtifactTypeSchema = z.enum(ARTIFACT_TYPES);
 
 /** HTML identifies a reserved format and is deliberately excluded from ArtifactTypeSchema and store writes. */
 export const RESERVED_ARTIFACT_TYPE = "html" as const;

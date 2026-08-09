@@ -77,6 +77,7 @@ class FakeIframe extends FakeElement {
               rendererRootSvgCount: 1,
               graphCount: 0,
               mermaidNodeCount: 0,
+              visibleSvgCount: 1,
               errorCount: 0,
             },
           },
@@ -89,7 +90,7 @@ class FakeIframe extends FakeElement {
   };
 }
 
-function createRuntime(viewModeEvent: unknown = { kind: "view-mode", mode: "native" }) {
+function createRuntime(viewModeEvent: unknown = { type: "view-mode", mode: "native" }) {
   const elements = new Map<string, FakeElement>();
   for (const id of [
     "facet-title",
@@ -224,7 +225,7 @@ describe("gallery shell startup", () => {
   });
 
   test("ignores a forged view-mode event with extra fields", async () => {
-    const harness = createRuntime({ kind: "view-mode", mode: "native", forged: true });
+    const harness = createRuntime({ type: "view-mode", mode: "native", forged: true });
     await startGallery(harness.runtime);
     await Promise.resolve();
 

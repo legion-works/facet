@@ -557,7 +557,7 @@ interface SimulatedFrameOptions {
  * `targetOrigin` — the oxlint rule targets `window.postMessage`, so
  * the rule is disabled at this helper.
  */
-function postFrameControl(frame: CreatedArtifactFrame, event: FrameControlEvent): void {
+function postFrameControl(frame: CreatedArtifactFrame, event: unknown): void {
   // oxlint-disable-next-line unicorn/require-post-message-target-origin
   frame.frameControlPort.postMessage(event);
 }
@@ -891,6 +891,29 @@ describe("gallery shell — control-port RECEIVE path", () => {
     expect(await pending).toMatchObject({ type: "boot-ready" });
     // No render-complete coming — the wait must bound itself.
     expect(await frame.awaitControlEvent("render-complete", 50)).toBeNull();
+    frame.closeControl();
+  });
+
+  test("drops ambiguous and malformed control events before dispatch", async () => {
+    const frame = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom: createStubDom(),
+    });
+    const events: FrameControlEvent[] = [];
+    const unsubscribe = frame.onControlEvent((event) => events.push(event));
+
+    postFrameControl(frame, { type: "boot-ready", kind: "view-mode" });
+    postFrameControl(frame, {
+      type: "render-complete",
+      observed: { rendererRootSvgCount: Number.POSITIVE_INFINITY },
+    });
+    postFrameControl(frame, { type: "unknown" });
+    postFrameControl(frame, { type: "view-mode", mode: "native" });
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+
+    expect(events).toEqual([{ type: "view-mode", mode: "native" }]);
+    unsubscribe();
     frame.closeControl();
   });
 });

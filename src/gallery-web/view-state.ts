@@ -97,7 +97,7 @@ export function validateViewIntent(value: unknown): ViewIntent | null {
 export function validateViewMode(value: unknown): ViewMode | null {
   if (value === null || typeof value !== "object") return null;
   const event = value as Record<string, unknown>;
-  if (event.kind !== "view-mode") return null;
+  if (event.type !== "view-mode") return null;
   if (event.mode !== "native" && event.mode !== "css") return null;
   if (Object.keys(event).length !== 2) return null;
   return event.mode;

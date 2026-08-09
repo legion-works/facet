@@ -3,10 +3,9 @@
 import { basename, join } from "node:path";
 
 import { frameBundlePlugins } from "../src/shared/build/frame-bundle-plugins";
+import { ARTIFACT_TYPES, type ArtifactType } from "../src/shared/contracts/artifact-types";
 
 const REPO_ROOT = import.meta.dir.replace(/\/scripts$/, "");
-const ARTIFACT_TYPES = ["markdown", "mermaid", "svg", "chart"] as const;
-type ArtifactType = (typeof ARTIFACT_TYPES)[number];
 
 const EXPECTED_RENDERERS: Readonly<Record<ArtifactType, readonly string[]>> = {
   markdown: ["markdown.ts", "mermaid.ts", "svg.ts"],

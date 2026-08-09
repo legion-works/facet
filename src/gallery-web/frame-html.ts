@@ -10,28 +10,7 @@
  */
 
 import { freshFrameNonce } from "./frame/channels";
-
-/**
- * Frozen production CSP. `script-src 'nonce-<NONCE>'` is the ONLY script
- * authority — the trusted bootstrap, embedded under a per-frame nonce.
- * `style-src 'unsafe-inline'` is required for Mermaid's inline SVG
- * styles; it does NOT authorize script. We never add `script-src
- * 'unsafe-inline'`, `allow-same-origin`, or window.postMessage as a
- * trust path.
- */
-export const FROZEN_CSP_TEMPLATE =
-  "default-src 'none'; " +
-  "script-src 'nonce-<BOOTSTRAP_NONCE>'; " +
-  "style-src 'unsafe-inline'; " +
-  "img-src data:; " +
-  "font-src data:; " +
-  "worker-src 'none'; " +
-  "connect-src 'none'; " +
-  "object-src 'none'; " +
-  "base-uri 'none'; " +
-  "form-action 'none'; " +
-  "frame-src 'none'; " +
-  "media-src 'none'";
+export { FROZEN_CSP_TEMPLATE } from "../shared/security/frozen-csp";
 
 /**
  * Frame element attributes. The shell applies these to every iframe it

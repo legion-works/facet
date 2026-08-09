@@ -51,11 +51,12 @@ describe("gallery view state", () => {
   });
 
   test("accepts only native and css frame view modes", () => {
-    expect(validateViewMode({ kind: "view-mode", mode: "native" })).toBe("native");
-    expect(validateViewMode({ kind: "view-mode", mode: "css" })).toBe("css");
-    expect(validateViewMode({ kind: "view-mode", mode: "script" })).toBeNull();
-    expect(validateViewMode({ kind: "view-mode", mode: "native", zoom: 8 })).toBeNull();
-    const prototypeLess = Object.assign(Object.create(null), { kind: "view-mode", mode: "native" });
+    expect(validateViewMode({ type: "view-mode", mode: "native" })).toBe("native");
+    expect(validateViewMode({ type: "view-mode", mode: "css" })).toBe("css");
+    expect(validateViewMode({ type: "view-mode", mode: "script" })).toBeNull();
+    expect(validateViewMode({ type: "view-mode", mode: "native", zoom: 8 })).toBeNull();
+    expect(validateViewMode({ type: "view-mode", kind: "view-intent", mode: "native" })).toBeNull();
+    const prototypeLess = Object.assign(Object.create(null), { type: "view-mode", mode: "native" });
     expect(validateViewMode(prototypeLess)).toBe("native");
   });
 });

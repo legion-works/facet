@@ -117,7 +117,7 @@ function receiveViewState(value: unknown): void {
   if (value === null || typeof value !== "object") return;
   const event = value as Record<string, unknown>;
   if (
-    event.kind !== "view-state" ||
+    event.type !== "view-state" ||
     typeof event.zoom !== "number" ||
     !Number.isFinite(event.zoom) ||
     event.zoom <= 0 ||
@@ -130,13 +130,13 @@ function receiveViewState(value: unknown): void {
   if (renderedSvg === null || originalViewBox === null) {
     if (!viewModeReported) {
       viewModeReported = true;
-      deliver({ kind: "view-mode", mode: "css" });
+      deliver({ type: "view-mode", mode: "css" });
     }
     return;
   }
   if (!viewModeReported) {
     viewModeReported = true;
-    deliver({ kind: "view-mode", mode: "native" });
+    deliver({ type: "view-mode", mode: "native" });
   }
   const width = renderedSvg.clientWidth;
   const height = renderedSvg.clientHeight;

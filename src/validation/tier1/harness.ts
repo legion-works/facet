@@ -22,29 +22,11 @@ import { build } from "bun";
 
 import { ARTIFACT_TYPES, type ArtifactType } from "../../gallery-web/frame/renderers/registry";
 import { frameBundlePlugins } from "../../shared/build/frame-bundle-plugins";
+import { FROZEN_CSP_TEMPLATE as HARNESS_CSP } from "../../shared/security/frozen-csp";
+
+export { FROZEN_CSP_TEMPLATE as HARNESS_CSP } from "../../shared/security/frozen-csp";
 
 const HARNESS_ENTRY_DIR = `${import.meta.dir}/entries`;
-
-/**
- * Frozen CSP the harness srcdoc ships with. Identical directive
- * shape to the gallery frame's CSP so the harness has the same
- * script-authority boundary: only the bundled bootstrap (under the
- * per-frame nonce) is executable; received artifact bytes never
- * become executable script.
- */
-export const HARNESS_CSP =
-  "default-src 'none'; " +
-  "script-src 'nonce-<BOOTSTRAP_NONCE>'; " +
-  "style-src 'unsafe-inline'; " +
-  "img-src data:; " +
-  "font-src data:; " +
-  "worker-src 'none'; " +
-  "connect-src 'none'; " +
-  "object-src 'none'; " +
-  "base-uri 'none'; " +
-  "form-action 'none'; " +
-  "frame-src 'none'; " +
-  "media-src 'none'";
 
 function freshNonce(): string {
   const bytes = new Uint8Array(16);

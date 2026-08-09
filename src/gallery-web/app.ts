@@ -29,6 +29,7 @@ import {
   newFrameNonce,
   type FrameAttributes,
 } from "./frame-html";
+import { createChannelPair } from "./frame/channels";
 import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
 import {
@@ -149,17 +150,71 @@ export type { ViewIntent, ViewState } from "./view-state";
  * Control-port events the frame emits to the shell. The frame's
  * page-shim counts ride `render-complete.observed`.
  */
+interface FrameObserved {
+  readonly rendererRootSvgCount: number;
+  readonly graphCount: number;
+  readonly mermaidNodeCount: number;
+  readonly visibleSvgCount: number;
+  readonly errorCount: number;
+}
+
 export interface FrameControlEvent {
-  readonly type?: string;
-  readonly kind?: string;
+  readonly type: string;
   readonly mode?: string;
-  readonly observed?: {
-    readonly rendererRootSvgCount?: number;
-    readonly graphCount?: number;
-    readonly mermaidNodeCount?: number;
-    readonly visibleSvgCount?: number;
-    readonly errorCount?: number;
+  readonly observed?: FrameObserved;
+}
+
+function finite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function validateObserved(value: unknown): FrameObserved | null {
+  if (value === null || typeof value !== "object") return null;
+  const observed = value as Record<string, unknown>;
+  const keys = [
+    "rendererRootSvgCount",
+    "graphCount",
+    "mermaidNodeCount",
+    "visibleSvgCount",
+    "errorCount",
+  ];
+  const rendererRootSvgCount = observed.rendererRootSvgCount;
+  const graphCount = observed.graphCount;
+  const mermaidNodeCount = observed.mermaidNodeCount;
+  const visibleSvgCount = observed.visibleSvgCount;
+  const errorCount = observed.errorCount;
+  if (
+    Object.keys(observed).length !== keys.length ||
+    !finite(rendererRootSvgCount) ||
+    !finite(graphCount) ||
+    !finite(mermaidNodeCount) ||
+    !finite(visibleSvgCount) ||
+    !finite(errorCount)
+  )
+    return null;
+  return {
+    rendererRootSvgCount,
+    graphCount,
+    mermaidNodeCount,
+    visibleSvgCount,
+    errorCount,
   };
+}
+
+function validateFrameControlEvent(value: unknown): FrameControlEvent | null {
+  if (value === null || typeof value !== "object") return null;
+  const event = value as Record<string, unknown>;
+  if (typeof event.type !== "string" || "kind" in event) return null;
+  if (event.type === "view-intent") return validateViewIntent(event);
+  if (event.type === "view-mode") {
+    const mode = validateViewMode(event);
+    return mode === null ? null : { type: "view-mode", mode };
+  }
+  if (event.type === "boot-ready")
+    return Object.keys(event).length === 1 ? { type: event.type } : null;
+  if (event.type !== "render-complete" || Object.keys(event).length !== 2) return null;
+  const observed = validateObserved(event.observed);
+  return observed === null ? null : { type: event.type, observed };
 }
 
 export interface CreateArtifactFrameOptions {
@@ -243,12 +298,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   frameUrl.searchParams.set("nonce", nonce);
   frameUrl.searchParams.set("type", options.artifactType);
   const attrs = buildFrameAttributes(frameUrl.toString());
-  // Fresh channels per frame. port1 = shell side; port2 = frame side
-  // (transferred on the postMessage handshake).
-  const ingress = new dom.MessageChannel();
-  const control = new dom.MessageChannel();
-  let ingressDelivered = false;
-  let controlOpen = true;
+  const channels = createChannelPair({ messageChannelCtor: dom.MessageChannel });
   const element = dom.document.createElement("iframe");
   element.setAttribute("sandbox", attrs.sandbox);
   element.setAttribute("referrerpolicy", attrs.referrerpolicy);
@@ -261,14 +311,9 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   // a handler registry: one port listener, many subscribers.
   const controlHandlers = new Set<(event: FrameControlEvent) => void>();
   // oxlint-disable-next-line unicorn/prefer-add-event-listener
-  control.port1.onmessage = (event: MessageEvent) => {
-    const data = event.data as FrameControlEvent | null;
-    if (
-      data === null ||
-      typeof data !== "object" ||
-      (typeof data.type !== "string" && typeof data.kind !== "string")
-    )
-      return;
+  channels.controlPort.onmessage = (event: MessageEvent) => {
+    const data = validateFrameControlEvent(event.data);
+    if (data === null) return;
     // Spread snapshots the handler set so a handler that unsubscribes
     // itself mid-dispatch does not skip the remaining peers.
     // oxlint-disable-next-line unicorn/no-useless-spread
@@ -279,38 +324,11 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
     frameId,
     nonce,
     attrs,
-    frameIngressPort: ingress.port2,
-    frameControlPort: control.port2,
-    deliverSource(payload) {
-      if (ingressDelivered) return;
-      ingressDelivered = true;
-      try {
-        ingress.port1.postMessage(payload);
-      } finally {
-        try {
-          ingress.port1.close();
-        } catch {
-          // already closed
-        }
-      }
-    },
-    sendControl(payload) {
-      if (!controlOpen) return;
-      try {
-        control.port1.postMessage(payload);
-      } catch {
-        // control channel torn down — drop silently
-      }
-    },
-    closeControl() {
-      if (!controlOpen) return;
-      controlOpen = false;
-      try {
-        control.port1.close();
-      } catch {
-        // already closed
-      }
-    },
+    frameIngressPort: channels.frameIngressPort,
+    frameControlPort: channels.frameControlPort,
+    deliverSource: channels.deliverSource,
+    sendControl: channels.sendControl,
+    closeControl: channels.closeControl,
     onControlEvent(handler) {
       controlHandlers.add(handler);
       return () => {
@@ -372,12 +390,12 @@ function observedErrorCount(event: FrameControlEvent): number {
 }
 
 function viewStateMessage(state: ViewState): {
-  readonly kind: "view-state";
+  readonly type: "view-state";
   readonly zoom: number;
   readonly panX: number;
   readonly panY: number;
 } {
-  return { kind: "view-state", zoom: state.zoom, panX: state.panX ?? 0, panY: state.panY ?? 0 };
+  return { type: "view-state", zoom: state.zoom, panX: state.panX ?? 0, panY: state.panY ?? 0 };
 }
 
 /**
