@@ -23,6 +23,7 @@ import puppeteer, { type Browser, type CDPSession, type Page } from "puppeteer-c
 import { buildBrowserArgs, resolveLauncher, type ResolvedLauncher } from "./launcher";
 import { TIER1_CDP_CALL_WATCHDOG_MS } from "./limits";
 import {
+  closeAndRemoveEphemeralProfile,
   createEphemeralProfileDir,
   removeEphemeralProfileDir,
   type VerifierCdpSession,
@@ -129,10 +130,11 @@ class PuppeteerVerifierTarget implements VerifierTarget {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    await this.session.detach().catch(() => {});
-    await this.page.close().catch(() => {});
-    await this.browser.close().catch(() => {});
-    removeEphemeralProfileDir(this.profileDir);
+    await closeAndRemoveEphemeralProfile(async () => {
+      await this.session.detach().catch(() => {});
+      await this.page.close().catch(() => {});
+      await this.browser.close().catch(() => {});
+    }, this.profileDir);
   }
 }
 

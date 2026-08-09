@@ -51,6 +51,8 @@ export interface SpawnServiceOptions {
   readonly readyTimeoutMs?: number;
   /** Poll interval in ms (default: 25). */
   readonly pollIntervalMs?: number;
+  /** Override the service idle window; used by lifecycle probes and tests. */
+  readonly idleTimeoutMs?: number;
   /**
    * Override the Tier 0 runner module path. Defaults to
    * `src/validation/tier0/runner.ts` resolved relative to this file.
@@ -129,6 +131,9 @@ function spawnChild(paths: FacetRuntimePaths, options: SpawnServiceOptions): Chi
     "--tier0-runner-path",
     tier0RunnerPath,
   ];
+  if (options.idleTimeoutMs !== undefined) {
+    args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
+  }
   return spawn(bunPath, args, {
     env: childEnv,
     stdio: ["ignore", "ignore", "ignore"],

@@ -96,6 +96,18 @@ export function removeEphemeralProfileDir(path: string): void {
   }
 }
 
+export async function closeAndRemoveEphemeralProfile(
+  close: () => Promise<void>,
+  profileDir: string,
+  timeoutMs = 2_000,
+): Promise<void> {
+  try {
+    await Promise.race([close(), new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+  } finally {
+    removeEphemeralProfileDir(profileDir);
+  }
+}
+
 /**
  * Detect whether the launcher wrapper + pinned shell are reachable.
  * Bounded by a 2s timeout so a hung unshare does not freeze the
