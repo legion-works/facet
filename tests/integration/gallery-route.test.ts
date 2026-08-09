@@ -74,6 +74,54 @@ describe("GET /gallery", () => {
     expect(galleryAsset.status).toBe(200);
   });
 
+  test("the frame script route refuses to escape the gallery root", async () => {
+    // af46b64 added a NEW file-serving route keyed on URL path
+    // (/gallery/frame/bootstrap/*.js, /gallery/frame/chunks/*.js) so each
+    // artifact type loads only its own renderer bundle. Path traversal is the
+    // classic defect of exactly that shape, and the guard is worth an
+    // executable proof rather than a careful read.
+    const testEnvDir = mkdtempSync(join(tmpdir(), "facet-gallery-traversal-"));
+    envDir = testEnvDir;
+    service = await startFacetService({
+      dbPath: join(testEnvDir, "facet.sqlite"),
+      installTokenPath: join(testEnvDir, "install.token"),
+      promoteTokenPath: join(testEnvDir, "promote.token"),
+      lockPath: join(testEnvDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "gallery-traversal-test" }),
+      tier0Runner: stubTier0Runner,
+    });
+
+    // The escape targets must EXIST on disk outside the gallery root, or the
+    // 404 proves only that the file is missing. Mutation-checked: with the
+    // traversal guard disabled these requests return 200 and serve real bytes
+    // from node_modules. An earlier version of this test aimed at
+    // /etc/passwd.js and passed with the guard removed — a guard verified by an
+    // unrelated 404 is not verified at all.
+    // FOUR levels: the request path is already two deep (frame/bootstrap/),
+    // and dist/gallery is two below the repo root. Under-escaping produces a
+    // path that never leaves the root, which passes for the wrong reason.
+    const realFileOutsideRoot = "../../../../node_modules/marked/lib/marked.esm.js";
+    const escapes = [
+      `/gallery/frame/bootstrap/${realFileOutsideRoot}`,
+      `/gallery/frame/chunks/${realFileOutsideRoot}`,
+      "/gallery/frame/bootstrap/..%2f..%2f..%2f..%2fnode_modules%2fmarked%2flib%2fmarked.esm.js",
+      "/gallery/frame/chunks/%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fnode_modules%2fmarked%2flib%2fmarked.esm.js",
+    ];
+    for (const escape of escapes) {
+      const response = await fetch(`${service.url}${escape}`);
+      expect(response.status).toBe(404);
+      expect(await response.text()).not.toContain("marked");
+    }
+
+    // A legitimate bundle still serves, so the guard is not just refusing
+    // everything — a 404-for-all guard would pass the assertions above while
+    // breaking the gallery entirely.
+    const legit = await fetch(`${service.url}/gallery/frame/bootstrap/svg.js`);
+    expect(legit.status).toBe(200);
+    expect((await legit.text()).length).toBeGreaterThan(0);
+  });
+
   test("serves a nonce-bound frame document and CORS-enabled module bootstrap", async () => {
     const testEnvDir = mkdtempSync(join(tmpdir(), "facet-gallery-frame-"));
     envDir = testEnvDir;
