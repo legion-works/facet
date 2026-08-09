@@ -273,16 +273,17 @@ export async function dispatch(
       // partial run so the wire response can carry a verdict-shaped
       // body. A non-ok Tier0Result is normal: the parser rejected the
       // artifact and we persist that decision as a render_run.
-      const lexical = computeLexicalExpectations(bytes, artifactType);
+      const lexical = computeLexicalExpectations(bytes, artifactType, command.renderer);
       const tier0Input = Tier0InputSchema.parse({
         revisionSha: revision.sha256,
         artifactType,
+        renderer: command.renderer,
         source: bytes,
         lexical: {
           rendererRootSvgCount: lexical.expectedRendererRoots,
           mermaidNodeCount: lexical.mermaidNodeCount,
           visibleSvgCount: 0,
-          opaqueRegionCount: 0,
+          opaqueRegionCount: lexical.expectedOpaqueRegions,
         },
       });
       const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input);

@@ -215,6 +215,29 @@ describe("computeLexicalExpectations — public shape", () => {
     expect(expectations.mermaidBlocks).toBe(0);
     expect(expectations.expectedRendererRoots).toBe(0);
   });
+
+  test("chart expectations are renderer-aware while svg remains unchanged", () => {
+    const bytes = new TextEncoder().encode('{"mark":"bar"}');
+    expect(computeLexicalExpectations(bytes, "chart")).toMatchObject({
+      expectedRendererRoots: 1,
+      expectedOpaqueRegions: 0,
+    });
+    expect(computeLexicalExpectations(bytes, "chart", "canvas")).toMatchObject({
+      expectedRendererRoots: 0,
+      expectedOpaqueRegions: 1,
+    });
+    expect(computeLexicalExpectations(bytes, "chart", "svg")).toMatchObject({
+      expectedRendererRoots: 1,
+      expectedOpaqueRegions: 0,
+    });
+  });
+
+  test("markdown, mermaid, and svg defaults retain zero opaque-region expectations", () => {
+    const bytes = new TextEncoder().encode("graph TD\nA --> B");
+    for (const artifactType of ["markdown", "mermaid", "svg"] as const) {
+      expect(computeLexicalExpectations(bytes, artifactType).expectedOpaqueRegions).toBe(0);
+    }
+  });
 });
 
 describe("computeLexicalExpectations — node-declaration prediction (real-renderer semantics)", () => {

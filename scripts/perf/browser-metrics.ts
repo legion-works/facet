@@ -141,6 +141,7 @@ export async function measureColdReadBack(): Promise<{
         verdict = await runTier1({
           revisionSha: published.revisionSha,
           artifactType: "svg",
+          renderer: "svg",
           source: bytes,
           lexical: {
             rendererRootSvgCount: lexical.expectedRendererRoots,

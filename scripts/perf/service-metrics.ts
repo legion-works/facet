@@ -326,6 +326,7 @@ export async function measureTier0Spawn(): Promise<{
     const result = await runTier0({
       revisionSha,
       artifactType: "markdown",
+      renderer: "svg",
       source,
       lexical: {
         rendererRootSvgCount: lexical.expectedRendererRoots,

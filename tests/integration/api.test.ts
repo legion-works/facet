@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 import {
@@ -26,6 +27,7 @@ import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 interface TestEnv {
   service: RunningService;
+  dbPath: string;
   baseUrl: string;
   installToken: string;
   promoteToken: string | null;
@@ -62,6 +64,7 @@ async function startService(): Promise<TestEnv> {
 
   return {
     service,
+    dbPath,
     baseUrl: service.url,
     installToken: service.installToken,
     promoteToken: service.promoteToken,
@@ -170,6 +173,23 @@ describe("service API integration", () => {
       expect(publishBody.ok).toBe(true);
       if (publishBody.data.command === "publish") {
         expect(publishBody.data.revision.renderer).toBe("canvas");
+
+        const db = new Database(env.dbPath, { readonly: true });
+        try {
+          const row = db
+            .query(
+              "SELECT expected_json FROM render_runs WHERE tier = 0 ORDER BY finished_at DESC LIMIT 1",
+            )
+            .get() as { expected_json: string };
+          const expected = JSON.parse(row.expected_json) as {
+            rendererRootSvgCount: number;
+            opaqueRegionCount: number;
+          };
+          expect(expected.rendererRootSvgCount).toBe(0);
+          expect(expected.opaqueRegionCount).toBe(1);
+        } finally {
+          db.close();
+        }
       }
     } finally {
       await env.cleanup();

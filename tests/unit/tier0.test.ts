@@ -320,6 +320,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
       const input = {
         revisionSha: "0".repeat(64),
         artifactType: "markdown" as const,
+        renderer: "svg" as const,
         source: bytes,
         lexical: lexicalCounters(bytes),
       };
@@ -338,6 +339,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
       const input = {
         revisionSha: "0".repeat(64),
         artifactType: "mermaid" as const,
+        renderer: "svg" as const,
         source: bytes,
         lexical: lexicalCounters(bytes),
       };
@@ -358,6 +360,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
       const input = {
         revisionSha: "0".repeat(64),
         artifactType: "svg" as const,
+        renderer: "svg" as const,
         source: bytes,
         lexical: lexicalCounters(bytes),
       };
@@ -374,6 +377,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
       const input = {
         revisionSha: "0".repeat(64),
         artifactType: "chart" as const,
+        renderer: "svg" as const,
         source: bytes,
         lexical: lexicalCounters(bytes),
       };
@@ -410,6 +414,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
       runTier0({
         revisionSha: "0".repeat(64),
         artifactType: "markdown",
+        renderer: "svg",
         source: bytes,
         lexical: lexicalCounters(bytes),
       }),

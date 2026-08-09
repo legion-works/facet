@@ -13,6 +13,7 @@
 
 import { MAX_MERMAID_BLOCKS, MAX_MERMAID_NODES } from "../../shared/config/limits";
 import type { ArtifactType } from "../../shared/contracts/artifact";
+import type { Renderer } from "../../shared/contracts/renderers";
 import { countMermaidNodeDeclarations } from "../../shared/util/mermaid-nodes";
 
 export interface FencedBlockCounts {
@@ -40,6 +41,8 @@ export interface LexicalExpectations {
    * the actual SVGs and the verdict fails closed on any divergence.
    */
   readonly expectedRendererRoots: number;
+  /** Expected opaque regions produced by renderer modes without SVG roots. */
+  readonly expectedOpaqueRegions: number;
   /**
    * Lexical node count: identifier-`[` declarations (`N1[...]`,
    * `A[...]`) across all mermaid blocks — the prediction the verdict
@@ -171,6 +174,7 @@ export function countMermaidBlocks(bytes: Uint8Array): number {
 export function computeLexicalExpectations(
   bytes: Uint8Array,
   artifactType: ArtifactType,
+  renderer: Renderer = "svg",
 ): LexicalExpectations {
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   const spans = findFenceSpans(text);
@@ -188,12 +192,14 @@ export function computeLexicalExpectations(
         : 0;
   const exceedsComplexityBudget =
     mermaid > MAX_MERMAID_BLOCKS || mermaidNodeCount > MAX_MERMAID_NODES;
-  const expectedRendererRoots = artifactType === "markdown" ? mermaid : 1;
+  const canvasChart = artifactType === "chart" && renderer === "canvas";
+  const expectedRendererRoots = canvasChart ? 0 : artifactType === "markdown" ? mermaid : 1;
   return {
     totalFencedBlocks: spans.length,
     mermaidBlocks: mermaid,
     fencedBlocksByLanguage: byLanguage,
     expectedRendererRoots,
+    expectedOpaqueRegions: canvasChart ? 1 : 0,
     mermaidNodeCount,
     exceedsComplexityBudget,
   };
