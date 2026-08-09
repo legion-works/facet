@@ -7,6 +7,19 @@ types may extend registries, but artifact code never gains host capabilities.
 
 • Artifact-content secret and PII scanning
 • HTML boundary re-review
+• Verdict path for structurally opaque content — the prerequisite for HTML mode, not a
+follow-up to it. Every observable a verdict is built from today
+(`rendererRootSvgCount`, `graphCount`, `mermaidNodeCount`, `visibleSvgCount`,
+`viewBoxes`) is DOM structure read by protocol authority, independent of page JS —
+which is exactly why a monkeypatched in-page shim cannot forge a verdict. Content
+that renders to an opaque bitmap (`<canvas>`, WebGL) exposes ONE element and no
+structure, so a canvas-bearing artifact can never earn a plain `ok`. Shipping HTML
+mode admits canvas whether or not we add it deliberately — any HTML artifact may
+carry a `<canvas>` and draw to it. Required: classify opaque regions and downgrade
+honestly (`partial:layout_unverified`, which already mandates a non-null
+`screenshotPath`) rather than asserting a structural claim the run could not check.
+Same principle as Insecure mode: a verdict must never claim a trust property the run
+did not have.
 • Screenshot policy tuning
 • Export slot
 • Browser pin upgrades
@@ -17,6 +30,27 @@ types may extend registries, but artifact code never gains host capabilities.
 
 • TypeScript `ArtifactBuilder`
 ▸ Swappable UI library: let a TSX artifact declare its UI kit and resolve it through a registered provider — another typed registry extension, like `RendererRegistry`. Hard constraint: the kit is vendored/bundled offline (never a runtime CDN pull) and artifact code still gains zero host capabilities — the frozen-CSP + byte-dumb model binds it. Researched defaults (T1, re-verify at design time): **Base UI** for polished/composed work (headless primitives; `CSPProvider` v1.1.0+ threads the per-frame nonce into its 4 style-injecting components) + **daisyUI 5** for quick dashboards (56/58 components pure CSS → CSP-safe by construction; themes are CSS-var sets that slot into the design-token palette). Disqualified: shadcn/ui's default Radix variant — `react-style-singleton` injects scroll-lock `<style>` without nonce propagation in static builds (upstream open since 2023). Charts stay vega-lite (already vendored, SVG, no runtime style injection).
+▸ Canvas as a RENDERER BACKEND — never as an artifact type. Rejected as a peer type
+(`artifactType: "canvas"`): a raw canvas yields no structural observable, so its
+verdict would rest on the page's own claim about what it drew — the precise forgery
+vector the trust core exists to close. Legitimate instead: verify at the SPEC layer,
+render at the PIXEL layer. Vega-Lite is already compiled and structurally validated
+in Tier 0, and Vega ships both SVG and canvas renderers, so a canvas backend for
+large-series charts leaves the trust anchor untouched — the spec is what we verify,
+the pixels are only how it is drawn. Gate it on measured need (SVG node counts where
+headless render time actually degrades), and it inherits the CSP constraint that
+already forced `@vega/vega-interpreter`: no `unsafe-eval`, offline, bundle-local.
+**Requires no new dependency** — researched (2026-08-09): Vega is the only surveyed
+library that switches one compiled spec between SVG and canvas AND clears strict
+nonce-only CSP, via the AST interpreter we already vendor. Disqualified on CSP
+grounds, recorded so this is not re-litigated: full D3 ships `new Function`; Plotly's
+renderer is trace-specific rather than one switch, with unresolved nonce/inline-style
+behavior; ECharts has dual output but its CSP admission is unproven against our
+pinned Chromium (would need a smoke test before it could be considered).
+The finding that settles canvas-as-a-type: **no permissively licensed library
+maintains a per-mark DOM mirror beside the bitmap** (Highcharts is the nearest prior
+art and is commercially licensed), so there is no structural surface for protocol
+probes to observe — the rejection above is a measured conclusion, not an assumption.
 • Forms `FormBridge`
 • FTS5 `SearchIndex`
 • Trilium `ExportSink`
