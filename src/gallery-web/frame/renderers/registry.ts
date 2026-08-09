@@ -55,35 +55,70 @@ export interface PageShimCounts {
   readonly graphCount: number;
   readonly mermaidNodeCount: number;
   readonly visibleSvgCount: number;
+  readonly opaqueRegionCount: number;
   readonly errorCount: number;
 }
 
-function safeSelectorCount(selector: string): number {
+const RENDERER_ROOT_SELECTOR = 'svg[data-facet-renderer-root="true"]';
+const RENDERER_GRAPH_ATTRIBUTE = "data-facet-renderer-graph";
+
+function safeSelectorElementsWithin(scope: ParentNode, selector: string): Element[] {
   // The shim lives in the PAGE world on purpose: a hostile page can
   // monkey-patch querySelectorAll and lie here — the Tier 1 verdict
   // detects that lie against the protocol authority. Reading through
   // the patchable API is the design, not a bug.
-  let result: unknown;
   try {
-    result = document.querySelectorAll(selector);
+    return Array.from(scope.querySelectorAll(selector));
   } catch {
-    result = [];
+    return [];
   }
-  return result !== null && typeof result === "object" && "length" in result
-    ? Number((result as { length: number }).length)
-    : 0;
+}
+
+function safeSelectorElements(selector: string): Element[] {
+  return safeSelectorElementsWithin(document, selector);
+}
+
+function hasMarkedRootAncestor(root: Element, roots: ReadonlySet<Element>): boolean {
+  let parent = root.parentElement;
+  while (parent !== null) {
+    if (roots.has(parent)) return true;
+    parent = parent.parentElement;
+  }
+  return false;
+}
+
+function nonDegenerateViewBox(svg: Element): boolean {
+  const parts = (svg.getAttribute("viewBox") ?? "")
+    .trim()
+    .split(/[\s,]+/)
+    .map((part) => Number.parseFloat(part));
+  if (parts.length !== 4) return false;
+  const [, , width, height] = parts as [number, number, number, number];
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
 }
 
 /** Page-world self-report emitted with `render-complete`. UNTRUSTED by design. */
 export function countPageShim(): PageShimCounts {
-  const svgLength = safeSelectorCount("svg");
-  const errorLength = safeSelectorCount("[data-facet-error]");
+  const markedCandidates = safeSelectorElements(RENDERER_ROOT_SELECTOR);
+  const candidateSet = new Set(markedCandidates);
+  const roots = markedCandidates.filter((root) => !hasMarkedRootAncestor(root, candidateSet));
+  const graphRoots = roots.filter((root) => root.getAttribute(RENDERER_GRAPH_ATTRIBUTE) === "true");
+  const mermaidNodeCount = graphRoots.reduce(
+    (count, root) => count + safeSelectorElementsWithin(root, "g.node").length,
+    0,
+  );
+  // Opaque regions are owning <canvas> elements; getContext() would create
+  // the surface being observed and turn the probe into a false positive.
+  const opaqueRegionCount = safeSelectorElements("*").filter(
+    (element) => element.nodeName.toLowerCase() === "canvas",
+  ).length;
   return {
-    rendererRootSvgCount: svgLength,
-    graphCount: svgLength,
-    mermaidNodeCount: svgLength,
-    visibleSvgCount: svgLength,
-    errorCount: errorLength,
+    rendererRootSvgCount: roots.length,
+    graphCount: graphRoots.length,
+    mermaidNodeCount,
+    visibleSvgCount: roots.filter(nonDegenerateViewBox).length,
+    opaqueRegionCount,
+    errorCount: safeSelectorElements("[data-facet-error]").length,
   };
 }
 

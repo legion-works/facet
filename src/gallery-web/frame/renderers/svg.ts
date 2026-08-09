@@ -79,6 +79,9 @@ const CSS_REF_ATTRS = new Set([
 ]);
 
 const EVENT_HANDLER_RE = /^on[a-z]+$/i;
+const RENDERER_ROOT_ATTRIBUTE = "data-facet-renderer-root";
+const RENDERER_GRAPH_ATTRIBUTE = "data-facet-renderer-graph";
+const RESERVED_RENDERER_ATTRIBUTES = new Set([RENDERER_ROOT_ATTRIBUTE, RENDERER_GRAPH_ATTRIBUTE]);
 
 function stripCssComments(css: string): string {
   let clean = "";
@@ -278,6 +281,10 @@ export function sanitizeSvgDocument(doc: Document): void {
     }
     for (const attr of Array.from(el.attributes ?? [])) {
       const name = attr.name.toLowerCase();
+      if (RESERVED_RENDERER_ATTRIBUTES.has(name)) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
       if (EVENT_HANDLER_RE.test(name)) {
         el.removeAttribute(attr.name);
         continue;
@@ -334,6 +341,8 @@ export interface SvgImportSettleOptions {
   readonly settleMs?: number;
   /** Hard cap — a never-settling subtree cannot wedge the barrier. */
   readonly maxWaitMs?: number;
+  /** Mark a sanitized renderer root as a Mermaid graph. */
+  readonly marker?: "graph";
 }
 
 /**
@@ -352,7 +361,9 @@ export async function importSanitizedSvgText(
   const maxWaitMs = options.maxWaitMs ?? 1_500;
   const doc = parseSvgData(svgText);
   sanitizeSvgDocument(doc);
-  const imported = document.importNode(doc.documentElement, true);
+  const imported = document.importNode(doc.documentElement, true) as Element;
+  imported.setAttribute(RENDERER_ROOT_ATTRIBUTE, "true");
+  if (options.marker === "graph") imported.setAttribute(RENDERER_GRAPH_ATTRIBUTE, "true");
   container.appendChild(imported);
   await new Promise<void>((resolve) => {
     let quietTimer: ReturnType<typeof setTimeout> | null = null;

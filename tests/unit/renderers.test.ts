@@ -145,6 +145,25 @@ describe("markdown renderer — raw HTML is DATA, never elements", () => {
 });
 
 describe("svg renderer — sanitize BEFORE import", () => {
+  test("reserved renderer markers are stripped from hostile SVG before the imported root is marked", async () => {
+    const container = freshContainer();
+    await svg.importSanitizedSvgText(
+      container,
+      [
+        '<svg xmlns="http://www.w3.org/2000/svg" data-facet-renderer-root="true" data-facet-renderer-graph="true">',
+        '<svg data-facet-renderer-root="true" data-facet-renderer-graph="true"/>',
+        "</svg>",
+      ].join(""),
+      { settleMs: 0, maxWaitMs: 10 },
+    );
+
+    const imported = container.firstElementChild;
+    expect(imported?.getAttribute("data-facet-renderer-root")).toBe("true");
+    expect(imported?.getAttribute("data-facet-renderer-graph")).toBeNull();
+    expect(imported?.querySelector("svg")?.getAttribute("data-facet-renderer-root")).toBeNull();
+    expect(imported?.querySelector("svg")?.getAttribute("data-facet-renderer-graph")).toBeNull();
+  });
+
   test("parseSvgData rejects garbage input and non-svg roots", () => {
     // linkedom recovers silently from some malformed XML (real browsers
     // surface parsererror, which parseSvgData also checks); garbage
@@ -481,6 +500,28 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
 });
 
 describe("renderer registry — dispatch contract", () => {
+  test("page shim reports marker-scoped counts without inflating nested SVGs or creating canvas contexts", () => {
+    shimDocument.body.replaceChildren();
+    const container = freshContainer();
+    container.innerHTML = [
+      '<svg data-facet-renderer-root="true" data-facet-renderer-graph="true" viewBox="0 0 100 100">',
+      '<g class="node"/><g class="node"/>',
+      '<svg data-facet-renderer-root="true" data-facet-renderer-graph="true" viewBox="0 0 100 100"/>',
+      "<canvas></canvas>",
+      '<facet-error data-facet-error="true"></facet-error>',
+      "</svg>",
+    ].join("");
+
+    expect(registry.countPageShim()).toEqual({
+      rendererRootSvgCount: 1,
+      graphCount: 1,
+      mermaidNodeCount: 2,
+      visibleSvgCount: 1,
+      opaqueRegionCount: 1,
+      errorCount: 1,
+    });
+  });
+
   test("registry resolves the four implemented types", () => {
     const reg = registry.createRendererRegistry(
       registry.ARTIFACT_TYPES.map((type) => [type, NOOP_RENDERER] as const),

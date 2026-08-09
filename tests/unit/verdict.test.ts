@@ -54,6 +54,7 @@ const shim = (overrides: Partial<PageShim> = {}): PageShim => ({
   graphCount: 1,
   mermaidNodeCount: 1,
   visibleSvgCount: 1,
+  opaqueRegionCount: 0,
   errorCount: 0,
   ...overrides,
 });
@@ -78,6 +79,17 @@ describe("deriveVerdict — happy path", () => {
 });
 
 describe("deriveVerdict — tamper detection (page shim is untrusted)", () => {
+  test("isolated opaque-region count differs from protocol → tampered", () => {
+    const status = deriveVerdict(
+      lex(),
+      protocol({ opaqueRegionCount: 1 }),
+      protocol({ opaqueRegionCount: 0 }),
+      shim({ opaqueRegionCount: 1 }),
+      lifecycle(),
+    );
+    expect(status).toBe("tampered");
+  });
+
   test("shim reports 2 SVGs / 0 errors but protocol truth shows 0 / 1 → tampered", () => {
     const status = deriveVerdict(
       lex({ rendererRootSvgCount: 1, mermaidNodeCount: 1, visibleSvgCount: 1 }),
@@ -208,7 +220,7 @@ describe("deriveVerdict — expected/observed mismatch", () => {
       lex({ rendererRootSvgCount: 2, mermaidNodeCount: 4 }),
       protocol({ rendererRootSvgCount: 1, graphCount: 1, mermaidNodeCount: 2 }),
       protocol({ rendererRootSvgCount: 1, graphCount: 1, mermaidNodeCount: 2 }),
-      shim({ rendererRootSvgCount: 1, graphCount: 1 }),
+      shim({ rendererRootSvgCount: 1, graphCount: 1, mermaidNodeCount: 2 }),
       lifecycle(),
     );
     expect(status).toBe("error");

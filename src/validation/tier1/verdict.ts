@@ -43,6 +43,7 @@ export interface PageShim {
   readonly graphCount: number;
   readonly mermaidNodeCount: number;
   readonly visibleSvgCount: number;
+  readonly opaqueRegionCount: number;
   readonly errorCount: number;
 }
 
@@ -138,8 +139,10 @@ function shimDiverges(shim: PageShim, protocol: ProtocolObservation): boolean {
   return (
     shim.rendererRootSvgCount !== protocol.rendererRootSvgCount ||
     shim.graphCount !== protocol.graphCount ||
+    shim.mermaidNodeCount !== protocol.mermaidNodeCount ||
     shim.errorCount !== protocol.errorCount ||
-    shim.visibleSvgCount !== protocol.visibleSvgCount
+    shim.visibleSvgCount !== protocol.visibleSvgCount ||
+    shim.opaqueRegionCount !== protocol.opaqueRegionCount
   );
 }
 
@@ -149,7 +152,8 @@ function countsDiffer(left: ProtocolObservation, right: ProtocolObservation): bo
     left.graphCount !== right.graphCount ||
     left.mermaidNodeCount !== right.mermaidNodeCount ||
     left.visibleSvgCount !== right.visibleSvgCount ||
-    left.errorCount !== right.errorCount
+    left.errorCount !== right.errorCount ||
+    left.opaqueRegionCount !== right.opaqueRegionCount
   );
 }
 

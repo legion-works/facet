@@ -76,7 +76,7 @@ export async function renderMermaidInto(container: HTMLElement, source: string):
     // Mermaid parks its sandbox in `d<id>` and does not remove it.
     document.getElementById(`d${id}`)?.remove();
   }
-  await importSanitizedSvgText(container, svg);
+  await importSanitizedSvgText(container, svg, { marker: "graph" });
 }
 
 /** Render a standalone mermaid artifact (artifactType "mermaid"). */

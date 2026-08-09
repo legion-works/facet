@@ -155,6 +155,7 @@ interface FrameObserved {
   readonly graphCount: number;
   readonly mermaidNodeCount: number;
   readonly visibleSvgCount: number;
+  readonly opaqueRegionCount: number;
   readonly errorCount: number;
 }
 
@@ -176,12 +177,14 @@ function validateObserved(value: unknown): FrameObserved | null {
     "graphCount",
     "mermaidNodeCount",
     "visibleSvgCount",
+    "opaqueRegionCount",
     "errorCount",
   ];
   const rendererRootSvgCount = observed.rendererRootSvgCount;
   const graphCount = observed.graphCount;
   const mermaidNodeCount = observed.mermaidNodeCount;
   const visibleSvgCount = observed.visibleSvgCount;
+  const opaqueRegionCount = observed.opaqueRegionCount;
   const errorCount = observed.errorCount;
   if (
     Object.keys(observed).length !== keys.length ||
@@ -189,6 +192,7 @@ function validateObserved(value: unknown): FrameObserved | null {
     !finite(graphCount) ||
     !finite(mermaidNodeCount) ||
     !finite(visibleSvgCount) ||
+    !finite(opaqueRegionCount) ||
     !finite(errorCount)
   )
     return null;
@@ -197,6 +201,7 @@ function validateObserved(value: unknown): FrameObserved | null {
     graphCount,
     mermaidNodeCount,
     visibleSvgCount,
+    opaqueRegionCount,
     errorCount,
   };
 }

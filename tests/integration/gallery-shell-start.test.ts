@@ -78,6 +78,7 @@ class FakeIframe extends FakeElement {
               graphCount: 0,
               mermaidNodeCount: 0,
               visibleSvgCount: 1,
+              opaqueRegionCount: 0,
               errorCount: 0,
             },
           },

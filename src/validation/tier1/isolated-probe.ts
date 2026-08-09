@@ -12,8 +12,8 @@
  *
  * `graphCount` matches the protocol probe: one count per
  * renderer-owned `<svg>`. `mermaidNodeCount` sums the `g.node`
- * descendants. The shim and protocol use the same definition so
- * a forged page-shim cannot drift from the protocol truth.
+ * descendants. Opaque regions are owning `<canvas>` elements; the
+ * probe never calls getContext(), which would create an observation.
  */
 
 import type { ProtocolObservation } from "../../shared/contracts/validation";
@@ -30,23 +30,33 @@ export async function probeIsolatedCounts(
       returnByValue: true,
       expression: [
         "(function(){",
-        "  var svgs = document.querySelectorAll('svg');",
-        "  var svgCount = svgs.length;",
+        "  var candidates = Array.prototype.slice.call(document.querySelectorAll('svg[data-facet-renderer-root=\"true\"]'));",
+        "  var candidateSet = new Set(candidates);",
+        "  var roots = candidates.filter(function(root){",
+        "    for (var parent = root.parentElement; parent; parent = parent.parentElement) {",
+        "      if (candidateSet.has(parent)) return false;",
+        "    }",
+        "    return true;",
+        "  });",
+        "  var graphRoots = roots.filter(function(root){ return root.getAttribute('data-facet-renderer-graph') === 'true'; });",
         "  var nodeCount = 0;",
         "  var visibleSvgCount = 0;",
-        "  for (var i = 0; i < svgs.length; i++) {",
-        "    nodeCount += svgs[i].querySelectorAll('g.node').length;",
-        "    var vb = svgs[i].getAttribute('viewBox');",
-        "    if (vb && !/^\\s*0\\s+0\\s+0\\s+0\\s*$/.test(vb)) visibleSvgCount += 1;",
+        "  for (var i = 0; i < roots.length; i++) {",
+        "    var vb = roots[i].getAttribute('viewBox') || '';",
+        "    var parts = vb.trim().split(/[\\s,]+/).map(Number.parseFloat);",
+        "    if (parts.length === 4 && Number.isFinite(parts[2]) && Number.isFinite(parts[3]) && parts[2] > 0 && parts[3] > 0) visibleSvgCount += 1;",
         "  }",
+        "  for (var j = 0; j < graphRoots.length; j++) nodeCount += graphRoots[j].querySelectorAll('g.node').length;",
         "  var errorCount = document.querySelectorAll('[data-facet-error]').length;",
+        "  var opaqueRegionCount = Array.prototype.slice.call(document.querySelectorAll('*')).filter(function(el){ return String(el.nodeName).toLowerCase() === 'canvas'; }).length;",
         "  return {",
-        "    rendererRootSvgCount: svgCount,",
-        "    graphCount: svgCount,",
+        "    rendererRootSvgCount: roots.length,",
+        "    graphCount: graphRoots.length,",
         "    mermaidNodeCount: nodeCount,",
         "    visibleSvgCount: visibleSvgCount,",
         "    viewBoxes: [],",
         "    errorCount: errorCount,",
+        "    opaqueRegionCount: opaqueRegionCount,",
         "    discriminativeErrors: []",
         "  };",
         "})()",

@@ -582,6 +582,7 @@ function simulateFrameSide(
         graphCount: 1,
         mermaidNodeCount: 0,
         visibleSvgCount: 1,
+        opaqueRegionCount: 0,
         errorCount: options.errorCount ?? 0,
       },
     });
@@ -869,6 +870,7 @@ describe("gallery shell — control-port RECEIVE path", () => {
         graphCount: 2,
         mermaidNodeCount: 40,
         visibleSvgCount: 2,
+        opaqueRegionCount: 0,
         errorCount: 0,
       },
     });

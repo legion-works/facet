@@ -269,7 +269,7 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
         visibleSvgCount: observed.visibleSvgCount,
         viewBoxes: observed.viewBoxes,
         errorCount: observed.errorCount,
-        opaqueRegionCount: 0,
+        opaqueRegionCount: observed.opaqueRegionCount,
         discriminativeErrors: observed.discriminativeErrors,
       },
       screenshotPath: captured.screenshotPath,
@@ -432,16 +432,19 @@ function mergeProtocol(
   getDocument: ProtocolObservation,
 ): ProtocolObservation {
   const errors = [...snapshot.discriminativeErrors];
-  if (snapshot.rendererRootSvgCount !== getDocument.rendererRootSvgCount) {
+  const counts = [
+    ["rendererRootSvg", snapshot.rendererRootSvgCount, getDocument.rendererRootSvgCount],
+    ["graph", snapshot.graphCount, getDocument.graphCount],
+    ["mermaidNode", snapshot.mermaidNodeCount, getDocument.mermaidNodeCount],
+    ["visibleSvg", snapshot.visibleSvgCount, getDocument.visibleSvgCount],
+    ["opaque", snapshot.opaqueRegionCount, getDocument.opaqueRegionCount],
+    ["errors", snapshot.errorCount, getDocument.errorCount],
+  ] as const;
+  for (const [name, fromSnapshot, fromDocument] of counts) {
+    if (fromSnapshot === fromDocument) continue;
     errors.push({
       code: "protocol_divergence",
-      message: `DOMSnapshot.svg=${snapshot.rendererRootSvgCount} vs DOM.getDocument.svg=${getDocument.rendererRootSvgCount}`,
-    });
-  }
-  if (snapshot.errorCount !== getDocument.errorCount) {
-    errors.push({
-      code: "protocol_divergence",
-      message: `DOMSnapshot.errors=${snapshot.errorCount} vs DOM.getDocument.errors=${getDocument.errorCount}`,
+      message: `DOMSnapshot.${name}=${fromSnapshot} vs DOM.getDocument.${name}=${fromDocument}`,
     });
   }
   return {
@@ -451,7 +454,7 @@ function mergeProtocol(
     visibleSvgCount: snapshot.visibleSvgCount,
     viewBoxes: snapshot.viewBoxes,
     errorCount: snapshot.errorCount,
-    opaqueRegionCount: 0,
+    opaqueRegionCount: snapshot.opaqueRegionCount,
     discriminativeErrors: errors,
   };
 }

@@ -29,6 +29,8 @@ interface SnapshotDocument {
   readonly frameId: number;
   readonly nodes: {
     readonly nodeName: number[];
+    /** Parent node index for every entry in nodeName. */
+    readonly parentIndex: readonly number[];
     /**
      * Per-node attribute payload. The wire format is a FLAT array of
      * alternating string-table indices — `[nameIdx, valueIdx, …]` —
@@ -73,49 +75,109 @@ function* attributePairs(
   }
 }
 
-function countGNode(snapshot: SnapshotResponse, documentIndex: number): number {
-  // Count `g.node` via the per-node attribute walk: DOMSnapshot exposes
-  // attribute lists, so the protocol authority counts the SAME class
-  // the isolated world counts. The all-`<g>` census was an
-  // approximation from the stand-in-renderer era; with the real
-  // mermaid renderer (which emits edgePath/edgeLabel groups) it would
-  // diverge from the isolated-world `g.node` count and forge a
-  // `tampered` verdict on honest renders.
+function attributeValue(
+  snapshot: SnapshotResponse,
+  document: SnapshotDocument,
+  nodeIndex: number,
+  wanted: string,
+): string | undefined {
+  const attr = document.nodes.attributes?.[nodeIndex];
+  if (attr === undefined) return undefined;
+  for (const [name, value] of attributePairs(snapshot, attr)) {
+    if (name.toLowerCase() === wanted.toLowerCase()) return value;
+  }
+  return undefined;
+}
+
+function isRendererRoot(
+  snapshot: SnapshotResponse,
+  document: SnapshotDocument,
+  nodeIndex: number,
+): boolean {
+  const name = readString(snapshot.strings, document.nodes.nodeName[nodeIndex] ?? 0).toLowerCase();
+  return (
+    name === "svg" &&
+    attributeValue(snapshot, document, nodeIndex, "data-facet-renderer-root") === "true"
+  );
+}
+
+function hasAncestorIn(
+  document: SnapshotDocument,
+  nodeIndex: number,
+  ancestors: ReadonlySet<number>,
+): boolean {
+  const seen = new Set<number>();
+  let parentIndex = document.nodes.parentIndex[nodeIndex] ?? -1;
+  while (parentIndex >= 0 && !seen.has(parentIndex)) {
+    if (ancestors.has(parentIndex)) return true;
+    seen.add(parentIndex);
+    parentIndex = document.nodes.parentIndex[parentIndex] ?? -1;
+  }
+  return false;
+}
+
+function rendererRootIndexes(snapshot: SnapshotResponse, documentIndex: number): number[] {
+  const document = snapshot.documents[documentIndex];
+  if (document === undefined) return [];
+  const candidates = new Set<number>();
+  for (let nodeIdx = 0; nodeIdx < document.nodes.nodeName.length; nodeIdx += 1) {
+    if (isRendererRoot(snapshot, document, nodeIdx)) candidates.add(nodeIdx);
+  }
+  return [...candidates].filter((nodeIdx) => !hasAncestorIn(document, nodeIdx, candidates));
+}
+
+function graphRootIndexes(
+  snapshot: SnapshotResponse,
+  documentIndex: number,
+  rendererRoots: readonly number[],
+): number[] {
+  const document = snapshot.documents[documentIndex];
+  if (document === undefined) return [];
+  return rendererRoots.filter(
+    (nodeIdx) =>
+      attributeValue(snapshot, document, nodeIdx, "data-facet-renderer-graph") === "true",
+  );
+}
+
+function countGNode(
+  snapshot: SnapshotResponse,
+  documentIndex: number,
+  graphRoots: readonly number[],
+): number {
   const document = snapshot.documents[documentIndex];
   if (document === undefined) return 0;
-  const attributes = document.nodes.attributes ?? [];
+  const graphRootSet = new Set(graphRoots);
   let count = 0;
   for (let nodeIdx = 0; nodeIdx < document.nodes.nodeName.length; nodeIdx += 1) {
     const tag = readString(snapshot.strings, document.nodes.nodeName[nodeIdx] ?? 0).toLowerCase();
-    if (tag !== "g") continue;
-    const attr = attributes[nodeIdx];
-    if (attr === undefined) continue;
-    for (const [name, value] of attributePairs(snapshot, attr)) {
-      if (name !== "class") continue;
-      if (value.split(/\s+/).includes("node")) count += 1;
-      break;
-    }
+    if (tag !== "g" || !hasAncestorIn(document, nodeIdx, graphRootSet)) continue;
+    if (attributeValue(snapshot, document, nodeIdx, "class")?.split(/\s+/).includes("node"))
+      count += 1;
   }
   return count;
 }
 
-function collectViewBoxes(snapshot: SnapshotResponse, documentIndex: number): string[] {
-  // Only `<svg>` elements carry the layout signal: mermaid also puts
-  // viewBox on `<marker>`/`<symbol>` defs, and counting those would
-  // diverge from the isolated-world census (which reads viewBox off
-  // svg roots only) and forge a `tampered` verdict on honest renders.
+function isNonDegenerateViewBox(viewBox: string): boolean {
+  const parts = viewBox
+    .trim()
+    .split(/[\s,]+/)
+    .map((part) => Number.parseFloat(part));
+  if (parts.length !== 4) return false;
+  const [, , width, height] = parts as [number, number, number, number];
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+}
+
+function collectViewBoxes(
+  snapshot: SnapshotResponse,
+  documentIndex: number,
+  rendererRoots: readonly number[],
+): string[] {
   const document = snapshot.documents[documentIndex];
   if (document === undefined) return [];
   const result: string[] = [];
-  const attributes = document.nodes.attributes ?? [];
-  for (let nodeIdx = 0; nodeIdx < document.nodes.nodeName.length; nodeIdx += 1) {
-    const tag = readString(snapshot.strings, document.nodes.nodeName[nodeIdx] ?? 0).toLowerCase();
-    if (tag !== "svg") continue;
-    const attr = attributes[nodeIdx];
-    if (attr === undefined) continue;
-    for (const [name, value] of attributePairs(snapshot, attr)) {
-      if (name === "viewBox" && value.length > 0) result.push(value);
-    }
+  for (const nodeIdx of rendererRoots) {
+    const viewBox = attributeValue(snapshot, document, nodeIdx, "viewbox");
+    if (viewBox !== undefined && viewBox.length > 0) result.push(viewBox);
   }
   return result;
 }
@@ -127,24 +189,9 @@ function collectDiscriminativeErrors(
   const document = snapshot.documents[documentIndex];
   if (document === undefined) return [];
   const result: { code: string; message: string }[] = [];
-  const attributes = document.nodes.attributes ?? [];
-  let inFacetError = false;
   for (let i = 0; i < document.nodes.nodeName.length; i += 1) {
-    const tag = readString(snapshot.strings, document.nodes.nodeName[i] ?? 0).toLowerCase();
-    const attr = attributes[i];
-    if (tag === "facet-error") {
-      inFacetError = true;
-      continue;
-    }
-    if (inFacetError) {
-      inFacetError = false;
-      if (attr === undefined) continue;
-      for (const [name] of attributePairs(snapshot, attr)) {
-        if (name === "data-facet-error") {
-          result.push({ code: "facet_error", message: "facet-error element" });
-          break;
-        }
-      }
+    if (attributeValue(snapshot, document, i, "data-facet-error") !== undefined) {
+      result.push({ code: "facet_error", message: "facet-error element" });
     }
   }
   return result;
@@ -190,28 +237,17 @@ export async function probeProtocolSnapshot(
       discriminativeErrors: [],
     };
   }
-  const svgCount = countByName(snapshot, documentIndex, "svg");
-  const errorCount = countByName(snapshot, documentIndex, "facet-error");
-  // graphCount equals renderer-owned SVG count: each rendered mermaid
-  // block produces exactly one top-level SVG, regardless of how many
-  // `g.node` children it carries (a parsed-but-empty block is still a
-  // graph for the protocol authority).
-  const graphCount = svgCount;
-  const viewBoxes = collectViewBoxes(snapshot, documentIndex);
+  const rendererRoots = rendererRootIndexes(snapshot, documentIndex);
+  const graphRoots = graphRootIndexes(snapshot, documentIndex, rendererRoots);
+  const viewBoxes = collectViewBoxes(snapshot, documentIndex, rendererRoots);
   const discriminativeErrors = collectDiscriminativeErrors(snapshot, documentIndex);
-  // visibleSvgCount falls back to rendererRootSvgCount when DOMSnapshot
-  // attributes are not surfaced (older pinned shells sometimes return
-  // empty attribute arrays). Layout observability is then decided by
-  // the viewBoxes list — a renderer that produced SVGs with no
-  // reported viewBoxes still earns `partial:layout_unverified` until
-  // an explicit non-degenerate viewBox is observed.
-  const visibleSvgCount = viewBoxes.length > 0 ? viewBoxes.length : svgCount;
+  const errorCount = discriminativeErrors.length;
   return {
-    rendererRootSvgCount: svgCount,
-    graphCount,
-    mermaidNodeCount: countGNode(snapshot, documentIndex),
-    visibleSvgCount,
-    opaqueRegionCount: 0,
+    rendererRootSvgCount: rendererRoots.length,
+    graphCount: graphRoots.length,
+    mermaidNodeCount: countGNode(snapshot, documentIndex, graphRoots),
+    visibleSvgCount: viewBoxes.filter(isNonDegenerateViewBox).length,
+    opaqueRegionCount: countByName(snapshot, documentIndex, "canvas"),
     viewBoxes,
     errorCount,
     discriminativeErrors: discriminativeErrors.map((entry) => ({
@@ -241,11 +277,14 @@ export async function probeProtocolGetDocument(
       shadowRoots?: unknown[];
     };
   };
-  let svgCount = 0;
+  let rendererRootSvgCount = 0;
+  let graphCount = 0;
   let errorCount = 0;
   let gNodeCount = 0;
+  let opaqueRegionCount = 0;
+  let visibleSvgCount = 0;
   const viewBoxes: string[] = [];
-  const visit = (node: unknown): void => {
+  const visit = (node: unknown, withinRendererRoot = false, withinGraphRoot = false): void => {
     if (node === null || typeof node !== "object") return;
     const record = node as {
       nodeName?: string;
@@ -260,34 +299,48 @@ export async function probeProtocolGetDocument(
       const attrs = record.attributes;
       if (!Array.isArray(attrs)) return undefined;
       for (let i = 0; i + 1 < attrs.length; i += 2) {
-        if (attrs[i] === wanted) return attrs[i + 1];
+        if (attrs[i]?.toLowerCase() === wanted.toLowerCase()) return attrs[i + 1];
       }
       return undefined;
     };
     const name = (record.nodeName ?? "").toLowerCase();
-    if (name === "svg") svgCount += 1;
-    if (name === "facet-error") errorCount += 1;
-    if (name === "g") {
-      // Class-aware g.node census — the same definition the isolated
-      // world and DOMSnapshot channels use.
-      const classAttr = findAttr("class");
-      if (classAttr !== undefined && classAttr.split(/\s+/).includes("node")) gNodeCount += 1;
-    }
-    if (name === "svg") {
+    const rendererRoot =
+      name === "svg" && findAttr("data-facet-renderer-root") === "true" && !withinRendererRoot;
+    const graphRoot = rendererRoot && findAttr("data-facet-renderer-graph") === "true";
+    if (rendererRoot) {
+      rendererRootSvgCount += 1;
       const vb = findAttr("viewBox");
-      if (vb !== undefined) viewBoxes.push(vb);
+      if (vb !== undefined) {
+        viewBoxes.push(vb);
+        if (isNonDegenerateViewBox(vb)) visibleSvgCount += 1;
+      }
     }
-    if (record.contentDocument !== undefined) visit(record.contentDocument);
-    if (record.children !== undefined) for (const child of record.children) visit(child);
-    if (record.shadowRoots !== undefined) for (const shadow of record.shadowRoots) visit(shadow);
+    if (graphRoot) graphCount += 1;
+    if (name === "g" && withinGraphRoot && findAttr("class")?.split(/\s+/).includes("node")) {
+      gNodeCount += 1;
+    }
+    // An opaque region is its owning <canvas>; getContext() would create
+    // a context and make the observation self-fulfilling.
+    if (name === "canvas") opaqueRegionCount += 1;
+    if (findAttr("data-facet-error") !== undefined) errorCount += 1;
+    const nextWithinRendererRoot = withinRendererRoot || rendererRoot;
+    const nextWithinGraphRoot = withinGraphRoot || graphRoot;
+    if (record.contentDocument !== undefined)
+      visit(record.contentDocument, nextWithinRendererRoot, nextWithinGraphRoot);
+    if (record.children !== undefined)
+      for (const child of record.children)
+        visit(child, nextWithinRendererRoot, nextWithinGraphRoot);
+    if (record.shadowRoots !== undefined)
+      for (const shadow of record.shadowRoots)
+        visit(shadow, nextWithinRendererRoot, nextWithinGraphRoot);
   };
   visit(result.root);
   return {
-    rendererRootSvgCount: svgCount,
-    graphCount: svgCount,
+    rendererRootSvgCount,
+    graphCount,
     mermaidNodeCount: gNodeCount,
-    visibleSvgCount: viewBoxes.length,
-    opaqueRegionCount: 0,
+    visibleSvgCount,
+    opaqueRegionCount,
     viewBoxes,
     errorCount,
     discriminativeErrors:
