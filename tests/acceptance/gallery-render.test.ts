@@ -8,8 +8,27 @@ import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
+import { resolveLauncher } from "../../src/validation/tier1/launcher";
 
-const browser = new PuppeteerTier1Browser();
+/**
+ * The gallery is Tier 2 — the USER'S browser looking at a loopback service —
+ * so it must NOT launch through the netns wrapper. A Tier 1 verifier browser
+ * runs with no egress and `lo` down, which is the whole point of that tier and
+ * also means it cannot reach 127.0.0.1: navigation returns
+ * `net::ERR_INTERNET_DISCONNECTED` and the page stays blank. This gate was
+ * structurally unable to pass while it modelled the verifier instead of the
+ * viewer. `binaryPath` is the pinned shell itself; `executablePath` is the
+ * netns wrapper puppeteer execs — overriding one with the other launches the
+ * same audited binary without the namespace.
+ */
+function galleryBrowser(): PuppeteerTier1Browser {
+  const launcher = resolveLauncher();
+  return new PuppeteerTier1Browser({
+    launcher: { ...launcher, executablePath: launcher.binaryPath },
+  });
+}
+
+const browser = galleryBrowser();
 const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
 // probeAvailability() launches a REAL browser through the netns wrapper and
 // tears it down. Doing that at module level ran it on EVERY suite run for a
@@ -51,19 +70,61 @@ test.skipIf(!liveGateEnabled || !availability.available)(
         throw new Error("gallery open command failed");
 
       target = await browser.launch();
-      await target.session.send("Page.navigate", { url: opened.data.frameUrl });
+      const navResult = await target.session.send<{ errorText?: string }>("Page.navigate", {
+        url: opened.data.frameUrl,
+      });
+      // Surface a navigation error directly. Without this the failure arrives
+      // as "no iframe rendered", which reads as a renderer bug and sends the
+      // next reader into the gallery code instead of at the transport.
+      if (navResult.errorText !== undefined && navResult.errorText.length > 0) {
+        throw new Error(`gallery navigation failed: ${navResult.errorText}`);
+      }
       const evaluation = await target.session.send<{
-        result?: { value?: { iframeCount: number; svgCount: number; status: string } };
+        result?: {
+          value?: {
+            iframeCount: number;
+            status: string;
+            live: string;
+            revision: string;
+            frameSrc: string;
+          };
+        };
       }>("Runtime.evaluate", {
+        // Without returnByValue the CDP result is an object HANDLE, so
+        // `result.value` is undefined no matter what the page resolved. The
+        // test then fails on every run and its diagnostic reports `undefined`
+        // for every field — it could not observe a working gallery, let alone
+        // a broken one. Both production probes (isolated-probe.ts,
+        // scripts/perf/gallery-stages.ts) pass it; this gate did not.
+        returnByValue: true,
         awaitPromise: true,
+        // MUST stay below TIER1_CDP_CALL_WATCHDOG_MS (10s): the watchdog kills
+        // the CDP call, so an in-page deadline above it can never resolve and
+        // the test reports a transport wedge instead of the diagnostic it
+        // exists to collect — the same inversion that hid the render-barrier
+        // timeout. Strict ordering: in-page deadline < CDP watchdog < test budget.
         expression: `new Promise((resolve) => {
-          const deadline = Date.now() + 15000;
+          const deadline = Date.now() + 7000;
           const inspect = () => {
             const iframe = document.querySelector('iframe');
             const status = document.querySelector('#facet-status-line')?.textContent ?? '';
-            const svgCount = iframe?.contentDocument?.querySelectorAll('svg').length ?? 0;
-            if (svgCount > 0 || status === 'error' || Date.now() >= deadline) {
-              resolve({ iframeCount: document.querySelectorAll('iframe').length, svgCount, status });
+            const live = document.querySelector('#facet-live')?.dataset.state ?? '';
+            const revision = document.querySelector('#facet-revision')?.textContent ?? '';
+            // contentDocument is null for an opaque-origin sandboxed frame, by
+            // design — the shell cannot read into the artifact and neither can
+            // this gate. Observe the SHELL's own state instead: the frame src
+            // carries the routed artifact type, and the status line reaches
+            // 'displayed' only after the frame reports render-complete over
+            // the control port.
+            if (status === 'displayed' || status === 'error' || Date.now() >= deadline) {
+              const frameSrc = iframe?.getAttribute('src') ?? '';
+              resolve({
+                iframeCount: document.querySelectorAll('iframe').length,
+                status,
+                live,
+                revision,
+                frameSrc,
+              });
               return;
             }
             setTimeout(inspect, 100);
@@ -72,10 +133,18 @@ test.skipIf(!liveGateEnabled || !availability.available)(
         })`,
       });
       const result = evaluation.result?.value;
+      if (result?.status !== "displayed") {
+        console.error(
+          `gallery diagnostic: status=${result?.status} live=${result?.live} iframes=${result?.iframeCount} src=${result?.frameSrc}`,
+        );
+      }
       expect(result?.iframeCount).toBe(1);
-      expect(result?.svgCount).toBeGreaterThan(0);
-      expect(result?.status).not.toBe("loading");
-      expect(result?.status).not.toBe("error");
+      expect(result?.status).toBe("displayed");
+      expect(result?.live).toBe("live");
+      // The frame src carries the routed artifact type, so this also pins the
+      // code-split: a mermaid artifact must load the mermaid entry bundle.
+      expect(result?.frameSrc).toContain("type=mermaid");
+      expect(result?.revision).toContain(published.revisionSha.slice(0, 7));
     } finally {
       await target?.close();
       await service.stop();
