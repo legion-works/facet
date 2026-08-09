@@ -29,10 +29,10 @@ import {
   appendRenderError,
   countPageShim,
   dispatchRender,
-  FacetRenderError,
   type RendererRegistry,
 } from "../../gallery-web/frame/renderers/registry";
-import { isRenderer, type Renderer } from "../../shared/contracts/renderers";
+import type { Renderer } from "../../shared/contracts/renderers";
+import { validateTier1Renderer } from "../../gallery-web/frame/renderer-validation";
 
 type ArtifactMode = "raw" | "render";
 
@@ -154,18 +154,13 @@ export function startTier1Harness(registry: RendererRegistry): void {
         ingress.close();
         const bytes = Uint8Array.from(atob(payload.bytes), (char) => char.charCodeAt(0));
         try {
-          if (!isRenderer(payload.renderer)) {
-            throw new FacetRenderError(
-              "artifact payload is missing a supported renderer",
-              "invalid_request",
-            );
-          }
+          const renderer = validateTier1Renderer(payload.renderer);
           await renderArtifact(
             registry,
             bytes,
             payload.mode,
             payload.artifactType ?? "markdown",
-            payload.renderer,
+            renderer,
           );
         } catch (error) {
           appendRenderError(container, error instanceof Error ? error.message : String(error));

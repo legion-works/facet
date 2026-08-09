@@ -40,57 +40,62 @@ export type ParsedCommand =
  * (`--flag` or `--flag <value>`) for that verb. The parser rejects
  * unknown flags with a typed usage error.
  */
-const VERB_FLAGS: Readonly<Record<CommandName, readonly { flag: string; takesValue: boolean }[]>> =
-  {
-    create: [
-      { flag: "--project-id", takesValue: true },
-      { flag: "--slug", takesValue: true },
-      { flag: "--title", takesValue: true },
-    ],
-    publish: [
-      { flag: "--artifact-id", takesValue: true },
-      { flag: "--type", takesValue: true },
-      { flag: "--renderer", takesValue: true },
-      { flag: "--file", takesValue: true },
-      { flag: "--note", takesValue: true },
-      { flag: "--parent-revision-id", takesValue: true },
-    ],
-    list: [
-      { flag: "--project-id", takesValue: true },
-      { flag: "--slug-prefix", takesValue: true },
-      { flag: "--limit", takesValue: true },
-    ],
-    readBack: [
-      { flag: "--artifact-id", takesValue: true },
-      { flag: "--revision-sha", takesValue: true },
-      { flag: "--tier", takesValue: true },
-    ],
-    status: [
-      { flag: "--artifact-id", takesValue: true },
-      { flag: "--start", takesValue: false },
-    ],
-    open: [
-      { flag: "--artifact-id", takesValue: true },
-      { flag: "--revision-sha", takesValue: true },
-    ],
-    promote: [
-      { flag: "--artifact-id", takesValue: true },
-      { flag: "--revision-id", takesValue: true },
-      { flag: "--name", takesValue: true },
-      { flag: "--description", takesValue: true },
-      { flag: "--promoted-by", takesValue: true },
-    ],
-    instantiate: [
-      { flag: "--name", takesValue: true },
-      { flag: "--new-slug", takesValue: true },
-      { flag: "--project-id", takesValue: true },
-    ],
-    pin: [
-      { flag: "--revision-id", takesValue: true },
-      { flag: "--pinned", takesValue: true },
-    ],
-    export: [{ flag: "--format", takesValue: true }],
-  };
+interface FlagDefinition {
+  readonly flag: string;
+  readonly takesValue: boolean;
+  readonly values?: readonly string[];
+}
+
+const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
+  create: [
+    { flag: "--project-id", takesValue: true },
+    { flag: "--slug", takesValue: true },
+    { flag: "--title", takesValue: true },
+  ],
+  publish: [
+    { flag: "--artifact-id", takesValue: true },
+    { flag: "--type", takesValue: true },
+    { flag: "--renderer", takesValue: true, values: ["svg", "canvas"] },
+    { flag: "--file", takesValue: true },
+    { flag: "--note", takesValue: true },
+    { flag: "--parent-revision-id", takesValue: true },
+  ],
+  list: [
+    { flag: "--project-id", takesValue: true },
+    { flag: "--slug-prefix", takesValue: true },
+    { flag: "--limit", takesValue: true },
+  ],
+  readBack: [
+    { flag: "--artifact-id", takesValue: true },
+    { flag: "--revision-sha", takesValue: true },
+    { flag: "--tier", takesValue: true },
+  ],
+  status: [
+    { flag: "--artifact-id", takesValue: true },
+    { flag: "--start", takesValue: false },
+  ],
+  open: [
+    { flag: "--artifact-id", takesValue: true },
+    { flag: "--revision-sha", takesValue: true },
+  ],
+  promote: [
+    { flag: "--artifact-id", takesValue: true },
+    { flag: "--revision-id", takesValue: true },
+    { flag: "--name", takesValue: true },
+    { flag: "--description", takesValue: true },
+    { flag: "--promoted-by", takesValue: true },
+  ],
+  instantiate: [
+    { flag: "--name", takesValue: true },
+    { flag: "--new-slug", takesValue: true },
+    { flag: "--project-id", takesValue: true },
+  ],
+  pin: [
+    { flag: "--revision-id", takesValue: true },
+    { flag: "--pinned", takesValue: true },
+  ],
+  export: [{ flag: "--format", takesValue: true }],
+};
 
 /** Map CLI verb names to wire `command` names. Only `read-back` differs. */
 const VERB_TO_COMMAND: Readonly<Record<string, CommandName>> = {
@@ -187,6 +192,12 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
       const value = stripped[i + 1];
       if (value === undefined) {
         return { kind: "usage", message: `Flag '${flag}' requires a value` };
+      }
+      if (def.values !== undefined && !def.values.includes(value)) {
+        return {
+          kind: "usage",
+          message: `Flag '${flag}' must be one of: ${def.values.join(", ")} (got '${value}')`,
+        };
       }
       args[flag.slice(2)] = value;
       i += 1;

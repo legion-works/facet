@@ -31,7 +31,7 @@ import {
   FacetRenderError,
   type RendererRegistry,
 } from "./renderers/registry";
-import { isRenderer } from "../../shared/contracts/renderers";
+import { validateGalleryRenderer } from "./renderer-validation";
 import { applySvgViewBox, type SvgViewBox } from "./view-box";
 
 declare global {
@@ -218,12 +218,7 @@ export function startGalleryFrame(registry: RendererRegistry): void {
               "invalid_request",
             );
           }
-          if (!isRenderer(payload.renderer)) {
-            throw new FacetRenderError(
-              "artifact payload is missing a supported renderer",
-              "invalid_request",
-            );
-          }
+          const renderer = validateGalleryRenderer(payload.renderer);
           const bytes = payload.bytes;
           if (bytes === undefined) {
             throw new FacetRenderError("artifact payload is missing bytes", "invalid_request");
@@ -233,7 +228,7 @@ export function startGalleryFrame(registry: RendererRegistry): void {
             { container },
             {
               artifactType: payload.artifactType,
-              renderer: payload.renderer,
+              renderer,
               bytes: decodePayloadBytes(bytes),
             },
           );

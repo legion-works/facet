@@ -257,6 +257,19 @@ describe("cli contract — surface", () => {
     }
   });
 
+  test("publish rejects an invalid --renderer value as a usage error before service startup", async () => {
+    const { env } = makeEnv("renderer-usage");
+    const io = makeIo('{"mark":"bar"}');
+    const exit = await runCli(
+      ["publish", "--artifact-id", "artifact-1", "--type", "chart", "--renderer", "webgl"],
+      { ...io, env },
+    );
+    expect(exit.code).toBe(64);
+    const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+    expect(envelope.ok).toBe(false);
+    if (!envelope.ok) expect(envelope.error.code).toBe("invalid_request");
+  });
+
   test("publish without --renderer preserves the svg request shape", () => {
     const request = buildPublishRequest(
       { "artifact-id": "artifact-1", type: "chart" },
