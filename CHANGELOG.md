@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.1.0](https://github.com/legion-works/facet/compare/v1.0.0...v1.1.0) (2026-08-09)
+
+
+### Features
+
+* capture full-artifact tier1 screenshot evidence at a deterministic 1280x800 viewport ([f84c0ca](https://github.com/legion-works/facet/commit/f84c0ca91ab28f224d732317107560ebc3fb3922))
+* svg-native viewBox zoom in the gallery frame ([cd83cac](https://github.com/legion-works/facet/commit/cd83caccea0d75aa3332eede949f4d88265fb14d))
+
+
+### Bug Fixes
+
+* enforce perf budgets by host sensitivity, not browser use ([65e9f96](https://github.com/legion-works/facet/commit/65e9f965762ede6c59d8854c1163b4d582ec19ed))
+* keep measured budgets when the browser probe dies ([d48a262](https://github.com/legion-works/facet/commit/d48a2623ae79a2706065a2d9764c64ffe2457e04))
+* make the service boundary guard fail closed ([6953ef6](https://github.com/legion-works/facet/commit/6953ef6dcba1222d92c5e1eb26db22b00b75a257))
+* pre-decode screenshot cap + raw-event view-mode validation ([634878f](https://github.com/legion-works/facet/commit/634878f4cf6a3f390283465feeab1e8a75abb50c))
+
+
+### Performance Improvements
+
+* **gallery:** split frame renderer bundles ([af46b64](https://github.com/legion-works/facet/commit/af46b640703657bcd7dddec0c6eed4d7ab064744))
+
 ## 1.0.0 (2026-08-09)
 
 
