@@ -13,8 +13,21 @@ pre-commit:
       run: bun run typecheck
     secrets:
       run: gitleaks protect --staged --redact --no-banner
+    # The service-byte-dumb rule is a SECURITY invariant, not a style choice:
+    # src/service/** must never import a renderer or parser. It costs 20ms, so
+    # there is no reason for its only enforcement to live in CI — especially
+    # since this private repo cannot have required checks (branch protection is
+    # a paid feature), which makes these hooks the only gate that actually gates.
+    boundaries:
+      run: bun run check:boundaries
 pre-push:
+  parallel: true
   commands:
     # unit suite activates once tests/unit exists
     unit-tests:
       run: sh -c 'test ! -d tests/unit || bun test tests/unit'
+    # Integration covers the service/worker boundaries — auth, leases, store
+    # error surfacing, CLI contract. 5.6s, and with no required checks upstream
+    # it is the last gate before bytes leave this machine.
+    integration-tests:
+      run: sh -c 'test ! -d tests/integration || bun test tests/integration'
