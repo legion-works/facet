@@ -16,6 +16,7 @@ import { compile } from "vega-lite";
 import { View, loader, parse, type Loader } from "vega";
 import { expressionInterpreter } from "vega-interpreter";
 
+import type { Renderer } from "../../../shared/contracts/renderers";
 import { FacetRenderError, type RenderContext, decodeArtifactBytes } from "./registry";
 import { importSanitizedSvgText } from "./svg";
 
@@ -91,7 +92,11 @@ export function compiledSpecHasExternalUrl(spec: unknown): boolean {
 }
 
 /** Render a chart artifact (artifactType "chart"): Vega-Lite JSON bytes. */
-export async function renderChart(ctx: RenderContext, bytes: Uint8Array): Promise<void> {
+export async function renderChart(
+  ctx: RenderContext,
+  bytes: Uint8Array,
+  renderer: Renderer = "svg",
+): Promise<void> {
   const text = decodeArtifactBytes(bytes);
   let spec: unknown;
   try {
@@ -110,7 +115,6 @@ export async function renderChart(ctx: RenderContext, bytes: Uint8Array): Promis
   if (compiledSpecHasExternalUrl(compiled.spec)) {
     throw new FacetRenderError("external chart data is not permitted", "chart_external_data");
   }
-  let svgText: string;
   // `ast: true` + the expression INTERPRETER is Vega's CSP-safe path.
   // The default compiles expressions with `Function`/eval, which the
   // frame's nonce-only CSP blocks outright — every chart rendered as an
@@ -122,11 +126,15 @@ export async function renderChart(ctx: RenderContext, bytes: Uint8Array): Promis
     expr: expressionInterpreter,
   });
   try {
+    if (renderer === "canvas") view.renderer("canvas").initialize(ctx.container);
     await view.runAsync();
     if (countDataTuples(view, compiled.spec) === 0) {
       throw new FacetRenderError("chart spec renders zero marks", "chart_zero_marks");
     }
-    svgText = await view.toSVG();
+    if (renderer === "svg") {
+      const svgText = await view.toSVG();
+      await importSanitizedSvgText(ctx.container, svgText);
+    }
   } catch (error) {
     if (error instanceof FacetRenderError) throw error;
     const message = error instanceof Error ? error.message : String(error);
@@ -134,5 +142,4 @@ export async function renderChart(ctx: RenderContext, bytes: Uint8Array): Promis
   } finally {
     view.finalize();
   }
-  await importSanitizedSvgText(ctx.container, svgText);
 }

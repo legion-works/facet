@@ -40,7 +40,7 @@ const availability = liveGateEnabled
   : { available: false, reason: "live gallery gate disabled" };
 
 test.skipIf(!liveGateEnabled || !availability.available)(
-  "real gallery route mounts an opaque frame and renders an SVG artifact",
+  "real gallery route mounts an opaque frame and renders a canvas chart",
   async () => {
     const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-acceptance-"));
     const service = await startFacetService({
@@ -56,8 +56,11 @@ test.skipIf(!liveGateEnabled || !availability.available)(
     try {
       const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
       const published = await publishArtifact(client, {
-        artifactType: "mermaid",
-        bytes: new TextEncoder().encode("graph TD\n  A-->B").buffer as ArrayBuffer,
+        artifactType: "chart",
+        renderer: "canvas",
+        bytes: new TextEncoder().encode(
+          '{"mark":"bar","data":{"values":[{"x":"A","y":1}]},"encoding":{"x":{"field":"x","type":"nominal"},"y":{"field":"y","type":"quantitative"}}}',
+        ).buffer as ArrayBuffer,
         slug: "gallery-render-acceptance",
       });
       const opened = await client.sendCommand({
@@ -116,7 +119,7 @@ test.skipIf(!liveGateEnabled || !availability.available)(
             // carries the routed artifact type, and the status line reaches
             // 'displayed' only after the frame reports render-complete over
             // the control port.
-            if (status === 'displayed' || status === 'error' || Date.now() >= deadline) {
+            if ((status === 'displayed' && live === 'live') || status === 'error' || Date.now() >= deadline) {
               const frameSrc = iframe?.getAttribute('src') ?? '';
               resolve({
                 iframeCount: document.querySelectorAll('iframe').length,
@@ -141,9 +144,10 @@ test.skipIf(!liveGateEnabled || !availability.available)(
       expect(result?.iframeCount).toBe(1);
       expect(result?.status).toBe("displayed");
       expect(result?.live).toBe("live");
-      // The frame src carries the routed artifact type, so this also pins the
-      // code-split: a mermaid artifact must load the mermaid entry bundle.
-      expect(result?.frameSrc).toContain("type=mermaid");
+      // The shell can only observe the opaque frame URL; both routing values
+      // prove the gallery selected the chart bundle and canvas backend.
+      expect(result?.frameSrc).toContain("type=chart");
+      expect(result?.frameSrc).toContain("renderer=canvas");
       expect(result?.revision).toContain(published.revisionSha.slice(0, 7));
 
       const nativeView = await target.session.send<{
@@ -167,8 +171,7 @@ test.skipIf(!liveGateEnabled || !availability.available)(
            inspect();
          })`,
       });
-      expect(nativeView.result?.value?.mode).toBe("native");
-      expect(nativeView.result?.value?.transform).toBe("");
+      expect(nativeView.result?.value?.mode).toBe("css");
     } finally {
       await target?.close();
       await service.stop();

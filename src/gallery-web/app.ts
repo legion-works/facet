@@ -224,6 +224,8 @@ function validateFrameControlEvent(value: unknown): FrameControlEvent | null {
 
 export interface CreateArtifactFrameOptions {
   readonly artifactType: string;
+  /** Legacy direct callers omit this; revision source fetches always make it explicit. */
+  readonly renderer?: string;
   readonly bootstrapUrl: string;
   readonly frameUrl?: string;
   readonly dom: ShellDom;
@@ -302,6 +304,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   const frameUrl = new URL(options.frameUrl ?? "/gallery/frame", `http://${dom.hostname}`);
   frameUrl.searchParams.set("nonce", nonce);
   frameUrl.searchParams.set("type", options.artifactType);
+  frameUrl.searchParams.set("renderer", options.renderer ?? "svg");
   const attrs = buildFrameAttributes(frameUrl.toString());
   const channels = createChannelPair({ messageChannelCtor: dom.MessageChannel });
   const element = dom.document.createElement("iframe");
@@ -484,6 +487,7 @@ export async function replaceArtifactFrame(
 
 export interface RevisionFetchResult {
   readonly artifactType: string;
+  readonly renderer: string;
   readonly bytes: Uint8Array;
   readonly verdict?: Verdict | null;
 }
@@ -531,6 +535,7 @@ export async function swapToRevision(
   const revision = await deps.fetchRevision(event.artifactId, event.revisionSha);
   const next = createArtifactFrame({
     artifactType: revision.artifactType,
+    renderer: revision.renderer,
     bootstrapUrl: deps.bootstrapUrl,
     dom: deps.dom,
     ...(deps.frameUrl === undefined ? {} : { frameUrl: deps.frameUrl }),
@@ -542,7 +547,11 @@ export async function swapToRevision(
     dom: deps.dom,
     host: deps.host,
     viewState,
-    source: { artifactType: revision.artifactType, bytes: revision.bytes },
+    source: {
+      artifactType: revision.artifactType,
+      renderer: revision.renderer,
+      bytes: revision.bytes,
+    },
     ...(deps.onProgress === undefined ? {} : { onProgress: deps.onProgress }),
     ...(deps.readyTimeoutMs !== undefined ? { readyTimeoutMs: deps.readyTimeoutMs } : {}),
   });
@@ -557,6 +566,7 @@ interface GallerySourceResponse {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly artifactType: string;
+  readonly renderer?: string;
   readonly source: string;
   readonly verdict: Verdict | null;
 }
@@ -581,6 +591,7 @@ async function fetchGallerySource(
   const payload = (await response.json()) as GallerySourceResponse;
   return {
     artifactType: payload.artifactType,
+    renderer: payload.renderer ?? "svg",
     bytes: new TextEncoder().encode(payload.source),
     verdict: payload.verdict ?? null,
   };
@@ -777,6 +788,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
   let current = createArtifactFrame({
     artifactType: source.artifactType,
+    renderer: source.renderer,
     bootstrapUrl,
     frameUrl,
     dom,
@@ -795,7 +807,11 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     host.mountOffScreen(frame.frameId, frame.element.raw),
   );
   if (boot === null) throw new Error("Gallery frame failed to boot");
-  current.deliverSource({ artifactType: source.artifactType, bytes: source.bytes });
+  current.deliverSource({
+    artifactType: source.artifactType,
+    renderer: source.renderer,
+    bytes: source.bytes,
+  });
   const initialEvent = await current.awaitControlEvent("render-complete", DEFAULT_READY_TIMEOUT_MS);
   if (initialEvent === null || observedErrorCount(initialEvent) !== 0)
     throw new Error("Gallery artifact failed to render");

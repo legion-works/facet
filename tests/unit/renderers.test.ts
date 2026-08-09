@@ -66,6 +66,33 @@ class ShimCSSStyleSheet {
 globals["CSSStyleSheet"] = ShimCSSStyleSheet;
 (shimWindow as unknown as Record<string, unknown>)["CSSStyleSheet"] = ShimCSSStyleSheet;
 
+function canvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  return new Proxy(
+    {
+      canvas,
+      pixelRatio: 1,
+      measureText: () => ({ width: 0 }),
+      createLinearGradient: () => ({ addColorStop() {} }),
+      createRadialGradient: () => ({ addColorStop() {} }),
+      createPattern: () => null,
+      getImageData: () => ({ data: new Uint8ClampedArray() }),
+    },
+    {
+      get(target, key) {
+        return key in target ? target[key as keyof typeof target] : () => {};
+      },
+      set: () => true,
+    },
+  ) as unknown as CanvasRenderingContext2D;
+}
+
+Object.defineProperty(Object.getPrototypeOf(shimDocument.createElement("canvas")), "getContext", {
+  value(this: HTMLCanvasElement) {
+    return canvasContext(this);
+  },
+  configurable: true,
+});
+
 const FIXTURES = {
   rawHtml: `${import.meta.dir}/../fixtures/markdown-raw-html.md`,
   svgClean: `${import.meta.dir}/../fixtures/svg-clean.svg`,
@@ -463,12 +490,20 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
     expect(chart.countVegaMarks("<svg></svg>")).toBe(0);
   });
 
-  test("barline fixture renders one SVG with marks via the sanitized import path", async () => {
+  test("explicit svg renderer preserves the sanitized SVG import path", async () => {
     const container = freshContainer();
-    await chart.renderChart({ container }, readBytes(FIXTURES.chartBarline));
+    await chart.renderChart({ container }, readBytes(FIXTURES.chartBarline), "svg");
     expect(container.querySelectorAll("svg").length).toBe(1);
+    expect(container.querySelectorAll("canvas").length).toBe(0);
     const svgText = container.innerHTML;
     expect(svgText).toMatch(/role-mark/);
+  }, 20_000);
+
+  test("canvas renderer attaches one canvas to the artifact container", async () => {
+    const container = freshContainer();
+    await chart.renderChart({ container }, readBytes(FIXTURES.chartBarline), "canvas");
+    expect(container.querySelectorAll("canvas").length).toBe(1);
+    expect(container.querySelectorAll("svg").length).toBe(0);
   }, 20_000);
 
   test("external data url is rejected by the blocked loader", async () => {
@@ -548,13 +583,37 @@ describe("renderer registry — dispatch contract", () => {
       await registry.dispatchRender(
         reg,
         { container: freshContainer() },
-        { artifactType: "html", bytes: new Uint8Array() },
+        { artifactType: "html", renderer: "svg", bytes: new Uint8Array() },
       );
     } catch (error) {
       caught = error;
     }
     expect(caught).toBeInstanceOf(registry.FacetRenderError);
     expect((caught as { code: string }).code).toBe("unsupported_reserved_type");
+  });
+
+  test("unknown renderers are rejected before the renderer callable runs", async () => {
+    const calls: string[] = [];
+    const reg = registry.createRendererRegistry([
+      [
+        "chart",
+        async (_ctx, _bytes, renderer) => {
+          calls.push(renderer);
+        },
+      ] as const,
+    ]);
+    await expect(
+      registry.dispatchRender(
+        reg,
+        { container: freshContainer() },
+        {
+          artifactType: "chart",
+          renderer: "webgl" as never,
+          bytes: new Uint8Array(),
+        },
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(calls).toEqual([]);
   });
 
   test("appendRenderError marks the element for every observation channel", () => {

@@ -29,6 +29,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
+import { FacetError } from "../../src/shared/errors/facet-error";
 
 import {
   runCli,
@@ -37,6 +38,7 @@ import {
   type CliExit,
   type CliTestHooks,
 } from "../../src/cli/main";
+import { buildPublishRequest } from "../../src/cli/commands/publish";
 import { parseArgs } from "../../src/cli/parser";
 import { printEnvelope } from "../../src/cli/output";
 
@@ -217,6 +219,59 @@ function normalizeAdapterEnvelope(text: string): unknown {
 }
 
 describe("cli contract — surface", () => {
+  test("publish parses --renderer canvas and builds a canvas request", () => {
+    const parsed = parseArgs([
+      "publish",
+      "--artifact-id",
+      "artifact-1",
+      "--type",
+      "chart",
+      "--renderer",
+      "canvas",
+    ]);
+    expect(parsed).toMatchObject({
+      kind: "verb",
+      verb: "publish",
+      args: { renderer: "canvas" },
+    });
+    if (parsed.kind !== "verb") throw new Error("publish parser rejected canvas renderer");
+    expect(
+      buildPublishRequest(parsed.args, new TextEncoder().encode('{"mark":"bar"}')).renderer,
+    ).toBe("canvas");
+  });
+
+  test("publish rejects an invalid renderer with typed invalid_request", () => {
+    expect(() =>
+      buildPublishRequest(
+        { "artifact-id": "artifact-1", type: "chart", renderer: "webgl" },
+        new TextEncoder().encode('{"mark":"bar"}'),
+      ),
+    ).toThrow(FacetError);
+    try {
+      buildPublishRequest(
+        { "artifact-id": "artifact-1", type: "chart", renderer: "webgl" },
+        new TextEncoder().encode('{"mark":"bar"}'),
+      );
+    } catch (error) {
+      expect((error as FacetError).code).toBe("invalid_request");
+    }
+  });
+
+  test("publish without --renderer preserves the svg request shape", () => {
+    const request = buildPublishRequest(
+      { "artifact-id": "artifact-1", type: "chart" },
+      new TextEncoder().encode('{"mark":"bar"}'),
+    );
+    expect({ ...request, requestId: "<generated>" }).toEqual({
+      command: "publish",
+      requestId: "<generated>",
+      artifactId: "artifact-1",
+      artifactType: "chart",
+      renderer: "svg",
+      bytes: "eyJtYXJrIjoiYmFyIn0=",
+    });
+  });
+
   test("piped envelope bytes remain identical to the canonical output path", () => {
     const envelope = {
       schemaVersion: FACET_SCHEMA_VERSION,

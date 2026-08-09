@@ -16,6 +16,7 @@
 import { readFileSync } from "node:fs";
 
 import { FacetError } from "../../shared/errors/facet-error";
+import { isRenderer } from "../../shared/contracts/renderers";
 import { generateRequestId } from "../../shared/util/time";
 import type { PublishRequest } from "../../shared/contracts/commands/requests";
 import type { ArtifactType } from "../../shared/contracts/artifact";
@@ -69,12 +70,20 @@ export function buildPublishRequest(
   }
   const noteValue = args["note"];
   const parentValue = args["parent-revision-id"];
+  const rendererValue = args["renderer"] ?? "svg";
+  if (!isRenderer(rendererValue)) {
+    throw new FacetError(
+      "invalid_request",
+      `--renderer must be one of: svg, canvas (got '${String(rendererValue)}')`,
+      { retryable: false, details: { reason: "invalid_renderer" } },
+    );
+  }
   return {
     command: "publish",
     requestId: generateRequestId(),
     artifactId,
     artifactType: type as ArtifactType,
-    renderer: "svg",
+    renderer: rendererValue,
     bytes: Buffer.from(sourceBytes).toString("base64"),
     ...(typeof noteValue === "string" ? { note: noteValue } : {}),
     ...(typeof parentValue === "string" ? { parentRevisionId: parentValue } : {}),

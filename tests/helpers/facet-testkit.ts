@@ -27,6 +27,7 @@ import {
 import { startFacetService, type RunningService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
+import type { Renderer } from "../../src/shared/contracts/renderers";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 
@@ -46,6 +47,7 @@ export interface AcceptanceVerdictObserved {
   readonly rendererRootSvgCount: number;
   readonly graphCount: number;
   readonly errorCount: number;
+  readonly opaqueRegionCount: number;
 }
 
 export interface AcceptanceVerdict {
@@ -64,11 +66,13 @@ export type { EgressPenetrationOptions, EgressPenetrationResult };
 export interface PublishedArtifact {
   readonly artifactId: string;
   readonly revisionSha: string;
+  readonly tier1ScreenshotPath: string | null;
 }
 
 export interface PublishFixtureOptions {
   readonly fixturePath: string;
   readonly artifactType: ArtifactType;
+  readonly renderer?: Renderer;
   readonly slug?: string;
 }
 
@@ -173,11 +177,16 @@ export async function publishFixture(opts: PublishFixtureOptions): Promise<Publi
   const { client } = await ensureEnv();
   const result = await publishArtifact(client, {
     artifactType: opts.artifactType,
+    ...(opts.renderer !== undefined ? { renderer: opts.renderer } : {}),
     bytes,
     ...(opts.slug !== undefined ? { slug: opts.slug } : {}),
   });
   traceTier1Transport("test:publish:complete");
-  return { artifactId: result.artifactId, revisionSha: result.revisionSha };
+  return {
+    artifactId: result.artifactId,
+    revisionSha: result.revisionSha,
+    tier1ScreenshotPath: result.tier1ScreenshotPath,
+  };
 }
 
 export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<AcceptanceVerdict> {
@@ -197,6 +206,7 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
     observed: {
       rendererRootSvgCount: result.observed.rendererRootSvgCount,
       graphCount: result.observed.graphCount,
+      opaqueRegionCount: result.observed.opaqueRegionCount,
       errorCount: result.observed.errorCount,
     },
   };

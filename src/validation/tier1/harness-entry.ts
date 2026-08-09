@@ -29,8 +29,10 @@ import {
   appendRenderError,
   countPageShim,
   dispatchRender,
+  FacetRenderError,
   type RendererRegistry,
 } from "../../gallery-web/frame/renderers/registry";
+import { isRenderer, type Renderer } from "../../shared/contracts/renderers";
 
 type ArtifactMode = "raw" | "render";
 
@@ -98,6 +100,7 @@ async function renderArtifact(
   artifactBytes: Uint8Array,
   mode: ArtifactMode,
   artifactType: string,
+  renderer: Renderer,
 ): Promise<void> {
   if (mode === "raw") {
     const text = new TextDecoder("utf-8", { fatal: false }).decode(artifactBytes);
@@ -118,7 +121,7 @@ async function renderArtifact(
   } catch {
     // not JSON — fall through to the typed renderer dispatch
   }
-  await dispatchRender(registry, { container }, { artifactType, bytes: artifactBytes });
+  await dispatchRender(registry, { container }, { artifactType, renderer, bytes: artifactBytes });
 }
 
 export function startTier1Harness(registry: RendererRegistry): void {
@@ -145,13 +148,25 @@ export function startTier1Harness(registry: RendererRegistry): void {
       // oxlint-disable-next-line unicorn/prefer-add-event-listener
       ingress.onmessage = async (sourceEvent: MessageEvent) => {
         const payload = sourceEvent.data as
-          | { bytes: string; mode: ArtifactMode; artifactType?: string }
+          | { bytes: string; mode: ArtifactMode; artifactType?: string; renderer?: string }
           | undefined;
         if (payload === undefined) return;
         ingress.close();
         const bytes = Uint8Array.from(atob(payload.bytes), (char) => char.charCodeAt(0));
         try {
-          await renderArtifact(registry, bytes, payload.mode, payload.artifactType ?? "markdown");
+          if (!isRenderer(payload.renderer)) {
+            throw new FacetRenderError(
+              "artifact payload is missing a supported renderer",
+              "invalid_request",
+            );
+          }
+          await renderArtifact(
+            registry,
+            bytes,
+            payload.mode,
+            payload.artifactType ?? "markdown",
+            payload.renderer,
+          );
         } catch (error) {
           appendRenderError(container, error instanceof Error ? error.message : String(error));
         }

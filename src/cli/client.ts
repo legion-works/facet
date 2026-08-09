@@ -32,6 +32,7 @@ function traceTier1Transport(stage: string): void {
 import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
+import type { Renderer } from "../shared/contracts/renderers";
 
 export interface FacetClientOptions {
   readonly baseUrl: string;
@@ -181,10 +182,12 @@ export interface PublishArtifactResult {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly tier1Status: string | null;
+  readonly tier1ScreenshotPath: string | null;
 }
 
 export interface PublishArtifactOptions {
   readonly artifactType: "markdown" | "mermaid" | "svg" | "chart";
+  readonly renderer?: Renderer;
   readonly bytes: ArrayBuffer;
   readonly slug?: string;
   readonly note?: string;
@@ -222,7 +225,7 @@ export async function publishArtifact(
     requestId: generateRequestId(),
     artifactId,
     artifactType: options.artifactType,
-    renderer: "svg",
+    renderer: options.renderer ?? "svg",
     bytes: base64,
     ...(options.note !== undefined ? { note: options.note } : {}),
   });
@@ -243,6 +246,7 @@ export async function publishArtifact(
     artifactId,
     revisionSha: parsedPublish.revision.sha256,
     tier1Status,
+    tier1ScreenshotPath: parsedPublish.tier1Verdict?.screenshotPath ?? null,
   };
 }
 
@@ -269,6 +273,7 @@ export async function readBack(
     readonly graphCount: number;
     readonly mermaidNodeCount: number;
     readonly visibleSvgCount: number;
+    readonly opaqueRegionCount: number;
     readonly errorCount: number;
   };
 }> {
@@ -296,6 +301,7 @@ export async function readBack(
       graphCount: parsed.verdict.observed.graphCount,
       mermaidNodeCount: parsed.verdict.observed.mermaidNodeCount,
       visibleSvgCount: parsed.verdict.observed.visibleSvgCount,
+      opaqueRegionCount: parsed.verdict.observed.opaqueRegionCount,
       errorCount: parsed.verdict.observed.errorCount,
     },
   };

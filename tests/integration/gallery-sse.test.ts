@@ -832,7 +832,7 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
         bootstrapUrl: BOOTSTRAP_URL,
         fetchRevision: async (artifactId, revisionSha) => {
           fetched.push({ artifactId, revisionSha });
-          return { artifactType: "markdown", bytes };
+          return { artifactType: "markdown", renderer: "svg", bytes };
         },
         onFrameCreated: (next) => simulateFrameSide(next, received),
         readyTimeoutMs: 2_000,
@@ -845,7 +845,7 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     expect(fetched).toEqual([{ artifactId: "art-1", revisionSha: "sha-1" }]);
     expect(result.failedNewFrameReady).toBe(false);
     expect(frame).not.toBe(current);
-    expect(received).toEqual([{ artifactType: "markdown", bytes }]);
+    expect(received).toEqual([{ artifactType: "markdown", renderer: "svg", bytes }]);
     expect(recording.viewStates.get(frame.frameId)).toEqual({ zoom: 2 });
     expect(recording.mounted.has(current.frameId)).toBe(false);
     frame.closeControl();

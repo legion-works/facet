@@ -36,8 +36,9 @@ export interface LexicalExpectations {
   /**
    * Expected number of renderer-root SVGs. For markdown sources this
    * is the mermaid block count (each fenced mermaid block produces one
-   * renderer root); for mermaid/svg/chart sources it is 1 (the whole
-   * document renders as one renderer-owned root). The verifier counts
+   * renderer root); for mermaid/svg and SVG-rendered chart sources it is 1
+   * (the whole document renders as one renderer-owned root). Canvas charts
+   * have no SVG root. The verifier counts
    * the actual SVGs and the verdict fails closed on any divergence.
    */
   readonly expectedRendererRoots: number;

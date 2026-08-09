@@ -175,7 +175,13 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
     targetStartTime = target.startTime;
     hostHtmlPath = join(hostDir, "host.html");
     traceTier1("host-page:start", startedAt);
-    const { html } = await buildHostPage(input.source, "render", hostDir, input.artifactType);
+    const { html } = await buildHostPage(
+      input.source,
+      "render",
+      hostDir,
+      input.artifactType,
+      input.renderer,
+    );
     traceTier1("host-page:complete", startedAt);
     writeFileSync(hostHtmlPath, html, "utf8");
     traceTier1("cdp:enable:start", startedAt);
@@ -206,7 +212,7 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
         "(function(){" +
         "var host=window.__facetHostArtifact;" +
         "if(!host){return 'no-host-artifact';}" +
-        "host.ingress.postMessage({bytes:host.bytes,mode:host.mode,artifactType:host.artifactType});" +
+        "host.ingress.postMessage({bytes:host.bytes,mode:host.mode,artifactType:host.artifactType,renderer:host.renderer});" +
         "return 'delivered';" +
         "})()",
       returnByValue: true,

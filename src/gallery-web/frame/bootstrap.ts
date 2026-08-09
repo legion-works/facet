@@ -31,6 +31,7 @@ import {
   FacetRenderError,
   type RendererRegistry,
 } from "./renderers/registry";
+import { isRenderer } from "../../shared/contracts/renderers";
 import { applySvgViewBox, type SvgViewBox } from "./view-box";
 
 declare global {
@@ -46,6 +47,7 @@ interface HandshakeData {
 
 interface ArtifactPayload {
   readonly artifactType?: string;
+  readonly renderer?: string;
   readonly bytes?: Uint8Array | string;
 }
 
@@ -216,6 +218,12 @@ export function startGalleryFrame(registry: RendererRegistry): void {
               "invalid_request",
             );
           }
+          if (!isRenderer(payload.renderer)) {
+            throw new FacetRenderError(
+              "artifact payload is missing a supported renderer",
+              "invalid_request",
+            );
+          }
           const bytes = payload.bytes;
           if (bytes === undefined) {
             throw new FacetRenderError("artifact payload is missing bytes", "invalid_request");
@@ -223,7 +231,11 @@ export function startGalleryFrame(registry: RendererRegistry): void {
           await dispatchRender(
             registry,
             { container },
-            { artifactType: payload.artifactType, bytes: decodePayloadBytes(bytes) },
+            {
+              artifactType: payload.artifactType,
+              renderer: payload.renderer,
+              bytes: decodePayloadBytes(bytes),
+            },
           );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);

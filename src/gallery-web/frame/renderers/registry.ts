@@ -1,4 +1,5 @@
 import type { ArtifactType } from "../../../shared/contracts/artifact-types";
+import { isRenderer, type Renderer as RendererKind } from "../../../shared/contracts/renderers";
 
 export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/artifact-types";
 
@@ -18,7 +19,11 @@ export interface RenderContext {
   readonly container: HTMLElement;
 }
 
-export type Renderer = (ctx: RenderContext, bytes: Uint8Array) => Promise<void>;
+export type Renderer = (
+  ctx: RenderContext,
+  bytes: Uint8Array,
+  renderer: RendererKind,
+) => Promise<void>;
 
 /**
  * Typed render failure. `code` travels into the facet-error element's
@@ -146,8 +151,18 @@ export function createRendererRegistry(
 export async function dispatchRender(
   registry: RendererRegistry,
   ctx: RenderContext,
-  payload: { readonly artifactType: string; readonly bytes: Uint8Array },
+  payload: {
+    readonly artifactType: string;
+    readonly renderer: RendererKind;
+    readonly bytes: Uint8Array;
+  },
 ): Promise<void> {
+  if (!isRenderer(payload.renderer)) {
+    throw new FacetRenderError(
+      `Artifact renderer '${payload.renderer}' is not supported in this frame`,
+      "invalid_request",
+    );
+  }
   const renderer = registry.get(payload.artifactType);
   if (renderer === undefined) {
     throw new FacetRenderError(
@@ -155,5 +170,5 @@ export async function dispatchRender(
       "unsupported_reserved_type",
     );
   }
-  await renderer(ctx, payload.bytes);
+  await renderer(ctx, payload.bytes, payload.renderer);
 }
