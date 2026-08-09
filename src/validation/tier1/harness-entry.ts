@@ -11,9 +11,10 @@
  *      port2 ends via postMessage).
  *   2. Emit `boot-ready` on the control port.
  *   3. Receive the artifact on the ingress port (one-shot).
- *   4. Dispatch through the SAME renderer registry the gallery frame
- *      bundles (`gallery-web/frame/renderers`): the unfakeable gate
- *      verifies the actual user-visible render, not a stand-in.
+ *   4. Dispatch through the renderer registry supplied by the paired
+ *      type-specific entry. Its renderer modules are build-checked
+ *      against the gallery entry, so the gate verifies the actual
+ *      user-visible render, not a stand-in.
  *      `test-adversary` payloads run the matching scenario instead
  *      (the monkeypatch / forge paths live here).
  *   5. Emit `render-complete` with the page-shim counts describing
@@ -28,7 +29,7 @@ import {
   appendRenderError,
   countPageShim,
   dispatchRender,
-  getRendererRegistry,
+  type RendererRegistry,
 } from "../../gallery-web/frame/renderers/registry";
 
 type ArtifactMode = "raw" | "render";
@@ -48,10 +49,6 @@ if (containerElement === null) {
   throw new Error("harness: #artifact container missing");
 }
 const container: HTMLElement = containerElement;
-
-(window as unknown as { facetHarnessLoaded?: boolean }).facetHarnessLoaded = true;
-
-const registry = getRendererRegistry();
 
 let controlPost: ((event: ControlEvent) => void) | null = null;
 
@@ -97,6 +94,7 @@ async function renderAdversarialJson(payload: unknown): Promise<void> {
 }
 
 async function renderArtifact(
+  registry: RendererRegistry,
   artifactBytes: Uint8Array,
   mode: ArtifactMode,
   artifactType: string,
@@ -123,47 +121,53 @@ async function renderArtifact(
   await dispatchRender(registry, { container }, { artifactType, bytes: artifactBytes });
 }
 
-window.addEventListener(
-  "message",
-  (event) => {
-    const data = (event as MessageEvent).data as { facetHandshake?: string; nonce?: string } | null;
-    if (data === null || data.facetHandshake !== "ports") return;
-    const ports = (event as MessageEvent).ports;
-    if (!Array.isArray(ports) || ports.length !== 2) return;
-    const ingress = ports[0];
-    const control = ports[1];
-    if (ingress === undefined || control === undefined) return;
-    controlPost = control.postMessage.bind(control) as (event: ControlEvent) => void;
-    // MessagePort.onmessage assignment is required over
-    // addEventListener("message"): the pinned chrome-headless-shell
-    // 131.0.6778.204 silently drops events registered via
-    // addEventListener, so the harness handshake would never fire.
-    // oxlint-disable-next-line unicorn/prefer-add-event-listener
-    ingress.onmessage = async (sourceEvent: MessageEvent) => {
-      const payload = sourceEvent.data as
-        | { bytes: string; mode: ArtifactMode; artifactType?: string }
-        | undefined;
-      if (payload === undefined) return;
-      ingress.close();
-      const bytes = Uint8Array.from(atob(payload.bytes), (char) => char.charCodeAt(0));
+export function startTier1Harness(registry: RendererRegistry): void {
+  (window as unknown as { facetHarnessLoaded?: boolean }).facetHarnessLoaded = true;
+  window.addEventListener(
+    "message",
+    (event) => {
+      const data = (event as MessageEvent).data as {
+        facetHandshake?: string;
+        nonce?: string;
+      } | null;
+      if (data === null || data.facetHandshake !== "ports") return;
+      const ports = (event as MessageEvent).ports;
+      if (!Array.isArray(ports) || ports.length !== 2) return;
+      const ingress = ports[0];
+      const control = ports[1];
+      if (ingress === undefined || control === undefined) return;
+      controlPost = control.postMessage.bind(control) as (event: ControlEvent) => void;
+      // MessagePort.onmessage assignment is required over
+      // addEventListener("message"): the pinned chrome-headless-shell
+      // 131.0.6778.204 silently drops events registered via
+      // addEventListener, so the harness handshake would never fire.
+      // oxlint-disable-next-line unicorn/prefer-add-event-listener
+      ingress.onmessage = async (sourceEvent: MessageEvent) => {
+        const payload = sourceEvent.data as
+          | { bytes: string; mode: ArtifactMode; artifactType?: string }
+          | undefined;
+        if (payload === undefined) return;
+        ingress.close();
+        const bytes = Uint8Array.from(atob(payload.bytes), (char) => char.charCodeAt(0));
+        try {
+          await renderArtifact(registry, bytes, payload.mode, payload.artifactType ?? "markdown");
+        } catch (error) {
+          appendRenderError(container, error instanceof Error ? error.message : String(error));
+        }
+        // Counts cross the control port ONLY after the render settled.
+        const report = countPageShim();
+        try {
+          controlPost?.({ type: "render-complete", observed: report, mode: payload.mode });
+        } catch {
+          // control channel already torn down — drop silently.
+        }
+      };
       try {
-        await renderArtifact(bytes, payload.mode, payload.artifactType ?? "markdown");
-      } catch (error) {
-        appendRenderError(container, error instanceof Error ? error.message : String(error));
-      }
-      // Counts cross the control port ONLY after the render settled.
-      const report = countPageShim();
-      try {
-        controlPost?.({ type: "render-complete", observed: report, mode: payload.mode });
+        controlPost({ type: "boot-ready" });
       } catch {
-        // control channel already torn down — drop silently.
+        // ditto
       }
-    };
-    try {
-      controlPost({ type: "boot-ready" });
-    } catch {
-      // ditto
-    }
-  },
-  { once: false },
-);
+    },
+    { once: false },
+  );
+}

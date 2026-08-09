@@ -1,35 +1,41 @@
 #!/usr/bin/env bun
 /**
- * Build the gallery shell + frame bundle into static assets the service
- * can serve. Two build outputs:
+ * Build the gallery shell + type-specific frame bundles into static assets
+ * the service can serve.
  *
  *   1. `dist/gallery/app.js` — the shell controller. Loaded as a
  *      `<script type="module">` in `index.html`.
- *   2. `dist/gallery/frame/bootstrap.js` — the trusted frame bundle.
- *      Embedded into the srcdoc under a per-frame nonce by `app.ts`
- *      at runtime (the nonce is FRESH per frame, not per build).
+ *   2. `dist/gallery/frame/bootstrap/<type>.js` — one trusted frame bundle
+ *      per artifact type. The frame URL selects the bundle before any
+ *      artifact bytes cross into the opaque origin.
  *
  * The build target is `browser` and minify is OFF — we want the
  * emitted bundle to be human-readable so an audit can verify no
  * artifact bytes leak into it. The `dist/` directory is gitignored.
  */
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { frameBundlePlugins } from "../src/shared/build/frame-bundle-plugins";
 
 const REPO_ROOT = import.meta.dir.replace(/\/scripts$/, "");
 const OUT_DIR = join(REPO_ROOT, "dist", "gallery");
-const FRAME_BOOTSTRAP_ENTRY = join(REPO_ROOT, "src", "gallery-web", "frame", "bootstrap.ts");
+const FRAME_ENTRY_DIR = join(REPO_ROOT, "src", "gallery-web", "frame", "entries");
+const ARTIFACT_TYPES = ["markdown", "mermaid", "svg", "chart"] as const;
 
-async function buildEntry(entry: string, name: string): Promise<void> {
+async function buildEntry(entry: string, name: string, splitting = false): Promise<void> {
   const result = await Bun.build({
     entrypoints: [entry],
     outdir: OUT_DIR,
     target: "browser",
     minify: false,
-    naming: name,
+    splitting,
+    naming: {
+      entry: name,
+      chunk: "frame/chunks/[name]-[hash].[ext]",
+      asset: "frame/assets/[name].[ext]",
+    },
     plugins: frameBundlePlugins(),
   });
   if (!result.success) {
@@ -40,7 +46,15 @@ async function buildEntry(entry: string, name: string): Promise<void> {
 
 async function main(): Promise<void> {
   mkdirSync(OUT_DIR, { recursive: true });
-  await buildEntry(FRAME_BOOTSTRAP_ENTRY, "frame/[dir]/[name].[ext]");
+  rmSync(join(OUT_DIR, "frame", "bootstrap.js"), { force: true });
+  rmSync(join(OUT_DIR, "frame", "chunks"), { recursive: true, force: true });
+  for (const artifactType of ARTIFACT_TYPES) {
+    await buildEntry(
+      join(FRAME_ENTRY_DIR, `${artifactType}.ts`),
+      `frame/bootstrap/${artifactType}.[ext]`,
+      true,
+    );
+  }
   // The shell controller is bundled from index.html so the CSS imports
   // + app.ts are wired into a single bundle the service serves.
   const shellResult = await Bun.build({

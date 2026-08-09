@@ -594,8 +594,16 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("seamless swap: new frame renders BEFORE the old frame is removed", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
-    const next = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const current = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
+    const next = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     const received: unknown[] = [];
     simulateFrameSide(next, received);
 
@@ -642,8 +650,16 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("view state (zoom) is preserved across the swap", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
-    const next = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const current = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
+    const next = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     simulateFrameSide(next, []);
 
     const result = await replaceArtifactFrame({
@@ -664,8 +680,16 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("every revision gets a FRESH opaque frame — no artifact-JS carryover", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const first = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
-    const second = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const first = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
+    const second = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     // Fresh nonce + fresh loopback URL per frame — an old bootstrap cannot
     // survive into a new CSP window, and no source bytes ride the document.
     expect(first.nonce).not.toBe(second.nonce);
@@ -680,7 +704,11 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     // is already closed (one-shot) and its control dies at replacement.
     const receivedFirst: unknown[] = [];
     simulateFrameSide(first, receivedFirst);
-    const seed = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const seed = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     const swapOne = await replaceArtifactFrame({
       current: seed,
       next: first,
@@ -717,8 +745,16 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("failed new render keeps the last-good frame + error badge", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
-    const next = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const current = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
+    const next = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     // The frame boots but its render reports errors.
     simulateFrameSide(next, [], { errorCount: 1 });
 
@@ -747,8 +783,16 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("new frame that never boots keeps the last-good frame (timeout path)", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
-    const next = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const current = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
+    const next = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     // No boot-ready at all.
     simulateFrameSide(next, [], { omitBootReady: true, omitRenderComplete: true });
 
@@ -771,7 +815,11 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   test("swapToRevision fetches the exact revision and swaps to a fresh frame", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
-    const current = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const current = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     const fetched: { artifactId: string; revisionSha: string }[] = [];
     const bytes = new Uint8Array([7, 7, 7]);
     const received: unknown[] = [];
@@ -806,7 +854,11 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
 describe("gallery shell — control-port RECEIVE path", () => {
   test("onControlEvent receives frame→shell events posted on the frame-held end", async () => {
     const dom = createStubDom();
-    const frame = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const frame = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     const events: FrameControlEvent[] = [];
     const unsubscribe = frame.onControlEvent((event) => events.push(event));
     postFrameControl(frame, { type: "boot-ready" });
@@ -829,7 +881,11 @@ describe("gallery shell — control-port RECEIVE path", () => {
 
   test("awaitControlEvent resolves on the matching type and times out to null", async () => {
     const dom = createStubDom();
-    const frame = createArtifactFrame({ bootstrapUrl: BOOTSTRAP_URL, dom });
+    const frame = createArtifactFrame({
+      artifactType: "markdown",
+      bootstrapUrl: BOOTSTRAP_URL,
+      dom,
+    });
     const pending = frame.awaitControlEvent("boot-ready", 1_000);
     postFrameControl(frame, { type: "boot-ready" });
     expect(await pending).toMatchObject({ type: "boot-ready" });

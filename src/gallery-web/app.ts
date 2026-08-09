@@ -159,6 +159,7 @@ export interface FrameControlEvent {
 }
 
 export interface CreateArtifactFrameOptions {
+  readonly artifactType: string;
   readonly bootstrapUrl: string;
   readonly frameUrl?: string;
   readonly dom: ShellDom;
@@ -236,6 +237,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   const nonce = options.nonce ?? newFrameNonce();
   const frameUrl = new URL(options.frameUrl ?? "/gallery/frame", `http://${dom.hostname}`);
   frameUrl.searchParams.set("nonce", nonce);
+  frameUrl.searchParams.set("type", options.artifactType);
   const attrs = buildFrameAttributes(frameUrl.toString());
   // Fresh channels per frame. port1 = shell side; port2 = frame side
   // (transferred on the postMessage handshake).
@@ -484,6 +486,7 @@ export async function swapToRevision(
 }> {
   const revision = await deps.fetchRevision(event.artifactId, event.revisionSha);
   const next = createArtifactFrame({
+    artifactType: revision.artifactType,
     bootstrapUrl: deps.bootstrapUrl,
     dom: deps.dom,
     ...(deps.frameUrl === undefined ? {} : { frameUrl: deps.frameUrl }),
@@ -719,7 +722,12 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   };
   const dom: ShellDom = { document, MessageChannel, hostname: window.location.hostname, window };
   const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
-  let current = createArtifactFrame({ bootstrapUrl, frameUrl, dom });
+  let current = createArtifactFrame({
+    artifactType: source.artifactType,
+    bootstrapUrl,
+    frameUrl,
+    dom,
+  });
   const boot = await armFrameLoad(current, (frame) =>
     host.mountOffScreen(frame.frameId, frame.element.raw),
   );

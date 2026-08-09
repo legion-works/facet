@@ -85,6 +85,8 @@ function freshContainer(): HTMLElement {
   return el as unknown as HTMLElement;
 }
 
+const NOOP_RENDERER = async (): Promise<void> => {};
+
 function escapeXmlAttribute(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -480,14 +482,16 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
 
 describe("renderer registry — dispatch contract", () => {
   test("registry resolves the four implemented types", () => {
-    const reg = registry.getRendererRegistry();
+    const reg = registry.createRendererRegistry(
+      registry.ARTIFACT_TYPES.map((type) => [type, NOOP_RENDERER] as const),
+    );
     for (const type of registry.ARTIFACT_TYPES) {
       expect(reg.get(type)).toBeDefined();
     }
   });
 
   test("html dispatch is the typed unsupported_reserved_type error", async () => {
-    const reg = registry.getRendererRegistry();
+    const reg = registry.createRendererRegistry([]);
     let caught: unknown = null;
     try {
       await registry.dispatchRender(

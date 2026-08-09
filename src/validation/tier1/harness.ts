@@ -7,11 +7,10 @@
  * renders for the verifier's adversarial probes.
  *
  * Build pipeline:
- *   1. Bundle the bootstrap (`harness-entry.ts`) as ESM via bun.build.
- *      The entry imports the SAME renderer registry the gallery frame
- *      bundles (`gallery-web/frame/renderers`), so mermaid/markdown
- *      run as real ESM inlined under the nonce — no sibling
- *      `<script src>` for the file:// CSP to reject.
+ *   1. Bundle the artifact type's entry as ESM via bun.build. Its paired
+ *      gallery entry imports the SAME renderer modules, enforced by the
+ *      build-metafile parity test. The result is inlined under the nonce,
+ *      with no sibling `<script src>` for the file:// CSP to reject.
  *   2. Build the harness srcdoc with the bootstrap inlined under a
  *      per-frame nonce.
  *   3. The host page points its iframe at the harness srcdoc via
@@ -21,9 +20,10 @@
 
 import { build } from "bun";
 
+import { ARTIFACT_TYPES, type ArtifactType } from "../../gallery-web/frame/renderers/registry";
 import { frameBundlePlugins } from "../../shared/build/frame-bundle-plugins";
 
-const HARNESS_ENTRY = `${import.meta.dir}/harness-entry.ts`;
+const HARNESS_ENTRY_DIR = `${import.meta.dir}/entries`;
 
 /**
  * Frozen CSP the harness srcdoc ships with. Identical directive
@@ -53,19 +53,26 @@ function freshNonce(): string {
 }
 
 /**
- * Build the harness browser bundle (bootstrap + the shared renderer
- * registry, inlined as ESM). Returns the bundled JS plus its byte
+ * Build one type-specific harness browser bundle, inlined as ESM.
+ * Returns the bundled JS plus its byte
  * length. The bundle is inlined into the srcdoc under the per-frame
  * nonce — the file:// CSP problem that blocks sibling `<script src>`
  * does not apply to nonce-carrying inline script, so the REAL
  * mermaid/markdown/vega renderers run inside the verifier frame.
  */
-async function buildBootstrapBundleUncached(): Promise<{
+function parseArtifactType(artifactType: string): ArtifactType {
+  if ((ARTIFACT_TYPES as readonly string[]).includes(artifactType)) {
+    return artifactType as ArtifactType;
+  }
+  throw new Error(`Tier 1 harness has no renderer bundle for artifact type '${artifactType}'`);
+}
+
+async function buildBootstrapBundleUncached(artifactType: ArtifactType): Promise<{
   readonly code: string;
   readonly bytes: number;
 }> {
   const result = await build({
-    entrypoints: [HARNESS_ENTRY],
+    entrypoints: [`${HARNESS_ENTRY_DIR}/${artifactType}.ts`],
     target: "browser",
     minify: false,
     format: "esm",
@@ -83,22 +90,29 @@ async function buildBootstrapBundleUncached(): Promise<{
   return { code: text, bytes: text.length };
 }
 
-let bundlePromise: Promise<{ readonly code: string; readonly bytes: number }> | null = null;
+const bundlePromises = new Map<
+  ArtifactType,
+  Promise<{ readonly code: string; readonly bytes: number }>
+>();
 
 /**
- * Memoized bundle build: the ~8 MB bundle is a pure function of the
- * source tree, so rebuilding it per verification buys nothing and
+ * Each type-specific bundle is a pure function of the source tree, so
+ * rebuilding it per verification buys nothing and
  * puts a heavyweight bundler invocation on every run's critical path.
  * The per-frame nonce is applied to the srcdoc, not the bundle, so
  * sharing the bytes across runs is sound.
  */
-function buildBootstrapBundle(): Promise<{ readonly code: string; readonly bytes: number }> {
-  if (bundlePromise === null) {
-    bundlePromise = buildBootstrapBundleUncached().catch((error: unknown) => {
+function buildBootstrapBundle(
+  artifactType: ArtifactType,
+): Promise<{ readonly code: string; readonly bytes: number }> {
+  let bundlePromise = bundlePromises.get(artifactType);
+  if (bundlePromise === undefined) {
+    bundlePromise = buildBootstrapBundleUncached(artifactType).catch((error: unknown) => {
       // A failed build must not poison the cache for later runs.
-      bundlePromise = null;
+      bundlePromises.delete(artifactType);
       throw error;
     });
+    bundlePromises.set(artifactType, bundlePromise);
   }
   return bundlePromise;
 }
@@ -118,13 +132,14 @@ function buildBootstrapBundle(): Promise<{ readonly code: string; readonly bytes
  * registered. The module script keeps top-level function declarations
  * in the module scope instead of the global one.
  */
-export async function buildHarnessSrcdoc(): Promise<{
+export async function buildHarnessSrcdoc(artifactType: string): Promise<{
   readonly srcdoc: string;
   readonly nonce: string;
   readonly bundleBytes: number;
 }> {
+  const rendererType = parseArtifactType(artifactType);
   const nonce = freshNonce();
-  const { code, bytes } = await buildBootstrapBundle();
+  const { code, bytes } = await buildBootstrapBundle(rendererType);
   const escaped = code.replace(/<\/script/gi, "<\\/script");
   const csp = HARNESS_CSP.replace("<BOOTSTRAP_NONCE>", nonce);
   const srcdoc =
@@ -158,7 +173,7 @@ export async function buildHostPage(
   hostDir: string,
   artifactType: string,
 ): Promise<HostPageInputs> {
-  const { srcdoc, bundleBytes: harnessBytes } = await buildHarnessSrcdoc();
+  const { srcdoc, bundleBytes: harnessBytes } = await buildHarnessSrcdoc(artifactType);
   const harnessPath = `${hostDir}/harness.html`;
   await Bun.write(harnessPath, srcdoc);
   const b64 = Buffer.from(artifactBytes).toString("base64");

@@ -1,19 +1,14 @@
 /**
  * Frame-side renderer registry — keyed by ArtifactType.
  *
- * Runs INSIDE the opaque-origin frame (gallery bootstrap and the
- * Tier 1 verifier harness bundle the SAME registry, so the unfakeable
- * gate verifies exactly what the operator sees). Artifact bytes are
- * DATA: dispatch routes them to the typed renderer and every renderer
- * builds DOM through trusted APIs — bytes never become executable.
+ * Runs INSIDE the opaque-origin frame. Gallery and Tier 1 have paired
+ * type-specific entries that instantiate this registry with the SAME
+ * renderer modules; the build-metafile parity gate turns red if those
+ * module sets diverge. Artifact bytes are DATA: dispatch routes them to
+ * the typed renderer and every renderer builds DOM through trusted APIs.
  *
  * No zod in the frame bundle: the wire shape is plain JS here.
  */
-
-import { renderMarkdown } from "./markdown";
-import { renderMermaidDocument } from "./mermaid";
-import { renderSvgDocument } from "./svg";
-import { renderChart } from "./chart";
 
 export const ARTIFACT_TYPES = ["markdown", "mermaid", "svg", "chart"] as const;
 export type ArtifactType = (typeof ARTIFACT_TYPES)[number];
@@ -91,26 +86,17 @@ export function countPageShim(): PageShimCounts {
   };
 }
 
-/**
- * The registry, keyed by ArtifactType. None of the renderers import
- * the registry (markdown delegates to mermaid + the shared svg import
- * path), so this map is cycle-free and built once at module load.
- */
-const REGISTRY = new Map<string, Renderer>([
-  ["markdown", renderMarkdown],
-  ["mermaid", renderMermaidDocument],
-  ["svg", renderSvgDocument],
-  ["chart", renderChart],
-]);
-
 export interface RendererRegistry {
   readonly get: (type: string) => Renderer | undefined;
 }
 
-export function getRendererRegistry(): RendererRegistry {
+export function createRendererRegistry(
+  entries: readonly (readonly [ArtifactType, Renderer])[],
+): RendererRegistry {
+  const registry = new Map<string, Renderer>(entries);
   return {
     get(type: string): Renderer | undefined {
-      return REGISTRY.get(type);
+      return registry.get(type);
     },
   };
 }

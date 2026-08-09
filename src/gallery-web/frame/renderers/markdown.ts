@@ -15,7 +15,6 @@
 import { Marked } from "marked";
 
 import { type RenderContext, decodeArtifactBytes } from "./registry";
-import { renderMermaidInto } from "./mermaid";
 
 const ESCAPES: ReadonlyMap<string, string> = new Map([
   ["&", "&amp;"],
@@ -64,6 +63,9 @@ export async function renderMarkdown(ctx: RenderContext, bytes: Uint8Array): Pro
   const mermaidBlocks = Array.from(
     template.content.querySelectorAll("pre > code.language-mermaid"),
   );
+  // Plain markdown must not pay Mermaid's multi-megabyte load + parse cost.
+  const renderMermaidInto =
+    mermaidBlocks.length === 0 ? null : (await import("./mermaid")).renderMermaidInto;
   for (const code of mermaidBlocks) {
     const source = code.textContent ?? "";
     const pre = code.parentElement;
@@ -71,7 +73,7 @@ export async function renderMarkdown(ctx: RenderContext, bytes: Uint8Array): Pro
     // Render into a scratch holder so the SVG lands where the <pre>
     // was, then move it into the template fragment.
     const scratch = document.createElement("div");
-    await renderMermaidInto(scratch, source);
+    await renderMermaidInto!(scratch, source);
     const svg = scratch.firstElementChild;
     if (svg !== null) pre.replaceWith(svg);
     else pre.remove();

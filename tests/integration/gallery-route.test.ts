@@ -87,26 +87,34 @@ describe("GET /gallery", () => {
       tier0Runner: stubTier0Runner,
     });
     const nonce = "0123456789abcdef0123456789abcdef";
-    const frame = await fetch(`${service.url}/gallery/frame?nonce=${nonce}`);
+    const frame = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=markdown`);
     const document = await frame.text();
     expect(frame.status).toBe(200);
     expect(frame.headers.get("content-security-policy")).toBe(
       FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce),
     );
     expect(document).toContain(
-      `<script type="module" nonce="${nonce}" src="/gallery/frame/bootstrap.js">`,
+      `<script type="module" nonce="${nonce}" src="/gallery/frame/bootstrap/markdown.js">`,
     );
     expect(document).not.toContain("FACET_SENTINEL_ARTIFACT_BYTES");
     expect(document.match(/<script/gi)?.length ?? 0).toBe(1);
 
     const invalid = await fetch(`${service.url}/gallery/frame?nonce=bad%0d%0aX-Evil%3A%20yes`);
     expect(invalid.status).toBe(400);
+    const invalidType = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=html`);
+    expect(invalidType.status).toBe(400);
 
-    const bootstrap = await fetch(`${service.url}/gallery/frame/bootstrap.js`, {
+    const bootstrap = await fetch(`${service.url}/gallery/frame/bootstrap/markdown.js`, {
       headers: { origin: "null" },
     });
     expect(bootstrap.status).toBe(200);
     expect(bootstrap.headers.get("access-control-allow-origin")).toBe("*");
+    const bootstrapSource = await bootstrap.text();
+    const chunkPath = bootstrapSource.match(/["'](\.\.\/chunks\/[^"']+\.js)["']/)?.[1];
+    expect(chunkPath).toBeDefined();
+    const chunk = await fetch(new URL(chunkPath!, bootstrap.url), { headers: { origin: "null" } });
+    expect(chunk.status).toBe(200);
+    expect(chunk.headers.get("access-control-allow-origin")).toBe("*");
   });
 
   test("serves source only through the matching live gallery lease", async () => {

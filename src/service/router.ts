@@ -49,6 +49,7 @@ import {
 } from "./router-guards";
 import type { FacetLogger } from "../shared/logging/logger";
 import { buildFrameDocument, FROZEN_CSP_TEMPLATE } from "../gallery-web/frame-html";
+import { ArtifactTypeSchema } from "../shared/contracts/artifact";
 import { VerdictSchema, type Verdict } from "../shared/contracts/validation";
 
 const ROUTE_API = "/api/v1/commands";
@@ -58,11 +59,20 @@ const ROUTE_FRAME = "/gallery/frame";
 const ROUTE_BOOTSTRAP = "/api/v1/gallery/bootstrap";
 const ROUTE_RELEASE = "/api/v1/gallery/release";
 const ROUTE_SOURCE = "/api/v1/gallery/source";
+const FRAME_BOOTSTRAP_PREFIX = `${ROUTE_FRAME}/bootstrap/`;
+const FRAME_CHUNK_PREFIX = `${ROUTE_FRAME}/chunks/`;
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 
 function traceTier1Transport(stage: string): void {
   if (!TIER1_TRACE) return;
   process.stderr.write(`[tier1-transport] ${stage}\n`);
+}
+
+function isFrameScriptPath(path: string): boolean {
+  return (
+    (path.startsWith(FRAME_BOOTSTRAP_PREFIX) || path.startsWith(FRAME_CHUNK_PREFIX)) &&
+    path.endsWith(".js")
+  );
 }
 
 function startRequestHeartbeat(requestId: string, command: string): () => void {
@@ -404,7 +414,7 @@ export function buildRouter(deps: RouterDeps): {
     async fetch(req: Request): Promise<Response> {
       const url = new URL(req.url);
       const path = url.pathname;
-      if (path === `${ROUTE_FRAME}/bootstrap.js` && req.method.toUpperCase() === "GET") {
+      if (isFrameScriptPath(path) && req.method.toUpperCase() === "GET") {
         try {
           await ensureGalleryBuild();
         } catch (error) {
@@ -413,7 +423,7 @@ export function buildRouter(deps: RouterDeps): {
             headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
           });
         }
-        return serveGalleryFile("frame/bootstrap.js", undefined, {
+        return serveGalleryFile(path.replace(/^\/gallery\//, ""), undefined, {
           "access-control-allow-origin": "*",
         });
       }
@@ -428,8 +438,21 @@ export function buildRouter(deps: RouterDeps): {
             },
           });
         }
+        const artifactType = ArtifactTypeSchema.safeParse(url.searchParams.get("type"));
+        if (!artifactType.success) {
+          return new Response("Invalid frame artifact type", {
+            status: 400,
+            headers: {
+              "cache-control": "no-store",
+              "content-type": "text/plain; charset=utf-8",
+            },
+          });
+        }
         return new Response(
-          buildFrameDocument({ nonce, bootstrapUrl: "/gallery/frame/bootstrap.js" }),
+          buildFrameDocument({
+            nonce,
+            bootstrapUrl: `${FRAME_BOOTSTRAP_PREFIX}${artifactType.data}.js`,
+          }),
           {
             status: 200,
             headers: {
@@ -450,7 +473,7 @@ export function buildRouter(deps: RouterDeps): {
         const rootAssetResponse = await serveGalleryFile(
           path.replace(/^\//, ""),
           undefined,
-          path === `${ROUTE_FRAME}/bootstrap.js` ? { "access-control-allow-origin": "*" } : {},
+          isFrameScriptPath(path) ? { "access-control-allow-origin": "*" } : {},
         );
         if (rootAssetResponse.status !== 404) return rootAssetResponse;
       }
