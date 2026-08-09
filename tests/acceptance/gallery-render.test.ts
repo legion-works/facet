@@ -10,8 +10,15 @@ import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
 
 const browser = new PuppeteerTier1Browser();
-const availability = await browser.probeAvailability();
 const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
+// probeAvailability() launches a REAL browser through the netns wrapper and
+// tears it down. Doing that at module level ran it on EVERY suite run for a
+// test that only executes under FACET_LIVE_GALLERY=1 — and a browser
+// lifecycle completing before the next file's service exists is the observed
+// trigger for a hung response in the following test.
+const availability = liveGateEnabled
+  ? await browser.probeAvailability()
+  : { available: false, reason: "live gallery gate disabled" };
 
 test.skipIf(!liveGateEnabled || !availability.available)(
   "real gallery route mounts an opaque frame and renders an SVG artifact",

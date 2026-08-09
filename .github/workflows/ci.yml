@@ -36,24 +36,29 @@ jobs:
           unshare --map-current-user --user --net -- /bin/true
       # set +e: these are DIAGNOSTICS, not gates — each variant must record its
       # own exit code and let the next one run. The `ci` job remains the gate.
-      - name: C - full acceptance dir, NO coverage
+      # G is the two-file reproducer: a bare browser launch+teardown at module
+      # level, then gate-forgery. If G hangs and H passes, the trigger is the
+      # browser lifecycle completing before the next file's service exists.
+      - name: G - browser-lifecycle stub then gate-forgery (REPRO)
+        shell: bash
+        env:
+          FACET_REPRO_LIFECYCLE: "1"
+        run: |
+          set +e
+          timeout 300 bun test tests/acceptance/_repro-browser-lifecycle.test.ts tests/acceptance/gate-forgery.test.ts 2>&1 | tail -20
+          echo "G_EXIT=${PIPESTATUS[0]}"
+      - name: H - same pair, stub disabled (control)
         shell: bash
         run: |
           set +e
-          timeout 400 bun test tests/acceptance/ 2>&1 | tail -25
-          echo "C_EXIT=${PIPESTATUS[0]}"
-      - name: D - egress then gate-forgery only (pairwise)
+          timeout 300 bun test tests/acceptance/_repro-browser-lifecycle.test.ts tests/acceptance/gate-forgery.test.ts 2>&1 | tail -20
+          echo "H_EXIT=${PIPESTATUS[0]}"
+      - name: I - full acceptance dir after the lazify fix
         shell: bash
         run: |
           set +e
-          timeout 400 bun test tests/acceptance/egress.test.ts tests/acceptance/gate-forgery.test.ts 2>&1 | tail -25
-          echo "D_EXIT=${PIPESTATUS[0]}"
-      - name: E - adversarial then gate-forgery only (pairwise control)
-        shell: bash
-        run: |
-          set +e
-          timeout 400 bun test tests/acceptance/adversarial-render.test.ts tests/acceptance/gate-forgery.test.ts 2>&1 | tail -25
-          echo "E_EXIT=${PIPESTATUS[0]}"
+          timeout 400 bun test tests/acceptance/ 2>&1 | tail -20
+          echo "I_EXIT=${PIPESTATUS[0]}"
 
   ci:
     runs-on: ubuntu-latest
