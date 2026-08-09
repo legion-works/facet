@@ -232,7 +232,20 @@ async function main(): Promise<void> {
   }
 
   console.error("perf phase: browser-probe");
-  const availability = await probeBrowserAvailability();
+  // The probe itself launches a browser, so on the pinned runtime it can die of
+  // oven-sh/bun#37230 before any budget is printed — losing the four
+  // browser-free phases that already completed. Measurements survive their
+  // collector: a probe failure degrades to "browser budgets unmeasured", never
+  // to "the run produced nothing".
+  let availability: Awaited<ReturnType<typeof probeBrowserAvailability>>;
+  try {
+    availability = await probeBrowserAvailability();
+  } catch (error) {
+    availability = {
+      available: false,
+      reason: `probe failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
   measurements.browserAvailability = availability;
   if (!availability.available) {
     const reason = availability.reason ?? "pinned browser unavailable";
@@ -241,7 +254,10 @@ async function main(): Promise<void> {
         name,
         observed: `SKIPPED: ${reason}`,
         status: "skipped",
-        enforced: true,
+        // Browser budgets are stable-machine scope; an unavailable browser is a
+        // measurement gap, not a broken promise, so it must not fail the run
+        // and silence the budgets that DID measure.
+        enforced: false,
         method: "unmeasured",
       });
     }
