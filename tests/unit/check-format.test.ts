@@ -25,6 +25,12 @@ describe("format surface", () => {
     ).toEqual(["src/app.ts", "src/app.css"]);
   });
 
+  test("skips generated files the release tool owns, but not hand-written markdown", () => {
+    expect(selectFormatPaths(["CHANGELOG.md", "docs/roadmap.md", "README.md"], () => true)).toEqual(
+      ["docs/roadmap.md", "README.md"],
+    );
+  });
+
   test("uses tracked files in CI and explicit staged files in the hook", () => {
     const calls: string[][] = [];
     const deps = {

@@ -23,6 +23,11 @@ export const FORMAT_EXTENSIONS = new Set([
   ".yml",
 ]);
 
+// Machine-generated files whose formatting belongs to the tool that emits them.
+// release-please rewrites CHANGELOG.md on every release, so formatting it here
+// would fail each release PR until a human reformatted output they do not own.
+export const GENERATED_PATHS = new Set(["CHANGELOG.md"]);
+
 export interface FormatCheckDeps {
   readonly trackedPaths: () => readonly string[];
   readonly pathExists: (path: string) => boolean;
@@ -34,7 +39,10 @@ export function selectFormatPaths(
   pathExists: (path: string) => boolean = existsSync,
 ): string[] {
   return [...new Set(paths)].filter(
-    (path) => FORMAT_EXTENSIONS.has(extname(path).toLowerCase()) && pathExists(path),
+    (path) =>
+      FORMAT_EXTENSIONS.has(extname(path).toLowerCase()) &&
+      !GENERATED_PATHS.has(path) &&
+      pathExists(path),
   );
 }
 
