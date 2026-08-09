@@ -221,7 +221,7 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
     const protocolSnapshot = await probeProtocolSnapshot(target.session, childFrame);
     traceTier1("protocol-snapshot:complete", startedAt);
     traceTier1("protocol-document:start", startedAt);
-    const protocolGetDocument = await probeProtocolGetDocument(target.session);
+    const protocolGetDocument = await probeProtocolGetDocument(target.session, childFrame);
     traceTier1("protocol-document:complete", startedAt);
     traceTier1("isolated-probe:start", startedAt);
     const isolatedObservation = await probeIsolatedCounts(

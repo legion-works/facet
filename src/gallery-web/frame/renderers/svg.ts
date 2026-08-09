@@ -281,7 +281,8 @@ export function sanitizeSvgDocument(doc: Document): void {
     }
     for (const attr of Array.from(el.attributes ?? [])) {
       const name = attr.name.toLowerCase();
-      if (RESERVED_RENDERER_ATTRIBUTES.has(name)) {
+      const localName = (attr.localName || attr.name).split(":").pop()?.toLowerCase() ?? "";
+      if (RESERVED_RENDERER_ATTRIBUTES.has(localName)) {
         el.removeAttribute(attr.name);
         continue;
       }

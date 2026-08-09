@@ -12,8 +12,10 @@
  *
  * `graphCount` matches the protocol probe: one count per
  * renderer-owned `<svg>`. `mermaidNodeCount` sums the `g.node`
- * descendants. Opaque regions are owning `<canvas>` elements; the
- * probe never calls getContext(), which would create an observation.
+ * descendants. Those renderer counts are marker-scoped; opaque regions
+ * deliberately census every owning `<canvas>` in the frame document so
+ * smuggled canvases cannot hide outside a marked root. The probe never
+ * calls getContext(), which would create an observation.
  */
 
 import type { ProtocolObservation } from "../../shared/contracts/validation";
@@ -61,8 +63,8 @@ export async function probeIsolatedCounts(
         "  };",
         "})()",
       ].join("\n"),
-    })) as { result: { value: ProtocolObservation } };
-    return result.result.value;
+    })) as { result: { value?: ProtocolObservation } };
+    return result.result.value ?? null;
   } catch {
     return null;
   }

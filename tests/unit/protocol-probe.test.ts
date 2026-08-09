@@ -40,43 +40,60 @@ const snapshot = {
 const document = {
   root: {
     nodeName: "#document",
+    frameId: "parent-frame",
     children: [
+      { nodeName: "CANVAS" },
       {
-        nodeName: "SVG",
-        attributes: [
-          "data-facet-renderer-root",
-          "true",
-          "data-facet-renderer-graph",
-          "true",
-          "viewBox",
-          "0 0 100 100",
-        ],
-        children: [
-          {
-            nodeName: "SVG",
-            attributes: [
-              "data-facet-renderer-root",
-              "true",
-              "data-facet-renderer-graph",
-              "true",
-              "viewBox",
-              "0 0 100 100",
-            ],
-          },
-          { nodeName: "g", attributes: ["class", "node"] },
-          { nodeName: "g", attributes: ["class", "node"] },
-          { nodeName: "CANVAS" },
-          { nodeName: "facet-error", attributes: ["data-facet-error", "true"] },
-        ],
+        nodeName: "IFRAME",
+        backendNodeId: 41,
+        contentDocument: {
+          nodeName: "#document",
+          children: [
+            {
+              nodeName: "SVG",
+              attributes: [
+                "data-facet-renderer-root",
+                "true",
+                "data-facet-renderer-graph",
+                "true",
+                "viewBox",
+                "0 0 100 100",
+              ],
+              children: [
+                {
+                  nodeName: "SVG",
+                  attributes: [
+                    "data-facet-renderer-root",
+                    "true",
+                    "data-facet-renderer-graph",
+                    "true",
+                    "viewBox",
+                    "0 0 100 100",
+                  ],
+                },
+                { nodeName: "g", attributes: ["class", "node"] },
+                { nodeName: "g", attributes: ["class", "node"] },
+                { nodeName: "CANVAS" },
+                { nodeName: "facet-error", attributes: ["data-facet-error", "true"] },
+              ],
+            },
+          ],
+        },
       },
     ],
   },
 };
 
+const childFrame = {
+  frameId: "child-frame",
+  url: "about:srcdoc",
+} as const;
+
 function session(): VerifierCdpSession {
   return {
     async send(method: string): Promise<never> {
       if (method === "DOMSnapshot.captureSnapshot") return snapshot as never;
+      if (method === "DOM.getFrameOwner") return { backendNodeId: 41 } as never;
       if (method === "DOM.getDocument") return document as never;
       throw new Error(`unexpected CDP method: ${method}`);
     },
@@ -85,13 +102,10 @@ function session(): VerifierCdpSession {
 }
 
 describe("protocol probes — renderer-owned observables", () => {
-  test("DOMSnapshot primary and DOM.getDocument corroboration count marked roots, graph nodes, canvas regions, and errors", async () => {
+  test("DOMSnapshot primary and DOM.getDocument corroboration scope the canvas census to the child frame", async () => {
     const cdp = session();
-    const fromSnapshot = await probeProtocolSnapshot(cdp, {
-      frameId: "child-frame",
-      url: "about:srcdoc",
-    });
-    const fromDocument = await probeProtocolGetDocument(cdp);
+    const fromSnapshot = await probeProtocolSnapshot(cdp, childFrame);
+    const fromDocument = await probeProtocolGetDocument(cdp, childFrame);
 
     for (const observation of [fromSnapshot, fromDocument]) {
       expect(observation.rendererRootSvgCount).toBe(1);

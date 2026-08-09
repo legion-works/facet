@@ -150,8 +150,8 @@ describe("svg renderer — sanitize BEFORE import", () => {
     await svg.importSanitizedSvgText(
       container,
       [
-        '<svg xmlns="http://www.w3.org/2000/svg" data-facet-renderer-root="true" data-facet-renderer-graph="true">',
-        '<svg data-facet-renderer-root="true" data-facet-renderer-graph="true"/>',
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:hostile="urn:hostile" data-facet-renderer-root="true" hostile:data-facet-renderer-graph="true">',
+        '<svg hostile:data-facet-renderer-root="true" hostile:data-facet-renderer-graph="true"/>',
         "</svg>",
       ].join(""),
       { settleMs: 0, maxWaitMs: 10 },
@@ -160,8 +160,18 @@ describe("svg renderer — sanitize BEFORE import", () => {
     const imported = container.firstElementChild;
     expect(imported?.getAttribute("data-facet-renderer-root")).toBe("true");
     expect(imported?.getAttribute("data-facet-renderer-graph")).toBeNull();
+    expect(
+      Array.from(imported?.attributes ?? [])
+        .filter((attr) => attr.name.includes(":data-facet-renderer-"))
+        .map((attr) => ({ localName: attr.localName, name: attr.name })),
+    ).toEqual([]);
     expect(imported?.querySelector("svg")?.getAttribute("data-facet-renderer-root")).toBeNull();
     expect(imported?.querySelector("svg")?.getAttribute("data-facet-renderer-graph")).toBeNull();
+    expect(
+      Array.from(imported?.querySelector("svg")?.attributes ?? [])
+        .filter((attr) => attr.name.includes(":data-facet-renderer-"))
+        .map((attr) => ({ localName: attr.localName, name: attr.name })),
+    ).toEqual([]);
   });
 
   test("parseSvgData rejects garbage input and non-svg roots", () => {

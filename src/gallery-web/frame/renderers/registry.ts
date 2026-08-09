@@ -107,8 +107,9 @@ export function countPageShim(): PageShimCounts {
     (count, root) => count + safeSelectorElementsWithin(root, "g.node").length,
     0,
   );
-  // Opaque regions are owning <canvas> elements; getContext() would create
-  // the surface being observed and turn the probe into a false positive.
+  // Marker-scoped renderer counts deliberately differ from this document-wide
+  // canvas census: a smuggled canvas outside a renderer root remains observable.
+  // getContext() would create the surface being observed and turn the probe into a false positive.
   const opaqueRegionCount = safeSelectorElements("*").filter(
     (element) => element.nodeName.toLowerCase() === "canvas",
   ).length;

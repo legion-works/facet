@@ -13,7 +13,7 @@
  *     captures viewBoxes for the layout-observability check.
  *
  *   - `DOM.getDocument({ depth: -1, pierce: true })` — corroboration.
- *     Walks the same DOM tree via a different protocol path so the
+ *     Walks the same resolved child-frame document via a different protocol path so the
  *     counts from one channel can be cross-checked against the other.
  *     A divergence here is itself an anomaly; the verdict layer
  *     treats both as authority and the test layer asserts agreement.
@@ -46,6 +46,29 @@ interface SnapshotDocument {
 interface SnapshotResponse {
   readonly documents: readonly SnapshotDocument[];
   readonly strings: readonly string[];
+}
+
+interface ProtocolDomNode {
+  readonly backendNodeId?: number;
+  readonly contentDocument?: unknown;
+  readonly children?: unknown[];
+  readonly shadowRoots?: unknown[];
+}
+
+function findFrameDocument(node: unknown, ownerBackendNodeId: number): unknown | null {
+  if (node === null || typeof node !== "object") return null;
+  const record = node as ProtocolDomNode;
+  if (record.backendNodeId === ownerBackendNodeId) return record.contentDocument ?? null;
+  const nested = [
+    record.contentDocument,
+    ...(record.children ?? []),
+    ...(record.shadowRoots ?? []),
+  ];
+  for (const candidate of nested) {
+    const document = findFrameDocument(candidate, ownerBackendNodeId);
+    if (document !== null) return document;
+  }
+  return null;
 }
 
 function readString(table: readonly string[], index: number): string {
@@ -265,6 +288,7 @@ export async function probeProtocolSnapshot(
  */
 export async function probeProtocolGetDocument(
   session: VerifierCdpSession,
+  childFrame: ResolvedChildFrame,
 ): Promise<ProtocolObservation> {
   const result = (await session.send("DOM.getDocument", {
     depth: -1,
@@ -272,11 +296,15 @@ export async function probeProtocolGetDocument(
   })) as {
     root: {
       nodeName: string;
+      backendNodeId?: number;
       contentDocument?: { nodeName: string; children?: unknown[] };
       children?: unknown[];
       shadowRoots?: unknown[];
     };
   };
+  const owner = (await session.send("DOM.getFrameOwner", {
+    frameId: childFrame.frameId,
+  })) as { backendNodeId: number };
   let rendererRootSvgCount = 0;
   let graphCount = 0;
   let errorCount = 0;
@@ -319,14 +347,13 @@ export async function probeProtocolGetDocument(
     if (name === "g" && withinGraphRoot && findAttr("class")?.split(/\s+/).includes("node")) {
       gNodeCount += 1;
     }
-    // An opaque region is its owning <canvas>; getContext() would create
-    // a context and make the observation self-fulfilling.
+    // Renderer markers scope SVG counts, but the canvas census deliberately
+    // covers the entire child-frame document so smuggled canvases stay visible.
+    // getContext() would create a context and make the observation self-fulfilling.
     if (name === "canvas") opaqueRegionCount += 1;
     if (findAttr("data-facet-error") !== undefined) errorCount += 1;
     const nextWithinRendererRoot = withinRendererRoot || rendererRoot;
     const nextWithinGraphRoot = withinGraphRoot || graphRoot;
-    if (record.contentDocument !== undefined)
-      visit(record.contentDocument, nextWithinRendererRoot, nextWithinGraphRoot);
     if (record.children !== undefined)
       for (const child of record.children)
         visit(child, nextWithinRendererRoot, nextWithinGraphRoot);
@@ -334,7 +361,8 @@ export async function probeProtocolGetDocument(
       for (const shadow of record.shadowRoots)
         visit(shadow, nextWithinRendererRoot, nextWithinGraphRoot);
   };
-  visit(result.root);
+  const frameDocument = findFrameDocument(result.root, owner.backendNodeId);
+  if (frameDocument !== null) visit(frameDocument);
   return {
     rendererRootSvgCount,
     graphCount,
