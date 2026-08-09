@@ -4,6 +4,16 @@ runs:
   using: composite
   steps:
     # v2.0.2 — 735343b667d3e6f658f44d0eca948eb6282f2b76
+    #
+    # Bun 1.3.14 carries a known fd-reuse bug: killing a child spawned with stdio
+    # pipes beyond fd 2 can close an fd belonging to an in-flight fetch, so the
+    # request either resets or never settles (oven-sh/bun#37230, fixed on 1.4.0
+    # canary; reproduced here 9/20 runs on 1.3.14, 0/20 on canary and 0/20 with
+    # 3-entry stdio). Tier 1 drives chrome-headless-shell over a CDP pipe, which
+    # is exactly that stdio shape. We stay pinned because the trigger is gone (no
+    # browser launches while a request is in flight) and FACET_CLIENT_COMMAND_
+    # TIMEOUT_MS bounds any recurrence into a typed error. Move to 1.4.0 when it
+    # ships stable — canary is not a defensible pin for a reproducibility gate.
     - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
       with:
         bun-version: 1.3.14
