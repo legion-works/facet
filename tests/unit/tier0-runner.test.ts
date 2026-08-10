@@ -16,4 +16,8 @@ describe("Tier 0 insecure isolation selection", () => {
     expect(tier0Runner.createTier0Runner(0)).toBeDefined();
     expect(tier0Runner.runTier0).toBeDefined();
   });
+
+  test("rejects a type-bypassed insecure level instead of failing open", () => {
+    expect(() => tier0Runner.resolveTier0Isolation(99 as never)).toThrow();
+  });
 });

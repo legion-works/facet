@@ -23,6 +23,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { statSync } from "node:fs";
 
 import { TIER0_MEMORY_CAP_BYTES } from "./limits";
+import { InsecureLevelSchema } from "../../shared/contracts/validation";
 
 /**
  * The unshare wrapper. The shell fragment applies `ulimit -v` (RLIMIT_AS)
@@ -132,7 +133,8 @@ export function spawnDirectWorker(args: readonly string[]): ChildProcess {
 
 /** Select the Tier 0 isolation boundary for a manual insecure level. */
 export function resolveTier0Isolation(level: 0 | 1 | 2 | 3): "netns" | "direct" {
-  return level <= 1 ? "netns" : "direct";
+  const parsedLevel = InsecureLevelSchema.parse(level);
+  return parsedLevel <= 1 ? "netns" : "direct";
 }
 
 function spawnWorker(args: readonly string[], useNetns: boolean): ChildProcess {

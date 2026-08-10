@@ -31,7 +31,12 @@ import { buildRouter } from "./router";
 import { createInstallTokenStore, createPromoteTokenStore } from "./security/token-store";
 import { createLeaseManager, type GalleryLeaseManager } from "./security/leases";
 import { createRevisionBroadcaster } from "./stream";
-import type { InsecureLevel, Tier0Runner, Tier1Runner } from "../shared/contracts/validation";
+import {
+  InsecureLevelSchema,
+  type InsecureLevel,
+  type Tier0Runner,
+  type Tier1Runner,
+} from "../shared/contracts/validation";
 import {
   acquireLock,
   releaseLock,
@@ -90,6 +95,7 @@ export async function startFacetService(
   options: StartServiceOptions = {},
 ): Promise<RunningService> {
   const logger = options.logger ?? createLogger({ component: "service" });
+  const insecureLevel = InsecureLevelSchema.parse(options.insecureLevel ?? 0);
   const paths = computeFacetPaths();
   const dbPath = options.dbPath ?? paths.database;
   const installTokenPath =
@@ -226,7 +232,7 @@ export async function startFacetService(
     // broadcaster fans it out to the live gallery streams.
     const broadcaster = createRevisionBroadcaster();
     const router = buildRouter({
-      insecureLevel: options.insecureLevel ?? 0,
+      insecureLevel,
       insecureReason: options.insecureReason ?? null,
       ...(tier1Runner !== undefined ? { tier1Runner } : {}),
       repository,

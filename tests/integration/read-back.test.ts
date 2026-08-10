@@ -43,6 +43,7 @@ import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
 import { ArtifactRepository } from "../../src/service/store/repository";
+import { FacetClient, readBack } from "../../src/cli/client";
 
 interface TestEnv {
   service: RunningService;
@@ -247,6 +248,52 @@ function writeFileSyncCompat(path: string, content: string): void {
 }
 
 describe("read-back revision binding", () => {
+  test("CLI read-back preserves discriminative errors from the observed verdict", async () => {
+    const revisionSha = "a".repeat(64);
+    const client = new FacetClient({
+      baseUrl: "http://127.0.0.1:1234",
+      installToken: "test-token",
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            schemaVersion: FACET_SCHEMA_VERSION,
+            requestId: "response-request",
+            ok: true,
+            data: {
+              command: "readBack",
+              requestId: "response-request",
+              renderer: "svg",
+              verdict: {
+                status: "error",
+                tier: 0,
+                artifactId: "artifact-1",
+                revisionSha,
+                observed: {
+                  rendererRootSvgCount: 0,
+                  graphCount: 0,
+                  mermaidNodeCount: 0,
+                  visibleSvgCount: 0,
+                  opaqueRegionCount: 0,
+                  errorCount: 1,
+                  discriminativeErrors: [{ code: "bad_markdown", message: "bad markdown" }],
+                },
+              },
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        )) as unknown as typeof fetch,
+    });
+
+    const result = await readBack(client, {
+      artifactId: "artifact-1",
+      revisionSha,
+      tier: 0,
+    });
+    expect(result.observed.discriminativeErrors).toEqual([
+      { code: "bad_markdown", message: "bad markdown" },
+    ]);
+  });
+
   test("two rapid revisions to the same artifact — each read-back returns only its own verdict", async () => {
     const env = await startEnv();
     try {

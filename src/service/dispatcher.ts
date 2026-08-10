@@ -103,6 +103,16 @@ function mapArtifact(a: Artifact): ArtifactEnvelope {
   };
 }
 
+function insecureMarker(
+  deps: Pick<DispatcherDeps, "insecureLevel" | "insecureReason">,
+): InsecureMarker | undefined {
+  if (deps.insecureLevel === 0) return undefined;
+  return {
+    level: deps.insecureLevel,
+    reason: deps.insecureReason ?? `manual insecure level ${deps.insecureLevel}`,
+  };
+}
+
 function buildVerdict(input: {
   artifactId: string;
   revisionSha: string;
@@ -167,9 +177,11 @@ function enrichVerdict(
   result: Tier0WorkerResult,
   artifactId: string,
   revisionSha: string,
+  insecure?: InsecureMarker,
 ): Tier0Result {
   return Tier0ResultSchema.parse({
     ...result,
+    ...(insecure !== undefined ? { insecure } : {}),
     artifactId,
     revisionSha,
   });
@@ -217,9 +229,11 @@ function enrichTier1Verdict(
   result: Tier1Result,
   artifactId: string,
   revisionSha: string,
+  insecure?: InsecureMarker,
 ): Tier1Result {
   return Tier1ResultSchema.parse({
     ...result,
+    ...(insecure !== undefined ? { insecure } : {}),
     artifactId,
     revisionSha,
   });
@@ -294,10 +308,53 @@ export async function dispatch(
           opaqueRegionCount: lexical.expectedOpaqueRegions,
         },
       });
+      const insecure = insecureMarker(deps);
+      if (deps.insecureLevel === 3) {
+        const verdict = buildVerdict({
+          artifactId: command.artifactId,
+          revisionSha: revision.sha256,
+          tier: 0,
+          status: "insecure:unvalidated",
+          observed: {
+            rendererRootSvgCount: 0,
+            graphCount: 0,
+            mermaidNodeCount: 0,
+            visibleSvgCount: 0,
+            opaqueRegionCount: 0,
+            errorCount: 0,
+          },
+          ...(insecure !== undefined ? { insecure } : {}),
+        });
+        deps.repository.recordRenderRun({
+          revisionId: revision.id,
+          tier: 0,
+          status: verdict.status,
+          expected: tier0Input.lexical,
+          observed: verdict.observed,
+        });
+        deps.onPublished?.(
+          RevisionCommittedEventSchema.parse({
+            type: "revision:committed",
+            artifactId: command.artifactId,
+            revisionSha: revision.sha256,
+            revisionNumber: revision.revisionNumber,
+            artifactType,
+            at: new Date().toISOString(),
+          }),
+        );
+        const { source: _source, ...envelope } = revision;
+        void _source;
+        return {
+          command: "publish",
+          requestId,
+          revision: envelope,
+          verdict,
+        };
+      }
       const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input);
       // 3. Bind the verdict to (artifactId, revisionSha) via the
       // canonical render_run row so read-back returns it later.
-      const enriched = enrichVerdict(tier0Result, command.artifactId, revision.sha256);
+      const enriched = enrichVerdict(tier0Result, command.artifactId, revision.sha256, insecure);
       deps.repository.recordRenderRun({
         revisionId: revision.id,
         tier: 0,
@@ -319,7 +376,12 @@ export async function dispatch(
         });
         const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input, command.artifactId);
         traceTier1Transport(`publish:tier1-return status=${tier1Result.status}`);
-        const enrichedTier1 = enrichTier1Verdict(tier1Result, command.artifactId, revision.sha256);
+        const enrichedTier1 = enrichTier1Verdict(
+          tier1Result,
+          command.artifactId,
+          revision.sha256,
+          insecure,
+        );
         traceTier1Transport("publish:tier1-record:start");
         deps.repository.recordRenderRun({
           revisionId: revision.id,
@@ -358,7 +420,7 @@ export async function dispatch(
         command: "publish",
         requestId,
         revision: envelope,
-        verdict: enriched,
+        ...(insecure !== undefined ? { verdict: enriched } : {}),
         ...(tier1Verdict !== null ? { tier1Verdict } : {}),
       };
     }
@@ -393,20 +455,14 @@ export async function dispatch(
         });
       }
       const observedJson = JSON.parse(runs[0]!.observedJson);
+      const insecure = insecureMarker(deps);
       const verdict = buildVerdict({
         artifactId: command.artifactId,
         revisionSha: command.revisionSha,
         tier,
         status: runs[0]!.status,
         observed: observedJson,
-        ...(deps.insecureLevel > 0
-          ? {
-              insecure: {
-                level: deps.insecureLevel as 1 | 2 | 3,
-                reason: deps.insecureReason ?? `manual insecure level ${deps.insecureLevel}`,
-              },
-            }
-          : {}),
+        ...(insecure !== undefined ? { insecure } : {}),
         ...(runs[0]!.screenshotErrorJson !== null
           ? { screenshotError: JSON.parse(runs[0]!.screenshotErrorJson) }
           : {}),

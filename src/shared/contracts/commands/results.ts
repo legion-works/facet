@@ -19,6 +19,7 @@ export type CreateResult = z.infer<typeof CreateResultSchema>;
 export const PublishResultSchema = BaseResultSchema.extend({
   command: z.literal("publish"),
   revision: RevisionEnvelopeSchema,
+  verdict: VerdictSchema.optional(),
   /**
    * Tier 1 verdict surfaced alongside the publish envelope when the
    * service was configured with a Tier1Runner. The shape is the
