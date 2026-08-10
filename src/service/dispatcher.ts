@@ -35,6 +35,7 @@ import {
   type Tier1Input,
   type Tier1Result,
   type Tier1Runner,
+  type InsecureLevel,
   type Verdict,
 } from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
@@ -61,6 +62,8 @@ function traceTier1Transport(stage: string): void {
  */
 
 export interface DispatcherDeps {
+  readonly insecureLevel: InsecureLevel;
+  readonly insecureReason: string | null;
   readonly repository: ArtifactRepository;
   readonly leases: GalleryLeaseManager;
   readonly idle: IdleController;

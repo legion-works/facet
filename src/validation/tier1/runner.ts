@@ -35,6 +35,7 @@ import { Buffer } from "node:buffer";
 import {
   Tier1ResultSchema,
   type ProtocolObservation,
+  type InsecureLevel,
   type ScreenshotError,
   type Tier1Input,
   type Tier1Result,
@@ -123,6 +124,17 @@ export function createTier1RunnerForTests(
  */
 export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
   return runTier1WithHooks(input, {});
+}
+
+/**
+ * Task 2 threads the immutable level without changing isolation. Task 3 is
+ * the only place where runner behavior may vary by level.
+ */
+export function createTier1Runner(
+  level: InsecureLevel,
+): (input: Tier1Input) => Promise<Tier1Result> {
+  void level;
+  return runTier1;
 }
 
 async function runTier1WithHooks(

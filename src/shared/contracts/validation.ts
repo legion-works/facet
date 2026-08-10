@@ -138,6 +138,7 @@ export type Tier0Input = z.infer<typeof Tier0InputSchema>;
  * clean.
  */
 export type Tier0Runner = (input: Tier0Input) => Promise<Tier0WorkerResult>;
+export type Tier0RunnerFactory = (level: InsecureLevel) => Tier0Runner;
 
 /** Tier 0 result: extends the canonical verdict with the expected counters. */
 export const Tier0ResultSchema = VerdictSchema.extend({
@@ -176,6 +177,7 @@ export type Tier1Input = z.infer<typeof Tier1InputSchema>;
  * `src/service/**` stays byte-dumb.
  */
 export type Tier1Runner = (input: Tier1Input) => Promise<Tier1Result>;
+export type Tier1RunnerFactory = (level: InsecureLevel) => Tier1Runner;
 
 /**
  * Tier 1 result: extends Tier 0 with screenshot/console paths.

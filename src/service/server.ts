@@ -31,7 +31,7 @@ import { buildRouter } from "./router";
 import { createInstallTokenStore, createPromoteTokenStore } from "./security/token-store";
 import { createLeaseManager, type GalleryLeaseManager } from "./security/leases";
 import { createRevisionBroadcaster } from "./stream";
-import type { Tier0Runner, Tier1Runner } from "../shared/contracts/validation";
+import type { InsecureLevel, Tier0Runner, Tier1Runner } from "../shared/contracts/validation";
 import {
   acquireLock,
   releaseLock,
@@ -48,6 +48,8 @@ const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 const LEASE_TTL_MS = 5 * 60_000;
 
 export interface StartServiceOptions {
+  readonly insecureLevel?: InsecureLevel;
+  readonly insecureReason?: string | null;
   readonly dbPath?: string;
   readonly installTokenPath?: string;
   readonly promoteTokenPath?: string;
@@ -224,6 +226,8 @@ export async function startFacetService(
     // broadcaster fans it out to the live gallery streams.
     const broadcaster = createRevisionBroadcaster();
     const router = buildRouter({
+      insecureLevel: options.insecureLevel ?? 0,
+      insecureReason: options.insecureReason ?? null,
       ...(tier1Runner !== undefined ? { tier1Runner } : {}),
       repository,
       installToken,

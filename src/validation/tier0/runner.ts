@@ -32,6 +32,7 @@ import {
   LexicalCountersSchema,
   Tier0WorkerResultSchema,
   type LexicalCounters,
+  type InsecureLevel,
   type Tier0Input,
   type Tier0WorkerResult,
 } from "../../shared/contracts/validation";
@@ -260,4 +261,15 @@ export async function runTier0(input: Tier0Input): Promise<Tier0WorkerResult> {
     timeoutMs: TIER0_TIMEOUT_MS,
     outputCap: TIER0_OUTPUT_CAP_BYTES,
   });
+}
+
+/**
+ * Task 2 threads the immutable level without changing isolation. Task 3 is
+ * the only place where runner behavior may vary by level.
+ */
+export function createTier0Runner(
+  level: InsecureLevel,
+): (input: Tier0Input) => Promise<Tier0WorkerResult> {
+  void level;
+  return runTier0;
 }

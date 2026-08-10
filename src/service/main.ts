@@ -14,6 +14,7 @@
  *                                this path so the static boundary
  *                                check still flags any hardcoded
  *                                `src/validation/**` import.
+ *   --tier1-runner-path <p>     path to a module exporting `createTier1Runner`;
  *
  * The ready line is a single JSON object on stderr so external CLI
  * tooling can scrape it without parsing prose.
@@ -21,7 +22,13 @@
 
 import { createLogger } from "../shared/logging/logger";
 import { startFacetService, type RunningService } from "./server";
-import type { Tier0Runner } from "../shared/contracts/validation";
+import type {
+  InsecureLevel,
+  Tier0Runner,
+  Tier0RunnerFactory,
+  Tier1Runner,
+  Tier1RunnerFactory,
+} from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
 
 interface MutableArgs {
@@ -31,6 +38,7 @@ interface MutableArgs {
   lockPath?: string;
   idleTimeoutMs?: number;
   tier0RunnerPath?: string;
+  tier1RunnerPath?: string;
 }
 
 interface ParsedArgs {
@@ -40,6 +48,7 @@ interface ParsedArgs {
   readonly lockPath?: string;
   readonly idleTimeoutMs?: number;
   readonly tier0RunnerPath?: string;
+  readonly tier1RunnerPath?: string;
 }
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -82,6 +91,12 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
         out.tier0RunnerPath = value;
         i += 1;
       }
+    } else if (arg === "--tier1-runner-path") {
+      const value = argv[i + 1];
+      if (value !== undefined) {
+        out.tier1RunnerPath = value;
+        i += 1;
+      }
     }
   }
   return out;
@@ -96,12 +111,15 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
  * in the service child; the CLI (src/cli/) is the only place that
  * knows the concrete path.
  */
-async function loadTier0Runner(path: string): Promise<Tier0Runner> {
+async function loadTier0Runner(path: string): Promise<Tier0RunnerFactory> {
   // The path is an arbitrary string at runtime; TypeScript cannot
   // type-check the import so we cast via unknown. The contract is
   // enforced by `typeof mod.runTier0 === "function"`.
   const dynamicPath = path;
-  const mod = (await import(dynamicPath)) as { runTier0?: unknown };
+  const mod = (await import(dynamicPath)) as { createTier0Runner?: unknown; runTier0?: unknown };
+  if (typeof mod.createTier0Runner === "function") {
+    return mod.createTier0Runner as Tier0RunnerFactory;
+  }
   if (typeof mod.runTier0 !== "function") {
     throw new FacetError(
       "internal",
@@ -109,12 +127,39 @@ async function loadTier0Runner(path: string): Promise<Tier0Runner> {
       { retryable: false },
     );
   }
-  return mod.runTier0 as Tier0Runner;
+  const runner = mod.runTier0 as Tier0Runner;
+  return () => runner;
+}
+
+async function loadTier1Runner(path: string): Promise<Tier1RunnerFactory> {
+  const dynamicPath = path;
+  const mod = (await import(dynamicPath)) as { createTier1Runner?: unknown };
+  if (typeof mod.createTier1Runner !== "function") {
+    throw new FacetError(
+      "internal",
+      `Tier 1 runner module '${path}' did not export a createTier1Runner function`,
+      { retryable: false },
+    );
+  }
+  return mod.createTier1Runner as Tier1RunnerFactory;
+}
+
+function parseInsecureLevel(raw: string | undefined): InsecureLevel {
+  if (raw === undefined || raw === "0") return 0;
+  if (raw === "1" || raw === "2" || raw === "3") return Number(raw) as InsecureLevel;
+  throw new FacetError(
+    "invalid_request",
+    `FACET_INSECURE must be one of 0, 1, 2, or 3; got '${raw}'`,
+    {
+      retryable: false,
+    },
+  );
 }
 
 async function main(): Promise<void> {
   const logger = createLogger({ component: "main" });
   const args = parseArgs(process.argv.slice(2));
+  const insecureRaw = process.env.FACET_INSECURE;
 
   let running: RunningService | null = null;
   const shutdown = async (signal: string): Promise<void> => {
@@ -127,14 +172,30 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
   try {
-    const tier0Runner = await loadRequiredTier0Runner(args.tier0RunnerPath);
+    const insecureLevel = parseInsecureLevel(insecureRaw);
+    const insecureReason = null;
+    const tier0Factory = await loadRequiredTier0Runner(args.tier0RunnerPath);
+    const configuredTier0Runner = tier0Factory(insecureLevel);
+    let tier1Runner: Tier1Runner | undefined;
+    if (insecureLevel > 0) {
+      if (args.tier1RunnerPath === undefined) {
+        throw new FacetError("internal", "Tier 1 runner path is required for insecure boots", {
+          retryable: false,
+        });
+      }
+      const tier1Factory = await loadTier1Runner(args.tier1RunnerPath);
+      tier1Runner = tier1Factory(insecureLevel);
+    }
     running = await startFacetService({
       ...(args.dbPath !== undefined ? { dbPath: args.dbPath } : {}),
       ...(args.installTokenPath !== undefined ? { installTokenPath: args.installTokenPath } : {}),
       ...(args.promoteTokenPath !== undefined ? { promoteTokenPath: args.promoteTokenPath } : {}),
       ...(args.lockPath !== undefined ? { lockPath: args.lockPath } : {}),
       ...(args.idleTimeoutMs !== undefined ? { idleTimeoutMs: args.idleTimeoutMs } : {}),
-      tier0Runner,
+      tier0Runner: configuredTier0Runner,
+      ...(tier1Runner !== undefined ? { tier1Runner } : {}),
+      insecureLevel,
+      insecureReason,
       logger,
     });
     process.stderr.write(
@@ -157,7 +218,7 @@ async function main(): Promise<void> {
   }
 }
 
-async function loadRequiredTier0Runner(path: string | undefined): Promise<Tier0Runner> {
+async function loadRequiredTier0Runner(path: string | undefined): Promise<Tier0RunnerFactory> {
   if (path === undefined) {
     throw new FacetError(
       "internal",

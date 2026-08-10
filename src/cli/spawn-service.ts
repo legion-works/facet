@@ -61,6 +61,8 @@ export interface SpawnServiceOptions {
    * the path passed here.
    */
   readonly tier0RunnerPath?: string;
+  /** Override the Tier 1 runner module path for insecure boots. */
+  readonly tier1RunnerPath?: string;
 }
 
 /**
@@ -131,6 +133,9 @@ function spawnChild(paths: FacetRuntimePaths, options: SpawnServiceOptions): Chi
     "--tier0-runner-path",
     tier0RunnerPath,
   ];
+  if (["1", "2", "3"].includes(options.env.FACET_INSECURE ?? "")) {
+    args.push("--tier1-runner-path", options.tier1RunnerPath ?? resolveDefaultTier1RunnerPath());
+  }
   if (options.idleTimeoutMs !== undefined) {
     args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
   }
@@ -149,6 +154,10 @@ function spawnChild(paths: FacetRuntimePaths, options: SpawnServiceOptions): Chi
  */
 function resolveDefaultTier0RunnerPath(): string {
   return resolvePath(import.meta.dir, "..", "validation", "tier0", "runner.ts");
+}
+
+function resolveDefaultTier1RunnerPath(): string {
+  return resolvePath(import.meta.dir, "..", "validation", "tier1", "runner.ts");
 }
 
 /**
