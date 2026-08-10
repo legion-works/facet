@@ -26,7 +26,11 @@ import { startFacetService, type RunningService } from "../../src/service/server
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
 import type { Renderer } from "../../src/shared/contracts/renderers";
-import type { ScreenshotError } from "../../src/shared/contracts/validation";
+import type {
+  InsecureLevel,
+  InsecureMarker,
+  ScreenshotError,
+} from "../../src/shared/contracts/validation";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 
@@ -48,6 +52,7 @@ export interface AcceptanceVerdictObserved {
   readonly graphCount: number;
   readonly errorCount: number;
   readonly opaqueRegionCount: number;
+  readonly discriminativeErrors?: readonly { readonly code: string; readonly message: string }[];
 }
 
 export interface AcceptanceVerdict {
@@ -57,6 +62,7 @@ export interface AcceptanceVerdict {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly observed: AcceptanceVerdictObserved;
+  readonly insecure?: InsecureMarker;
   readonly screenshotError?: ScreenshotError;
 }
 
@@ -79,12 +85,16 @@ export interface PublishFixtureOptions {
   readonly renderer?: Renderer;
   readonly slug?: string;
   readonly screenshotMode?: ScreenshotMode;
+  readonly insecureLevel?: InsecureLevel;
+  readonly productionTier0?: boolean;
 }
 
 export interface ReadBackFixtureOptions {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly tier: Tier;
+  readonly insecureLevel?: InsecureLevel;
+  readonly productionTier0?: boolean;
 }
 
 export interface RunEgressPenetrationOptions {
@@ -100,21 +110,27 @@ interface AcceptanceEnv {
   readonly service: RunningService;
   readonly envDir: string;
   readonly screenshotMode: ScreenshotMode;
+  readonly insecureLevel: InsecureLevel;
+  readonly productionTier0: boolean;
 }
 
 async function startAcceptanceService(
   envDir: string,
   screenshotMode: ScreenshotMode,
+  insecureLevel: InsecureLevel,
+  productionTier0: boolean,
 ): Promise<AcceptanceEnv> {
   const dbPath = join(envDir, "facet.sqlite");
   const installTokenPath = join(envDir, "install.token");
   const promoteTokenPath = join(envDir, "promote.token");
   const lockPath = join(envDir, "facet.lock");
   // Lazy import keeps the Tier 1 verifier out of the unit-test bundle.
-  const { createTier1RunnerForTests, runTier1 } = await import("../../src/validation/tier1/runner");
+  const { createTier1Runner, createTier1RunnerForTests } =
+    await import("../../src/validation/tier1/runner");
+  const { createTier0Runner } = await import("../../src/validation/tier0/runner");
   const tier1Runner =
     screenshotMode === "live"
-      ? runTier1
+      ? createTier1Runner(insecureLevel)
       : createTier1RunnerForTests({
           captureScreenshot:
             screenshotMode === "deterministic"
@@ -130,14 +146,16 @@ async function startAcceptanceService(
     lockPath,
     idleTimeoutMs: ACCEPTANCE_IDLE_TIMEOUT_MS,
     logger: createQuietLogger({ component: "acceptance" }),
-    tier0Runner: stubTier0Runner,
+    tier0Runner: productionTier0 ? createTier0Runner(insecureLevel) : stubTier0Runner,
     tier1Runner,
+    insecureLevel,
+    insecureReason: insecureLevel > 0 ? `manual insecure level ${insecureLevel}` : null,
   });
   const client = new FacetClient({
     baseUrl: service.url,
     installToken: service.installToken,
   });
-  return { client, service, envDir, screenshotMode };
+  return { client, service, envDir, screenshotMode, insecureLevel, productionTier0 };
 }
 
 async function isServiceReachable(candidate: AcceptanceEnv): Promise<boolean> {
@@ -155,10 +173,16 @@ async function isServiceReachable(candidate: AcceptanceEnv): Promise<boolean> {
   }
 }
 
-async function ensureEnv(screenshotMode?: ScreenshotMode): Promise<AcceptanceEnv> {
+async function ensureEnv(
+  screenshotMode?: ScreenshotMode,
+  insecureLevel: InsecureLevel = 0,
+  productionTier0 = false,
+): Promise<AcceptanceEnv> {
   if (
     env !== null &&
     (screenshotMode === undefined || env.screenshotMode === screenshotMode) &&
+    env.insecureLevel === insecureLevel &&
+    env.productionTier0 === productionTier0 &&
     (await isServiceReachable(env))
   ) {
     return env;
@@ -171,7 +195,12 @@ async function ensureEnv(screenshotMode?: ScreenshotMode): Promise<AcceptanceEnv
   }
 
   const envDir = previous?.envDir ?? mkdtempSync(join(tmpdir(), "facet-acceptance-"));
-  env = await startAcceptanceService(envDir, screenshotMode ?? "live");
+  env = await startAcceptanceService(
+    envDir,
+    screenshotMode ?? "live",
+    insecureLevel,
+    productionTier0,
+  );
   if (!cleanupRegistered) {
     afterAll(async () => {
       if (env !== null) {
@@ -200,7 +229,11 @@ beforeAll(async () => {
 export async function publishFixture(opts: PublishFixtureOptions): Promise<PublishedArtifact> {
   traceTier1Transport("test:publish:start");
   const bytes = await Bun.file(opts.fixturePath).arrayBuffer();
-  const { client } = await ensureEnv(opts.screenshotMode ?? "live");
+  const { client } = await ensureEnv(
+    opts.screenshotMode ?? "live",
+    opts.insecureLevel ?? 0,
+    opts.productionTier0 ?? false,
+  );
   const result = await publishArtifact(client, {
     artifactType: opts.artifactType,
     ...(opts.renderer !== undefined ? { renderer: opts.renderer } : {}),
@@ -219,7 +252,11 @@ export async function publishFixture(opts: PublishFixtureOptions): Promise<Publi
 
 export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<AcceptanceVerdict> {
   traceTier1Transport("test:readback:start");
-  const { client } = await ensureEnv();
+  const { client } = await ensureEnv(
+    undefined,
+    opts.insecureLevel ?? 0,
+    opts.productionTier0 ?? false,
+  );
   const result = await readBack(client, {
     artifactId: opts.artifactId,
     revisionSha: opts.revisionSha,
@@ -232,12 +269,16 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
     renderer: result.renderer,
     artifactId: result.artifactId,
     revisionSha: result.revisionSha,
+    ...(result.insecure !== undefined ? { insecure: result.insecure } : {}),
     ...(result.screenshotError !== undefined ? { screenshotError: result.screenshotError } : {}),
     observed: {
       rendererRootSvgCount: result.observed.rendererRootSvgCount,
       graphCount: result.observed.graphCount,
       opaqueRegionCount: result.observed.opaqueRegionCount,
       errorCount: result.observed.errorCount,
+      ...(result.observed.discriminativeErrors !== undefined
+        ? { discriminativeErrors: result.observed.discriminativeErrors }
+        : {}),
     },
   };
 }

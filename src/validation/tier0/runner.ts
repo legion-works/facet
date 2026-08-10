@@ -37,7 +37,14 @@ import {
   type Tier0WorkerResult,
 } from "../../shared/contracts/validation";
 
-import { probeNetnsSupport, spawnNetnsWorker } from "../sandbox/netns";
+import {
+  probeNetnsSupport,
+  resolveTier0Isolation,
+  spawnDirectWorker,
+  spawnNetnsWorker,
+} from "../sandbox/netns";
+
+export { resolveTier0Isolation } from "../sandbox/netns";
 import { TIER0_OUTPUT_CAP_BYTES, TIER0_TIMEOUT_MS } from "../sandbox/limits";
 
 const TIER0_WORKER_ENTRY = resolvePath(import.meta.dir, "worker-entry.ts");
@@ -173,23 +180,29 @@ async function readStreamCapped(
 async function runOnce(
   input: Tier0Input,
   options: { timeoutMs: number; outputCap: number },
+  level: InsecureLevel,
 ): Promise<Tier0WorkerResult> {
   const envelope = buildInputEnvelope(input);
   const envelopeJson = `${JSON.stringify(envelope)}\n`;
 
-  // Reject netns-unavailable hosts with a typed error instead of
-  // silently running un-sandboxed. The probe is cheap (a single
-  // `unshare -- /bin/true`).
-  const probe = probeNetnsSupport();
-  if (!probe.available) {
-    throw new FacetError(
-      "tier0_unavailable",
-      `Tier 0 cannot run: netns unavailable (${probe.reason ?? "unknown"})`,
-      { retryable: false, details: { reason: probe.reason ?? "unknown" } },
-    );
+  const isolation = resolveTier0Isolation(level);
+  if (isolation === "netns") {
+    // Reject netns-unavailable hosts with a typed error instead of silently
+    // running un-sandboxed. The probe is cheap (a single unshare invocation).
+    const probe = probeNetnsSupport();
+    if (!probe.available) {
+      throw new FacetError(
+        "tier0_unavailable",
+        `Tier 0 cannot run: netns unavailable (${probe.reason ?? "unknown"})`,
+        { retryable: false, details: { reason: probe.reason ?? "unknown" } },
+      );
+    }
   }
 
-  const child: ChildProcess = spawnNetnsWorker(["run", TIER0_WORKER_ENTRY]);
+  const child: ChildProcess =
+    isolation === "netns"
+      ? spawnNetnsWorker(["run", TIER0_WORKER_ENTRY])
+      : spawnDirectWorker(["run", TIER0_WORKER_ENTRY]);
   // We never read STDERR — it goes to the parent's STDERR via the
   // default pipe inheritance so test logs can see diagnostics.
   let stdoutOverflow = false;
@@ -243,7 +256,13 @@ async function runOnce(
       details: { capBytes: options.outputCap },
     });
   }
-  return _parseWorkerStdout(stdout, options.outputCap);
+  const result = _parseWorkerStdout(stdout, options.outputCap);
+  return level === 0
+    ? result
+    : {
+        ...result,
+        insecure: { level, reason: `manual insecure level ${level}` },
+      };
 }
 
 /**
@@ -257,10 +276,7 @@ export async function runTier0(input: Tier0Input): Promise<Tier0WorkerResult> {
   // The contract requires `tier` to be 0 here, but we trust the
   // caller's input rather than re-parsing it — `Tier0ResultSchema`
   // enforces `tier: 0` on the worker side.
-  return runOnce(input, {
-    timeoutMs: TIER0_TIMEOUT_MS,
-    outputCap: TIER0_OUTPUT_CAP_BYTES,
-  });
+  return runOnce(input, { timeoutMs: TIER0_TIMEOUT_MS, outputCap: TIER0_OUTPUT_CAP_BYTES }, 0);
 }
 
 /**
@@ -270,6 +286,6 @@ export async function runTier0(input: Tier0Input): Promise<Tier0WorkerResult> {
 export function createTier0Runner(
   level: InsecureLevel,
 ): (input: Tier0Input) => Promise<Tier0WorkerResult> {
-  void level;
-  return runTier0;
+  return (input) =>
+    runOnce(input, { timeoutMs: TIER0_TIMEOUT_MS, outputCap: TIER0_OUTPUT_CAP_BYTES }, level);
 }

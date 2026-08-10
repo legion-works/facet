@@ -36,6 +36,7 @@ import {
   type Tier1Result,
   type Tier1Runner,
   type InsecureLevel,
+  type InsecureMarker,
   type Verdict,
 } from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
@@ -108,6 +109,7 @@ function buildVerdict(input: {
   tier: 0 | 1;
   status: string;
   observed: unknown;
+  insecure?: InsecureMarker;
   screenshotError?: unknown;
 }): Verdict {
   const observed = VerdictObservedSchema.parse(input.observed);
@@ -117,6 +119,7 @@ function buildVerdict(input: {
     artifactId: input.artifactId,
     revisionSha: input.revisionSha,
     observed,
+    ...(input.insecure !== undefined ? { insecure: input.insecure } : {}),
     ...(input.screenshotError !== undefined ? { screenshotError: input.screenshotError } : {}),
   });
 }
@@ -396,6 +399,14 @@ export async function dispatch(
         tier,
         status: runs[0]!.status,
         observed: observedJson,
+        ...(deps.insecureLevel > 0
+          ? {
+              insecure: {
+                level: deps.insecureLevel as 1 | 2 | 3,
+                reason: deps.insecureReason ?? `manual insecure level ${deps.insecureLevel}`,
+              },
+            }
+          : {}),
         ...(runs[0]!.screenshotErrorJson !== null
           ? { screenshotError: JSON.parse(runs[0]!.screenshotErrorJson) }
           : {}),

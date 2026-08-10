@@ -20,10 +20,13 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { InsecureLevelSchema, type InsecureLevel } from "../../shared/contracts/validation";
 import { TIER1_PINNED_VERSION } from "./limits";
 
 const ENV_PINNED_VERSION = "FACET_TIER1_PINNED_VERSION";
 const ENV_CACHE_DIR = "FACET_TIER1_BROWSER_CACHE";
+// Test-only seam: production callers resolve the repository wrapper path.
+const ENV_NETNS_WRAPPER = "FACET_TIER1_NETNS_WRAPPER";
 
 /**
  * A pair of resolved paths the runner hands to puppeteer-core. The
@@ -36,6 +39,12 @@ export interface ResolvedLauncher {
   readonly binaryPath: string;
   readonly pinnedVersion: string;
 }
+
+type LauncherOverrides = {
+  readonly version?: string;
+  readonly cacheRoot?: string;
+  readonly wrapperPath?: string;
+};
 
 /**
  * Default lookup locations for the cached shell. The cache directory
@@ -80,7 +89,7 @@ export function resolveShellBinary(
  * `tier1_unavailable` instead of falling back to a plain exec.
  */
 export function resolveNetnsWrapper(overrides: { readonly wrapperPath?: string } = {}): string {
-  const override = overrides.wrapperPath ?? readEnv("FACET_TIER1_NETNS_WRAPPER");
+  const override = overrides.wrapperPath ?? readEnv(ENV_NETNS_WRAPPER);
   if (override !== undefined) return override;
   const fromRepo = join(process.cwd(), "scripts", "launch-netns.sh");
   if (existsSync(fromRepo)) return fromRepo;
@@ -135,12 +144,17 @@ export function buildBrowserArgs(userDataDir: string): readonly string[] {
  * `tier1_unavailable` upstream.
  */
 export function resolveLauncher(
-  overrides: {
-    readonly version?: string;
-    readonly cacheRoot?: string;
-    readonly wrapperPath?: string;
-  } = {},
+  level: InsecureLevel,
+  overrides?: LauncherOverrides,
+): ResolvedLauncher;
+export function resolveLauncher(overrides?: LauncherOverrides): ResolvedLauncher;
+export function resolveLauncher(
+  levelOrOverrides: InsecureLevel | LauncherOverrides = 0,
+  passedOverrides: LauncherOverrides = {},
 ): ResolvedLauncher {
+  const level = typeof levelOrOverrides === "number" ? levelOrOverrides : 0;
+  const overrides = typeof levelOrOverrides === "number" ? passedOverrides : levelOrOverrides;
+  InsecureLevelSchema.parse(level);
   const binaryPath = resolveShellBinary({
     ...(overrides.version !== undefined ? { version: overrides.version } : {}),
     ...(overrides.cacheRoot !== undefined ? { cacheRoot: overrides.cacheRoot } : {}),
@@ -151,9 +165,12 @@ export function resolveLauncher(
     );
   }
   return {
-    executablePath: resolveNetnsWrapper(
-      overrides.wrapperPath !== undefined ? { wrapperPath: overrides.wrapperPath } : {},
-    ),
+    executablePath:
+      level === 0
+        ? resolveNetnsWrapper(
+            overrides.wrapperPath !== undefined ? { wrapperPath: overrides.wrapperPath } : {},
+          )
+        : binaryPath,
     binaryPath,
     pinnedVersion: overrides.version ?? TIER1_PINNED_VERSION,
   };

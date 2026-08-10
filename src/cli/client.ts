@@ -33,7 +33,7 @@ import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
 import type { Renderer } from "../shared/contracts/renderers";
-import type { ScreenshotError } from "../shared/contracts/validation";
+import type { InsecureMarker, ScreenshotError } from "../shared/contracts/validation";
 
 export interface FacetClientOptions {
   readonly baseUrl: string;
@@ -272,6 +272,7 @@ export async function readBack(
   readonly renderer: Renderer;
   readonly artifactId: string;
   readonly revisionSha: string;
+  readonly insecure?: InsecureMarker;
   readonly screenshotError?: ScreenshotError;
   readonly observed: {
     readonly rendererRootSvgCount: number;
@@ -280,6 +281,7 @@ export async function readBack(
     readonly visibleSvgCount: number;
     readonly opaqueRegionCount: number;
     readonly errorCount: number;
+    readonly discriminativeErrors?: readonly { readonly code: string; readonly message: string }[];
   };
 }> {
   const res = await client.sendCommand({
@@ -302,6 +304,7 @@ export async function readBack(
     renderer: parsed.renderer,
     artifactId: parsed.verdict.artifactId,
     revisionSha: parsed.verdict.revisionSha,
+    ...(parsed.verdict.insecure !== undefined ? { insecure: parsed.verdict.insecure } : {}),
     ...(parsed.verdict.screenshotError !== undefined
       ? { screenshotError: parsed.verdict.screenshotError }
       : {}),
@@ -312,6 +315,9 @@ export async function readBack(
       visibleSvgCount: parsed.verdict.observed.visibleSvgCount,
       opaqueRegionCount: parsed.verdict.observed.opaqueRegionCount,
       errorCount: parsed.verdict.observed.errorCount,
+      ...(parsed.verdict.observed.discriminativeErrors !== undefined
+        ? { discriminativeErrors: parsed.verdict.observed.discriminativeErrors }
+        : {}),
     },
   };
 }

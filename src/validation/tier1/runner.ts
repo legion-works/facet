@@ -106,7 +106,7 @@ export interface Tier1RunnerTestHooks {
 export function createTier1RunnerForTests(
   hooks: Tier1RunnerTestHooks,
 ): (input: Tier1Input) => Promise<Tier1Result> {
-  return async (input) => runTier1WithHooks(input, hooks);
+  return async (input) => runTier1WithHooks(input, hooks, 0);
 }
 
 /**
@@ -123,7 +123,7 @@ export function createTier1RunnerForTests(
  * relaunch verifies the same bytes.
  */
 export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
-  return runTier1WithHooks(input, {});
+  return runTier1WithHooks(input, {}, 0);
 }
 
 /**
@@ -133,13 +133,13 @@ export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
 export function createTier1Runner(
   level: InsecureLevel,
 ): (input: Tier1Input) => Promise<Tier1Result> {
-  void level;
-  return runTier1;
+  return (input) => runTier1WithHooks(input, {}, level);
 }
 
 async function runTier1WithHooks(
   input: Tier1Input,
   hooks: Tier1RunnerTestHooks,
+  level: InsecureLevel,
 ): Promise<Tier1Result> {
   const startedAt = Date.now();
   traceTier1("run:start", startedAt);
@@ -147,7 +147,7 @@ async function runTier1WithHooks(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       traceTier1(`attempt:${attempt + 1}:start`, startedAt);
-      const result = await runTier1Attempt(input, startedAt, hooks);
+      const result = await runTier1Attempt(input, startedAt, hooks, level);
       traceTier1(`attempt:${attempt + 1}:complete`, startedAt, `status=${result.status}`);
       return result;
     } catch (error) {
@@ -174,12 +174,13 @@ async function runTier1Attempt(
   input: Tier1Input,
   startedAt = Date.now(),
   hooks: Tier1RunnerTestHooks = {},
+  level: InsecureLevel = 0,
 ): Promise<Tier1Result> {
   if (!Number.isInteger(input.artifactType === undefined)) {
     void (input.artifactType as unknown);
   }
   const browser = new PuppeteerTier1Browser({
-    launcher: resolveLauncher({ version: input.launcherVersion }),
+    launcher: resolveLauncher(level, { version: input.launcherVersion }),
   });
   const profileDir = mkdtempSync(join(tmpdir(), "facet-tier1-host-"));
   let target: VerifierTarget | undefined;
@@ -319,6 +320,7 @@ async function runTier1Attempt(
       },
       screenshotPath: captured.screenshotPath,
       consolePath: captured.consolePath,
+      ...(level > 0 ? { insecure: { level, reason: `manual insecure level ${level}` } } : {}),
       ...(status.startsWith("partial:") && captured.screenshotError !== null
         ? { screenshotError: captured.screenshotError }
         : {}),
@@ -340,6 +342,9 @@ async function runTier1Attempt(
     }
     if (message.includes("not found")) {
       throw new FacetError("tier1_launcher_missing", message, { retryable: false });
+    }
+    if (level === 0 && /unshare|operation not permitted|network namespace|netns/i.test(message)) {
+      throw new FacetError("tier1_unavailable", message, { retryable: false });
     }
     throw new FacetError("tier1_protocol_error", message, { retryable: false, cause: error });
   } finally {

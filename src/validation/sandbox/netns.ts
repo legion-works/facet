@@ -33,11 +33,11 @@ import { TIER0_MEMORY_CAP_BYTES } from "./limits";
  * `--` terminates unshare's own option parsing so a worker argv
  * beginning with `-` cannot be mistaken for a wrapper flag.
  */
-const NETNS_WRAPPER = [
-  "ulimit -v",
-  TIER0_MEMORY_CAP_BYTES,
-  "; exec unshare --map-current-user --net -- ",
-].join(" ");
+const MEMORY_LIMIT_PREFIX = ["ulimit -v", TIER0_MEMORY_CAP_BYTES, "; "].join(" ");
+
+// Acceptance-only seams let the proof exercise both branches on one host.
+const FORCE_UNAVAILABLE_ENV = "FACET_TIER0_FORCE_NETNS_UNAVAILABLE";
+const DIRECT_EXEC_MARKER_ENV = "FACET_TIER0_DIRECT_EXEC_MARKER";
 
 export interface NetnsProbe {
   /** True iff `unshare --map-current-user --net` is runnable as the current user. */
@@ -59,6 +59,9 @@ export interface NetnsProbe {
 let cachedProbe: NetnsProbe | null = null;
 
 export function probeNetnsSupport(): NetnsProbe {
+  if (process.env[FORCE_UNAVAILABLE_ENV] === "1") {
+    return { available: false, reason: "forced unavailable for acceptance proof" };
+  }
   if (cachedProbe !== null) return cachedProbe;
   try {
     // spawnSync, NOT spawn: `exit` fires on a later tick, so an async probe
@@ -119,6 +122,20 @@ export function resolveUnsharePath(): string {
  * observes EOF and exits.
  */
 export function spawnNetnsWorker(args: readonly string[]): ChildProcess {
+  return spawnWorker(args, true);
+}
+
+/** Spawn the same capped worker without the network namespace boundary. */
+export function spawnDirectWorker(args: readonly string[]): ChildProcess {
+  return spawnWorker(args, false);
+}
+
+/** Select the Tier 0 isolation boundary for a manual insecure level. */
+export function resolveTier0Isolation(level: 0 | 1 | 2 | 3): "netns" | "direct" {
+  return level <= 1 ? "netns" : "direct";
+}
+
+function spawnWorker(args: readonly string[], useNetns: boolean): ChildProcess {
   const bunPath = process.execPath;
   // Compose the shell command. `sh -c` is required because the wrapper
   // applies `ulimit` before exec-ing unshare — ulimit is a shell builtin
@@ -126,7 +143,12 @@ export function spawnNetnsWorker(args: readonly string[]): ChildProcess {
   // execs into the bun binary with the caller-supplied args, so the
   // long-running worker is the bun process (not unshare or sh).
   const tail = [quoteShell(bunPath), ...args.map(quoteShell)].join(" ");
-  const shellCommand = `${NETNS_WRAPPER}${tail}`;
+  const isolation = useNetns ? "unshare --map-current-user --net -- " : "";
+  const marker =
+    !useNetns && process.env[DIRECT_EXEC_MARKER_ENV] !== undefined
+      ? `: > ${quoteShell(process.env[DIRECT_EXEC_MARKER_ENV]!)}`
+      : "";
+  const shellCommand = `${MEMORY_LIMIT_PREFIX}${marker.length > 0 ? `${marker}; ` : ""}exec ${isolation}${tail}`;
   return spawn("/bin/sh", ["-c", shellCommand], {
     stdio: ["pipe", "pipe", "pipe"],
     // Detach from the parent's controlling terminal so SIGINT to the
