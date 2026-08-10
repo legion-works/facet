@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -195,9 +203,20 @@ describe("export CLI helpers", () => {
 
     expect(() => writeExportFiles(result, paths, true)).toThrow();
     expect(existsSync(paths.artifactPath)).toBe(true);
-    expect(new Uint8Array(readFileSync(paths.artifactPath))).toEqual(
-      new Uint8Array([0, 1, 2, 255]),
-    );
+    expect(readFileSync(paths.artifactPath, "utf8")).toBe("existing artifact\n");
+  });
+
+  test("preserves a pre-existing artifact when the sidecar target is a directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
+    tempDirs.push(root);
+    const result = validExportResultFor();
+    const paths = resolveExportPaths(result, join(root, "artifact.md"), root);
+    writeFileSync(paths.artifactPath, "existing artifact\n");
+    mkdirSync(paths.sidecarPath);
+
+    expect(() => writeExportFiles(result, paths, true)).toThrow();
+    expect(readFileSync(paths.artifactPath, "utf8")).toBe("existing artifact\n");
+    expect(readdirSync(root).filter((name) => name.includes(".tmp"))).toEqual([]);
   });
 
   test("writes unchanged bytes and a mandatory JSON sidecar, replacing both with force", () => {

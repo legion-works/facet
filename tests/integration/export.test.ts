@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { startFacetService } from "../../src/service/server";
+import { ArtifactRepository } from "../../src/service/store/repository";
 import { openDatabase } from "../../src/service/store/database";
 import { CommandResultSchema } from "../../src/shared/contracts/commands";
 import { FACET_SCHEMA_VERSION } from "../../src/shared/contracts/envelope";
@@ -407,6 +408,59 @@ describe("render export", () => {
       expect((await response.json()).error.code).toBe("evidence_unavailable");
     } finally {
       await env.service.stop();
+    }
+  });
+
+  test("newest Tier 1 run with null screenshotPath must not fall back to older run bytes", async () => {
+    const envDir = join(scratchRoot, "render-newest-null");
+    const calls = { value: 0 };
+    const paths: string[] = [];
+    const tier1Runner = evidenceTier1({
+      evidenceDir: join(envDir, "evidence"),
+      screenshot: new Uint8Array([7, 8, 9]),
+      calls,
+      paths,
+    });
+    let active = await startEnv({ envDir, tier1Runner });
+    try {
+      const artifactId = await createArtifact(active, "render-newest-null");
+      const revisionSha = (await publish(active, artifactId, SOURCE_ONE)).revisionSha;
+      expect(calls.value).toBe(1);
+
+      await active.service.stop();
+      const db = openDatabase(active.dbPath);
+      try {
+        const repository = new ArtifactRepository(db, {
+          evidenceRoot: join(envDir, "evidence"),
+        });
+        const revision = repository.getRevisionBySha(artifactId, revisionSha);
+        if (revision === null) throw new Error("missing published revision");
+        repository.recordRenderRun({
+          revisionId: revision.id,
+          tier: 1,
+          status: "ok",
+          expected: {},
+          observed: OBSERVED,
+          screenshotPath: null,
+          startedAt: "2030-01-01T00:00:00.000Z",
+          finishedAt: "2030-01-01T00:00:01.000Z",
+        });
+      } finally {
+        db.close();
+      }
+
+      active = await startEnv({ envDir, tier1Runner });
+      const response = await request(active, {
+        command: "export",
+        artifactId,
+        revisionSha,
+        format: "render",
+      });
+      expect(response.status).toBe(404);
+      expect((await response.json()).error.code).toBe("evidence_unavailable");
+      expect(calls.value).toBe(1);
+    } finally {
+      await active.service.stop();
     }
   });
 

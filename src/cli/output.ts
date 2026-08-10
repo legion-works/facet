@@ -25,10 +25,6 @@
  *   typed envelope → nonzero; any well-formed envelope (incl.
  *   `ok: false` with a typed `error.code`) → exit 0.
  *
- *   The reserved `export` verb exits 0 with a typed
- *   `accepted: false` envelope — adapters see "not implemented"
- *   via the envelope, not via the exit code.
- *
  * DATA / TEMPFAIL codes from earlier drafts were removed: with the
  * envelope-first policy they are unreachable. Every `FacetError`
  * thrown by the spawn path or a per-verb builder is wrapped in a

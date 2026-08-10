@@ -6,8 +6,9 @@
  * service cannot be used as a general filesystem writer.
  */
 
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, extname, resolve } from "node:path";
+import { existsSync, mkdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { basename, dirname, extname, join, resolve } from "node:path";
 
 import type { ExportFormat, ExportRequest } from "../../shared/contracts/commands/requests";
 import { ExportRequestSchema } from "../../shared/contracts/commands/requests";
@@ -105,15 +106,39 @@ export function writeExportFiles(result: ExportResult, paths: ExportPaths, force
   }
 
   mkdirSync(dirname(paths.artifactPath), { recursive: true });
-  writeFileSync(paths.artifactPath, Buffer.from(result.bytes, "base64"));
+  mkdirSync(dirname(paths.sidecarPath), { recursive: true });
+  for (const target of [paths.artifactPath, paths.sidecarPath]) {
+    if (existsSync(target) && statSync(target).isDirectory()) {
+      throw new Error(`export output is a directory: ${target}`);
+    }
+  }
+
+  const artifactTempPath = join(
+    dirname(paths.artifactPath),
+    `.${basename(paths.artifactPath)}.${randomUUID()}.tmp`,
+  );
+  const sidecarTempPath = join(
+    dirname(paths.sidecarPath),
+    `.${basename(paths.sidecarPath)}.${randomUUID()}.tmp`,
+  );
   try {
-    writeFileSync(paths.sidecarPath, `${JSON.stringify(result.sidecar, null, 2)}\n`, "utf8");
+    writeFileSync(artifactTempPath, Buffer.from(result.bytes, "base64"), {
+      flag: "wx",
+      mode: 0o600,
+    });
+    writeFileSync(sidecarTempPath, `${JSON.stringify(result.sidecar, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    renameSync(artifactTempPath, paths.artifactPath);
+    renameSync(sidecarTempPath, paths.sidecarPath);
   } catch (error) {
-    if (!artifactExistedBeforeWrite) {
+    for (const tempPath of [artifactTempPath, sidecarTempPath]) {
       try {
-        unlinkSync(paths.artifactPath);
+        unlinkSync(tempPath);
       } catch {
-        // Preserve the sidecar failure as the useful error at the CLI boundary.
+        // Preserve the write or rename failure as the useful error at the CLI boundary.
       }
     }
     throw error;
