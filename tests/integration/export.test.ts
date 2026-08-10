@@ -194,7 +194,7 @@ function tier0(status: Tier0Result["status"]): Tier0Runner {
 }
 
 describe("source export", () => {
-  test("exports stored HTML source while Tier 0 is temporarily not implemented", async () => {
+  test("exports stored HTML source with the Tier 0 structural prediction", async () => {
     const env = await startEnv();
     try {
       const artifactId = await createArtifact(env, "html-source");
@@ -204,12 +204,11 @@ describe("source export", () => {
 
       expect(Buffer.from(exported.bytes as string, "base64")).toEqual(Buffer.from(source));
       expect(exported.sidecar.revisionSha).toBe(published.revisionSha);
-      expect(exported.sidecar.verdict.status).toBe("error");
-      expect(
-        exported.sidecar.verdict.observed.discriminativeErrors?.map(
-          (error: { code: string }) => error.code,
-        ),
-      ).toContain("html_parser_not_implemented");
+      expect(exported.sidecar.verdict.status).toBe("ok");
+      expect(exported.sidecar.verdict.observed.html).toMatchObject({
+        rendererRootCount: 1,
+        headingCount: 0,
+      });
     } finally {
       await env.service.stop();
     }

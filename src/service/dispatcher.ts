@@ -259,17 +259,26 @@ export async function dispatch(
       // body. A non-ok Tier0Result is normal: the parser rejected the
       // artifact and we persist that decision as a render_run.
       const lexical = computeLexicalExpectations(bytes, artifactType, command.renderer);
+      const legacyCounters =
+        artifactType === "html"
+          ? {
+              rendererRootSvgCount: 0,
+              mermaidNodeCount: 0,
+              visibleSvgCount: 0,
+              opaqueRegionCount: 0,
+            }
+          : {
+              rendererRootSvgCount: lexical.expectedRendererRoots,
+              mermaidNodeCount: lexical.mermaidNodeCount,
+              visibleSvgCount: 0,
+              opaqueRegionCount: lexical.expectedOpaqueRegions,
+            };
       const tier0Input = Tier0InputSchema.parse({
         revisionSha: revision.sha256,
         artifactType,
         renderer: command.renderer,
         source: bytes,
-        lexical: {
-          rendererRootSvgCount: lexical.expectedRendererRoots,
-          mermaidNodeCount: lexical.mermaidNodeCount,
-          visibleSvgCount: 0,
-          opaqueRegionCount: lexical.expectedOpaqueRegions,
-        },
+        lexical: legacyCounters,
       });
       const insecure = insecureMarker(deps.insecureLevel, deps.insecureReason);
       if (deps.insecureLevel === 3) {
@@ -342,6 +351,7 @@ export async function dispatch(
       if (deps.tier1Runner !== undefined) {
         const tier1Input: Tier1Input = Tier1InputSchema.parse({
           ...tier0Input,
+          lexical: enriched.expected,
           launcherVersion: TIER1_PINNED_VERSION,
           networkNamespace: "facet-tier1-egress-isolated",
         });

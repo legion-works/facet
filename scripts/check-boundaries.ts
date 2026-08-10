@@ -52,6 +52,7 @@ export const FORBIDDEN_PACKAGES = new Set([
   "jsdom",
   "happy-dom",
   "linkedom",
+  "parse5",
   "vega",
   "vega-lite",
   "@types/marked",

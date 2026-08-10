@@ -21,6 +21,7 @@ import { parseMermaid } from "../../src/validation/tier0/mermaid";
 import { parseMarkdown } from "../../src/validation/tier0/markdown";
 import { parseSvg } from "../../src/validation/tier0/svg";
 import { parseChart } from "../../src/validation/tier0/chart";
+import { parseHtml } from "../../src/validation/tier0/html";
 import { domShimInstalled } from "../../src/validation/tier0/dom-shim";
 import { runTier0, _parseWorkerStdout } from "../../src/validation/tier0/runner";
 import { probeNetnsSupport } from "../../src/validation/sandbox/netns";
@@ -388,7 +389,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
   );
 
   netnsTest(
-    "worker reports html_parser_not_implemented until the HTML parser lands",
+    "worker returns the parse5 HTML prediction in both expected and observed channels",
     async () => {
       const encoded = new TextEncoder().encode("<main>HTML</main>");
       const bytes = new Uint8Array(new ArrayBuffer(encoded.byteLength));
@@ -400,10 +401,29 @@ describe("Tier 0 process boundary — worker subprocess", () => {
         source: bytes,
         lexical: lexicalCounters(bytes),
       });
-      expect(result.status).toBe("error");
-      expect(result.observed.discriminativeErrors?.map((error) => error.code)).toContain(
-        "html_parser_not_implemented",
-      );
+      expect(parseHtml(bytes)).toEqual({
+        status: "ok",
+        html: {
+          rendererRootCount: 1,
+          headingCount: 0,
+          tableCount: 0,
+          listCount: 0,
+          imageCount: 0,
+          canvasCount: 0,
+          externalImageCount: 0,
+        },
+      });
+      expect(result.status).toBe("ok");
+      expect(result.expected.html).toEqual({
+        rendererRootCount: 1,
+        headingCount: 0,
+        tableCount: 0,
+        listCount: 0,
+        imageCount: 0,
+        canvasCount: 0,
+        externalImageCount: 0,
+      });
+      expect(result.observed.html).toEqual(result.expected.html);
     },
     { timeout: TIER0_TIMEOUT_MS + 5_000 },
   );

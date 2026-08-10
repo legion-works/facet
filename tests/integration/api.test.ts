@@ -293,7 +293,7 @@ describe("service API integration", () => {
     }
   });
 
-  test("html publishes while Tier 0 reports the current parser-not-implemented result", async () => {
+  test("html publishes with a structural Tier 0 prediction", async () => {
     const env = await startService();
     try {
       const createRes = await envelopeRequest(env, {
@@ -315,7 +315,7 @@ describe("service API integration", () => {
         command: "publish",
         artifactId: createBody.data.artifact.id,
         artifactType: "html",
-        bytes: Buffer.from("<h1>", "utf8").toString("base64"),
+        bytes: Buffer.from("<h1>HTML</h1>", "utf8").toString("base64"),
       });
       const body = parseEnvelopeStrict(await res.text()) as {
         ok: true;
@@ -336,15 +336,13 @@ describe("service API integration", () => {
         data: {
           verdict: {
             status: string;
-            observed: { discriminativeErrors?: Array<{ code: string }> };
+            observed: { html?: { headingCount: number } };
           };
         };
       };
       expect(readBack.ok).toBe(true);
-      expect(readBack.data.verdict.status).toBe("error");
-      expect(
-        readBack.data.verdict.observed.discriminativeErrors?.map((error) => error.code),
-      ).toContain("html_parser_not_implemented");
+      expect(readBack.data.verdict.status).toBe("ok");
+      expect(readBack.data.verdict.observed.html?.headingCount).toBe(1);
     } finally {
       await env.cleanup();
     }

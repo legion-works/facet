@@ -84,6 +84,15 @@ describe("boundary check — forbidden package import forms", () => {
     expect(v.map((x) => x.specifier)).toEqual(["mermaid"]);
   });
 
+  test('catches `import { parse } from "parse5"` in the byte-dumb service', () => {
+    const root = makeRoot();
+    writeServiceFile(root, "parse-html.ts", `import { parse } from "parse5";`);
+    const violations = runBoundaryCheck(root);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.specifier).toBe("parse5");
+    expect(violations[0]?.reason).toContain("forbidden package import");
+  });
+
   test('catches `export * from "mermaid"` (reviewer mutation probe)', () => {
     const root = makeRoot();
     writeServiceFile(root, "a.ts", `export * from "mermaid";`);
@@ -124,6 +133,7 @@ describe("boundary check — forbidden package import forms", () => {
       "jsdom",
       "happy-dom",
       "linkedom",
+      "parse5",
       "vega",
       "vega-lite",
     ];

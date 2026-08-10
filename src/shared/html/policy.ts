@@ -45,6 +45,13 @@ export function isHtmlUrlBearingAttribute(elementName: string, attributeName: st
   );
 }
 
+export function isHtmlUrlAttributeName(attributeName: string): boolean {
+  const normalized = attributeName.toLowerCase();
+  return Object.values(HTML_URL_BEARING_ATTRIBUTES).some((attributes) =>
+    attributes.includes(normalized as never),
+  );
+}
+
 export function isHtmlEventHandlerAttribute(name: string): boolean {
   return name.toLowerCase().startsWith("on");
 }

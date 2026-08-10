@@ -11,28 +11,27 @@
  */
 
 import type { Tier0Input, Tier0Result } from "../../src/shared/contracts/validation";
+import { parseHtml } from "../../src/validation/tier0/html";
 
 export const stubTier0Runner = async (input: Tier0Input): Promise<Tier0Result> => {
   if (input.artifactType === "html") {
+    const result = parseHtml(input.source);
+    const html = result.html;
     return {
       tier: 0,
-      status: "error",
+      status: result.status,
       artifactId: "",
       revisionSha: input.revisionSha,
-      expected: input.lexical,
+      expected: { ...input.lexical, html },
       observed: {
         rendererRootSvgCount: 0,
         graphCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
-        opaqueRegionCount: 0,
-        errorCount: 1,
-        discriminativeErrors: [
-          {
-            code: "html_parser_not_implemented",
-            message: "HTML Tier 0 parsing is not implemented in this build",
-          },
-        ],
+        opaqueRegionCount: html.canvasCount,
+        html,
+        errorCount: result.status === "error" ? result.errors.length : 0,
+        ...(result.status === "error" ? { discriminativeErrors: [...result.errors] } : {}),
       },
     };
   }
