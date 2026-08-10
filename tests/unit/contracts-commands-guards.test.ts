@@ -11,7 +11,7 @@ import {
 import { REQUEST_ID } from "./_helpers/command-fixtures";
 
 describe("CommandName coverage", () => {
-  test("exposes the nine implemented command verbs", () => {
+  test("exposes the ten implemented command verbs", () => {
     const implemented: CommandName[] = [
       "create",
       "publish",
@@ -22,12 +22,13 @@ describe("CommandName coverage", () => {
       "promote",
       "instantiate",
       "pin",
+      "export",
     ];
     expect(new Set(IMPLEMENTED_COMMANDS)).toEqual(new Set(implemented));
   });
 
-  test("names 'export' as a reserved verb", () => {
-    expect(RESERVED_COMMANDS).toContain("export");
+  test("does not name 'export' as a reserved verb", () => {
+    expect(RESERVED_COMMANDS).not.toContain("export");
   });
 
   test("CommandNameSchema accepts both implemented and reserved names", () => {
@@ -42,20 +43,12 @@ describe("CommandName coverage", () => {
   });
 });
 
-describe("reserved 'export' command verb", () => {
-  test("parses as a valid request but checkCommandImplemented returns reserved_not_implemented", () => {
-    const exportReq = { command: "export" as const, requestId: REQUEST_ID, format: "pdf" };
+describe("implemented 'export' command verb", () => {
+  test("parses as a valid request and checkCommandImplemented returns null", () => {
+    const exportReq = { command: "export" as const, requestId: REQUEST_ID, artifactId: "art-1" };
     expect(CommandNameSchema.safeParse(exportReq.command).success).toBe(true);
     const error = checkCommandImplemented(exportReq.command);
-    expect(error).not.toBeNull();
-    expect(error?.code).toBe("reserved_not_implemented");
-    expect(error?.retryable).toBe(false);
-    expect(error?.toBody()).toEqual({
-      code: "reserved_not_implemented",
-      message: error!.message,
-      retryable: false,
-      details: { command: "export" },
-    });
+    expect(error).toBeNull();
   });
 
   test("checkCommandImplemented returns null for every implemented verb", () => {

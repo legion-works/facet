@@ -112,8 +112,16 @@ export const PinRequestSchema = BaseRequestSchema.extend({
 });
 export type PinRequest = z.infer<typeof PinRequestSchema>;
 
-export const ReservedExportRequestSchema = BaseRequestSchema.extend({
+export const ExportFormatSchema = z.enum(["source", "render"]);
+export type ExportFormat = z.infer<typeof ExportFormatSchema>;
+
+export const ExportRequestSchema = BaseRequestSchema.extend({
   command: z.literal("export"),
-  format: z.string().min(1),
+  artifactId: z.string().min(1),
+  revisionSha: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  format: ExportFormatSchema.default("source"),
 });
-export type ReservedExportRequest = z.infer<typeof ReservedExportRequestSchema>;
+export type ExportRequest = z.infer<typeof ExportRequestSchema>;

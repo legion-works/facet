@@ -176,7 +176,8 @@ async function executeVerb(
       request = {
         command: "export",
         requestId: `req-${crypto.randomUUID()}`,
-        format: typeof args["format"] === "string" ? args["format"] : "html",
+        artifactId: typeof args["artifact-id"] === "string" ? args["artifact-id"] : "",
+        format: args["format"] === "render" ? "render" : "source",
       };
       break;
     default: {

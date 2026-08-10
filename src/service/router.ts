@@ -20,7 +20,6 @@ import { errEnvelope, okEnvelope, parseEnvelope } from "../shared/contracts/enve
 import {
   CommandRequestSchema,
   CommandResultSchema,
-  ReservedExportResultSchema,
   checkCommandImplemented,
   type CommandRequest,
 } from "../shared/contracts/commands";
@@ -257,15 +256,6 @@ export async function handleCommand(deps: RouterDeps, req: Request): Promise<Res
   // 7. Reserved-verb gate.
   const reserved = checkCommandImplemented(command.command);
   if (reserved !== null) {
-    if (command.command === "export") {
-      const result = ReservedExportResultSchema.parse({
-        command: "export",
-        requestId,
-        accepted: false,
-        reason: "export is reserved and not implemented in this build",
-      });
-      return envelopeResponse(okEnvelope(requestId, result), 200);
-    }
     return envelopeResponse(errEnvelope(requestId, reserved.toBody()), 400);
   }
 

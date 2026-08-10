@@ -27,6 +27,7 @@ export const FacetErrorCodes = {
   artifact_not_found: true,
   revision_not_found: true,
   template_not_found: true,
+  evidence_unavailable: true,
   revision_capacity_pinned: true,
   // Tier 0 worker-level failures. These surface when the parent cannot
   // even obtain a Tier0Result (worker died, bad stdout, wall-clock cap,

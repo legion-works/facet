@@ -30,6 +30,7 @@ export const IMPLEMENTED_COMMANDS: readonly CommandName[] = [
   "promote",
   "instantiate",
   "pin",
+  "export",
 ];
 
-export const RESERVED_COMMANDS: readonly CommandName[] = ["export"];
+export const RESERVED_COMMANDS: readonly CommandName[] = [];

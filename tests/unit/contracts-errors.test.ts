@@ -27,6 +27,7 @@ describe("FacetError", () => {
       "unsupported_reserved_type",
       "unknown_schema_version",
       "payload_too_large",
+      "evidence_unavailable",
     ];
     for (const code of requiredCodes) {
       expect(FacetErrorCodes).toHaveProperty(code);

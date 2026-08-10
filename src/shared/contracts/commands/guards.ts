@@ -21,9 +21,9 @@ export {
 };
 
 /**
- * Returns a `reserved_not_implemented` FacetError for any reserved verb
- * (currently just `export`) and `null` for every implemented verb. The
- * command dispatcher calls this before running any handler.
+ * Returns a `reserved_not_implemented` FacetError for any reserved verb and
+ * `null` for every implemented verb. The command dispatcher calls this before
+ * running any handler.
  */
 export function checkCommandImplemented(name: CommandName): FacetError | null {
   if ((RESERVED_COMMANDS as readonly CommandName[]).includes(name)) {

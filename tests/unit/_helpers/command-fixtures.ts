@@ -183,3 +183,37 @@ export function validPinRequest() {
 export function validPinResult() {
   return { command: "pin" as const, requestId: REQUEST_ID, revisionId: "rev-1", pinned: true };
 }
+
+export function validExportRequest() {
+  return {
+    command: "export" as const,
+    requestId: REQUEST_ID,
+    artifactId: "art-1",
+    format: "source" as const,
+  };
+}
+
+export function validExportResult() {
+  return {
+    command: "export" as const,
+    requestId: REQUEST_ID,
+    format: "source" as const,
+    bytes: "aGk=",
+    sidecar: {
+      artifactId: "art-1",
+      slug: "my-artifact",
+      revisionSha: "a".repeat(64),
+      artifactType: "markdown" as const,
+      renderer: "svg" as const,
+      verdict: {
+        status: "ok" as const,
+        tier: 0 as const,
+        artifactId: "art-1",
+        revisionSha: "a".repeat(64),
+        observed: VERDICT_OBSERVED,
+      },
+      format: "source" as const,
+      exportedAt: "2025-01-01T00:00:00.000Z",
+    },
+  };
+}

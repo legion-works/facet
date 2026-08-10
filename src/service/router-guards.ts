@@ -113,6 +113,7 @@ export function statusFor(error: FacetError): number {
     case "artifact_not_found":
     case "revision_not_found":
     case "template_not_found":
+    case "evidence_unavailable":
       return 404;
     case "payload_too_large":
       return 413;

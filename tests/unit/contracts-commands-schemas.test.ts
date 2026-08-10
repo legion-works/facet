@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   CommandRequestSchema,
   CommandResultSchema,
+  ExportRequestSchema,
+  ExportResultSchema,
   CreateRequestSchema,
   CreateResultSchema,
   InstantiateRequestSchema,
@@ -28,6 +30,8 @@ import {
 import {
   validCreateRequest,
   validCreateResult,
+  validExportRequest,
+  validExportResult,
   validInstantiateRequest,
   validInstantiateResult,
   validListRequest,
@@ -119,6 +123,31 @@ describe("command round-trips", () => {
     expect(PinResultSchema.parse(validPinResult())).toEqual(validPinResult());
   });
 
+  test("export request and result round-trip", () => {
+    expect(ExportRequestSchema.parse(validExportRequest())).toEqual(validExportRequest());
+    expect(ExportResultSchema.parse(validExportResult())).toEqual(validExportResult());
+  });
+
+  test("export request defaults format to source and accepts an optional revisionSha", () => {
+    const { format: _format, ...withoutFormat } = validExportRequest();
+    expect(ExportRequestSchema.parse(withoutFormat).format).toBe("source");
+    expect(
+      ExportRequestSchema.safeParse({ ...withoutFormat, revisionSha: "a".repeat(64) }).success,
+    ).toBe(true);
+    expect(ExportRequestSchema.safeParse({ ...withoutFormat, format: "pdf" }).success).toBe(false);
+  });
+
+  test("export result rejects the old accepted-false envelope", () => {
+    expect(
+      ExportResultSchema.safeParse({
+        command: "export",
+        requestId: "req-0001",
+        accepted: false,
+        reason: "export is reserved",
+      }).success,
+    ).toBe(false);
+  });
+
   test("discriminated union of all requests round-trips for implemented verbs", () => {
     const samples: CommandRequest[] = [
       validCreateRequest(),
@@ -130,6 +159,7 @@ describe("command round-trips", () => {
       validPromoteRequest(),
       validInstantiateRequest(),
       validPinRequest(),
+      validExportRequest(),
     ];
     for (const sample of samples) {
       expect(CommandRequestSchema.parse(sample)).toEqual(sample);
@@ -147,6 +177,7 @@ describe("command round-trips", () => {
       validPromoteResult(),
       validInstantiateResult(),
       validPinResult(),
+      validExportResult(),
     ];
     for (const sample of samples) {
       expect(CommandResultSchema.parse(sample)).toEqual(sample);

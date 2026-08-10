@@ -39,7 +39,8 @@ import {
   PublishArtifactTypeSchema,
   PublishRequestSchema,
   ReadBackRequestSchema,
-  ReservedExportRequestSchema,
+  ExportFormatSchema,
+  ExportRequestSchema,
   StatusRequestSchema,
   type CreateRequest,
   type InstantiateRequest,
@@ -49,7 +50,8 @@ import {
   type PromoteRequest,
   type PublishRequest,
   type ReadBackRequest,
-  type ReservedExportRequest,
+  type ExportFormat,
+  type ExportRequest,
   type StatusRequest,
 } from "./requests";
 import {
@@ -61,7 +63,8 @@ import {
   PromoteResultSchema,
   PublishResultSchema,
   ReadBackResultSchema,
-  ReservedExportResultSchema,
+  ExportSidecarSchema,
+  ExportResultSchema,
   StatusResultSchema,
   type CreateResult,
   type InstantiateResult,
@@ -71,7 +74,8 @@ import {
   type PromoteResult,
   type PublishResult,
   type ReadBackResult,
-  type ReservedExportResult,
+  type ExportSidecar,
+  type ExportResult,
   type StatusResult,
 } from "./results";
 import {
@@ -82,8 +86,8 @@ import {
 
 /**
  * Discriminated union of every command request the protocol parses.
- * `export` is included so the schema can describe the wire; the
- * dispatcher must check `checkCommandImplemented` and short-circuit.
+ * `export` is included as an implemented command contract; its dispatcher
+ * arm is intentionally landed separately from this contract flip.
  */
 export const CommandRequestSchema = z.discriminatedUnion("command", [
   CreateRequestSchema,
@@ -95,7 +99,7 @@ export const CommandRequestSchema = z.discriminatedUnion("command", [
   PromoteRequestSchema,
   InstantiateRequestSchema,
   PinRequestSchema,
-  ReservedExportRequestSchema,
+  ExportRequestSchema,
 ]);
 export type CommandRequest = z.infer<typeof CommandRequestSchema>;
 
@@ -109,7 +113,7 @@ export const CommandResultSchema = z.discriminatedUnion("command", [
   PromoteResultSchema,
   InstantiateResultSchema,
   PinResultSchema,
-  ReservedExportResultSchema,
+  ExportResultSchema,
 ]);
 export type CommandResult = z.infer<typeof CommandResultSchema>;
 
@@ -142,7 +146,8 @@ export {
   PromoteRequestSchema,
   InstantiateRequestSchema,
   PinRequestSchema,
-  ReservedExportRequestSchema,
+  ExportFormatSchema,
+  ExportRequestSchema,
   // results
   CreateResultSchema,
   PublishResultSchema,
@@ -153,7 +158,8 @@ export {
   PromoteResultSchema,
   InstantiateResultSchema,
   PinResultSchema,
-  ReservedExportResultSchema,
+  ExportResultSchema,
+  ExportSidecarSchema,
   // guards
   checkCommandImplemented,
   checkArtifactTypeSupported,
@@ -171,7 +177,8 @@ export type {
   PromoteRequest,
   InstantiateRequest,
   PinRequest,
-  ReservedExportRequest,
+  ExportFormat,
+  ExportRequest,
   CreateResult,
   PublishResult,
   ListResult,
@@ -181,6 +188,7 @@ export type {
   PromoteResult,
   InstantiateResult,
   PinResult,
-  ReservedExportResult,
+  ExportResult,
+  ExportSidecar,
   ReadBackTier,
 };

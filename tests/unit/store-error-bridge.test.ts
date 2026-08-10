@@ -165,6 +165,12 @@ describe("statusFor — store codes map to the right HTTP status", () => {
       expect(statusFor(new FacetStoreError(code, "x"))).toBe(500);
     }
   });
+
+  test("evidence_unavailable maps to 404", () => {
+    expect(
+      statusFor(new FacetError("evidence_unavailable", "Screenshot evidence unavailable")),
+    ).toBe(404);
+  });
 });
 
 describe("INVALID_JSON sentinel — body-parse failure marker", () => {

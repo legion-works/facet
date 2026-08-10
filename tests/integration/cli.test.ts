@@ -720,22 +720,16 @@ describe("cli contract — wire", () => {
 });
 
 describe("cli contract — reserved + errors", () => {
-  test("reserved `export` returns the reserved envelope and exits 0 (adapter-safe)", async () => {
+  test("export without an artifact id returns a typed validation error until the CLI arm lands", async () => {
     const { env } = makeEnv("export");
     const warmIo = makeIo();
     await runCli(["list", "--project-id", "warm"], { ...warmIo, env });
     const io = makeIo();
     const exit = await runCli(["export", "--format", "html"], { ...io, env });
-    // Reserved verbs are NOT an error — the envelope carries
-    // `accepted: false` so adapters can branch on the typed shape.
-    expect(exit.code).toBe(0);
+    expect(exit.code).toBe(70);
     const env1 = parseStdoutEnvelope(io.stdoutBuf.value);
-    expect(env1.ok).toBe(true);
-    if (env1.ok) {
-      expect(env1.data["command"]).toBe("export");
-      expect(env1.data["accepted"]).toBe(false);
-      expect((env1.data["reason"] as string).length).toBeGreaterThan(0);
-    }
+    expect(env1.ok).toBe(false);
+    if (!env1.ok) expect(env1.error.code).toBe("invalid_envelope");
   }, 20_000);
 
   test("unknown verb exits with a typed usage error envelope (adapter-safe)", async () => {

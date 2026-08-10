@@ -327,25 +327,23 @@ describe("service API integration", () => {
     }
   });
 
-  test("export reserved command returns the reserved envelope shape", async () => {
+  test("export remains an honest intermediate failure until its dispatcher arm lands", async () => {
     const env = await startService();
     try {
       const res = await envelopeRequest(env, {
         schemaVersion: FACET_SCHEMA_VERSION,
         requestId: "req-export",
         command: "export",
-        format: "html",
+        artifactId: "missing-artifact",
+        format: "source",
       });
       const body = parseEnvelopeStrict(await res.text()) as {
-        ok: true;
-        data: CommandResult;
+        ok: false;
+        error: { code: string };
       };
-      expect(body.ok).toBe(true);
-      if (body.data.command === "export") {
-        expect(body.data.accepted).toBe(false);
-      } else {
-        throw new Error("expected export result");
-      }
+      expect(res.status).toBe(400);
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe("reserved_not_implemented");
     } finally {
       await env.cleanup();
     }

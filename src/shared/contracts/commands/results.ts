@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import { Tier1ResultSchema, VerdictSchema } from "../validation";
-import { RendererSchema } from "../artifact";
+import { ArtifactTypeSchema, RendererSchema } from "../artifact";
+import { ExportFormatSchema } from "./requests";
 
 import {
   ArtifactEnvelopeSchema,
@@ -114,9 +115,22 @@ export const PinResultSchema = BaseResultSchema.extend({
 });
 export type PinResult = z.infer<typeof PinResultSchema>;
 
-export const ReservedExportResultSchema = BaseResultSchema.extend({
-  command: z.literal("export"),
-  accepted: z.literal(false),
-  reason: z.string().min(1),
+export const ExportSidecarSchema = z.object({
+  artifactId: z.string().min(1),
+  slug: z.string().min(1),
+  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
+  artifactType: ArtifactTypeSchema,
+  renderer: RendererSchema,
+  verdict: VerdictSchema,
+  format: ExportFormatSchema,
+  exportedAt: z.string().datetime({ offset: true }),
 });
-export type ReservedExportResult = z.infer<typeof ReservedExportResultSchema>;
+export type ExportSidecar = z.infer<typeof ExportSidecarSchema>;
+
+export const ExportResultSchema = BaseResultSchema.extend({
+  command: z.literal("export"),
+  format: ExportFormatSchema,
+  bytes: z.string().regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  sidecar: ExportSidecarSchema,
+});
+export type ExportResult = z.infer<typeof ExportResultSchema>;
