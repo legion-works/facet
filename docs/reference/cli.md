@@ -34,6 +34,16 @@ Errors use the same top level with `ok: false` and
 defaults to `svg`; `canvas` is valid only for chart artifacts. An invalid
 renderer value is a usage error and exits 64.
 
+## Insecure mode
+
+`FACET_INSECURE=1|2|3` sets a boot-only forced floor. `FACET_INSECURE_AUTO=1`
+opts into startup probe fallback; it never selects level 3. Restart after
+changing either variable. Insecure verdicts print an explicit line:
+
+```
+INSECURE L1 — auto:tier 1 unavailable
+```
+
 ## Exit codes
 
 | code | meaning                                       |

@@ -20,6 +20,7 @@ Every other layer is bound to it through `VerdictSchema.status`.
 | `timeout`                   | The harness did not emit `render-complete` within `TIER1_RENDER_BARRIER_MS`.                                                                                                   |
 | `shim_only`                 | Isolated-world channel missing; only the untrusted page-shim produced usable counts.                                                                                           |
 | `probe_only`                | Both the page-shim and the isolated-world channel are missing; only the protocol channel is usable.                                                                            |
+| `insecure:unvalidated`      | Level 3 intentionally skipped validation. The artifact is not represented as validated.                                                                                        |
 
 A `partial:*` verdict is a verdict the verifier could not finalize, NOT
 a degraded `ok`. The screenshot is mandatory FOR `partial:` so a human
@@ -91,12 +92,16 @@ enriched verdict — never the worker's placeholder identity.
 
 ## Layering
 
+Insecure execution conditions are metadata: `Verdict.insecure` carries the
+effective level and reason, but verdict derivation never consumes that marker.
+Only level 3 produces the `insecure:unvalidated` status.
+
 ```
 shared/contracts/validation.ts   canonical VerdictSchema + RenderStatus
                                  + Tier1Result refine (partial-screenshot)
 shared/contracts/artifact.ts     RenderRunSchema adds `retained` and `screenshotErrorJson`
-service/store/schema.ts          V2_SCHEMA_FRAGMENT, V3_SCHEMA_FRAGMENT, V4_SCHEMA_FRAGMENT
-service/store/migrations.ts      additive v2, v3, and v4 migrations
+ service/store/schema.ts      V2_SCHEMA_FRAGMENT, V3_SCHEMA_FRAGMENT, V4_SCHEMA_FRAGMENT, V5_SCHEMA_FRAGMENT
+ service/store/migrations.ts      additive v2, v3, v4, and v5 migrations
 service/store/evidence-retention.ts
                                  last-N cleanup + 0700 directory ensure
 service/store/repository.ts      recordRenderRun wires retention + cleanup-on-failure

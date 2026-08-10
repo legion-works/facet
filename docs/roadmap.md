@@ -23,7 +23,7 @@ did not have.
 • Screenshot policy tuning
 • Export slot
 • Browser pin upgrades
-• Insecure mode — explicit opt-in relaxation tiers for users who accept the risk (e.g. `FACET_INSECURE=1|2|3`): candidate levels — (1) skip Tier 1 netns isolation, (2) run validators without sandboxing, (3) skip validation entirely / trust the artifact. Design lines: never the default, loud on every startup and envelope, and verdicts produced under any relaxed level carry an explicit `insecure` marker — a verdict must never claim a trust property the run did not have. Levels compose downward only (no per-request escalation).
+✓ DONE — Insecure mode — explicit opt-in relaxation tiers (`FACET_INSECURE=1|2|3`) with forced-floor composition, loud startup/envelope/CLI/gallery disclosure, and explicit `insecure` verdict markers. L1 removes Tier 1 netns isolation, L2 removes both validator netns layers, and L3 skips validation entirely. Levels are boot-only; no per-request escalation.
 • Performance budgets are now measured by `scripts/perf-gate.ts`. Current budgets and purposes:
 absolute service RSS ≤80 MiB (catastrophic-growth guard), paired service-minus-Bun-floor
 RSS ≤30 MiB (regression detector), idle CPU <0.5% (regression detector),

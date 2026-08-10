@@ -17,6 +17,15 @@ the artifact types; `renderers.ts` owns `RENDERERS`, `Renderer`, and
 `isRenderer`. `src/gallery-web/frame/renderer-validation.ts` exports
 `validateRenderer`.
 
+Recent insecure-mode additions: `src/service/verdict-enrichment.ts` exports
+`insecureMarker` and `enrichVerdict`; `src/service/store/schema.ts` exports
+`V5_SCHEMA_FRAGMENT`; `src/shared/contracts/validation.ts` owns
+`InsecureLevel`, `InsecureMarker`, `insecure:unvalidated`, and `Verdict.insecure`;
+the Tier 0 and Tier 1 runners export the probe entry points used by auto
+fallback. Coverage lives in `tests/integration/insecure-auto.test.ts`,
+`tests/integration/insecure-level-threading.test.ts`, and
+`tests/integration/insecure-mode.test.ts`.
+
 Opaque-content coverage lives in `tests/unit/tier1-screenshot-evidence.test.ts`
 and the related renderer fixtures and integration tests.
 

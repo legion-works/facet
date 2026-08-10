@@ -12,6 +12,7 @@ import {
   type Tier1Runner,
 } from "../../src/shared/contracts/validation";
 import { startFacetService, type RunningService } from "../../src/service/server";
+import { openDatabase } from "../../src/service/store/database";
 
 interface TestEnv {
   readonly service: RunningService;
@@ -209,6 +210,41 @@ describe("insecure dispatcher semantics", () => {
     expect(readBack.verdict.status).toBe("insecure:unvalidated");
     expect(readBack.verdict.observed).toEqual(verdict.observed);
     expect(readBack.verdict.insecure).toEqual(verdict.insecure);
+  });
+
+  test("auto-downgraded publish persists the auto reason in render_runs", async () => {
+    const dbPath = `/tmp/facet-insecure-auto-persist-${crypto.randomUUID()}.sqlite`;
+    const service = await startFacetService({
+      dbPath,
+      installTokenPath: `${dbPath}.install`,
+      promoteTokenPath: `${dbPath}.promote`,
+      lockPath: `${dbPath}.lock`,
+      idleTimeoutMs: 2_000,
+      insecureLevel: 1,
+      insecureReason: "auto:tier 1 unavailable",
+      tier0Runner: async (input) => ({
+        tier: 0,
+        status: "ok" as const,
+        revisionSha: input.revisionSha,
+        expected: input.lexical,
+        observed: observed(),
+      }),
+    });
+    const env = { service, cleanup: async () => service.stop() };
+    environments.push(env);
+    const result = await publish(env);
+    const db = openDatabase(dbPath);
+    try {
+      const row = db.query("SELECT insecure_json FROM render_runs LIMIT 1").get() as {
+        insecure_json: string | null;
+      };
+      expect(row.insecure_json).toBe(
+        JSON.stringify({ level: 1, reason: "auto:tier 1 unavailable" }),
+      );
+      expect(result.verdict?.insecure).toEqual({ level: 1, reason: "auto:tier 1 unavailable" });
+    } finally {
+      db.close();
+    }
   });
 
   test.each([undefined, 0] as const)(
