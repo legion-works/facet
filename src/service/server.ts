@@ -134,6 +134,7 @@ export async function startFacetService(
   }
 
   let boundServer: ReturnType<typeof Bun.serve> | null = null;
+  // Capture the hook before initialization so every later startup failure reaps a lazy worker.
   let tier0Close: (() => void) | null = options.tier0Runner?.close ?? null;
   let databaseClose: (() => void) | null = null;
   let leasesClear: (() => void) | null = null;

@@ -75,6 +75,14 @@ for (;;) {
       process.stdout.write(response(request) + "\\nGARBAGE");
       continue;
     }
+    if (source === "missing-result") {
+      process.stdout.write(JSON.stringify({ requestId: request.requestId }) + "\\n");
+      continue;
+    }
+    if (source === "null-envelope") {
+      process.stdout.write("null\\n");
+      continue;
+    }
     if (active) {
       process.stdout.write("CONCURRENT\\n");
       process.exit(7);
@@ -226,6 +234,32 @@ describe("Tier 0 worker pool", () => {
       } finally {
         capRunner.close?.();
         capRunner.close?.();
+      }
+    });
+  });
+
+  test("a response without result is a typed protocol error", async () => {
+    await withFakeWorker(async (workerEntry) => {
+      const runner = tier0Runner.createTier0RunnerForTests(2, { workerEntry });
+      try {
+        await expect(runner(input("9".repeat(64), "missing-result"))).rejects.toMatchObject({
+          code: "tier0_protocol_error",
+        });
+      } finally {
+        runner.close?.();
+      }
+    });
+  });
+
+  test("a null response envelope is a typed protocol error", async () => {
+    await withFakeWorker(async (workerEntry) => {
+      const runner = tier0Runner.createTier0RunnerForTests(2, { workerEntry });
+      try {
+        await expect(runner(input("a".repeat(64), "null-envelope"))).rejects.toMatchObject({
+          code: "tier0_protocol_error",
+        });
+      } finally {
+        runner.close?.();
       }
     });
   });

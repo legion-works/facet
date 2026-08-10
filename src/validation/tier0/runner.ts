@@ -183,17 +183,28 @@ function parseWorkerResponse(
   requestId: string,
   outputCap: number,
 ): Tier0WorkerResult {
-  let envelope: { requestId?: unknown; result?: unknown };
+  let rawEnvelope: unknown;
   try {
-    envelope = JSON.parse(line.toString("utf8")) as { requestId?: unknown; result?: unknown };
+    rawEnvelope = JSON.parse(line.toString("utf8"));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new FacetError("tier0_protocol_error", `Worker stdout is not valid JSON: ${message}`, {
       retryable: false,
     });
   }
+  if (typeof rawEnvelope !== "object" || rawEnvelope === null || Array.isArray(rawEnvelope)) {
+    throw new FacetError("tier0_protocol_error", "Worker response is not an object envelope", {
+      retryable: false,
+    });
+  }
+  const envelope = rawEnvelope as { requestId?: unknown; result?: unknown };
   if (envelope.requestId !== requestId) {
     throw new FacetError("tier0_protocol_error", "Worker response requestId did not match", {
+      retryable: false,
+    });
+  }
+  if (envelope.result === undefined) {
+    throw new FacetError("tier0_protocol_error", "Worker response omitted result", {
       retryable: false,
     });
   }
