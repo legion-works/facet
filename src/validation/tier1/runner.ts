@@ -317,7 +317,6 @@ async function runTier1Attempt(
       },
       screenshotPath: captured.screenshotPath,
       consolePath: captured.consolePath,
-      ...(level > 0 ? { insecure: { level, reason: `manual insecure level ${level}` } } : {}),
       ...(status.startsWith("partial:") && captured.screenshotError !== null
         ? { screenshotError: captured.screenshotError }
         : {}),

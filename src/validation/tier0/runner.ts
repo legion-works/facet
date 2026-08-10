@@ -257,12 +257,7 @@ async function runOnce(
     });
   }
   const result = _parseWorkerStdout(stdout, options.outputCap);
-  return level === 0
-    ? result
-    : {
-        ...result,
-        insecure: { level, reason: `manual insecure level ${level}` },
-      };
+  return result;
 }
 
 /**

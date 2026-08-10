@@ -272,28 +272,32 @@ export async function dispatch(
       });
       const insecure = insecureMarker(deps.insecureLevel, deps.insecureReason);
       if (deps.insecureLevel === 3) {
-        const verdict = buildVerdict({
-          artifactId: command.artifactId,
-          revisionSha: revision.sha256,
-          tier: 0,
-          status: "insecure:unvalidated",
-          observed: {
-            rendererRootSvgCount: 0,
-            graphCount: 0,
-            mermaidNodeCount: 0,
-            visibleSvgCount: 0,
-            opaqueRegionCount: 0,
-            errorCount: 0,
-          },
-          ...(insecure !== undefined ? { insecure } : {}),
-        });
+        const verdict = enrichVerdict(
+          buildVerdict({
+            artifactId: command.artifactId,
+            revisionSha: revision.sha256,
+            tier: 0,
+            status: "insecure:unvalidated",
+            observed: {
+              rendererRootSvgCount: 0,
+              graphCount: 0,
+              mermaidNodeCount: 0,
+              visibleSvgCount: 0,
+              opaqueRegionCount: 0,
+              errorCount: 0,
+            },
+          }),
+          command.artifactId,
+          revision.sha256,
+          insecure,
+        );
         deps.repository.recordRenderRun({
           revisionId: revision.id,
           tier: 0,
           status: verdict.status,
           expected: tier0Input.lexical,
           observed: verdict.observed,
-          ...(insecure !== undefined ? { insecure } : {}),
+          insecure: verdict.insecure ?? null,
         });
         deps.onPublished?.(
           RevisionCommittedEventSchema.parse({

@@ -131,7 +131,7 @@ export function spawnDirectWorker(args: readonly string[]): ChildProcess {
   return spawnWorker(args, false);
 }
 
-/** Select the Tier 0 isolation boundary for a manual insecure level. */
+/** Select the Tier 0 isolation boundary for the configured insecure level. */
 export function resolveTier0Isolation(level: 0 | 1 | 2 | 3): "netns" | "direct" {
   const parsedLevel = InsecureLevelSchema.parse(level);
   return parsedLevel <= 1 ? "netns" : "direct";
