@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <body>
+    <h1>Adoption agency report</h1>
+    <p>Misnested formatting elements trigger the active-formatting-elements
+       adoption-agency algorithm when a later block breaks an inner one.
+       Both Chromium and parse5 implement the algorithm identically for
+       well-formed input, so the recovered structure must agree.</p>
+    <p><b><i>bold-then-italic fragment ends here without closing italic</b>
+    <p><i><b>italic-then-bold fragment ends here without closing bold</i>
+    <ul><li>item</li></ul>
+  </body>
+</html>

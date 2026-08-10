@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <body>
+    <h1>Character references report</h1>
+    <p>Named: &amp; &lt; &gt; &copy; &nbsp; &#xA9; &Auml;</p>
+    <p>Numeric: &#65; &#x42;</p>
+    <p>Ambiguous bare ampersand must not be consumed: &not-a-real-entity; stays literal-ish.</p>
+    <table>
+      <tbody><tr><td>&lt;tag&gt; inside table</td></tr></tbody>
+    </table>
+    <ul><li>item &amp; another</li></ul>
+  </body>
+</html>

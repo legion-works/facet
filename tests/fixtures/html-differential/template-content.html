@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <body>
+    <h1>Template content report</h1>
+    <p>The template element holds inert DOM that must not count toward the
+       rendered structure. Both parsers agree: the contents are not part of
+       the rendered document.</p>
+    <template>
+      <div>
+        <h2>inert heading</h2>
+        <table><tr><td>inert cell</td></tr></table>
+        <ul><li>inert list item</li></ul>
+      </div>
+    </template>
+    <p>after template</p>
+    <ul><li>visible list item</li></ul>
+  </body>
+</html>
