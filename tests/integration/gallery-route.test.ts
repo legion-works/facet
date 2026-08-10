@@ -149,7 +149,12 @@ describe("GET /gallery", () => {
 
     const invalid = await fetch(`${service.url}/gallery/frame?nonce=bad%0d%0aX-Evil%3A%20yes`);
     expect(invalid.status).toBe(400);
-    const invalidType = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=html`);
+    const htmlFrame = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=html`);
+    expect(htmlFrame.status).toBe(200);
+    expect(await htmlFrame.text()).toContain(
+      `<script type="module" nonce="${nonce}" src="/gallery/frame/bootstrap/html.js">`,
+    );
+    const invalidType = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=pdf`);
     expect(invalidType.status).toBe(400);
 
     const bootstrap = await fetch(`${service.url}/gallery/frame/bootstrap/markdown.js`, {

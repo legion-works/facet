@@ -144,9 +144,8 @@ export function createRendererRegistry(
 }
 
 /**
- * Dispatch one artifact through the registry. Unknown types (the
- * reserved `html` literal included) throw — the caller turns the
- * throw into a facet-error marker, never executable content.
+ * Dispatch one artifact through the registry. Unknown types throw — the caller
+ * turns the throw into a facet-error marker, never executable content.
  */
 export async function dispatchRender(
   registry: RendererRegistry,

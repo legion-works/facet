@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { RendererSchema } from "./artifact";
+import { ArtifactTypeSchema, RendererSchema } from "./artifact";
 
 /**
  * Validation tier. Tier 0 is the always-on parser worker (no browser);
@@ -121,7 +121,7 @@ export type Verdict = z.infer<typeof VerdictSchema>;
 /** Tier 0 input: pure-parse verifier, no browser, no egress. */
 export const Tier0InputSchema = z.object({
   revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
-  artifactType: z.enum(["markdown", "mermaid", "svg", "chart"]),
+  artifactType: ArtifactTypeSchema,
   renderer: RendererSchema,
   source: z.instanceof(Uint8Array<ArrayBuffer>),
   lexical: LexicalCountersSchema,

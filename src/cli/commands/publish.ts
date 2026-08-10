@@ -16,12 +16,13 @@
 import { readFileSync } from "node:fs";
 
 import { FacetError } from "../../shared/errors/facet-error";
+import { ARTIFACT_TYPES } from "../../shared/contracts/artifact-types";
 import { isRenderer } from "../../shared/contracts/renderers";
 import { generateRequestId } from "../../shared/util/time";
 import type { PublishRequest } from "../../shared/contracts/commands/requests";
 import type { ArtifactType } from "../../shared/contracts/artifact";
 
-const VALID_TYPES: ReadonlySet<ArtifactType> = new Set(["markdown", "mermaid", "svg", "chart"]);
+const VALID_TYPES: ReadonlySet<ArtifactType> = new Set(ARTIFACT_TYPES);
 
 export interface ResolveSourceInput {
   readonly fileFlag: string | undefined;

@@ -9,6 +9,7 @@ import { ArtifactRepository } from "../../src/service/store/repository";
 import { openDatabase } from "../../src/service/store/database";
 import { CommandResultSchema, type CommandResult } from "../../src/shared/contracts/commands";
 import { FACET_SCHEMA_VERSION } from "../../src/shared/contracts/envelope";
+import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
 import type {
   Tier0Input,
   Tier0Result,
@@ -124,11 +125,12 @@ async function publish(
   env: TestEnv,
   artifactId: string,
   source: Uint8Array,
+  artifactType: ArtifactType = "markdown",
 ): Promise<{ revisionSha: string; revisionNumber: number }> {
   const published = await result(env, {
     command: "publish",
     artifactId,
-    artifactType: "markdown",
+    artifactType,
     bytes: Buffer.from(source).toString("base64"),
   });
   return {
@@ -192,6 +194,27 @@ function tier0(status: Tier0Result["status"]): Tier0Runner {
 }
 
 describe("source export", () => {
+  test("exports stored HTML source while Tier 0 is temporarily not implemented", async () => {
+    const env = await startEnv();
+    try {
+      const artifactId = await createArtifact(env, "html-source");
+      const source = new TextEncoder().encode("<main>HTML</main>");
+      const published = await publish(env, artifactId, source, "html");
+      const exported = await result(env, { command: "export", artifactId, format: "source" });
+
+      expect(Buffer.from(exported.bytes as string, "base64")).toEqual(Buffer.from(source));
+      expect(exported.sidecar.revisionSha).toBe(published.revisionSha);
+      expect(exported.sidecar.verdict.status).toBe("error");
+      expect(
+        exported.sidecar.verdict.observed.discriminativeErrors?.map(
+          (error: { code: string }) => error.code,
+        ),
+      ).toContain("html_parser_not_implemented");
+    } finally {
+      await env.service.stop();
+    }
+  });
+
   test("exports the original bytes, selects revisions, and proves hash identity", async () => {
     const env = await startEnv();
     try {

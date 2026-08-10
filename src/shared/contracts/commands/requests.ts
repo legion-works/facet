@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ArtifactTypeSchema, RendererSchema, ReservedArtifactTypeSchema } from "../artifact";
+import { ArtifactTypeSchema, RendererSchema } from "../artifact";
 import { MAX_LIST_LIMIT } from "../../config/limits";
 
 import { BaseRequestSchema, ReadBackTierSchema } from "./_shared";
@@ -31,13 +31,8 @@ export const PublishBytesSchema = z.string().superRefine((value, ctx) => {
   }
 });
 
-/**
- * Publish accepts the four implemented artifact types AND the reserved
- * `html` literal — the reserved form parses here so the dispatcher can
- * detect it via `checkArtifactTypeSupported` and return the typed
- * `unsupported_reserved_type` error.
- */
-export const PublishArtifactTypeSchema = z.union([ArtifactTypeSchema, ReservedArtifactTypeSchema]);
+/** Publish accepts every implemented artifact type from the canonical contract. */
+export const PublishArtifactTypeSchema = ArtifactTypeSchema;
 
 export const CreateRequestSchema = BaseRequestSchema.extend({
   command: z.literal("create"),

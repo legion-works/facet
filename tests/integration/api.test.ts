@@ -293,7 +293,7 @@ describe("service API integration", () => {
     }
   });
 
-  test("reserved html artifact type returns unsupported_reserved_type", async () => {
+  test("html publishes while Tier 0 reports the current parser-not-implemented result", async () => {
     const env = await startService();
     try {
       const createRes = await envelopeRequest(env, {
@@ -318,10 +318,33 @@ describe("service API integration", () => {
         bytes: Buffer.from("<h1>", "utf8").toString("base64"),
       });
       const body = parseEnvelopeStrict(await res.text()) as {
-        ok: false;
-        error: { code: string };
+        ok: true;
+        data: {
+          revision: { artifactType: string; sha256: string };
+        };
       };
-      expect(body.error.code).toBe("unsupported_reserved_type");
+      expect(body.ok).toBe(true);
+      expect(body.data.revision.artifactType).toBe("html");
+      const readBackRes = await envelopeRequest(env, {
+        command: "readBack",
+        artifactId: createBody.data.artifact.id,
+        revisionSha: body.data.revision.sha256,
+        tier: 0,
+      });
+      const readBack = parseEnvelopeStrict(await readBackRes.text()) as {
+        ok: true;
+        data: {
+          verdict: {
+            status: string;
+            observed: { discriminativeErrors?: Array<{ code: string }> };
+          };
+        };
+      };
+      expect(readBack.ok).toBe(true);
+      expect(readBack.data.verdict.status).toBe("error");
+      expect(
+        readBack.data.verdict.observed.discriminativeErrors?.map((error) => error.code),
+      ).toContain("html_parser_not_implemented");
     } finally {
       await env.cleanup();
     }

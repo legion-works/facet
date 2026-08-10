@@ -169,6 +169,7 @@ test("interrupted migration rolls back its version and recovers on retry", () =>
     { version: 3 },
     { version: 4 },
     { version: 5 },
+    { version: 6 },
   ]);
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'projects'").get()).toEqual({
     name: "projects",
@@ -217,6 +218,7 @@ test("upgrades a populated v2 database with renderer and screenshot-error column
     { version: 3 },
     { version: 4 },
     { version: 5 },
+    { version: 6 },
   ]);
   expect(db.query("SELECT renderer FROM revisions WHERE id = ?").get("revision-v2")).toEqual({
     renderer: "svg",
@@ -288,6 +290,7 @@ test("upgrades a populated v4 database and preserves render-run bytes without in
     { version: 3 },
     { version: 4 },
     { version: 5 },
+    { version: 6 },
   ]);
   expect(
     db

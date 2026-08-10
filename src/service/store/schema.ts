@@ -25,7 +25,7 @@ CREATE TABLE revisions(
   artifact_id TEXT NOT NULL REFERENCES artifacts(id),
   revision_number INTEGER NOT NULL,
   parent_revision_id TEXT REFERENCES revisions(id),
-  artifact_type TEXT NOT NULL CHECK(artifact_type IN ('markdown','mermaid','svg','chart')),
+  artifact_type TEXT NOT NULL CHECK(artifact_type IN ('markdown','mermaid','svg','chart','html')),
   source BLOB NOT NULL,
   sha256 TEXT NOT NULL,
   note TEXT,
@@ -81,4 +81,37 @@ ALTER TABLE render_runs ADD COLUMN screenshot_error_json TEXT;
 /** The v5 fragment persists the insecure execution marker with each run. */
 export const V5_SCHEMA_FRAGMENT = `
 ALTER TABLE render_runs ADD COLUMN insecure_json TEXT;
+`;
+
+/**
+ * The v6 rebuild widens revisions.artifact_type. SQLite cannot alter a CHECK
+ * in place, so the official create-copy-drop-rename procedure preserves child
+ * foreign-key clauses by never renaming the original table.
+ */
+export const V6_SCHEMA_FRAGMENT = `
+CREATE TABLE revisions_v6(
+  id TEXT PRIMARY KEY,
+  artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+  revision_number INTEGER NOT NULL,
+  parent_revision_id TEXT REFERENCES revisions(id),
+  artifact_type TEXT NOT NULL CHECK(artifact_type IN ('markdown','mermaid','svg','chart','html')),
+  source BLOB NOT NULL,
+  sha256 TEXT NOT NULL,
+  note TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  renderer TEXT NOT NULL DEFAULT 'svg' CHECK(renderer IN ('svg','canvas')),
+  UNIQUE(artifact_id, revision_number),
+  UNIQUE(artifact_id, sha256)
+);
+INSERT INTO revisions_v6(
+  id, artifact_id, revision_number, parent_revision_id, artifact_type, source, sha256,
+  note, pinned, created_at, renderer
+)
+SELECT
+  id, artifact_id, revision_number, parent_revision_id, artifact_type, source, sha256,
+  note, pinned, created_at, renderer
+FROM revisions;
+DROP TABLE revisions;
+ALTER TABLE revisions_v6 RENAME TO revisions;
 `;

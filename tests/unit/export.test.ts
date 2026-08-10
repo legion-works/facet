@@ -124,6 +124,7 @@ describe("export CLI helpers", () => {
     expect(extensionForExport("source", "mermaid")).toBe(".md");
     expect(extensionForExport("source", "svg")).toBe(".svg");
     expect(extensionForExport("source", "chart")).toBe(".json");
+    expect(extensionForExport("source", "html")).toBe(".html");
     expect(extensionForExport("render", "markdown")).toBe(".png");
   });
 

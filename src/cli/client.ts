@@ -32,6 +32,7 @@ function traceTier1Transport(stage: string): void {
 import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
+import type { ArtifactType } from "../shared/contracts/artifact-types";
 import type { Renderer } from "../shared/contracts/renderers";
 import type { InsecureMarker, ScreenshotError } from "../shared/contracts/validation";
 
@@ -188,7 +189,7 @@ export interface PublishArtifactResult {
 }
 
 export interface PublishArtifactOptions {
-  readonly artifactType: "markdown" | "mermaid" | "svg" | "chart";
+  readonly artifactType: ArtifactType;
   readonly renderer?: Renderer;
   readonly bytes: ArrayBuffer;
   readonly slug?: string;

@@ -26,6 +26,7 @@ import {
   type CommandRequest,
   type CommandResult,
 } from "../../src/shared/contracts/commands";
+import { ArtifactTypeSchema } from "../../src/shared/contracts/artifact";
 
 import {
   validCreateRequest,
@@ -67,6 +68,13 @@ describe("command round-trips", () => {
     expect(PublishRequestSchema.parse(withoutRenderer).renderer).toBe("svg");
     expect(PublishRequestSchema.safeParse({ ...request, renderer: "canvas" }).success).toBe(true);
     expect(PublishRequestSchema.safeParse({ ...request, renderer: "webgl" }).success).toBe(false);
+  });
+
+  test("artifact and publish schemas accept the implemented html type", () => {
+    expect(ArtifactTypeSchema.parse("html")).toBe("html");
+    expect(
+      PublishRequestSchema.parse({ ...validPublishRequest(), artifactType: "html" }).artifactType,
+    ).toBe("html");
   });
 
   test("list request and result round-trip", () => {

@@ -44,11 +44,19 @@ export function buildExportRequest(
 export function extensionForExport(
   format: ExportFormat,
   artifactType: ArtifactType,
-): ".md" | ".svg" | ".json" | ".png" {
+): ".md" | ".svg" | ".json" | ".html" | ".png" {
   if (format === "render") return ".png";
-  if (artifactType === "svg") return ".svg";
-  if (artifactType === "chart") return ".json";
-  return ".md";
+  switch (artifactType) {
+    case "markdown":
+    case "mermaid":
+      return ".md";
+    case "svg":
+      return ".svg";
+    case "chart":
+      return ".json";
+    case "html":
+      return ".html";
+  }
 }
 
 function sidecarPathForArtifact(path: string): string {

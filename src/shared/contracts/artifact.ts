@@ -8,11 +8,6 @@ export { RENDERERS, type Renderer } from "./renderers";
 export const ArtifactTypeSchema = z.enum(ARTIFACT_TYPES);
 export const RendererSchema = z.enum(RENDERERS);
 
-/** HTML identifies a reserved format and is deliberately excluded from ArtifactTypeSchema and store writes. */
-export const RESERVED_ARTIFACT_TYPE = "html" as const;
-export const ReservedArtifactTypeSchema = z.literal(RESERVED_ARTIFACT_TYPE);
-export type ReservedArtifactType = z.infer<typeof ReservedArtifactTypeSchema>;
-
 const IdSchema = z.string().min(1);
 const IsoTimestampSchema = z.string().datetime({ offset: true });
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);

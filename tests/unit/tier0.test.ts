@@ -387,6 +387,27 @@ describe("Tier 0 process boundary — worker subprocess", () => {
     { timeout: TIER0_TIMEOUT_MS + 5_000 },
   );
 
+  netnsTest(
+    "worker reports html_parser_not_implemented until the HTML parser lands",
+    async () => {
+      const encoded = new TextEncoder().encode("<main>HTML</main>");
+      const bytes = new Uint8Array(new ArrayBuffer(encoded.byteLength));
+      bytes.set(encoded);
+      const result = await runTier0({
+        revisionSha: "0".repeat(64),
+        artifactType: "html",
+        renderer: "svg",
+        source: bytes,
+        lexical: lexicalCounters(bytes),
+      });
+      expect(result.status).toBe("error");
+      expect(result.observed.discriminativeErrors?.map((error) => error.code)).toContain(
+        "html_parser_not_implemented",
+      );
+    },
+    { timeout: TIER0_TIMEOUT_MS + 5_000 },
+  );
+
   test("netns probe reports a typed reason when unavailable (or ok when available)", () => {
     if (netnsProbe.available) {
       expect(netnsProbe.reason).toBeNull();

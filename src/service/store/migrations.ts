@@ -7,6 +7,7 @@ import {
   V3_SCHEMA_FRAGMENT,
   V4_SCHEMA_FRAGMENT,
   V5_SCHEMA_FRAGMENT,
+  V6_SCHEMA_FRAGMENT,
 } from "./schema";
 
 export interface MigrationOptions {
@@ -53,6 +54,12 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
       db.exec(V5_SCHEMA_FRAGMENT);
     },
   },
+  {
+    version: 6,
+    apply: (db) => {
+      db.exec(V6_SCHEMA_FRAGMENT);
+    },
+  },
 ];
 
 export function runMigrations(db: Database, options: MigrationOptions = {}): void {
@@ -64,6 +71,9 @@ export function runMigrations(db: Database, options: MigrationOptions = {}): voi
       .query("SELECT version FROM schema_migrations ORDER BY version")
       .all() as Array<{ version: number }>;
     const appliedSet = new Set(applied.map((row) => row.version));
+    const foreignKeys = db.query("PRAGMA foreign_keys").get() as { foreign_keys: number };
+    const disableForeignKeys = !appliedSet.has(6) && foreignKeys.foreign_keys === 1;
+    if (disableForeignKeys) db.exec("PRAGMA foreign_keys = OFF");
     const migrate = db.transaction(() => {
       for (const step of MIGRATION_STEPS) {
         if (appliedSet.has(step.version)) continue;
@@ -75,7 +85,11 @@ export function runMigrations(db: Database, options: MigrationOptions = {}): voi
         );
       }
     });
-    migrate();
+    try {
+      migrate();
+    } finally {
+      if (disableForeignKeys) db.exec("PRAGMA foreign_keys = ON");
+    }
   } catch (error) {
     const mapped = asStoreError(error);
     if (mapped.code === "database_corrupt" || mapped.code === "database_busy") throw mapped;

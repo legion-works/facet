@@ -43,6 +43,7 @@ describe("gallery and Tier 1 renderer bundle parity", () => {
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({
       chart: ["chart.ts", "svg.ts"],
+      html: ["html-stub.ts"],
       markdown: ["markdown.ts", "mermaid.ts", "svg.ts"],
       mermaid: ["mermaid.ts", "svg.ts"],
       svg: ["svg.ts"],

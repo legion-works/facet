@@ -117,7 +117,7 @@ function sha256(source: Uint8Array): string {
   return hasher.digest("hex");
 }
 
-function parseArtifactType(value: ArtifactType | "html"): ArtifactType {
+function parseArtifactType(value: ArtifactType): ArtifactType {
   try {
     return ArtifactTypeSchema.parse(value);
   } catch (error) {

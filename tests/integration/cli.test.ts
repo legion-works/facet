@@ -371,6 +371,14 @@ describe("cli contract — surface", () => {
     ).toBe("canvas");
   });
 
+  test("publish accepts --type html and builds the implemented type request", () => {
+    const request = buildPublishRequest(
+      { "artifact-id": "artifact-1", type: "html" },
+      new TextEncoder().encode("<main>HTML</main>"),
+    );
+    expect(request.artifactType).toBe("html");
+  });
+
   test("publish rejects an invalid renderer with typed invalid_request", () => {
     expect(() =>
       buildPublishRequest(

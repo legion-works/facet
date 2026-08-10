@@ -20,7 +20,8 @@
  * entry path); it is invoked by `bun run src/validation/tier0/worker-entry.ts`.
  */
 
-import type { ArtifactType, Renderer } from "../../shared/contracts/artifact";
+import { ARTIFACT_TYPES, type ArtifactType } from "../../shared/contracts/artifact-types";
+import type { Renderer } from "../../shared/contracts/artifact";
 import type { LexicalCounters, Tier0WorkerResult } from "../../shared/contracts/validation";
 import { TIER0_INPUT_CAP_BYTES } from "../sandbox/limits";
 
@@ -75,10 +76,8 @@ function parseWorkerInput(text: string): WorkerInput {
     throw new Error("invalid revisionSha");
   }
   if (
-    raw.artifactType !== "markdown" &&
-    raw.artifactType !== "mermaid" &&
-    raw.artifactType !== "svg" &&
-    raw.artifactType !== "chart"
+    typeof raw.artifactType !== "string" ||
+    !ARTIFACT_TYPES.includes(raw.artifactType as ArtifactType)
   ) {
     throw new Error(`invalid artifactType: ${String(raw.artifactType)}`);
   }
@@ -102,7 +101,7 @@ function parseWorkerInput(text: string): WorkerInput {
     schemaVersion: "facet.tier0.v1",
     requestId: raw.requestId,
     revisionSha: raw.revisionSha,
-    artifactType: raw.artifactType,
+    artifactType: raw.artifactType as ArtifactType,
     renderer: raw.renderer,
     source,
     lexical,
@@ -172,6 +171,25 @@ async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
             : result.observed,
       };
     }
+    case "html":
+      return {
+        ...base,
+        status: "error",
+        observed: {
+          rendererRootSvgCount: 0,
+          graphCount: 0,
+          mermaidNodeCount: 0,
+          visibleSvgCount: 0,
+          opaqueRegionCount: 0,
+          errorCount: 1,
+          discriminativeErrors: [
+            {
+              code: "html_parser_not_implemented",
+              message: "HTML Tier 0 parsing is not implemented in this build",
+            },
+          ],
+        },
+      };
   }
 }
 

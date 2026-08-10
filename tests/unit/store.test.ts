@@ -3,7 +3,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/service/store/database";
 import { ArtifactRepository } from "../../src/service/store/repository";
 import { runMigrations } from "../../src/service/store/migrations";
-import { V3_SCHEMA_FRAGMENT } from "../../src/service/store/schema";
+import {
+  INITIAL_SCHEMA,
+  V2_SCHEMA_FRAGMENT,
+  V3_SCHEMA_FRAGMENT,
+  V4_SCHEMA_FRAGMENT,
+  V5_SCHEMA_FRAGMENT,
+} from "../../src/service/store/schema";
+import { ARTIFACT_TYPES } from "../../src/shared/contracts/artifact-types";
 import { RENDERERS } from "../../src/shared/contracts/renderers";
 
 const databases: Array<{ close: () => void }> = [];
@@ -20,6 +27,56 @@ function makeStore() {
     title: "Example",
   });
   return { db, repository, artifact };
+}
+
+function v5InitialSchema(): string {
+  return INITIAL_SCHEMA.replace(
+    "artifact_type TEXT NOT NULL CHECK(artifact_type IN ('markdown','mermaid','svg','chart','html'))",
+    "artifact_type TEXT NOT NULL CHECK(artifact_type IN ('markdown','mermaid','svg','chart'))",
+  );
+}
+
+function makeV5Store() {
+  const db = openDatabase({ databasePath: ":memory:" });
+  databases.push(db);
+  db.exec(
+    `${v5InitialSchema()}${V2_SCHEMA_FRAGMENT}${V3_SCHEMA_FRAGMENT}${V4_SCHEMA_FRAGMENT}${V5_SCHEMA_FRAGMENT}`,
+  );
+  db.exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
+  for (const version of [1, 2, 3, 4, 5]) {
+    db.query("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(
+      version,
+      "2026-08-10T00:00:00.000Z",
+    );
+  }
+  const repository = new ArtifactRepository(db);
+  const project = repository.createProject({ projectRoot: `/tmp/facet-v5-${crypto.randomUUID()}` });
+  const artifact = repository.createArtifact({
+    projectId: project.id,
+    slug: "v5-example",
+    title: "V5 example",
+  });
+  return { db, repository, artifact };
+}
+
+function tableCounts(db: ReturnType<typeof openDatabase>) {
+  return Object.fromEntries(
+    ["revisions", "render_runs", "templates"].map((table) => [
+      table,
+      (db.query(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count,
+    ]),
+  );
+}
+
+function artifactTypeCheckValues(db: ReturnType<typeof openDatabase>): string[] {
+  const row = db
+    .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'revisions'")
+    .get() as {
+    sql: string;
+  };
+  const match = row.sql.match(/artifact_type TEXT NOT NULL CHECK\(artifact_type IN \(([^)]+)\)\)/);
+  if (match?.[1] === undefined) throw new Error("revisions artifact_type CHECK is missing");
+  return match[1].split(",").map((value) => value.trim().slice(1, -1));
 }
 
 afterEach(() => {
@@ -53,6 +110,135 @@ describe("artifact store", () => {
       db.query("SELECT version, applied_at FROM schema_migrations ORDER BY version").all(),
     ).toEqual(first);
     expect(db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all()).toHaveLength(6);
+  });
+
+  test("artifact type check matches the canonical implemented type array", () => {
+    const fresh = openDatabase({ databasePath: ":memory:" });
+    databases.push(fresh);
+    runMigrations(fresh);
+
+    const { db: v5 } = makeV5Store();
+    runMigrations(v5);
+
+    expect(artifactTypeCheckValues(fresh)).toEqual([...ARTIFACT_TYPES]);
+    expect(artifactTypeCheckValues(v5)).toEqual([...ARTIFACT_TYPES]);
+  });
+
+  test("migrates v5 revisions without breaking render and template relationships", () => {
+    const { db, repository, artifact } = makeV5Store();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new TextEncoder().encode("# v5"),
+    });
+    const renderRun = repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 0,
+      status: "ok",
+      expected: { nodes: 0 },
+      observed: { nodes: 0 },
+    });
+    const template = repository.promoteRevision({
+      revisionId: revision.id,
+      name: `v5-template-${crypto.randomUUID()}`,
+      promotedBy: "test",
+    });
+    const before = tableCounts(db);
+
+    runMigrations(db);
+
+    expect(tableCounts(db)).toEqual(before);
+    expect(db.query("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
+      { version: 1 },
+      { version: 2 },
+      { version: 3 },
+      { version: 4 },
+      { version: 5 },
+      { version: 6 },
+    ]);
+    expect(
+      db
+        .query(
+          "SELECT render_runs.revision_id AS render_revision_id, templates.revision_id AS template_revision_id FROM render_runs JOIN templates",
+        )
+        .get(),
+    ).toEqual({
+      render_revision_id: renderRun.revisionId,
+      template_revision_id: template.revisionId,
+    });
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+
+    const uniqueColumns = (
+      db.query("PRAGMA index_list('revisions')").all() as Array<{
+        name: string;
+        unique: number;
+        origin: string;
+      }>
+    )
+      .filter((index) => index.unique === 1 && index.origin === "u")
+      .map((index) =>
+        (db.query(`PRAGMA index_info('${index.name}')`).all() as Array<{ name: string }>).map(
+          (column) => column.name,
+        ),
+      )
+      .toSorted((left, right) => left.join(",").localeCompare(right.join(",")));
+    expect(uniqueColumns).toEqual([
+      ["artifact_id", "revision_number"],
+      ["artifact_id", "sha256"],
+    ]);
+
+    const html = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "html",
+      source: new TextEncoder().encode("<main>HTML</main>"),
+    });
+    expect(html.artifactType).toBe("html");
+    expect(tableCounts(db)).toEqual({ revisions: 2, render_runs: 1, templates: 1 });
+  });
+
+  test("rolls back the v6 rebuild when interrupted before recording its schema version", () => {
+    const { db, repository, artifact } = makeV5Store();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new TextEncoder().encode("# v5"),
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 0,
+      status: "ok",
+      expected: { nodes: 0 },
+      observed: { nodes: 0 },
+    });
+    repository.promoteRevision({
+      revisionId: revision.id,
+      name: `v5-interrupted-${crypto.randomUUID()}`,
+      promotedBy: "test",
+    });
+    const before = tableCounts(db);
+
+    expect(() =>
+      runMigrations(db, {
+        beforeRecordVersion: (version) => {
+          if (version === 6) throw new Error("simulated v6 interruption");
+        },
+      }),
+    ).toThrow("simulated v6 interruption");
+
+    expect(tableCounts(db)).toEqual(before);
+    expect(db.query("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
+      { version: 1 },
+      { version: 2 },
+      { version: 3 },
+      { version: 4 },
+      { version: 5 },
+    ]);
+    expect(artifactTypeCheckValues(db)).toEqual(["markdown", "mermaid", "svg", "chart"]);
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+
+    runMigrations(db);
+    expect(artifactTypeCheckValues(db)).toEqual([...ARTIFACT_TYPES]);
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
   });
 
   test("round-trips exact bytes and sha256 lookup", () => {

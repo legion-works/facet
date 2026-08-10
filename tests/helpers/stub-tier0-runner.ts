@@ -13,6 +13,29 @@
 import type { Tier0Input, Tier0Result } from "../../src/shared/contracts/validation";
 
 export const stubTier0Runner = async (input: Tier0Input): Promise<Tier0Result> => {
+  if (input.artifactType === "html") {
+    return {
+      tier: 0,
+      status: "error",
+      artifactId: "",
+      revisionSha: input.revisionSha,
+      expected: input.lexical,
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+        errorCount: 1,
+        discriminativeErrors: [
+          {
+            code: "html_parser_not_implemented",
+            message: "HTML Tier 0 parsing is not implemented in this build",
+          },
+        ],
+      },
+    };
+  }
   return {
     tier: 0,
     status: "ok",

@@ -58,18 +58,10 @@ describe("implemented 'export' command verb", () => {
   });
 });
 
-describe("reserved 'html' artifact type", () => {
-  test("checkArtifactTypeSupported('html') returns unsupported_reserved_type", () => {
-    const error = checkArtifactTypeSupported("html");
-    expect(error).not.toBeNull();
-    expect(error?.code).toBe("unsupported_reserved_type");
-    expect(error?.retryable).toBe(false);
-  });
-
-  test("checkArtifactTypeSupported accepts every implemented type", () => {
-    expect(checkArtifactTypeSupported("markdown")).toBeNull();
-    expect(checkArtifactTypeSupported("mermaid")).toBeNull();
-    expect(checkArtifactTypeSupported("svg")).toBeNull();
-    expect(checkArtifactTypeSupported("chart")).toBeNull();
+describe("implemented 'html' artifact type", () => {
+  test("checkArtifactTypeSupported accepts html and every implemented type", () => {
+    for (const type of ["markdown", "mermaid", "svg", "chart", "html"]) {
+      expect(checkArtifactTypeSupported(type)).toBeNull();
+    }
   });
 });

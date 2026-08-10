@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { RESERVED_ARTIFACT_TYPE } from "../artifact";
 import type { Renderer } from "../renderers";
 import { FacetError } from "../../errors/facet-error";
 
@@ -37,18 +36,11 @@ export function checkCommandImplemented(name: CommandName): FacetError | null {
 }
 
 /**
- * Returns `unsupported_reserved_type` for the reserved `html` artifact
- * type and `null` for every implemented type. The publish dispatcher
- * calls this before passing the bytes into the store.
+ * Future reserved artifact types return `unsupported_reserved_type`; every
+ * known type currently returns `null`. The publish dispatcher calls this
+ * before passing bytes into the store.
  */
-export function checkArtifactTypeSupported(type: string): FacetError | null {
-  if (type === RESERVED_ARTIFACT_TYPE) {
-    return new FacetError(
-      "unsupported_reserved_type",
-      `Artifact type '${type}' is reserved and not supported in this build`,
-      { retryable: false, details: { artifactType: type } },
-    );
-  }
+export function checkArtifactTypeSupported(_type: string): FacetError | null {
   return null;
 }
 
