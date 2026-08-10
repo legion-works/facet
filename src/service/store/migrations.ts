@@ -6,6 +6,7 @@ import {
   V2_SCHEMA_FRAGMENT,
   V3_SCHEMA_FRAGMENT,
   V4_SCHEMA_FRAGMENT,
+  V5_SCHEMA_FRAGMENT,
 } from "./schema";
 
 export interface MigrationOptions {
@@ -44,6 +45,12 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
     version: 4,
     apply: (db) => {
       db.exec(V4_SCHEMA_FRAGMENT);
+    },
+  },
+  {
+    version: 5,
+    apply: (db) => {
+      db.exec(V5_SCHEMA_FRAGMENT);
     },
   },
 ];

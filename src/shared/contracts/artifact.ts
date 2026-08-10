@@ -60,6 +60,7 @@ export const RenderRunSchema = z.object({
   screenshotPath: z.string().nullable(),
   consolePath: z.string().nullable(),
   screenshotErrorJson: z.string().nullable(),
+  insecureJson: z.string().nullable(),
   /**
    * Retained-evidence carve-out: `true` exempts the row from the
    * last-N retention eviction. Pin/template call sites mark rows

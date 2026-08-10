@@ -279,10 +279,7 @@ export async function runTier0(input: Tier0Input): Promise<Tier0WorkerResult> {
   return runOnce(input, { timeoutMs: TIER0_TIMEOUT_MS, outputCap: TIER0_OUTPUT_CAP_BYTES }, 0);
 }
 
-/**
- * Task 2 threads the immutable level without changing isolation. Task 3 is
- * the only place where runner behavior may vary by level.
- */
+/** Create a Tier 0 runner using the requested isolation level. */
 export function createTier0Runner(
   level: InsecureLevel,
 ): (input: Tier0Input) => Promise<Tier0WorkerResult> {

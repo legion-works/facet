@@ -50,6 +50,11 @@ interface TestEnv {
   baseUrl: string;
   installToken: string;
   evidenceDir: string;
+  envDir: string;
+  dbPath: string;
+  installTokenPath: string;
+  promoteTokenPath: string;
+  lockPath: string;
   cleanup: () => Promise<void>;
 }
 
@@ -63,24 +68,31 @@ afterEach(() => {
   rmSync(scratchRoot, { recursive: true, force: true });
 });
 
-async function startEnv(opts: { tier1Runner?: Tier1Runner } = {}): Promise<TestEnv> {
-  const envDir = join(scratchRoot, crypto.randomUUID());
+async function startEnv(
+  opts: { tier1Runner?: Tier1Runner; insecureLevel?: 0 | 1 | 2 | 3; envDir?: string } = {},
+): Promise<TestEnv> {
+  const envDir = opts.envDir ?? join(scratchRoot, crypto.randomUUID());
   mkdirSync(envDir, { recursive: true });
   const evidenceDir = join(envDir, "evidence");
   mkdirSync(evidenceDir, { recursive: true });
+  const dbPath = join(envDir, "facet.sqlite");
+  const installTokenPath = join(envDir, "install.token");
+  const promoteTokenPath = join(envDir, "promote.token");
+  const lockPath = join(envDir, "facet.lock");
   // The service resolves its own evidence root from env; we use a
   // dedicated FACET_HOME so paths inside it match the test's evidenceDir.
   const previousFacetHome = process.env.FACET_HOME;
   process.env.FACET_HOME = envDir;
   try {
     const service = await startFacetService({
-      dbPath: join(envDir, "facet.sqlite"),
-      installTokenPath: join(envDir, "install.token"),
-      promoteTokenPath: join(envDir, "promote.token"),
-      lockPath: join(envDir, "facet.lock"),
+      dbPath,
+      installTokenPath,
+      promoteTokenPath,
+      lockPath,
       idleTimeoutMs: 5_000,
       logger: createQuietLogger({ component: "read-back-test" }),
       tier0Runner: stubTier0Runner,
+      ...(opts.insecureLevel !== undefined ? { insecureLevel: opts.insecureLevel } : {}),
       ...(opts.tier1Runner !== undefined ? { tier1Runner: opts.tier1Runner } : {}),
     });
     return {
@@ -88,6 +100,11 @@ async function startEnv(opts: { tier1Runner?: Tier1Runner } = {}): Promise<TestE
       baseUrl: service.url,
       installToken: service.installToken,
       evidenceDir: join(envDir, "evidence"),
+      envDir,
+      dbPath,
+      installTokenPath,
+      promoteTokenPath,
+      lockPath,
       cleanup: async () => {
         await service.stop();
       },
@@ -248,6 +265,57 @@ function writeFileSyncCompat(path: string, content: string): void {
 }
 
 describe("read-back revision binding", () => {
+  test("restart preserves insecure markers and does not synthesize them from current mode", async () => {
+    const levelOne = await startEnv({ insecureLevel: 1 });
+    const levelThree = await startEnv({ insecureLevel: 3 });
+    try {
+      const levelOneArtifact = await createArtifact(levelOne, "restart-level-one");
+      const levelThreeArtifact = await createArtifact(levelThree, "restart-level-three");
+      const levelOneRevision = await publishMarkdown(levelOne, levelOneArtifact, "level one");
+      const levelThreeRevision = await publishMarkdown(
+        levelThree,
+        levelThreeArtifact,
+        "level three",
+      );
+
+      await levelOne.service.stop();
+      await levelThree.service.stop();
+      const restartedOne = await startEnv({ envDir: levelOne.envDir, insecureLevel: 0 });
+      const restartedThree = await startEnv({ envDir: levelThree.envDir, insecureLevel: 0 });
+      try {
+        const levelOneRead = await envelopeOk(restartedOne, {
+          command: "readBack",
+          artifactId: levelOneArtifact,
+          revisionSha: levelOneRevision.revisionSha,
+          tier: 0,
+        });
+        const levelThreeRead = await envelopeOk(restartedThree, {
+          command: "readBack",
+          artifactId: levelThreeArtifact,
+          revisionSha: levelThreeRevision.revisionSha,
+          tier: 0,
+        });
+        if (levelOneRead.command !== "readBack" || levelThreeRead.command !== "readBack") {
+          throw new Error("expected readBack results");
+        }
+        expect(levelOneRead.verdict.insecure).toEqual({
+          level: 1,
+          reason: "manual insecure level 1",
+        });
+        expect(levelThreeRead.verdict.insecure).toEqual({
+          level: 3,
+          reason: "manual insecure level 3",
+        });
+      } finally {
+        await restartedOne.cleanup();
+        await restartedThree.cleanup();
+      }
+    } finally {
+      await levelOne.cleanup();
+      await levelThree.cleanup();
+    }
+  });
+
   test("CLI read-back preserves discriminative errors from the observed verdict", async () => {
     const revisionSha = "a".repeat(64);
     const client = new FacetClient({

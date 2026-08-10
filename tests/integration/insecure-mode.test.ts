@@ -159,6 +159,22 @@ describe("insecure dispatcher semantics", () => {
     },
   );
 
+  test.each([1, 2] as const)("level %d preserves markers when runners throw", async (level) => {
+    const env = await startEnv(level, {
+      tier0: async () => {
+        throw new Error("tier0 runner failed");
+      },
+      tier1: async () => {
+        throw new Error("tier1 runner failed");
+      },
+      calls: { tier0: 0, tier1: 0 },
+    });
+    const result = await publish(env);
+
+    expect(result.verdict).toMatchObject({ insecure: { level } });
+    expect(result.tier1Verdict).toMatchObject({ insecure: { level } });
+  });
+
   test("level 3 skips both runners and records a zero-valued unvalidated verdict", async () => {
     const configured = runners({ tier0: "error", tier1: "tampered" });
     const env = await startEnv(3, configured);
@@ -192,6 +208,7 @@ describe("insecure dispatcher semantics", () => {
     if (readBack.command !== "readBack") throw new Error("expected read-back result");
     expect(readBack.verdict.status).toBe("insecure:unvalidated");
     expect(readBack.verdict.observed).toEqual(verdict.observed);
+    expect(readBack.verdict.insecure).toEqual(verdict.insecure);
   });
 
   test.each([undefined, 0] as const)(

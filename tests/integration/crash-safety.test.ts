@@ -4,7 +4,12 @@ import { chmodSync, existsSync, readFileSync, statSync, unlinkSync, writeFileSyn
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
 import { ArtifactRepository } from "../../src/service/store/repository";
-import { INITIAL_SCHEMA, V2_SCHEMA_FRAGMENT } from "../../src/service/store/schema";
+import {
+  INITIAL_SCHEMA,
+  V2_SCHEMA_FRAGMENT,
+  V3_SCHEMA_FRAGMENT,
+  V4_SCHEMA_FRAGMENT,
+} from "../../src/service/store/schema";
 
 const databasePaths: string[] = [];
 const connections: Array<{ close: () => void }> = [];
@@ -163,6 +168,7 @@ test("interrupted migration rolls back its version and recovers on retry", () =>
     { version: 2 },
     { version: 3 },
     { version: 4 },
+    { version: 5 },
   ]);
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'projects'").get()).toEqual({
     name: "projects",
@@ -210,6 +216,7 @@ test("upgrades a populated v2 database with renderer and screenshot-error column
     { version: 2 },
     { version: 3 },
     { version: 4 },
+    { version: 5 },
   ]);
   expect(db.query("SELECT renderer FROM revisions WHERE id = ?").get("revision-v2")).toEqual({
     renderer: "svg",
@@ -220,4 +227,81 @@ test("upgrades a populated v2 database with renderer and screenshot-error column
       (column) => column.name === "screenshot_error_json",
     ),
   ).toBe(true);
+});
+
+test("upgrades a populated v4 database and preserves render-run bytes without insecure markers", () => {
+  const databasePath = pathFor("migration-v4-upgrade");
+  const db = openDatabase({ databasePath });
+  connections.push(db);
+  db.exec(INITIAL_SCHEMA);
+  db.exec(V2_SCHEMA_FRAGMENT);
+  db.exec(V3_SCHEMA_FRAGMENT);
+  db.exec(V4_SCHEMA_FRAGMENT);
+  db.exec("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
+  const timestamp = new Date().toISOString();
+  db.query(
+    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?), (?, ?), (?, ?), (?, ?)",
+  ).run(1, timestamp, 2, timestamp, 3, timestamp, 4, timestamp);
+  db.query("INSERT INTO projects(id, project_root, created_at) VALUES (?, ?, ?)").run(
+    "project-v4",
+    "/tmp/facet-v4-upgrade",
+    timestamp,
+  );
+  db.query(
+    "INSERT INTO artifacts(id, project_id, slug, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run("artifact-v4", "project-v4", "v4", "V4", timestamp, timestamp);
+  db.query(
+    "INSERT INTO revisions(id, artifact_id, revision_number, artifact_type, source, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    "revision-v4",
+    "artifact-v4",
+    1,
+    "markdown",
+    new Uint8Array([9, 8, 7]),
+    "b".repeat(64),
+    timestamp,
+  );
+  const expectedJson = JSON.stringify({ rendererRootSvgCount: 1 });
+  const observedJson = JSON.stringify({ rendererRootSvgCount: 1, errorCount: 0 });
+  db.query(
+    "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    "run-v4",
+    "revision-v4",
+    0,
+    "ok",
+    expectedJson,
+    observedJson,
+    null,
+    null,
+    JSON.stringify({ code: "capture_failed", message: "old screenshot error" }),
+    0,
+    timestamp,
+    timestamp,
+  );
+
+  runMigrations(db);
+
+  expect(db.query("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
+    { version: 1 },
+    { version: 2 },
+    { version: 3 },
+    { version: 4 },
+    { version: 5 },
+  ]);
+  expect(
+    db
+      .query(
+        "SELECT expected_json, observed_json, screenshot_error_json, insecure_json FROM render_runs WHERE id = ?",
+      )
+      .get("run-v4"),
+  ).toEqual({
+    expected_json: expectedJson,
+    observed_json: observedJson,
+    screenshot_error_json: JSON.stringify({
+      code: "capture_failed",
+      message: "old screenshot error",
+    }),
+    insecure_json: null,
+  });
 });

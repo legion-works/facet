@@ -77,3 +77,8 @@ ALTER TABLE revisions ADD COLUMN renderer TEXT NOT NULL DEFAULT 'svg' CHECK(rend
 export const V4_SCHEMA_FRAGMENT = `
 ALTER TABLE render_runs ADD COLUMN screenshot_error_json TEXT;
 `;
+
+/** The v5 fragment persists the insecure execution marker with each run. */
+export const V5_SCHEMA_FRAGMENT = `
+ALTER TABLE render_runs ADD COLUMN insecure_json TEXT;
+`;

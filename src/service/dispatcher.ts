@@ -29,7 +29,6 @@ import {
   VerdictObservedSchema,
   VerdictSchema,
   type Tier0Input,
-  type Tier0Result,
   type Tier0WorkerResult,
   type Tier0Runner,
   type Tier1Input,
@@ -42,6 +41,7 @@ import {
 import { FacetError } from "../shared/errors/facet-error";
 import { SOURCE_CAP_BYTES, TIER1_PINNED_VERSION } from "../shared/config/limits";
 import { computeLexicalExpectations } from "./lexical/expectations";
+import { enrichVerdict, insecureMarker } from "./verdict-enrichment";
 
 import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
@@ -100,16 +100,6 @@ function mapArtifact(a: Artifact): ArtifactEnvelope {
     title: a.title,
     createdAt: a.createdAt,
     updatedAt: a.updatedAt,
-  };
-}
-
-function insecureMarker(
-  deps: Pick<DispatcherDeps, "insecureLevel" | "insecureReason">,
-): InsecureMarker | undefined {
-  if (deps.insecureLevel === 0) return undefined;
-  return {
-    level: deps.insecureLevel,
-    reason: deps.insecureReason ?? `manual insecure level ${deps.insecureLevel}`,
   };
 }
 
@@ -173,20 +163,6 @@ async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tie
  * runs out of process and only needs the sha); we fill it in here so
  * every Tier 0 verdict carries the canonical binding.
  */
-function enrichVerdict(
-  result: Tier0WorkerResult,
-  artifactId: string,
-  revisionSha: string,
-  insecure?: InsecureMarker,
-): Tier0Result {
-  return Tier0ResultSchema.parse({
-    ...result,
-    ...(insecure !== undefined ? { insecure } : {}),
-    artifactId,
-    revisionSha,
-  });
-}
-
 /**
  * Map a Tier 1 runner failure into a synthetic Tier1Result with
  * `status: "error"`. The publish path ALWAYS records a tier 1 run
@@ -223,20 +199,6 @@ async function runTier1Safe(
       consolePath: null,
     });
   }
-}
-
-function enrichTier1Verdict(
-  result: Tier1Result,
-  artifactId: string,
-  revisionSha: string,
-  insecure?: InsecureMarker,
-): Tier1Result {
-  return Tier1ResultSchema.parse({
-    ...result,
-    ...(insecure !== undefined ? { insecure } : {}),
-    artifactId,
-    revisionSha,
-  });
 }
 
 export async function dispatch(
@@ -308,7 +270,7 @@ export async function dispatch(
           opaqueRegionCount: lexical.expectedOpaqueRegions,
         },
       });
-      const insecure = insecureMarker(deps);
+      const insecure = insecureMarker(deps.insecureLevel, deps.insecureReason);
       if (deps.insecureLevel === 3) {
         const verdict = buildVerdict({
           artifactId: command.artifactId,
@@ -331,6 +293,7 @@ export async function dispatch(
           status: verdict.status,
           expected: tier0Input.lexical,
           observed: verdict.observed,
+          ...(insecure !== undefined ? { insecure } : {}),
         });
         deps.onPublished?.(
           RevisionCommittedEventSchema.parse({
@@ -354,13 +317,16 @@ export async function dispatch(
       const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input);
       // 3. Bind the verdict to (artifactId, revisionSha) via the
       // canonical render_run row so read-back returns it later.
-      const enriched = enrichVerdict(tier0Result, command.artifactId, revision.sha256, insecure);
+      const enriched = Tier0ResultSchema.parse(
+        enrichVerdict(tier0Result, command.artifactId, revision.sha256, insecure),
+      );
       deps.repository.recordRenderRun({
         revisionId: revision.id,
         tier: 0,
         status: enriched.status,
         expected: enriched.expected,
         observed: enriched.observed,
+        ...(enriched.insecure !== undefined ? { insecure: enriched.insecure } : {}),
       });
       // 4. Tier 1 (optional). When configured, run the headless-shell
       // verifier over the SAME bytes and record a separate render_run.
@@ -376,11 +342,8 @@ export async function dispatch(
         });
         const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input, command.artifactId);
         traceTier1Transport(`publish:tier1-return status=${tier1Result.status}`);
-        const enrichedTier1 = enrichTier1Verdict(
-          tier1Result,
-          command.artifactId,
-          revision.sha256,
-          insecure,
+        const enrichedTier1 = Tier1ResultSchema.parse(
+          enrichVerdict(tier1Result, command.artifactId, revision.sha256, insecure),
         );
         traceTier1Transport("publish:tier1-record:start");
         deps.repository.recordRenderRun({
@@ -396,6 +359,7 @@ export async function dispatch(
           ...(enrichedTier1.screenshotError !== undefined
             ? { screenshotError: enrichedTier1.screenshotError }
             : {}),
+          ...(enrichedTier1.insecure !== undefined ? { insecure: enrichedTier1.insecure } : {}),
         });
         traceTier1Transport("publish:tier1-record:complete");
         tier1Verdict = enrichedTier1;
@@ -455,18 +419,23 @@ export async function dispatch(
         });
       }
       const observedJson = JSON.parse(runs[0]!.observedJson);
-      const insecure = insecureMarker(deps);
-      const verdict = buildVerdict({
-        artifactId: command.artifactId,
-        revisionSha: command.revisionSha,
-        tier,
-        status: runs[0]!.status,
-        observed: observedJson,
-        ...(insecure !== undefined ? { insecure } : {}),
-        ...(runs[0]!.screenshotErrorJson !== null
-          ? { screenshotError: JSON.parse(runs[0]!.screenshotErrorJson) }
-          : {}),
-      });
+      const verdict = enrichVerdict(
+        buildVerdict({
+          artifactId: command.artifactId,
+          revisionSha: command.revisionSha,
+          tier,
+          status: runs[0]!.status,
+          observed: observedJson,
+          ...(runs[0]!.insecureJson !== null
+            ? { insecure: JSON.parse(runs[0]!.insecureJson) }
+            : {}),
+          ...(runs[0]!.screenshotErrorJson !== null
+            ? { screenshotError: JSON.parse(runs[0]!.screenshotErrorJson) }
+            : {}),
+        }),
+        command.artifactId,
+        command.revisionSha,
+      );
       traceTier1Transport(`readback:build-complete status=${verdict.status}`);
       return { command: "readBack", requestId, renderer: revision.renderer, verdict };
     }
