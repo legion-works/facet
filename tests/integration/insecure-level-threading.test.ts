@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ensureService } from "../../src/cli/spawn-service";
+import { startFacetService } from "../../src/service/server";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const scratch = join(tmpdir(), `facet-insecure-threading-${crypto.randomUUID()}`);
 const children: Bun.Subprocess[] = [];
@@ -29,6 +32,18 @@ export const run${kind} = async () => ({ status: "ok", tier: ${kind === "Tier0" 
   writeFileSync(runner, source("Tier0"));
   writeFileSync(tier1, source("Tier1"));
   return { home, records, runner, tier1 };
+}
+
+function normalizeReadyStream(stderr: string): string {
+  return stderr
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      for (const key of ["timestamp", "pid", "port", "url"]) delete parsed[key];
+      return JSON.stringify(parsed);
+    })
+    .join("\n");
 }
 
 async function boot(fixture: ReturnType<typeof makeFixture>, level?: string) {
@@ -75,12 +90,13 @@ describe("insecure level boot threading", () => {
     if (explicitResult.code !== 0) throw new Error(explicitResult.stderr);
     expect(absentResult.code).toBe(0);
     expect(explicitResult.code).toBe(0);
-    expect(absentResult.stderr.replace(/timestamp[^,]+,/, "timestamp:<volatile>,")).toContain(
-      '"event":"service.ready"',
-    );
+    const normalisedAbsent = normalizeReadyStream(absentResult.stderr);
+    const normalisedExplicit = normalizeReadyStream(explicitResult.stderr);
+    expect(normalisedAbsent).toBe(normalisedExplicit);
+    expect(normalisedAbsent).toContain('"event":"service.ready"');
+    expect(absentResult.stderr).not.toContain("insecure");
     expect(explicitResult.stderr).not.toContain("insecure");
-    expect(readFileSync(absent.records, "utf8")).toContain('"level":0');
-    expect(readFileSync(explicit.records, "utf8")).toContain('"level":0');
+    expect(readFileSync(absent.records, "utf8")).toBe(readFileSync(explicit.records, "utf8"));
   });
 
   test.each(["1", "2", "3"])("passes level %s to both runner factories", async (level) => {
@@ -101,6 +117,88 @@ describe("insecure level boot threading", () => {
       expect(result.code).not.toBe(0);
       expect(result.stderr).toContain("FACET_INSECURE");
       expect(result.stderr).not.toContain('"event":"service.ready"');
+      expect(existsSync(join(fixture.home, "facet.lock"))).toBe(false);
     },
   );
+
+  test("secure CLI spawn argv excludes Tier 1 runner path", async () => {
+    const fixture = makeFixture();
+    const argv: readonly string[] | undefined = await (async () => {
+      let captured: readonly string[] | undefined;
+      await ensureService(
+        {
+          env: { ...process.env, FACET_HOME: fixture.home, FACET_INSECURE: "0" },
+          tier0RunnerPath: fixture.runner,
+          tier1RunnerPath: fixture.tier1,
+          idleTimeoutMs: 100,
+          readyTimeoutMs: 5_000,
+        },
+        {
+          onServiceSpawn: (args) => {
+            captured = args;
+          },
+        },
+      );
+      return captured;
+    })();
+    expect(argv).toBeDefined();
+    expect(argv).toContain("--tier0-runner-path");
+    expect(argv).not.toContain("--tier1-runner-path");
+  });
+
+  test("level 0 remains secure if FACET_INSECURE changes before publish", async () => {
+    const home = join(scratch, "direct-service");
+    mkdirSync(home, { recursive: true });
+    const old = process.env.FACET_INSECURE;
+    const service = await startFacetService({
+      dbPath: join(home, "facet.sqlite"),
+      installTokenPath: join(home, "install.token"),
+      promoteTokenPath: join(home, "promote.token"),
+      lockPath: join(home, "facet.lock"),
+      idleTimeoutMs: 500,
+      insecureLevel: 0,
+      tier0Runner: stubTier0Runner,
+    });
+    try {
+      process.env.FACET_INSECURE = "3";
+      const headers = {
+        "content-type": "application/json",
+        authorization: `Bearer ${service.installToken}`,
+        host: `127.0.0.1:${service.port}`,
+      };
+      const create = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          schemaVersion: "facet.v1",
+          requestId: "r-c",
+          ok: true,
+          data: { requestId: "r-c", command: "create", projectId: "p", slug: "s", title: "S" },
+        }),
+      });
+      const created = (await create.json()) as { data: { artifact: { id: string } } };
+      const publish = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          schemaVersion: "facet.v1",
+          requestId: "r-p",
+          ok: true,
+          data: {
+            requestId: "r-p",
+            command: "publish",
+            artifactId: created.data.artifact.id,
+            artifactType: "markdown",
+            bytes: "aGk=",
+          },
+        }),
+      });
+      const envelope = (await publish.json()) as Record<string, unknown>;
+      expect(JSON.stringify(envelope)).not.toContain("insecure");
+    } finally {
+      if (old === undefined) delete process.env.FACET_INSECURE;
+      else process.env.FACET_INSECURE = old;
+      await service.stop();
+    }
+  });
 });

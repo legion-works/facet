@@ -173,6 +173,8 @@ async function main(): Promise<void> {
 
   try {
     const insecureLevel = parseInsecureLevel(insecureRaw);
+    // Task 7 will populate this from auto-mode detection; keep the boot
+    // contract stable while the current explicit levels have no reason.
     const insecureReason = null;
     const tier0Factory = await loadRequiredTier0Runner(args.tier0RunnerPath);
     const configuredTier0Runner = tier0Factory(insecureLevel);

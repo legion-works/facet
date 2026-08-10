@@ -75,7 +75,7 @@ export interface SpawnServiceOptions {
  * (with bypass on, the same 20 callers produce 20 spawns).
  */
 export interface ServiceHooks {
-  readonly onServiceSpawn?: () => void;
+  readonly onServiceSpawn?: (argv?: readonly string[]) => void;
   readonly bypassInflight?: boolean;
 }
 
@@ -103,7 +103,11 @@ const inflight = new Map<string, Promise<ResolvedService>>();
  * the same paths on the command line so a future change to
  * `computeFacetPaths` cannot desync parent and child.
  */
-function spawnChild(paths: FacetRuntimePaths, options: SpawnServiceOptions): ChildProcess {
+function spawnChild(
+  paths: FacetRuntimePaths,
+  options: SpawnServiceOptions,
+  onSpawn?: (argv?: readonly string[]) => void,
+): ChildProcess {
   const bunPath = options.bunPath ?? process.execPath;
   const entrypoint = options.entrypoint ?? resolvePath(import.meta.dir, "..", "service", "main.ts");
   const facetHome = paths.database
@@ -139,6 +143,7 @@ function spawnChild(paths: FacetRuntimePaths, options: SpawnServiceOptions): Chi
   if (options.idleTimeoutMs !== undefined) {
     args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
   }
+  onSpawn?.(args);
   return spawn(bunPath, args, {
     env: childEnv,
     stdio: ["ignore", "ignore", "ignore"],
@@ -212,8 +217,7 @@ async function coldStart(
       baseUrl: `http://127.0.0.1:${precheck.port}`,
     };
   }
-  hooks.onServiceSpawn?.();
-  const child = spawnChild(paths, options);
+  const child = spawnChild(paths, options, hooks.onServiceSpawn);
   // Detach the child from the parent's lifecycle — when the CLI
   // exits, the service keeps running until its idle window closes.
   child.unref();
