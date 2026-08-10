@@ -81,15 +81,20 @@ describe("deriveVerdict — happy path", () => {
   test("insecure marker is attached outside deriveVerdict and does not alter observed errors", () => {
     const status = deriveVerdict(lex(), protocol(), protocol(), shim(), lifecycle());
     expect(status).toBe("ok");
+    const discriminativeError = { code: "probe_note", message: "protocol evidence retained" };
+    const insecure = { level: 1 as const, reason: "trust unavailable" };
     const verdict = VerdictSchema.parse({
       status,
       tier: 1,
       artifactId: "art-1",
       revisionSha: "a".repeat(64),
-      observed: { ...protocol(), discriminativeErrors: [] },
-      insecure: { level: 1, reason: "trust unavailable" },
+      observed: { ...protocol(), discriminativeErrors: [discriminativeError] },
+      insecure,
     });
-    expect(verdict.observed.discriminativeErrors).toEqual([]);
+    expect(verdict.insecure).toEqual(insecure);
+    expect(verdict.observed.discriminativeErrors).toEqual([discriminativeError]);
+    expect((verdict.observed as Record<string, unknown>).insecure).toBeUndefined();
+    expect(Object.keys(verdict.observed)).not.toContain("insecure");
   });
 });
 
