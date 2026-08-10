@@ -251,6 +251,28 @@ describe("gallery shell startup", () => {
     expect(badge.querySelector<FakeElement>(".tier")?.textContent).toBe("· INSECURE L3 · T0");
   });
 
+  test("composes opaque detail before the insecure marker and tier", async () => {
+    const harness = createRuntime(undefined, {
+      status: "partial:opaque_content",
+      tier: 1,
+      revisionSha: "a".repeat(64),
+      artifactId: "artifact-1",
+      insecure: { level: 2, reason: "manual insecure level 2" },
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 1,
+        errorCount: 0,
+      },
+    });
+    await startGallery(harness.runtime);
+    expect(
+      harness.elements.get("facet-verdict")?.querySelector<FakeElement>(".tier")?.textContent,
+    ).toBe("· opaque · INSECURE L2 · T1");
+  });
+
   test("boots one frame, renders source, binds controls, and releases its lease", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);

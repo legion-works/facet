@@ -75,7 +75,7 @@ export interface SpawnServiceOptions {
  * (with bypass on, the same 20 callers produce 20 spawns).
  */
 export interface ServiceHooks {
-  readonly onServiceSpawn?: (argv?: readonly string[]) => void;
+  readonly onServiceSpawn?: (argv?: readonly string[], stderr?: "ignore" | "inherit") => void;
   readonly bypassInflight?: boolean;
 }
 
@@ -106,7 +106,7 @@ const inflight = new Map<string, Promise<ResolvedService>>();
 function spawnChild(
   paths: FacetRuntimePaths,
   options: SpawnServiceOptions,
-  onSpawn?: (argv?: readonly string[]) => void,
+  onSpawn?: (argv?: readonly string[], stderr?: "ignore" | "inherit") => void,
 ): ChildProcess {
   const bunPath = options.bunPath ?? process.execPath;
   const entrypoint = options.entrypoint ?? resolvePath(import.meta.dir, "..", "service", "main.ts");
@@ -143,10 +143,11 @@ function spawnChild(
   if (options.idleTimeoutMs !== undefined) {
     args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
   }
-  onSpawn?.(args);
+  const stderr = ["1", "2", "3"].includes(options.env.FACET_INSECURE ?? "") ? "inherit" : "ignore";
+  onSpawn?.(args, stderr);
   return spawn(bunPath, args, {
     env: childEnv,
-    stdio: ["ignore", "ignore", "inherit"],
+    stdio: ["ignore", "ignore", stderr],
     detached: true,
   });
 }

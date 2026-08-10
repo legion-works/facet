@@ -178,6 +178,7 @@ describe("insecure level boot threading", () => {
 
   test("secure CLI spawn argv excludes Tier 1 runner path", async () => {
     const fixture = makeFixture();
+    let stderrMode: "ignore" | "inherit" | undefined;
     const argv: readonly string[] | undefined = await (async () => {
       let captured: readonly string[] | undefined;
       await ensureService(
@@ -189,8 +190,9 @@ describe("insecure level boot threading", () => {
           readyTimeoutMs: 5_000,
         },
         {
-          onServiceSpawn: (args) => {
+          onServiceSpawn: (args, stderr) => {
             captured = args;
+            stderrMode = stderr;
           },
         },
       );
@@ -199,6 +201,27 @@ describe("insecure level boot threading", () => {
     expect(argv).toBeDefined();
     expect(argv).toContain("--tier0-runner-path");
     expect(argv).not.toContain("--tier1-runner-path");
+    expect(stderrMode).toBe("ignore");
+  });
+
+  test("insecure CLI spawn inherits stderr so the boot warning reaches the operator", async () => {
+    const fixture = makeFixture();
+    let stderrMode: "ignore" | "inherit" | undefined;
+    await ensureService(
+      {
+        env: { ...process.env, FACET_HOME: fixture.home, FACET_INSECURE: "1" },
+        tier0RunnerPath: fixture.runner,
+        tier1RunnerPath: fixture.tier1,
+        idleTimeoutMs: 100,
+        readyTimeoutMs: 5_000,
+      },
+      {
+        onServiceSpawn: (_args, stderr) => {
+          stderrMode = stderr;
+        },
+      },
+    );
+    expect(stderrMode).toBe("inherit");
   });
 
   test("level 0 remains secure if FACET_INSECURE changes before publish", async () => {
