@@ -143,9 +143,16 @@ describe("command round-trips", () => {
         command: "export",
         requestId: "req-0001",
         accepted: false,
-        reason: "export is reserved",
+        reason: "legacy export refusal",
       }).success,
     ).toBe(false);
+  });
+
+  test("export result rejects malformed base64 bytes", () => {
+    const sample = validExportResult();
+    for (const bytes of ["AAA", "AA$=", "A===", "AA=A"]) {
+      expect(ExportResultSchema.safeParse({ ...sample, bytes }).success).toBe(false);
+    }
   });
 
   test("discriminated union of all requests round-trips for implemented verbs", () => {

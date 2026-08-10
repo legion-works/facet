@@ -313,6 +313,10 @@ describe("cli contract — surface", () => {
     expect(parseArgs(["export", "artifact-1", "--format", "invalid"]).kind).toBe("usage");
     expect(parseArgs(["export", "--format", "render"]).kind).toBe("usage");
     expect(parseArgs(["export", "artifact-1", "--no-sidecar"]).kind).toBe("usage");
+    expect(parseArgs(["list", "--format", "json"])).toMatchObject({
+      kind: "verb",
+      verb: "list",
+    });
     expect(parseArgs(["--version", "--format", "json"])).toEqual({
       kind: "version",
       format: "json",
@@ -704,8 +708,8 @@ describe("cli contract — wire", () => {
       );
       expect(exit.code).toBe(0);
       const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+      if (!envelope.ok) throw new Error(`render export failed: ${JSON.stringify(envelope.error)}`);
       expect(envelope.ok).toBe(true);
-      if (!envelope.ok) throw new Error("render export must succeed");
       const expectedPath = join(exportCwd, `seeded-render-${seeded.revisionSha.slice(0, 7)}.png`);
       const expectedSidecarPath = join(
         exportCwd,

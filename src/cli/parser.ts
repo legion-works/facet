@@ -149,13 +149,17 @@ function readFormat(argv: readonly string[]): "text" | "json" {
   return "text";
 }
 
-/** Strip only the meta-independent `--json` flag before verb parsing. */
-function withoutFormatFlags(argv: readonly string[]): string[] {
+/** Strip format metadata for non-export verbs; export owns its format flag. */
+function withoutFormatFlags(argv: readonly string[], stripVerbFormat: boolean): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === undefined) continue;
     if (arg === "--json") continue;
+    if (stripVerbFormat && arg === "--format") {
+      i += 1;
+      continue;
+    }
     out.push(arg);
   }
   return out;
@@ -168,7 +172,11 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
     firstRaw === "--help" || firstRaw === "-h" || firstRaw === "--version" || firstRaw === "-V";
   const format = isMeta ? readFormat(argv) : "text";
   const jsonFlag = argv.includes("--json");
-  const stripped = withoutFormatFlags(argv);
+  const firstCommand = typeof firstRaw === "string" ? VERB_TO_COMMAND[firstRaw] : undefined;
+  const stripped = withoutFormatFlags(
+    argv,
+    isMeta || (firstCommand !== undefined && firstCommand !== "export"),
+  );
 
   const first = stripped[0];
   if (first === "--help" || first === "-h") return { kind: "help", format };

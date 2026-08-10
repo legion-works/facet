@@ -75,6 +75,14 @@ function derivedSlug(result: ExportResult): string {
   );
 }
 
+function removeIfExists(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch {
+    // Best-effort cleanup must not replace the original write failure.
+  }
+}
+
 export function resolveExportPaths(
   result: ExportResult,
   outFlag: string | undefined,
@@ -88,7 +96,12 @@ export function resolveExportPaths(
   return { artifactPath, sidecarPath: sidecarPathForArtifact(artifactPath) };
 }
 
-export function writeExportFiles(result: ExportResult, paths: ExportPaths, force: boolean): void {
+export function writeExportFiles(
+  result: ExportResult,
+  paths: ExportPaths,
+  force: boolean,
+  renameFile: typeof renameSync = renameSync,
+): void {
   const artifactExistedBeforeWrite = existsSync(paths.artifactPath);
   const sidecarExistedBeforeWrite = existsSync(paths.sidecarPath);
   if (!force) {
@@ -121,6 +134,28 @@ export function writeExportFiles(result: ExportResult, paths: ExportPaths, force
     dirname(paths.sidecarPath),
     `.${basename(paths.sidecarPath)}.${randomUUID()}.tmp`,
   );
+  const artifactBackupPath = artifactExistedBeforeWrite
+    ? join(dirname(paths.artifactPath), `.${basename(paths.artifactPath)}.${randomUUID()}.bak`)
+    : null;
+  const sidecarBackupPath = sidecarExistedBeforeWrite
+    ? join(dirname(paths.sidecarPath), `.${basename(paths.sidecarPath)}.${randomUUID()}.bak`)
+    : null;
+  let artifactRenamed = false;
+  let sidecarRenamed = false;
+
+  const restoreTarget = (target: string, backup: string | null, wasRenamed: boolean): void => {
+    try {
+      if (backup !== null) {
+        if (existsSync(target)) removeIfExists(target);
+        if (existsSync(backup)) renameSync(backup, target);
+      } else if (wasRenamed) {
+        removeIfExists(target);
+      }
+    } catch {
+      // Best-effort rollback must not mask the original rename failure.
+    }
+  };
+
   try {
     writeFileSync(artifactTempPath, Buffer.from(result.bytes, "base64"), {
       flag: "wx",
@@ -131,8 +166,14 @@ export function writeExportFiles(result: ExportResult, paths: ExportPaths, force
       flag: "wx",
       mode: 0o600,
     });
-    renameSync(artifactTempPath, paths.artifactPath);
-    renameSync(sidecarTempPath, paths.sidecarPath);
+    if (artifactBackupPath !== null) renameFile(paths.artifactPath, artifactBackupPath);
+    if (sidecarBackupPath !== null) renameFile(paths.sidecarPath, sidecarBackupPath);
+    renameFile(artifactTempPath, paths.artifactPath);
+    artifactRenamed = true;
+    renameFile(sidecarTempPath, paths.sidecarPath);
+    sidecarRenamed = true;
+    if (artifactBackupPath !== null) removeIfExists(artifactBackupPath);
+    if (sidecarBackupPath !== null) removeIfExists(sidecarBackupPath);
   } catch (error) {
     for (const tempPath of [artifactTempPath, sidecarTempPath]) {
       try {
@@ -141,6 +182,8 @@ export function writeExportFiles(result: ExportResult, paths: ExportPaths, force
         // Preserve the write or rename failure as the useful error at the CLI boundary.
       }
     }
+    restoreTarget(paths.sidecarPath, sidecarBackupPath, sidecarRenamed);
+    restoreTarget(paths.artifactPath, artifactBackupPath, artifactRenamed);
     throw error;
   }
 }

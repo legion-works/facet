@@ -127,10 +127,33 @@ export const ExportSidecarSchema = z.object({
 });
 export type ExportSidecar = z.infer<typeof ExportSidecarSchema>;
 
+function isBase64(value: string): boolean {
+  if (value.length % 4 !== 0) return false;
+  let paddingStart = value.length;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    const isUpper = code >= 65 && code <= 90;
+    const isLower = code >= 97 && code <= 122;
+    const isDigit = code >= 48 && code <= 57;
+    if (isUpper || isLower || isDigit || code === 43 || code === 47) continue;
+    if (code === 61) {
+      paddingStart = index;
+      break;
+    }
+    return false;
+  }
+  const padding = value.length - paddingStart;
+  if (padding > 2) return false;
+  for (let index = paddingStart; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 61) return false;
+  }
+  return true;
+}
+
 export const ExportResultSchema = BaseResultSchema.extend({
   command: z.literal("export"),
   format: ExportFormatSchema,
-  bytes: z.string().regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  bytes: z.string().refine(isBase64, "Invalid base64"),
   sidecar: ExportSidecarSchema,
 });
 export type ExportResult = z.infer<typeof ExportResultSchema>;

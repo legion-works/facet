@@ -1,10 +1,9 @@
 import { z } from "zod";
 
 /**
- * Every command verb the protocol recognizes. `export` is reserved (it
- * parses cleanly here so the schema can describe the wire) but the
- * dispatcher must consult `checkCommandImplemented` and return
- * `reserved_not_implemented` before any handler logic runs.
+ * Every command verb the protocol recognizes. `RESERVED_COMMANDS` is empty
+ * today; the reserved mechanism remains so a future verb can be described
+ * by the wire schema before its handler is shipped.
  */
 export const CommandNameSchema = z.enum([
   "create",

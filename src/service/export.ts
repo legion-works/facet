@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, relative } from "node:path";
 
 import {
   ExportResultSchema,
@@ -34,6 +35,68 @@ export function buildExportSidecar(input: {
   });
 }
 
+function resolveExportTarget(
+  repository: ArtifactRepository,
+  command: ExportRequest,
+): { artifact: Artifact; revision: Revision } {
+  const artifact = repository.getArtifactById(command.artifactId);
+  if (artifact === null) {
+    throw new FacetError("artifact_not_found", "Artifact not found", {
+      retryable: false,
+      details: { artifactId: command.artifactId },
+    });
+  }
+
+  const revision =
+    command.revisionSha === undefined
+      ? repository.getLatestRevision(command.artifactId)
+      : repository.getRevisionBySha(command.artifactId, command.revisionSha);
+  if (revision === null) {
+    throw new FacetError("revision_not_found", "Revision not found", {
+      retryable: false,
+      details: {
+        artifactId: command.artifactId,
+        ...(command.revisionSha === undefined ? {} : { revisionSha: command.revisionSha }),
+      },
+    });
+  }
+  return { artifact, revision };
+}
+
+function evidenceUnavailable(artifact: Artifact, revision: Revision, cause?: unknown): FacetError {
+  return new FacetError("evidence_unavailable", "Screenshot evidence unavailable", {
+    retryable: false,
+    ...(cause === undefined ? {} : { cause }),
+    details: { artifactId: artifact.id, revisionSha: revision.sha256 },
+  });
+}
+
+function resolveEvidencePath(
+  repository: ArtifactRepository,
+  screenshotPath: string,
+  artifact: Artifact,
+  revision: Revision,
+): string {
+  const evidenceRoot = repository.getEvidenceRoot();
+  if (evidenceRoot === undefined) throw evidenceUnavailable(artifact, revision);
+  try {
+    const resolvedRoot = realpathSync(evidenceRoot);
+    const resolvedCandidate = realpathSync(screenshotPath);
+    const relativeCandidate = relative(resolvedRoot, resolvedCandidate);
+    if (
+      relativeCandidate.length === 0 ||
+      isAbsolute(relativeCandidate) ||
+      relativeCandidate === ".." ||
+      relativeCandidate.startsWith("../")
+    ) {
+      throw new Error("Screenshot evidence is outside the evidence root");
+    }
+    return resolvedCandidate;
+  } catch (cause) {
+    throw evidenceUnavailable(artifact, revision, cause);
+  }
+}
+
 export function exportStoredSource(input: {
   readonly repository: ArtifactRepository;
   readonly command: ExportRequest;
@@ -47,29 +110,7 @@ export function exportStoredSource(input: {
     });
   }
 
-  const artifact = input.repository.getArtifactById(input.command.artifactId);
-  if (artifact === null) {
-    throw new FacetError("artifact_not_found", "Artifact not found", {
-      retryable: false,
-      details: { artifactId: input.command.artifactId },
-    });
-  }
-
-  const revision =
-    input.command.revisionSha === undefined
-      ? input.repository.getLatestRevision(input.command.artifactId)
-      : input.repository.getRevisionBySha(input.command.artifactId, input.command.revisionSha);
-  if (revision === null) {
-    throw new FacetError("revision_not_found", "Revision not found", {
-      retryable: false,
-      details: {
-        artifactId: input.command.artifactId,
-        ...(input.command.revisionSha === undefined
-          ? {}
-          : { revisionSha: input.command.revisionSha }),
-      },
-    });
-  }
+  const { artifact, revision } = resolveExportTarget(input.repository, input.command);
 
   const verdict = latestStoredVerdict(input.repository, revision);
   if (verdict === null) {
@@ -101,47 +142,25 @@ export function exportStoredRender(input: {
   readonly requestId: string;
   readonly exportedAt?: string;
 }): ExportResult {
-  const artifact = input.repository.getArtifactById(input.command.artifactId);
-  if (artifact === null) {
-    throw new FacetError("artifact_not_found", "Artifact not found", {
-      retryable: false,
-      details: { artifactId: input.command.artifactId },
-    });
-  }
-
-  const revision =
-    input.command.revisionSha === undefined
-      ? input.repository.getLatestRevision(input.command.artifactId)
-      : input.repository.getRevisionBySha(input.command.artifactId, input.command.revisionSha);
-  if (revision === null) {
-    throw new FacetError("revision_not_found", "Revision not found", {
-      retryable: false,
-      details: {
-        artifactId: input.command.artifactId,
-        ...(input.command.revisionSha === undefined
-          ? {}
-          : { revisionSha: input.command.revisionSha }),
-      },
-    });
-  }
+  const { artifact, revision } = resolveExportTarget(input.repository, input.command);
 
   const run = input.repository.listRenderRuns({ revisionId: revision.id, tier: 1 })[0];
   if (run === undefined || run.screenshotPath === null) {
-    throw new FacetError("evidence_unavailable", "Screenshot evidence unavailable", {
-      retryable: false,
-      details: { artifactId: artifact.id, revisionSha: revision.sha256 },
-    });
+    throw evidenceUnavailable(artifact, revision);
   }
 
   let bytes: Uint8Array;
   try {
-    bytes = new Uint8Array(readFileSync(run.screenshotPath));
+    const screenshotPath = resolveEvidencePath(
+      input.repository,
+      run.screenshotPath,
+      artifact,
+      revision,
+    );
+    bytes = new Uint8Array(readFileSync(screenshotPath));
   } catch (cause) {
-    throw new FacetError("evidence_unavailable", "Screenshot evidence unavailable", {
-      retryable: false,
-      cause,
-      details: { artifactId: artifact.id, revisionSha: revision.sha256 },
-    });
+    if (cause instanceof FacetError) throw cause;
+    throw evidenceUnavailable(artifact, revision, cause);
   }
 
   const verdict = verdictFromStoredRun(revision, run);

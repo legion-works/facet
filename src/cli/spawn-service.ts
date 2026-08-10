@@ -111,7 +111,7 @@ function spawnChild(
   const bunPath = options.bunPath ?? process.execPath;
   const entrypoint = options.entrypoint ?? resolvePath(import.meta.dir, "..", "service", "main.ts");
   const facetHome = paths.database
-    ? resolvePath(dirname(dirname(dirname(paths.database))))
+    ? resolvePath(dirname(dirname(paths.database)))
     : (options.env.FACET_HOME ?? "");
   const childEnv: NodeJS.ProcessEnv = {
     ...options.env,

@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -217,6 +218,57 @@ describe("export CLI helpers", () => {
     expect(() => writeExportFiles(result, paths, true)).toThrow();
     expect(readFileSync(paths.artifactPath, "utf8")).toBe("existing artifact\n");
     expect(readdirSync(root).filter((name) => name.includes(".tmp"))).toEqual([]);
+  });
+
+  test("rolls back the first rename when the second rename fails", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
+    tempDirs.push(root);
+    const result = validExportResultFor();
+    const paths = resolveExportPaths(result, join(root, "artifact.md"), root);
+    let renameCalls = 0;
+    const renameFile = (
+      from: Parameters<typeof renameSync>[0],
+      to: Parameters<typeof renameSync>[1],
+    ) => {
+      renameCalls += 1;
+      if (renameCalls === 2) throw new Error("simulated second rename failure");
+      renameSync(from, to);
+    };
+
+    expect(() => writeExportFiles(result, paths, false, renameFile)).toThrow(
+      "simulated second rename failure",
+    );
+    expect(renameCalls).toBe(2);
+    expect(existsSync(paths.artifactPath)).toBe(false);
+    expect(existsSync(paths.sidecarPath)).toBe(false);
+    expect(readdirSync(root).filter((name) => name.includes(".tmp"))).toEqual([]);
+  });
+
+  test("restores displaced artifact and sidecar content after a forced pair failure", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
+    tempDirs.push(root);
+    const result = validExportResultFor();
+    const paths = resolveExportPaths(result, join(root, "artifact.md"), root);
+    writeFileSync(paths.artifactPath, "old artifact\n");
+    writeFileSync(paths.sidecarPath, "old sidecar\n");
+    let renameCalls = 0;
+    const renameFile = (
+      from: Parameters<typeof renameSync>[0],
+      to: Parameters<typeof renameSync>[1],
+    ) => {
+      renameCalls += 1;
+      if (renameCalls === 4) throw new Error("simulated second rename failure");
+      renameSync(from, to);
+    };
+
+    expect(() => writeExportFiles(result, paths, true, renameFile)).toThrow(
+      "simulated second rename failure",
+    );
+    expect(readFileSync(paths.artifactPath, "utf8")).toBe("old artifact\n");
+    expect(readFileSync(paths.sidecarPath, "utf8")).toBe("old sidecar\n");
+    expect(
+      readdirSync(root).filter((name) => name.includes(".tmp") || name.includes(".bak")),
+    ).toEqual([]);
   });
 
   test("writes unchanged bytes and a mandatory JSON sidecar, replacing both with force", () => {

@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 
 import { startFacetService } from "../../src/service/server";
 import { ArtifactRepository } from "../../src/service/store/repository";
 import { openDatabase } from "../../src/service/store/database";
-import { CommandResultSchema } from "../../src/shared/contracts/commands";
+import { CommandResultSchema, type CommandResult } from "../../src/shared/contracts/commands";
 import { FACET_SCHEMA_VERSION } from "../../src/shared/contracts/envelope";
 import type {
   Tier0Input,
@@ -18,6 +18,7 @@ import type {
   Tier1Runner,
 } from "../../src/shared/contracts/validation";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { SOURCE_CAP_BYTES } from "../../src/shared/config/limits";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 type Running = Awaited<ReturnType<typeof startFacetService>>;
@@ -220,6 +221,40 @@ describe("source export", () => {
     }
   });
 
+  test("round-trips a source at the hard cap through the export envelope", async () => {
+    const env = await startEnv();
+    try {
+      const artifactId = await createArtifact(env, "source-cap");
+      const source = new Uint8Array(SOURCE_CAP_BYTES);
+      for (let index = 0; index < source.length; index += 1) source[index] = index % 251;
+      const published = await publish(env, artifactId, source);
+
+      const response = await request(env, {
+        command: "export",
+        artifactId,
+        revisionSha: published.revisionSha,
+        format: "source",
+      });
+      const body = (await response.json()) as {
+        ok: boolean;
+        data?: Record<string, unknown>;
+        error?: { code?: string };
+      };
+      if (response.status !== 200) throw new Error(`cap export failed: ${JSON.stringify(body)}`);
+      expect(body.ok).toBe(true);
+      if (!body.ok || body.data === undefined) throw new Error("missing export envelope data");
+      const exported = CommandResultSchema.parse(body.data) as Extract<
+        CommandResult,
+        { command: "export" }
+      >;
+      const decoded = Buffer.from(exported.bytes as string, "base64");
+      expect(decoded.byteLength).toBe(SOURCE_CAP_BYTES);
+      expect(createHash("sha256").update(decoded).digest("hex")).toBe(published.revisionSha);
+    } finally {
+      await env.service.stop();
+    }
+  });
+
   test("reports typed errors for unknown artifacts and revisions", async () => {
     const env = await startEnv();
     try {
@@ -381,6 +416,60 @@ describe("render export", () => {
       expect(calls.value).toBe(1);
     } finally {
       await env.service.stop();
+    }
+  });
+
+  test("confines screenshot evidence to the evidence root", async () => {
+    for (const hostile of ["absolute", "traversal", "symlink"] as const) {
+      const envDir = join(scratchRoot, `render-confinement-${hostile}`);
+      const paths: string[] = [];
+      const tier1Runner = evidenceTier1({
+        evidenceDir: join(envDir, "evidence"),
+        screenshot: new Uint8Array([1, 2, 3]),
+        calls: { value: 0 },
+        paths,
+      });
+      let env = await startEnv({ envDir, tier1Runner });
+      try {
+        const artifactId = await createArtifact(env, `render-confinement-${hostile}`);
+        const revisionSha = (await publish(env, artifactId, SOURCE_ONE)).revisionSha;
+        const evidenceRoot = join(envDir, "evidence");
+        let screenshotPath: string;
+        if (hostile === "absolute") {
+          screenshotPath = "/etc/hostname";
+        } else if (hostile === "traversal") {
+          screenshotPath = join(evidenceRoot, relative(evidenceRoot, "/etc/hostname"));
+        } else {
+          screenshotPath = join(evidenceRoot, "escape.png");
+          symlinkSync("/etc/hostname", screenshotPath);
+        }
+
+        await env.service.stop();
+        const db = openDatabase(env.dbPath);
+        try {
+          const revision = db
+            .query("SELECT id FROM revisions WHERE artifact_id = ? AND sha256 = ?")
+            .get(artifactId, revisionSha) as { id: string } | null;
+          if (revision === null) throw new Error("missing seeded revision");
+          db.query(
+            "UPDATE render_runs SET screenshot_path = ? WHERE revision_id = ? AND tier = 1",
+          ).run(screenshotPath, revision.id);
+        } finally {
+          db.close();
+        }
+
+        env = await startEnv({ envDir, tier1Runner });
+        const response = await request(env, {
+          command: "export",
+          artifactId,
+          revisionSha,
+          format: "render",
+        });
+        expect(response.status).toBe(404);
+        expect((await response.json()).error.code).toBe("evidence_unavailable");
+      } finally {
+        await env.service.stop();
+      }
     }
   });
 

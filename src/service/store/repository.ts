@@ -153,6 +153,10 @@ export class ArtifactRepository {
     private readonly options: RepositoryOptions = {},
   ) {}
 
+  getEvidenceRoot(): string | undefined {
+    return this.options.evidenceRoot;
+  }
+
   createProject(input: ProjectInput): Project {
     const value = { id: crypto.randomUUID(), projectRoot: input.projectRoot, createdAt: now() };
     try {

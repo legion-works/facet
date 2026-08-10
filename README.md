@@ -55,7 +55,7 @@ A screenshot is evidence of pixels. It is not evidence that the page's own repor
 
 ## What's in the box
 
-- **CLI contract** — `create`, `publish`, `list`, `read-back`, `status`, `open`, `promote`, `instantiate`, and `pin`. `export` is reserved and returns a typed refusal.
+- **CLI contract** — `create`, `publish`, `list`, `read-back`, `status`, `open`, `promote`, `instantiate`, `pin`, and `export` (source/render with a mandatory sidecar).
 - **Artifact types** — Markdown, Mermaid, SVG, and Vega-Lite chart specs. Chart data must be inline; external `data.url` forms are rejected.
 - **Gallery** — an offline-built shell with opaque-origin frames, frozen CSP, zoom controls, evidence channels, and revision SSE.
 - **Validation** — a 5 MiB source cap, up to 64 Mermaid blocks and 10,000 Mermaid nodes, and a 1 MiB SVG cap with 16 roots. Tier 1 uses pinned `chrome-headless-shell` `151.0.7922.77`.

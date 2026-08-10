@@ -27,7 +27,7 @@ describe("CommandName coverage", () => {
     expect(new Set(IMPLEMENTED_COMMANDS)).toEqual(new Set(implemented));
   });
 
-  test("does not name 'export' as a reserved verb", () => {
+  test("does not reserve the implemented export verb", () => {
     expect(RESERVED_COMMANDS).not.toContain("export");
   });
 
