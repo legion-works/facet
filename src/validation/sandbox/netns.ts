@@ -119,8 +119,8 @@ export function resolveUnsharePath(): string {
  * wall-clock + output cap are enforced by the parent runner on top of
  * the returned streams.
  *
- * The caller MUST close STDIN after writing the input so the worker
- * observes EOF and exits.
+ * The caller keeps STDIN open for the worker's bounded NDJSON protocol
+ * and closes it only when tearing down the worker pool.
  */
 export function spawnNetnsWorker(args: readonly string[]): ChildProcess {
   return spawnWorker(args, true);

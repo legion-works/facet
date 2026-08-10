@@ -20,6 +20,9 @@ export const TIER0_TIMEOUT_MS = 5_000;
  */
 export const TIER0_OUTPUT_CAP_BYTES = 64 * 1024;
 
+/** Maximum NDJSON request line accepted by the long-lived Tier 0 worker. */
+export const TIER0_INPUT_CAP_BYTES = 8 * 1024 * 1024;
+
 /**
  * Linux `setrlimit` cap on the worker's resident memory. Enforced via
  * `bash -c 'ulimit -v …; exec "$@"'` inside the netns wrapper so the

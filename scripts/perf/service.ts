@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -43,10 +43,24 @@ export async function startDetachedPerfService(options: {
   };
 }
 
+export function listServiceChildPids(pid: number): readonly number[] {
+  try {
+    const text = readFileSync(`/proc/${pid}/task/${pid}/children`, "utf8").trim();
+    if (text.length === 0) return [];
+    return text
+      .split(/\s+/)
+      .map((value) => Number.parseInt(value, 10))
+      .filter(Number.isInteger);
+  } catch {
+    return [];
+  }
+}
+
 export async function inspectDormancy(service: DetachedPerfService): Promise<{
   readonly processExited: boolean;
   readonly portClosed: boolean;
   readonly lockRemoved: boolean;
+  readonly workerProcesses: number;
 }> {
   let portClosed = false;
   try {
@@ -58,6 +72,7 @@ export async function inspectDormancy(service: DetachedPerfService): Promise<{
     processExited: !isPidAlive(service.pid),
     portClosed,
     lockRemoved: !existsSync(service.paths.lock),
+    workerProcesses: listServiceChildPids(service.pid).length,
   };
 }
 

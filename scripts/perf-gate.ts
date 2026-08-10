@@ -3,6 +3,8 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+import { FacetClient, publishArtifact } from "../src/cli/client";
+import { isPidAlive } from "../src/shared/util/process";
 import {
   measureBrowserExit,
   measureColdReadBack,
@@ -20,6 +22,7 @@ import { snapshotTier1Leaks, waitForTier1Cleanup } from "./perf/process";
 import { measureMemoryAndCpu, measureTier0Spawn, measureWarmSse } from "./perf/service-metrics";
 import {
   inspectDormancy,
+  listServiceChildPids,
   startDetachedPerfService,
   stopDetachedProcess,
   waitForDormancy,
@@ -35,13 +38,13 @@ interface Metric {
   readonly method: string;
 }
 
+const quick = process.argv.includes("--quick");
 const requestedPolicies = [
   process.argv.includes("--ci") ? "ci" : null,
   process.argv.includes("--record-only") ? "record" : null,
 ].filter((value): value is PerfPolicy => value !== null);
 if (requestedPolicies.length > 1) throw new Error("choose only one performance policy");
-if (process.argv.includes("--quick")) throw new Error("--quick was removed; use --ci");
-const policy: PerfPolicy = requestedPolicies[0] ?? "stable";
+const policy: PerfPolicy = requestedPolicies[0] ?? (quick ? "ci" : "stable");
 const jsonPath = process.env.FACET_PERF_JSON;
 const metrics: Metric[] = [];
 const measurements: Record<string, unknown> = {};
@@ -64,18 +67,40 @@ function addBudget(key: PerfBudgetKey, observed: number, unit: string, method: s
 async function measureDormancy(): Promise<void> {
   const service = await startDetachedPerfService({ idleTimeoutMs: 500 });
   try {
+    const client = new FacetClient({
+      baseUrl: service.baseUrl,
+      installToken: service.installToken,
+    });
+    await publishArtifact(client, {
+      artifactType: "markdown",
+      bytes: new TextEncoder().encode("# perf dormancy\n").buffer as ArrayBuffer,
+    });
+    const workerPids = listServiceChildPids(service.pid);
     const active = await inspectDormancy(service);
     const dormant = await waitForDormancy(service, 5_000);
     const startedLive = !active.processExited && !active.portClosed && !active.lockRemoved;
-    const cleaned = dormant.processExited && dormant.portClosed && dormant.lockRemoved;
-    measurements.dormancy = { pid: service.pid, port: service.port, active, dormant };
+    const survivingWorkerPids = workerPids.filter(isPidAlive);
+    const cleaned =
+      dormant.processExited &&
+      dormant.portClosed &&
+      dormant.lockRemoved &&
+      dormant.workerProcesses === 0 &&
+      survivingWorkerPids.length === 0;
+    measurements.dormancy = {
+      pid: service.pid,
+      port: service.port,
+      workerPids,
+      survivingWorkerPids,
+      active,
+      dormant,
+    };
     metrics.push({
       name: "service dormancy cleanup",
-      observed: `startedLive=${startedLive} processExited=${dormant.processExited} portClosed=${dormant.portClosed} lockRemoved=${dormant.lockRemoved}`,
-      status: startedLive && cleaned ? "pass" : "fail",
+      observed: `startedLive=${startedLive} processExited=${dormant.processExited} portClosed=${dormant.portClosed} lockRemoved=${dormant.lockRemoved} workerProcesses=${dormant.workerProcesses} capturedWorkers=${workerPids.length} survivingWorkers=${survivingWorkerPids.length}`,
+      status: startedLive && workerPids.length > 0 && cleaned ? "pass" : "fail",
       enforced: true,
       method:
-        "one detached service, 500ms natural idle window; PID, bound port, and live lock checked",
+        "one detached service, one publish, 500ms natural idle window; service PID, bound port, lock, and captured worker PIDs checked",
     });
   } finally {
     await stopDetachedProcess(service.pid);
@@ -173,14 +198,14 @@ async function main(): Promise<void> {
   // when the honest reading is "we validate before we announce".
   console.error("perf phase: tier0-attribution");
   const tier0 = await measureTier0Spawn();
-  const tier0P95 = nearestRankPercentile(tier0.samplesMs, 0.95);
+  const tier0P95 = nearestRankPercentile(tier0.warmSamplesMs, 0.95);
   measurements.tier0Spawn = tier0;
   metrics.push({
-    name: "tier-0 netns spawn p95 (attribution)",
-    observed: `${tier0P95.toFixed(2)} ms`,
+    name: "tier-0 warm pooled p95 (attribution)",
+    observed: `cold=${tier0.coldStartMs.toFixed(2)} ms warm=${tier0P95.toFixed(2)} ms`,
     status: "info",
     enforced: false,
-    method: `nearest-rank p95 of ${tier0.sampleCount} runTier0 calls after ${tier0.warmupCount} warmups \u2014 accounts for ${((tier0P95 / sseP95) * 100).toFixed(0)}% of warm SSE p95`,
+    method: `cold start plus nearest-rank p95 of ${tier0.sampleCount} pooled calls after ${tier0.warmupCount} warmups \u2014 warm requests account for ${((tier0P95 / sseP95) * 100).toFixed(0)}% of warm SSE p95`,
   });
   addBudget(
     "publishCommitted",

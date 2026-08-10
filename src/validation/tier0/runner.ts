@@ -34,6 +34,7 @@ import {
   type LexicalCounters,
   type InsecureLevel,
   type Tier0Input,
+  type Tier0Runner,
   type Tier0WorkerResult,
 } from "../../shared/contracts/validation";
 
@@ -62,10 +63,19 @@ const TIER0_WORKER_ENTRY = resolvePath(import.meta.dir, "worker-entry.ts");
  */
 interface WorkerInputEnvelope {
   readonly schemaVersion: "facet.tier0.v1";
+  readonly requestId: string;
   readonly revisionSha: string;
   readonly artifactType: ArtifactType;
+  readonly renderer: Tier0Input["renderer"];
   readonly sourceBase64: string;
   readonly lexical: LexicalCounters;
+}
+
+export interface Tier0RunnerTestHooks {
+  readonly workerEntry?: string;
+  readonly timeoutMs?: number;
+  readonly outputCap?: number;
+  readonly onWorkerSpawn?: (pid: number) => void;
 }
 
 /**
@@ -73,15 +83,17 @@ interface WorkerInputEnvelope {
  * are validated against the closed schema here so a misbehaving
  * caller cannot smuggle extra fields into the worker.
  */
-function buildInputEnvelope(input: Tier0Input): WorkerInputEnvelope {
+function buildInputEnvelope(input: Tier0Input, requestId: string): WorkerInputEnvelope {
   // The contract says input.source is Uint8Array; we accept anything
   // `instanceof Uint8Array` and base64-encode it.
   const sourceBytes =
     input.source instanceof Uint8Array ? input.source : new Uint8Array(input.source);
   return {
     schemaVersion: "facet.tier0.v1",
+    requestId,
     revisionSha: input.revisionSha,
     artifactType: input.artifactType,
+    renderer: input.renderer,
     sourceBase64: Buffer.from(sourceBytes).toString("base64"),
     lexical: LexicalCountersSchema.parse(input.lexical),
   };
@@ -133,137 +145,261 @@ export function _parseWorkerStdout(stdout: string, outputCap: number): Tier0Work
   return result.data;
 }
 
-/**
- * Drain a Node stream into a single string up to `cap` bytes. If the
- * stream emits more than `cap` bytes before EOF, the returned string
- * is truncated and `overflow` is set so the caller can surface a
- * typed `tier0_output_cap` error.
- */
-async function readStreamCapped(
-  stream: NodeJS.ReadableStream,
-  cap: number,
-): Promise<{ text: string; overflow: boolean }> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    let overflow = false;
-    stream.setEncoding("utf8");
-    stream.on("data", (chunk: string) => {
-      const bytes = Buffer.byteLength(chunk, "utf8");
-      if (total + bytes > cap) {
-        overflow = true;
-        // Append only what fits, then signal the caller.
-        const remaining = cap - total;
-        if (remaining > 0) {
-          chunks.push(Buffer.from(chunk.slice(0, remaining), "utf8"));
-          total += remaining;
-        }
-        stream.removeAllListeners("data");
-        stream.removeAllListeners("end");
-        stream.removeAllListeners("error");
-        // Nudge the stream toward EOF without consuming more bytes.
-        stream.resume();
-        resolve({ text: chunks.map((b) => b.toString("utf8")).join(""), overflow: true });
-        return;
-      }
-      chunks.push(Buffer.from(chunk, "utf8"));
-      total += bytes;
+interface PendingRequest {
+  readonly requestId: string;
+  readonly worker: ChildProcess;
+  readonly resolve: (result: Tier0WorkerResult) => void;
+  readonly reject: (error: FacetError) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+interface RunnerOptions {
+  readonly workerEntry: string;
+  readonly timeoutMs: number;
+  readonly outputCap: number;
+  readonly onWorkerSpawn?: (pid: number) => void;
+}
+
+function workerDiedError(code: number | null, signal: NodeJS.Signals | null): FacetError {
+  if (signal !== null) {
+    return new FacetError("tier0_worker_died", `Worker terminated by signal ${signal}`, {
+      retryable: false,
+      details: { signal },
     });
-    stream.on("end", () => {
-      resolve({ text: chunks.map((b) => b.toString("utf8")).join(""), overflow });
+  }
+  if (code === null) {
+    return new FacetError("tier0_worker_died", "Worker exited without code or signal", {
+      retryable: false,
     });
-    stream.on("error", (error) => reject(error));
+  }
+  return new FacetError("tier0_worker_died", `Worker exited with non-zero code ${code}`, {
+    retryable: false,
+    details: { exitCode: code },
   });
 }
 
-/**
- * Spawn the worker, write the input envelope, read stdout, enforce
- * the wall-clock timeout, kill the worker on overrun, and surface the
- * result. NEVER returns a partially-parsed result: every failure mode
- * is either a typed `FacetError` (system-level) or a `Tier0Result`
- * with a non-`ok` status (parser-level).
- */
-async function runOnce(
-  input: Tier0Input,
-  options: { timeoutMs: number; outputCap: number },
-  level: InsecureLevel,
-): Promise<Tier0WorkerResult> {
-  const envelope = buildInputEnvelope(input);
-  const envelopeJson = `${JSON.stringify(envelope)}\n`;
+function parseWorkerResponse(
+  line: Buffer,
+  requestId: string,
+  outputCap: number,
+): Tier0WorkerResult {
+  let envelope: { requestId?: unknown; result?: unknown };
+  try {
+    envelope = JSON.parse(line.toString("utf8")) as { requestId?: unknown; result?: unknown };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new FacetError("tier0_protocol_error", `Worker stdout is not valid JSON: ${message}`, {
+      retryable: false,
+    });
+  }
+  if (envelope.requestId !== requestId) {
+    throw new FacetError("tier0_protocol_error", "Worker response requestId did not match", {
+      retryable: false,
+    });
+  }
+  return _parseWorkerStdout(JSON.stringify(envelope.result), outputCap);
+}
 
-  const isolation = resolveTier0Isolation(level);
-  if (isolation === "netns") {
-    // Reject netns-unavailable hosts with a typed error instead of silently
-    // running un-sandboxed. The probe is cheap (a single unshare invocation).
-    const probe = probeNetnsSupport();
-    if (!probe.available) {
-      throw new FacetError(
-        "tier0_unavailable",
-        `Tier 0 cannot run: netns unavailable (${probe.reason ?? "unknown"})`,
-        { retryable: false, details: { reason: probe.reason ?? "unknown" } },
-      );
+function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner {
+  let child: ChildProcess | null = null;
+  let pending: PendingRequest | null = null;
+  let stdoutBuffer = Buffer.alloc(0);
+  let queued: Promise<void> = Promise.resolve();
+  let requestSequence = 0;
+  let closed = false;
+
+  function rejectPending(target: PendingRequest, error: FacetError): void {
+    if (pending !== target) return;
+    clearTimeout(target.timer);
+    pending = null;
+    target.reject(error);
+  }
+
+  function resolvePending(target: PendingRequest, result: Tier0WorkerResult): void {
+    if (pending !== target) return;
+    clearTimeout(target.timer);
+    pending = null;
+    target.resolve(result);
+  }
+
+  function clearWorker(target: ChildProcess, kill: boolean): void {
+    if (child !== target) return;
+    child = null;
+    stdoutBuffer = Buffer.alloc(0);
+    if (!kill) return;
+    try {
+      target.kill("SIGKILL");
+    } catch {
+      // The worker may have exited between protocol failure and teardown.
     }
   }
 
-  const child: ChildProcess =
-    isolation === "netns"
-      ? spawnNetnsWorker(["run", TIER0_WORKER_ENTRY])
-      : spawnDirectWorker(["run", TIER0_WORKER_ENTRY]);
-  // We never read STDERR — it goes to the parent's STDERR via the
-  // default pipe inheritance so test logs can see diagnostics.
-  let stdoutOverflow = false;
-  const stdoutPromise = readStreamCapped(child.stdout!, options.outputCap).then(
-    (r) => {
-      stdoutOverflow = r.overflow;
-      return r.text;
-    },
-    () => "",
-  );
+  function failWorker(target: ChildProcess, error: FacetError, kill: boolean): void {
+    if (pending?.worker === target) rejectPending(pending, error);
+    clearWorker(target, kill);
+  }
 
-  const timer = setTimeout(() => {
-    child.kill("SIGKILL");
-  }, options.timeoutMs);
+  function handleStdout(target: ChildProcess, chunk: Buffer): void {
+    if (child !== target || pending === null || pending.worker !== target) {
+      failWorker(
+        target,
+        new FacetError("tier0_protocol_error", "Worker emitted stdout without an active request", {
+          retryable: false,
+        }),
+        true,
+      );
+      return;
+    }
+    stdoutBuffer = Buffer.concat([stdoutBuffer, chunk]);
+    const newline = stdoutBuffer.indexOf(0x0a);
+    if (newline < 0) {
+      if (stdoutBuffer.byteLength > options.outputCap) {
+        failWorker(
+          target,
+          new FacetError("tier0_output_cap", "Worker stdout exceeded the byte cap", {
+            retryable: false,
+            details: { capBytes: options.outputCap },
+          }),
+          true,
+        );
+      }
+      return;
+    }
+    const line = stdoutBuffer.subarray(0, newline);
+    const trailing = stdoutBuffer.subarray(newline + 1);
+    stdoutBuffer = Buffer.alloc(0);
+    if (line.byteLength > options.outputCap) {
+      failWorker(
+        target,
+        new FacetError("tier0_output_cap", "Worker stdout exceeded the byte cap", {
+          retryable: false,
+          details: { capBytes: options.outputCap },
+        }),
+        true,
+      );
+      return;
+    }
+    if (trailing.byteLength > 0) {
+      failWorker(
+        target,
+        new FacetError("tier0_protocol_error", "Worker emitted trailing stdout bytes", {
+          retryable: false,
+        }),
+        true,
+      );
+      return;
+    }
+    const active = pending;
+    try {
+      resolvePending(active, parseWorkerResponse(line, active.requestId, options.outputCap));
+    } catch (error) {
+      const facet = FacetError.from(error);
+      failWorker(target, facet, true);
+    }
+  }
 
-  // Write the envelope, then close STDIN so the worker observes EOF.
-  child.stdin!.write(envelopeJson);
-  child.stdin!.end();
+  function spawnWorker(): ChildProcess {
+    const isolation = resolveTier0Isolation(level);
+    if (isolation === "netns") {
+      const probe = probeNetnsSupport();
+      if (!probe.available) {
+        throw new FacetError(
+          "tier0_unavailable",
+          `Tier 0 cannot run: netns unavailable (${probe.reason ?? "unknown"})`,
+          { retryable: false, details: { reason: probe.reason ?? "unknown" } },
+        );
+      }
+    }
+    const started =
+      isolation === "netns"
+        ? spawnNetnsWorker(["run", options.workerEntry])
+        : spawnDirectWorker(["run", options.workerEntry]);
+    child = started;
+    options.onWorkerSpawn?.(started.pid!);
+    started.stderr?.pipe(process.stderr, { end: false });
+    started.stdout?.on("data", (chunk: Buffer) => handleStdout(started, Buffer.from(chunk)));
+    started.once("error", () => {
+      failWorker(
+        started,
+        new FacetError("tier0_worker_died", "Worker process failed to start", { retryable: false }),
+        false,
+      );
+    });
+    started.once("exit", (code, signal) => {
+      failWorker(started, workerDiedError(code, signal), false);
+    });
+    return started;
+  }
 
-  // Race the exit against the timeout. The timer fires regardless of
-  // which resolves first; if the worker exits cleanly we clear it.
-  const exitCode = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
-    (resolve, reject) => {
-      child.once("error", (error) => reject(error));
-      child.once("exit", (code, signal) => resolve({ code, signal }));
-    },
-  ).finally(() => clearTimeout(timer));
-
-  const stdout = await stdoutPromise;
-
-  if (exitCode.signal !== null && exitCode.signal !== undefined) {
-    throw new FacetError("tier0_worker_died", `Worker terminated by signal ${exitCode.signal}`, {
-      retryable: false,
-      details: { signal: exitCode.signal },
+  async function runRequest(input: Tier0Input): Promise<Tier0WorkerResult> {
+    if (closed) {
+      throw new FacetError("tier0_worker_died", "Tier 0 runner is closed", { retryable: false });
+    }
+    const worker = child ?? spawnWorker();
+    if (child !== worker)
+      throw new FacetError("tier0_worker_died", "Worker exited before request", {
+        retryable: false,
+      });
+    const requestId = String(++requestSequence);
+    const envelopeJson = `${JSON.stringify(buildInputEnvelope(input, requestId))}\n`;
+    return new Promise<Tier0WorkerResult>((resolve, reject) => {
+      const target: PendingRequest = {
+        requestId,
+        worker,
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          failWorker(
+            worker,
+            new FacetError(
+              "tier0_timeout",
+              `Tier 0 worker timed out after ${options.timeoutMs}ms`,
+              {
+                retryable: false,
+                details: { timeoutMs: options.timeoutMs },
+              },
+            ),
+            true,
+          );
+        }, options.timeoutMs),
+      };
+      pending = target;
+      try {
+        worker.stdin?.write(envelopeJson);
+      } catch {
+        failWorker(
+          worker,
+          new FacetError("tier0_worker_died", "Failed to write to Tier 0 worker", {
+            retryable: false,
+          }),
+          true,
+        );
+      }
     });
   }
-  if (exitCode.code === null) {
-    throw new FacetError("tier0_worker_died", "Worker exited without code or signal", {
-      retryable: false,
-    });
-  }
-  if (exitCode.code !== 0) {
-    throw new FacetError("tier0_worker_died", `Worker exited with non-zero code ${exitCode.code}`, {
-      retryable: false,
-      details: { exitCode: exitCode.code },
-    });
-  }
-  if (stdoutOverflow) {
-    throw new FacetError("tier0_output_cap", "Worker stdout exceeded the byte cap", {
-      retryable: false,
-      details: { capBytes: options.outputCap },
-    });
-  }
-  const result = _parseWorkerStdout(stdout, options.outputCap);
-  return result;
+
+  const run = (input: Tier0Input): Promise<Tier0WorkerResult> => {
+    const request = queued.then(() => runRequest(input));
+    queued = request.then(
+      () => undefined,
+      () => undefined,
+    );
+    return request;
+  };
+
+  const close = (): void => {
+    if (closed) return;
+    closed = true;
+    const active = child;
+    if (active === null) return;
+    failWorker(
+      active,
+      new FacetError("tier0_worker_died", "Tier 0 runner closed", { retryable: false }),
+      true,
+    );
+  };
+
+  return Object.assign(run, { close });
 }
 
 /**
@@ -274,16 +410,31 @@ async function runOnce(
  * a typed `tier0_*` code.
  */
 export async function runTier0(input: Tier0Input): Promise<Tier0WorkerResult> {
-  // The contract requires `tier` to be 0 here, but we trust the
-  // caller's input rather than re-parsing it — `Tier0ResultSchema`
-  // enforces `tier: 0` on the worker side.
-  return runOnce(input, { timeoutMs: TIER0_TIMEOUT_MS, outputCap: TIER0_OUTPUT_CAP_BYTES }, 0);
+  const runner = createTier0Runner(0);
+  try {
+    return await runner(input);
+  } finally {
+    runner.close?.();
+  }
 }
 
 /** Create a Tier 0 runner using the requested isolation level. */
-export function createTier0Runner(
+export function createTier0Runner(level: InsecureLevel): Tier0Runner {
+  return createRunner(level, {
+    workerEntry: TIER0_WORKER_ENTRY,
+    timeoutMs: TIER0_TIMEOUT_MS,
+    outputCap: TIER0_OUTPUT_CAP_BYTES,
+  });
+}
+
+export function createTier0RunnerForTests(
   level: InsecureLevel,
-): (input: Tier0Input) => Promise<Tier0WorkerResult> {
-  return (input) =>
-    runOnce(input, { timeoutMs: TIER0_TIMEOUT_MS, outputCap: TIER0_OUTPUT_CAP_BYTES }, level);
+  hooks: Tier0RunnerTestHooks,
+): Tier0Runner {
+  return createRunner(level, {
+    workerEntry: hooks.workerEntry ?? TIER0_WORKER_ENTRY,
+    timeoutMs: hooks.timeoutMs ?? TIER0_TIMEOUT_MS,
+    outputCap: hooks.outputCap ?? TIER0_OUTPUT_CAP_BYTES,
+    ...(hooks.onWorkerSpawn === undefined ? {} : { onWorkerSpawn: hooks.onWorkerSpawn }),
+  });
 }

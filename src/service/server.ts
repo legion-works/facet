@@ -134,6 +134,7 @@ export async function startFacetService(
   }
 
   let boundServer: ReturnType<typeof Bun.serve> | null = null;
+  let tier0Close: (() => void) | null = options.tier0Runner?.close ?? null;
   let databaseClose: (() => void) | null = null;
   let leasesClear: (() => void) | null = null;
   const cleanup = (): void => {
@@ -144,6 +145,14 @@ export async function startFacetService(
         // already stopped
       }
       boundServer = null;
+    }
+    if (tier0Close !== null) {
+      try {
+        tier0Close();
+      } catch {
+        // A worker can die before service cleanup reaches it.
+      }
+      tier0Close = null;
     }
     if (databaseClose !== null) {
       try {

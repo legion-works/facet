@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { collectFacetStatus } from "../../src/cli/commands/status";
 import { computeLexicalExpectations } from "../../src/service/lexical/expectations";
-import { runTier0 } from "../../src/validation/tier0/runner";
+import { createTier0Runner } from "../../src/validation/tier0/runner";
 import { summarize } from "./core";
 import {
   sampleProcessCpuPercent,
@@ -312,31 +312,47 @@ export async function measureWarmSse(): Promise<{
 export async function measureTier0Spawn(): Promise<{
   readonly warmupCount: number;
   readonly sampleCount: number;
-  readonly samplesMs: readonly number[];
+  readonly coldStartMs: number;
+  readonly warmSamplesMs: readonly number[];
 }> {
   const source = Uint8Array.from(
     new TextEncoder().encode("# Tier 0 perf\n"),
   ) as Uint8Array<ArrayBuffer>;
   const lexical = computeLexicalExpectations(source, "markdown");
   const revisionSha = createHash("sha256").update(source).digest("hex");
-  const samples: number[] = [];
-  const total = SSE_WARMUP_COUNT + TIER0_SAMPLE_COUNT;
-  for (let index = 0; index < total; index += 1) {
-    const startedAt = performance.now();
-    const result = await runTier0({
-      revisionSha,
-      artifactType: "markdown",
-      renderer: "svg",
-      source,
-      lexical: {
-        rendererRootSvgCount: lexical.expectedRendererRoots,
-        mermaidNodeCount: lexical.mermaidNodeCount,
-        visibleSvgCount: 0,
-        opaqueRegionCount: 0,
-      },
-    });
-    if (result.status !== "ok") throw new Error(`Tier 0 perf verdict was ${result.status}`);
-    if (index >= SSE_WARMUP_COUNT) samples.push(performance.now() - startedAt);
+  const runner = createTier0Runner(0);
+  const request = {
+    revisionSha,
+    artifactType: "markdown" as const,
+    renderer: "svg" as const,
+    source,
+    lexical: {
+      rendererRootSvgCount: lexical.expectedRendererRoots,
+      mermaidNodeCount: lexical.mermaidNodeCount,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+    },
+  };
+  const coldStartedAt = performance.now();
+  try {
+    const cold = await runner(request);
+    if (cold.status !== "ok") throw new Error(`Tier 0 cold verdict was ${cold.status}`);
+    const coldStartMs = performance.now() - coldStartedAt;
+    const warmSamplesMs: number[] = [];
+    const total = SSE_WARMUP_COUNT + TIER0_SAMPLE_COUNT;
+    for (let index = 0; index < total; index += 1) {
+      const startedAt = performance.now();
+      const result = await runner(request);
+      if (result.status !== "ok") throw new Error(`Tier 0 warm verdict was ${result.status}`);
+      if (index >= SSE_WARMUP_COUNT) warmSamplesMs.push(performance.now() - startedAt);
+    }
+    return {
+      warmupCount: SSE_WARMUP_COUNT,
+      sampleCount: TIER0_SAMPLE_COUNT,
+      coldStartMs,
+      warmSamplesMs,
+    };
+  } finally {
+    runner.close?.();
   }
-  return { warmupCount: SSE_WARMUP_COUNT, sampleCount: TIER0_SAMPLE_COUNT, samplesMs: samples };
 }

@@ -137,7 +137,9 @@ export type Tier0Input = z.infer<typeof Tier0InputSchema>;
  * `src/service/**` stays byte-dumb and the boundary checker remains
  * clean.
  */
-export type Tier0Runner = (input: Tier0Input) => Promise<Tier0WorkerResult>;
+export type Tier0Runner = ((input: Tier0Input) => Promise<Tier0WorkerResult>) & {
+  readonly close?: () => void;
+};
 export type Tier0RunnerFactory = (level: InsecureLevel) => Tier0Runner;
 
 export interface IsolationProbeResult {

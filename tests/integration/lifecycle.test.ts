@@ -18,7 +18,9 @@ import { join } from "node:path";
 
 import { startFacetService } from "../../src/service/server";
 import { runOrphanCleanup } from "../../src/service/lifecycle/orphan-cleanup";
+import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const scratchRoot = join(tmpdir(), `facet-lifecycle-${crypto.randomUUID()}`);
@@ -56,6 +58,19 @@ async function portClosed(port: number): Promise<boolean> {
   } catch {
     return true;
   }
+}
+
+async function waitForPidExit(pid: number): Promise<boolean> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    await Bun.sleep(25);
+  }
+  return false;
 }
 
 describe("service lifecycle", () => {
@@ -224,5 +239,82 @@ describe("service lifecycle", () => {
     });
     await service.stop();
     await service.stop();
+  });
+
+  test("startup failure after runner injection closes the runner", async () => {
+    const paths = envPaths("startup-close");
+    let closes = 0;
+    const runner = Object.assign(stubTier0Runner, {
+      close: () => {
+        closes += 1;
+      },
+    });
+
+    await expect(
+      startFacetService({
+        logger: createQuietLogger({ component: "test" }),
+        ...paths,
+        host: "invalid host",
+        tier0Runner: runner,
+      }),
+    ).rejects.toMatchObject({ code: "internal" });
+    expect(closes).toBe(1);
+    expect(existsSync(paths.lockPath)).toBe(false);
+  });
+
+  test("idle shutdown reaps the pooled Tier 0 worker", async () => {
+    const paths = envPaths("pooled-idle");
+    const pids: number[] = [];
+    const runner = createTier0RunnerForTests(2, {
+      onWorkerSpawn: (pid) => pids.push(pid),
+    });
+    const service = await startFacetService({
+      logger: createQuietLogger({ component: "test" }),
+      ...paths,
+      idleTimeoutMs: 100,
+      tier0Runner: runner,
+    });
+    try {
+      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+      await publishArtifact(client, {
+        artifactType: "markdown",
+        bytes: new TextEncoder().encode("# pooled idle\n").buffer as ArrayBuffer,
+      });
+      expect(pids).toHaveLength(1);
+      await service.waitUntilIdle();
+      expect(await portClosed(service.port)).toBe(true);
+      expect(existsSync(paths.lockPath)).toBe(false);
+      expect(await waitForPidExit(pids[0]!)).toBe(true);
+    } finally {
+      runner.close?.();
+      await service.stop();
+    }
+  });
+
+  test("explicit stop reaps the pooled Tier 0 worker", async () => {
+    const paths = envPaths("pooled-stop");
+    const pids: number[] = [];
+    const runner = createTier0RunnerForTests(2, {
+      onWorkerSpawn: (pid) => pids.push(pid),
+    });
+    const service = await startFacetService({
+      logger: createQuietLogger({ component: "test" }),
+      ...paths,
+      idleTimeoutMs: 5_000,
+      tier0Runner: runner,
+    });
+    try {
+      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+      await publishArtifact(client, {
+        artifactType: "markdown",
+        bytes: new TextEncoder().encode("# pooled stop\n").buffer as ArrayBuffer,
+      });
+      expect(pids).toHaveLength(1);
+      await service.stop();
+      expect(await waitForPidExit(pids[0]!)).toBe(true);
+    } finally {
+      runner.close?.();
+      await service.stop();
+    }
   });
 });
