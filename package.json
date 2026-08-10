@@ -2,6 +2,7 @@
   "name": "facet",
   "version": "1.3.0",
   "private": true,
+  "license": "MIT OR Apache-2.0",
   "bin": {
     "facet": "./src/cli/main.ts"
   },
