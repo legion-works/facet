@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import { tmpdir } from "node:os";
 
 import type { Artifact, Revision } from "../../src/shared/contracts/artifact";
@@ -55,6 +55,7 @@ afterEach(() => {
 
 function validExportResultFor(
   artifactType: ExportResult["sidecar"]["artifactType"] = "markdown",
+  slug = "source-artifact",
 ): ExportResult {
   return {
     command: "export",
@@ -63,7 +64,7 @@ function validExportResultFor(
     bytes: Buffer.from([0, 1, 2, 255]).toString("base64"),
     sidecar: {
       artifactId: "artifact-1",
-      slug: "source-artifact",
+      slug,
       revisionSha: "a".repeat(64),
       artifactType,
       renderer: "svg",
@@ -136,6 +137,18 @@ describe("export CLI helpers", () => {
     );
   });
 
+  test("sanitizes hostile slugs before composing the derived default filename", () => {
+    const cwd = "/tmp/facet-cwd";
+    for (const slug of ["../../../etc/passwd", "/etc/evil", "embedded\nnewline"]) {
+      const paths = resolveExportPaths(validExportResultFor("markdown", slug), undefined, cwd);
+      const relativeArtifact = relative(cwd, paths.artifactPath);
+      expect(isAbsolute(relativeArtifact)).toBe(false);
+      expect(relativeArtifact.startsWith("../")).toBe(false);
+      expect(paths.artifactPath.startsWith(`${cwd}/`)).toBe(true);
+      expect(paths.artifactPath).not.toContain("\n");
+    }
+  });
+
   test("preflights the mandatory pair before writing when only the sidecar exists", () => {
     const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
     tempDirs.push(root);
@@ -146,6 +159,45 @@ describe("export CLI helpers", () => {
     expect(() => writeExportFiles(result, paths, false)).toThrow(/already exists/);
     expect(existsSync(paths.artifactPath)).toBe(false);
     expect(readFileSync(paths.sidecarPath, "utf8")).toBe("existing sidecar\n");
+  });
+
+  test("preflights an existing artifact before writing when only the sidecar is absent", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
+    tempDirs.push(root);
+    const result = validExportResultFor();
+    const paths = resolveExportPaths(result, join(root, "artifact.md"), root);
+    writeFileSync(paths.artifactPath, "existing artifact\n");
+
+    expect(() => writeExportFiles(result, paths, false)).toThrow(/already exists/);
+    expect(readFileSync(paths.artifactPath, "utf8")).toBe("existing artifact\n");
+    expect(existsSync(paths.sidecarPath)).toBe(false);
+  });
+
+  test("rolls back a fresh artifact when sidecar writing fails", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
+    tempDirs.push(root);
+    const result = validExportResultFor();
+    const paths = resolveExportPaths(result, join(root, "artifact.md"), root);
+    mkdirSync(paths.sidecarPath);
+
+    expect(() => writeExportFiles(result, paths, true)).toThrow();
+    expect(existsSync(paths.artifactPath)).toBe(false);
+    expect(existsSync(paths.sidecarPath)).toBe(true);
+  });
+
+  test("does not unlink a pre-existing artifact path when sidecar writing fails under force", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
+    tempDirs.push(root);
+    const result = validExportResultFor();
+    const paths = resolveExportPaths(result, join(root, "artifact.md"), root);
+    writeFileSync(paths.artifactPath, "existing artifact\n");
+    mkdirSync(paths.sidecarPath);
+
+    expect(() => writeExportFiles(result, paths, true)).toThrow();
+    expect(existsSync(paths.artifactPath)).toBe(true);
+    expect(new Uint8Array(readFileSync(paths.artifactPath))).toEqual(
+      new Uint8Array([0, 1, 2, 255]),
+    );
   });
 
   test("writes unchanged bytes and a mandatory JSON sidecar, replacing both with force", () => {

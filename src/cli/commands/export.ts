@@ -6,7 +6,7 @@
  * service cannot be used as a general filesystem writer.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 
 import type { ExportFormat, ExportRequest } from "../../shared/contracts/commands/requests";
@@ -57,6 +57,23 @@ function sidecarPathForArtifact(path: string): string {
     : `${path.slice(0, -extension.length)}.facet.json`;
 }
 
+function sanitizeDerivedNamePart(value: string): string {
+  return value
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/\.\.+/g, "-")
+    .replace(/^[.-]+|[.-]+$/g, "")
+    .slice(0, 80)
+    .replace(/^[.-]+|[.-]+$/g, "");
+}
+
+function derivedSlug(result: ExportResult): string {
+  return (
+    sanitizeDerivedNamePart(result.sidecar.slug) ||
+    sanitizeDerivedNamePart(result.sidecar.artifactId) ||
+    "artifact"
+  );
+}
+
 export function resolveExportPaths(
   result: ExportResult,
   outFlag: string | undefined,
@@ -65,14 +82,19 @@ export function resolveExportPaths(
   const extension = extensionForExport(result.format, result.sidecar.artifactType);
   const artifactPath =
     outFlag === undefined
-      ? resolve(cwd, `${result.sidecar.slug}-${result.sidecar.revisionSha.slice(0, 7)}${extension}`)
+      ? resolve(cwd, `${derivedSlug(result)}-${result.sidecar.revisionSha.slice(0, 7)}${extension}`)
       : resolve(cwd, outFlag);
   return { artifactPath, sidecarPath: sidecarPathForArtifact(artifactPath) };
 }
 
 export function writeExportFiles(result: ExportResult, paths: ExportPaths, force: boolean): void {
+  const artifactExistedBeforeWrite = existsSync(paths.artifactPath);
+  const sidecarExistedBeforeWrite = existsSync(paths.sidecarPath);
   if (!force) {
-    const existing = [paths.artifactPath, paths.sidecarPath].filter((path) => existsSync(path));
+    const existing = [
+      artifactExistedBeforeWrite ? paths.artifactPath : null,
+      sidecarExistedBeforeWrite ? paths.sidecarPath : null,
+    ].filter((path): path is string => path !== null);
     if (existing.length > 0) {
       throw new FacetError(
         "invalid_request",
@@ -84,5 +106,16 @@ export function writeExportFiles(result: ExportResult, paths: ExportPaths, force
 
   mkdirSync(dirname(paths.artifactPath), { recursive: true });
   writeFileSync(paths.artifactPath, Buffer.from(result.bytes, "base64"));
-  writeFileSync(paths.sidecarPath, `${JSON.stringify(result.sidecar, null, 2)}\n`, "utf8");
+  try {
+    writeFileSync(paths.sidecarPath, `${JSON.stringify(result.sidecar, null, 2)}\n`, "utf8");
+  } catch (error) {
+    if (!artifactExistedBeforeWrite) {
+      try {
+        unlinkSync(paths.artifactPath);
+      } catch {
+        // Preserve the sidecar failure as the useful error at the CLI boundary.
+      }
+    }
+    throw error;
+  }
 }
