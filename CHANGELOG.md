@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.0](https://github.com/legion-works/facet/compare/v1.2.0...v1.3.0) (2026-08-10)
+
+
+### Features
+
+* add insecure dispatcher semantics and wire disclosure ([59b230e](https://github.com/legion-works/facet/commit/59b230e4c97ebd94b16abceea370f05c3553caad))
+* add insecure level and status contracts ([4b391e2](https://github.com/legion-works/facet/commit/4b391e27d1b04f53d22c5df7d9b47f2a0a454f9e))
+* add opt-in insecure auto fallback ([de411db](https://github.com/legion-works/facet/commit/de411db0c9527700b835c7d614dfd2691d5eb7f0))
+* implement insecure sandbox level selection ([ee207cd](https://github.com/legion-works/facet/commit/ee207cd123297817e75537ce0dc321eb7783126b))
+* make insecure mode loud on every surface ([2971166](https://github.com/legion-works/facet/commit/297116653fd6f7ff3fa34069653b8eeb0a74cd14))
+* persist insecure markers with v5 migration ([1ee2825](https://github.com/legion-works/facet/commit/1ee28252f1e97db16253c2f99d5f03b4a5a99396))
+* thread insecure level through service boot ([2afce35](https://github.com/legion-works/facet/commit/2afce3579625015d8ad8e45a4167c6e19595977c))
+
+
+### Bug Fixes
+
+* gate service stderr inherit on insecure boot ([c13d409](https://github.com/legion-works/facet/commit/c13d40910a10a0fdfd12f30a630d976e9a44c4e3))
+* surface insecure marker on gallery source route ([50043d9](https://github.com/legion-works/facet/commit/50043d9114feea6674b2ac2360ddcd809a1b7d80))
+
 ## [1.2.0](https://github.com/legion-works/facet/compare/v1.1.0...v1.2.0) (2026-08-10)
 
 
