@@ -149,7 +149,7 @@ drifts from either array.
 
 `alert`, `badge`, `btn`, `card`, `stat`, `table`.
 
-6 components in total · 65 classes shipped across both arrays.
+6 components in total · 64 classes shipped across both arrays.
 
 <!-- VOCABULARY:END -->
 

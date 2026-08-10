@@ -300,6 +300,7 @@ describe("HTML validation observables", () => {
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
+      externalImageCount: 2,
       html: HTML_COUNTS,
     };
     const observed = {
@@ -308,6 +309,7 @@ describe("HTML validation observables", () => {
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
+      externalImageCount: 2,
       errorCount: 0,
       html: HTML_COUNTS,
     };
@@ -368,6 +370,7 @@ describe("HTML validation observables", () => {
         mermaidNodeCount: 2,
         visibleSvgCount: 1,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
         errorCount: 0,
       },
     };
@@ -379,6 +382,7 @@ describe("HTML validation observables", () => {
         mermaidNodeCount: 2,
         visibleSvgCount: 1,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
     };
     const tier1Baseline = {

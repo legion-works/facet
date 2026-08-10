@@ -126,8 +126,17 @@ async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
   switch (input.artifactType) {
     case "markdown": {
       const result = parseMarkdown(input.source);
+      // Propagate the markdown-side external-image count up to the
+      // lexical expectation so the verdict's expected/observed match
+      // compares two top-level counters. The dispatcher is byte-dumb
+      // and cannot compute this itself.
+      const externalImageCount =
+        result.status === "ok" || result.status === "error"
+          ? result.observed.externalImageCount
+          : 0;
       return {
         ...base,
+        expected: { ...input.lexical, externalImageCount },
         status: result.status === "ok" ? "ok" : "error",
         observed:
           result.status === "error"
@@ -175,16 +184,21 @@ async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
     case "html": {
       const result = parseHtml(input.source);
       const html = result.html;
+      // The HTML artifact's external-image count lives inside `html`
+      // (Tier 1 protocol probes populate it from real DOM observation);
+      // mirror it up to the top level so the verdict reads the
+      // type-agnostic counter rather than the HTML-shaped subfield.
       return {
         ...base,
         status: result.status,
-        expected: { ...input.lexical, html },
+        expected: { ...input.lexical, externalImageCount: html.externalImageCount, html },
         observed: {
           rendererRootSvgCount: 0,
           graphCount: 0,
           mermaidNodeCount: 0,
           visibleSvgCount: 0,
           opaqueRegionCount: html.canvasCount,
+          externalImageCount: html.externalImageCount,
           html,
           errorCount: result.status === "error" ? result.errors.length : 0,
           ...(result.status === "error" ? { discriminativeErrors: [...result.errors] } : {}),

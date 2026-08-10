@@ -52,6 +52,7 @@ function lexicalCounters(_bytes: Uint8Array) {
     mermaidNodeCount: 0,
     visibleSvgCount: 0,
     opaqueRegionCount: 0,
+    externalImageCount: 0,
   });
 }
 
@@ -517,6 +518,7 @@ describe("Tier 0 protocol-boundary unit cases (no subprocess required)", () => {
             graphCount: 0,
             mermaidNodeCount: 0,
             visibleSvgCount: 0,
+            externalImageCount: 0,
             opaqueRegionCount: 0,
             errorCount: 0,
           },
@@ -562,6 +564,7 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
       rendererRootSvgCount: 0,
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
+      externalImageCount: 0,
       opaqueRegionCount: 0,
     },
     observed: {
@@ -569,6 +572,7 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
       graphCount: 0,
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
+      externalImageCount: 0,
       opaqueRegionCount: 0,
       errorCount: 0,
     },
@@ -590,6 +594,7 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
         rendererRootSvgCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        externalImageCount: 0,
         opaqueRegionCount: 0,
       },
       observed: {
@@ -597,6 +602,7 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
         graphCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        externalImageCount: 0,
         opaqueRegionCount: 0,
         errorCount: 0,
       },

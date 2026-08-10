@@ -11,6 +11,19 @@
  * Marked produces inline `html` tokens for raw HTML blocks; those are
  * counted but never attached to a DOM. The `marked` lexer therefore
  * gives us a safe structural check without any rendering surface.
+ *
+ * External-image disclosure: the frozen CSP widens `img-src` to
+ * `https:` for every artifact type, so a markdown artifact carrying a
+ * native `![](https://…)` image loads that image at display time.
+ * `parseMarkdown` walks Marked's token tree (NOT a regex over the
+ * source) and tallies every image whose resolved `href` is `https:`.
+ * Marked resolves inline, reference-style, and autolink forms into the
+ * same `Tokens.Image` shape with the final `href` already populated,
+ * so a single walker pass is sufficient. The count surfaces as
+ * `observed.externalImageCount` so the verdict can downgrade the
+ * artifact to `partial:external_resources`. Raw-HTML smuggling of an
+ * `href`/`src` to `https:` remains a hard Tier 0 rejection — that
+ * pattern is hostile, not authored.
  */
 
 import { Lexer, type Token, type Tokens } from "marked";
@@ -35,19 +48,37 @@ interface MarkdownCounts {
   mermaidFenced: number;
   rendererRoots: number;
   htmlTokens: number;
+  externalImageCount: number;
   hasScript: boolean;
   hasOnHandler: boolean;
   hasExternalRef: boolean;
 }
 
+function isExternalHttpsUrl(value: string): boolean {
+  // The URL constructor canonicalizes the protocol; malformed URLs
+  // (e.g. `https://[`) return false here rather than throwing, so the
+  // token walk surfaces a typed zero instead of crashing Tier 0.
+  try {
+    return new URL(value.trim()).protocol.toLowerCase() === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Walk the marked token tree and tally the surfaces that matter for
  * the Tier 0 verdict: fenced blocks, mermaid blocks, raw HTML blocks,
- * and three structural red flags the verifier must NOT execute (a
- * `<script>` token, an `on*=…` handler, and an external URL in any
- * attribute). The red flags are counted so a hostile source that
- * smuggles executable content surfaces as `status: "error"` even
- * though marked does not interpret it.
+ * native-markdown external-image references, and three structural
+ * red flags the verifier must NOT execute (a `<script>` token, an
+ * `on*=…` handler, and an external URL in any raw-HTML attribute).
+ *
+ * Marked resolves every image form (inline `![](https://…)`,
+ * reference-style `![alt][ref]` whose `[ref]: https://…`, autolink
+ * `![<https://…>]()`) into the same `Tokens.Image` shape with the
+ * final `href` already populated — the walker counts one `https:`
+ * image per token regardless of which authoring form produced it.
+ * Raw-HTML `src="https://…"` is the smuggling pattern and is rejected
+ * below.
  */
 function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
   for (const token of tokens) {
@@ -66,6 +97,9 @@ function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
       if (/<script[\s>]/i.test(raw)) counts.hasScript = true;
       if (/\son[a-z]+\s*=/i.test(raw)) counts.hasOnHandler = true;
       if (/\b(?:href|src)\s*=\s*["']https?:/i.test(raw)) counts.hasExternalRef = true;
+    } else if (token.type === "image") {
+      const image = token as Tokens.Image;
+      if (isExternalHttpsUrl(image.href ?? "")) counts.externalImageCount += 1;
     }
     // Recurse into containers (paragraph, list, blockquote, table).
     const recurseTokens = (sub: Token[] | undefined): void => {
@@ -95,6 +129,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
     mermaidFenced: 0,
     rendererRoots: 0,
     htmlTokens: 0,
+    externalImageCount: 0,
     hasScript: false,
     hasOnHandler: false,
     hasExternalRef: false,
@@ -118,6 +153,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
         graphCount: 0,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        externalImageCount: 0,
         errorCount: 1,
         opaqueRegionCount: 0,
       },
@@ -136,6 +172,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
         graphCount: counts.mermaidFenced,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        externalImageCount: counts.externalImageCount,
         errorCount: 1,
         opaqueRegionCount: 0,
       },
@@ -155,6 +192,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
         graphCount: counts.mermaidFenced,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        externalImageCount: counts.externalImageCount,
         errorCount: 1,
         opaqueRegionCount: 0,
       },
@@ -174,6 +212,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
         graphCount: counts.mermaidFenced,
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
+        externalImageCount: counts.externalImageCount,
         errorCount: 1,
         opaqueRegionCount: 0,
       },
@@ -193,6 +232,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
       graphCount: counts.mermaidFenced,
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
+      externalImageCount: counts.externalImageCount,
       errorCount: 0,
       opaqueRegionCount: 0,
     },

@@ -7,8 +7,7 @@
  * real prediction-vs-observation gate while the harness routes through
  * that production function; a hand-rolled copy of `countSnapshotHtml`
  * would let an observation regression (e.g. a gutted incrementer)
- * silently pass. Per the reviewer's acceptance proof, gutting
- * `countSnapshotHtml` tableCount in production MUST redden this file.
+ * silently pass.
  *
  * Each accepted row also carries a `triggerProof` that walks the parse5
  * tree and asserts the named recovery family actually fires. A fixture

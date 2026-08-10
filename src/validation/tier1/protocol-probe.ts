@@ -342,6 +342,7 @@ export async function probeProtocolSnapshot(
       viewBoxes: [],
       errorCount: 0,
       opaqueRegionCount: 0,
+      externalImageCount: 0,
       discriminativeErrors: [],
     };
   }
@@ -350,15 +351,15 @@ export async function probeProtocolSnapshot(
   const viewBoxes = collectViewBoxes(snapshot, documentIndex, rendererRoots);
   const discriminativeErrors = collectDiscriminativeErrors(snapshot, documentIndex);
   const errorCount = discriminativeErrors.length;
+  const htmlCounts = countSnapshotHtml(snapshot, documentIndex);
   return {
     rendererRootSvgCount: rendererRoots.length,
     graphCount: graphRoots.length,
     mermaidNodeCount: countGNode(snapshot, documentIndex, graphRoots),
     visibleSvgCount: viewBoxes.filter(isNonDegenerateViewBox).length,
     opaqueRegionCount: countByName(snapshot, documentIndex, "canvas"),
-    ...(countSnapshotHtml(snapshot, documentIndex) === undefined
-      ? {}
-      : { html: countSnapshotHtml(snapshot, documentIndex) }),
+    externalImageCount: htmlCounts?.externalImageCount ?? 0,
+    ...(htmlCounts === undefined ? {} : { html: htmlCounts }),
     viewBoxes,
     errorCount,
     discriminativeErrors: discriminativeErrors.map((entry) => ({
@@ -508,6 +509,7 @@ export async function probeProtocolGetDocument(
     mermaidNodeCount: gNodeCount,
     visibleSvgCount,
     opaqueRegionCount,
+    externalImageCount: html?.externalImageCount ?? 0,
     ...(html === undefined ? {} : { html }),
     viewBoxes,
     errorCount,

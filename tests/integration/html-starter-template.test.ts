@@ -16,15 +16,54 @@
  * this test stays at the Tier 0 + structural boundary so it runs
  * without the browser harness.
  */
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 import { expect, test } from "bun:test";
 
 import { parseHtml } from "../../src/validation/tier0/html";
 import { HTML_STYLE_CLASSES } from "../../src/shared/html/style-vocabulary";
+import { startFacetService } from "../../src/service/server";
+import { createQuietLogger } from "../../src/shared/logging/logger";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
+import { CommandResultSchema, type CommandResult } from "../../src/shared/contracts/commands";
+import { FACET_SCHEMA_VERSION } from "../../src/shared/contracts/envelope";
 
 const STARTER_PATH = join(import.meta.dir, "..", "..", "templates", "html-status-report.html");
+
+async function request(
+  service: Awaited<ReturnType<typeof startFacetService>>,
+  command: Record<string, unknown>,
+): Promise<Extract<CommandResult, { command: "create" | "publish" | "export" }>> {
+  const requestId = `req-${crypto.randomUUID()}`;
+  const response = await fetch(`${service.url}/api/v1/commands`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${service.installToken}`,
+      "content-type": "application/json",
+      host: new URL(service.url).host,
+    },
+    body: JSON.stringify({
+      schemaVersion: FACET_SCHEMA_VERSION,
+      requestId,
+      ok: true,
+      data: { requestId, ...command },
+    }),
+  });
+  const body = (await response.json()) as {
+    ok: boolean;
+    data?: { command: "create" | "publish" | "export"; [k: string]: unknown };
+    error?: unknown;
+  };
+  if (!body.ok || body.data === undefined) {
+    throw new Error(`request failed: ${JSON.stringify(body.error ?? body)}`);
+  }
+  return CommandResultSchema.parse(body.data) as Extract<
+    CommandResult,
+    { command: "create" | "publish" | "export" }
+  >;
+}
 
 test("starter parses to ok in Tier 0", () => {
   const bytes = new Uint8Array(readFileSync(STARTER_PATH));
@@ -74,17 +113,69 @@ test("starter contains no script, event handler, inline style, or external font/
   expect(/data-facet-/i.test(source)).toBe(false);
 });
 
-test("exported source bytes equal the file byte-for-byte", () => {
+test("exported source bytes equal the file byte-for-byte through the real pipeline", async () => {
   // The HTML renderer wraps sanitized body content in a frame-owned
   // element carrying `data-facet-renderer-root`. That wrapper never
   // touches storage or export — exported bytes are exactly the bytes
   // the operator published. This is the byte-identity contract from
   // D13 of the HTML design.
+  //
+  // The previous incarnation of this test only proved that UTF-8
+  // decode∘encode is the identity on valid UTF-8 — no service, no
+  // publish path, no export command, no renderer. It accepted without
+  // comment even after the export pipeline was gutted. This rewrite
+  // routes through `request(service, …)` so the byte-identity claim
+  // is anchored to the real wire path, not a string-roundtrip in
+  // test code.
   const fileBytes = new Uint8Array(readFileSync(STARTER_PATH));
-  // Re-encode the file as UTF-8 the same way the export pipeline does:
-  // it round-trips through TextDecoder(TextEncoder.encode(source)),
-  // which is byte-identical for any valid UTF-8 source.
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(fileBytes);
-  const reencoded = new TextEncoder().encode(text);
-  expect(reencoded).toEqual(fileBytes);
+  const envDir = mkdtempSync(join(tmpdir(), "facet-starter-template-"));
+  const service = await startFacetService({
+    dbPath: join(envDir, "facet.sqlite"),
+    installTokenPath: join(envDir, "install.token"),
+    promoteTokenPath: join(envDir, "promote.token"),
+    lockPath: join(envDir, "facet.lock"),
+    idleTimeoutMs: 5_000,
+    logger: createQuietLogger({ component: "starter-template-test" }),
+    tier0Runner: stubTier0Runner,
+  });
+  try {
+    const createBody = await request(service, {
+      command: "create",
+      projectId: "starter-template-project",
+      slug: "html-status-report",
+      title: "HTML status report",
+    });
+    if (createBody.command !== "create") throw new Error("expected create");
+    const artifactId = createBody.artifact.id;
+    const publishBody = await request(service, {
+      command: "publish",
+      artifactId,
+      artifactType: "html",
+      bytes: Buffer.from(fileBytes).toString("base64"),
+    });
+    if (publishBody.command !== "publish") throw new Error("expected publish");
+    const revisionSha = publishBody.revision.sha256;
+    const exportBody = await request(service, {
+      command: "export",
+      artifactId,
+      revisionSha,
+      format: "source",
+    });
+    if (exportBody.command !== "export") throw new Error("expected export");
+    const exportedBytes = Buffer.from(exportBody.bytes, "base64");
+    expect(new Uint8Array(exportedBytes)).toEqual(fileBytes);
+    expect(exportBody.sidecar.revisionSha).toBe(revisionSha);
+    // Re-issuing export without a revisionSha must select the same
+    // (latest) revision and still match byte-for-byte.
+    const latest = await request(service, {
+      command: "export",
+      artifactId,
+      format: "source",
+    });
+    if (latest.command !== "export") throw new Error("expected export");
+    expect(Buffer.from(latest.bytes, "base64")).toEqual(Buffer.from(fileBytes));
+  } finally {
+    await service.stop();
+    rmSync(envDir, { recursive: true, force: true });
+  }
 });

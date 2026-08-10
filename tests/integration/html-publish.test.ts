@@ -80,6 +80,7 @@ function observed(html: HtmlStructureCounts, errorCount = 0) {
     mermaidNodeCount: 0,
     visibleSvgCount: 0,
     opaqueRegionCount: html.canvasCount,
+    externalImageCount: html.externalImageCount,
     html,
     errorCount,
   };
@@ -218,6 +219,7 @@ describe("HTML publish prediction boundary", () => {
           mermaidNodeCount: input.lexical.mermaidNodeCount,
           visibleSvgCount: 0,
           opaqueRegionCount: input.lexical.opaqueRegionCount,
+          externalImageCount: input.lexical.externalImageCount,
           errorCount: 0,
         },
       }),
@@ -238,7 +240,7 @@ describe("HTML publish prediction boundary", () => {
           )
           .get() as { expected_json: string };
         expect(row.expected_json).toBe(
-          '{"rendererRootSvgCount":0,"mermaidNodeCount":0,"visibleSvgCount":0,"opaqueRegionCount":0}',
+          '{"rendererRootSvgCount":0,"mermaidNodeCount":0,"visibleSvgCount":0,"opaqueRegionCount":0,"externalImageCount":0}',
         );
       } finally {
         db.close();

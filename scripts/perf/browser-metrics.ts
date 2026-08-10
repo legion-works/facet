@@ -148,6 +148,7 @@ export async function measureColdReadBack(): Promise<{
             mermaidNodeCount: lexical.mermaidNodeCount,
             visibleSvgCount: 0,
             opaqueRegionCount: 0,
+            externalImageCount: 0,
           },
           launcherVersion: TIER1_PINNED_VERSION,
           networkNamespace: TIER1_NETWORK_NAMESPACE,

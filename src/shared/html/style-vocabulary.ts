@@ -62,4 +62,25 @@ export const HTML_TAILWIND_CLASSES = [
 
 export const HTML_DAISY_COMPONENTS = ["alert", "badge", "btn", "card", "stat", "table"] as const;
 
+/**
+ * Distinct (deduplicated) view of the full vocabulary. `table` appears
+ * in both arrays above (it ships as a Tailwind utility AND a daisyUI
+ * component), so a naïve `.length` double-counts it. Use this for any
+ * "how many distinct classes shipped" assertion — including the
+ * drift-guard test, which derives its expected count from this set so
+ * a future deduplication regression (e.g. adding a second duplicate)
+ * reddens the doc-block test rather than silently agreeing with itself.
+ */
+export const HTML_STYLE_CLASSES_DISTINCT = [
+  ...new Set<string>([...HTML_TAILWIND_CLASSES, ...HTML_DAISY_COMPONENTS]),
+] as const;
+
+/**
+ * Flat view of the vocabulary used by the Tailwind class-name build.
+ * Duplicates `table` (Tailwind utility AND daisyUI component) so the
+ * vendored CSS ship output keeps the `.table` class even if a future
+ * dedup removes one of its sources — but DO NOT use this for any
+ * "how many distinct classes shipped" assertion; use
+ * `HTML_STYLE_CLASSES_DISTINCT` instead.
+ */
 export const HTML_STYLE_CLASSES = [...HTML_TAILWIND_CLASSES, ...HTML_DAISY_COMPONENTS] as const;

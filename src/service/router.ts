@@ -420,17 +420,52 @@ export function buildRouter(deps: RouterDeps): {
             },
           });
         }
+        // The html frame route is the ONE gallery route that needs
+        // the bundled stylesheet — the other types self-heal because
+        // their frame route already calls `ensureGalleryBuild()`.
+        // Without this build, a fresh clone (or a `rm -rf dist/`
+        // followed by a restart) hits a 500 with a raw stack trace as
+        // the response body, which is an information-disclosure
+        // defect on its own.
+        if (artifactType.data === "html") {
+          try {
+            await ensureGalleryBuild();
+          } catch (error) {
+            return new Response(error instanceof Error ? error.message : "Gallery build failed", {
+              status: 500,
+              headers: {
+                "content-type": "text/plain; charset=utf-8",
+                "cache-control": "no-store",
+              },
+            });
+          }
+        }
+        let vendoredStyles: string | undefined;
+        if (artifactType.data === "html") {
+          try {
+            vendoredStyles = await Bun.file(
+              join(galleryRoot, "frame", "bootstrap", "html.css"),
+            ).text();
+          } catch {
+            // The build step above should have produced the asset; if
+            // it is still missing, return a typed plain-text 500
+            // rather than a raw exception dump. The body intentionally
+            // omits the underlying error text so we don't leak paths,
+            // syscall names, or errno values to the operator's browser.
+            return new Response("html frame stylesheet unavailable", {
+              status: 500,
+              headers: {
+                "content-type": "text/plain; charset=utf-8",
+                "cache-control": "no-store",
+              },
+            });
+          }
+        }
         return new Response(
           buildFrameDocument({
             nonce,
             bootstrapUrl: `${FRAME_BOOTSTRAP_PREFIX}${artifactType.data}.js`,
-            ...(artifactType.data === "html"
-              ? {
-                  vendoredStyles: await Bun.file(
-                    join(galleryRoot, "frame", "bootstrap", "html.css"),
-                  ).text(),
-                }
-              : {}),
+            ...(vendoredStyles === undefined ? {} : { vendoredStyles }),
           }),
           {
             status: 200,

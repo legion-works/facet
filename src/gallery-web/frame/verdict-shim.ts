@@ -7,11 +7,21 @@
  * becomes the Tier-1 source of truth.
  */
 
+/**
+ * Placeholder verdict shim — the shell + channels ship without the
+ * per-type renderer. The bootstrap reports an empty verdict via the
+ * control channel so the shell can still demonstrate end-to-end
+ * wiring without a real renderer; the typed per-artifact renderer
+ * (mermaid/markdown/svg/chart/html) replaces this and the verifier
+ * becomes the Tier-1 source of truth.
+ */
+
 export interface VerdictShimObserved {
   readonly rendererRootSvgCount: number;
   readonly graphCount: number;
   readonly mermaidNodeCount: number;
   readonly visibleSvgCount: number;
+  readonly externalImageCount: number;
   readonly errorCount: number;
   readonly html?: {
     readonly rendererRootCount: number;
@@ -29,11 +39,6 @@ export interface VerdictShimReport {
   readonly observed: VerdictShimObserved;
 }
 
-/**
- * Compute the placeholder verdict. The real verifier runs out-of-frame
- * (Tier 1 chrome-headless-shell) and is the source of truth — this
- * shim is intentionally empty.
- */
 export function computeVerdictShim(): VerdictShimReport {
   return {
     status: "shim_only",
@@ -42,6 +47,7 @@ export function computeVerdictShim(): VerdictShimReport {
       graphCount: 0,
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
+      externalImageCount: 0,
       errorCount: 0,
     },
   };

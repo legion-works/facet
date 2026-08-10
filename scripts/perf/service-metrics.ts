@@ -331,6 +331,7 @@ export async function measureTier0Spawn(): Promise<{
       mermaidNodeCount: lexical.mermaidNodeCount,
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
+      externalImageCount: 0,
     },
   };
   const coldStartedAt = performance.now();

@@ -563,6 +563,7 @@ describe("renderer registry — dispatch contract", () => {
       mermaidNodeCount: 2,
       visibleSvgCount: 1,
       opaqueRegionCount: 1,
+      externalImageCount: 0,
       errorCount: 1,
     });
   });
@@ -638,7 +639,7 @@ describe("page shim wire compatibility", () => {
 
     const message = JSON.stringify({ type: "render-complete", observed: registry.countPageShim() });
     expect(message).toBe(
-      '{"type":"render-complete","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":0,"visibleSvgCount":1,"opaqueRegionCount":0,"errorCount":0}}',
+      '{"type":"render-complete","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":0,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}}',
     );
     root.remove();
   });

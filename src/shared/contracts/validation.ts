@@ -80,12 +80,20 @@ export type HtmlStructureCounts = z.infer<typeof HtmlStructureCountsSchema>;
  * so an attacker cannot make a forged page's `svgCount` agree with
  * the verifier's observation without also matching the lexical
  * expectation.
+ *
+ * `externalImageCount` is the TYPE-AGNOSTIC count of references to
+ * resources the no-egress validation run cannot observe (HTTPS
+ * images). It applies to every artifact type that may reference an
+ * external resource (markdown native image syntax, raw HTML, html),
+ * so the verdict reads it from the top level rather than from the
+ * HTML-only `html` subfield.
  */
 export const LexicalCountersSchema = z.object({
   rendererRootSvgCount: z.number().int().nonnegative(),
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
   opaqueRegionCount: z.number().int().nonnegative(),
+  externalImageCount: z.number().int().nonnegative(),
   html: HtmlStructureCountsSchema.optional(),
 });
 export type LexicalCounters = z.infer<typeof LexicalCountersSchema>;
@@ -108,6 +116,7 @@ export const VerdictObservedSchema = z.object({
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
   opaqueRegionCount: z.number().int().nonnegative(),
+  externalImageCount: z.number().int().nonnegative(),
   html: HtmlStructureCountsSchema.optional(),
   viewBoxes: z.array(z.string()).optional(),
   errorCount: z.number().int().nonnegative(),
@@ -239,6 +248,7 @@ export const ProtocolObservationSchema = z.object({
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
   opaqueRegionCount: z.number().int().nonnegative(),
+  externalImageCount: z.number().int().nonnegative(),
   html: HtmlStructureCountsSchema.optional(),
   viewBoxes: z.array(z.string()),
   errorCount: z.number().int().nonnegative(),

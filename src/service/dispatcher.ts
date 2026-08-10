@@ -150,6 +150,7 @@ async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tie
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
         viewBoxes: [],
         errorCount: 1,
         discriminativeErrors: [{ code: facet.code, message: facet.message }],
@@ -192,6 +193,7 @@ async function runTier1Safe(
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
         viewBoxes: [],
         errorCount: 1,
         discriminativeErrors: [{ code: facet.code, message: facet.message }],
@@ -266,12 +268,14 @@ export async function dispatch(
               mermaidNodeCount: 0,
               visibleSvgCount: 0,
               opaqueRegionCount: 0,
+              externalImageCount: 0,
             }
           : {
               rendererRootSvgCount: lexical.expectedRendererRoots,
               mermaidNodeCount: lexical.mermaidNodeCount,
               visibleSvgCount: 0,
               opaqueRegionCount: lexical.expectedOpaqueRegions,
+              externalImageCount: 0,
             };
       const tier0Input = Tier0InputSchema.parse({
         revisionSha: revision.sha256,
@@ -294,6 +298,7 @@ export async function dispatch(
               mermaidNodeCount: 0,
               visibleSvgCount: 0,
               opaqueRegionCount: 0,
+              externalImageCount: 0,
               errorCount: 0,
             },
           }),

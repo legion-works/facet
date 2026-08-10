@@ -62,6 +62,7 @@ export interface PageShimCounts {
   readonly mermaidNodeCount: number;
   readonly visibleSvgCount: number;
   readonly opaqueRegionCount: number;
+  readonly externalImageCount: number;
   readonly errorCount: number;
   readonly html?: {
     readonly rendererRootCount: number;
@@ -179,6 +180,7 @@ export function countPageShim(): PageShimCounts {
     mermaidNodeCount,
     visibleSvgCount: roots.filter(nonDegenerateViewBox).length,
     opaqueRegionCount,
+    externalImageCount: html?.externalImageCount ?? 0,
     errorCount: safeSelectorElements("[data-facet-error]").length,
     ...(html === undefined ? {} : { html }),
   };

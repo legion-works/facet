@@ -45,7 +45,7 @@ export function create${kind}Runner(level: number) {
     status: "ok",
     revisionSha: input.revisionSha,
     expected: input.lexical,
-    observed: { rendererRootSvgCount: 0, graphCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0, opaqueRegionCount: 0, errorCount: 0 },
+    observed: { rendererRootSvgCount: 0, graphCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0, opaqueRegionCount: 0, externalImageCount: 0, errorCount: 0 },
   })`
       : `({
     tier: 1,
@@ -53,7 +53,7 @@ export function create${kind}Runner(level: number) {
     artifactId: "worker-placeholder",
     revisionSha: input.revisionSha,
     expected: input.lexical,
-    observed: { rendererRootSvgCount: 0, graphCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0, opaqueRegionCount: 0, errorCount: 0 },
+    observed: { rendererRootSvgCount: 0, graphCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0, opaqueRegionCount: 0, externalImageCount: 0, errorCount: 0 },
     screenshotPath: null,
     consolePath: null,
   })`

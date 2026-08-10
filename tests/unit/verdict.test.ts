@@ -35,6 +35,7 @@ const lex = (overrides: Partial<LexicalCounters> = {}): LexicalCounters =>
     mermaidNodeCount: 1,
     visibleSvgCount: 1,
     opaqueRegionCount: 0,
+    externalImageCount: 0,
     ...overrides,
   });
 
@@ -46,6 +47,7 @@ const protocol = (overrides: Partial<ProtocolObservation> = {}): ProtocolObserva
   viewBoxes: ["0 0 100 100"],
   errorCount: 0,
   opaqueRegionCount: 0,
+  externalImageCount: 0,
   discriminativeErrors: [],
   ...overrides,
 });
@@ -56,6 +58,7 @@ const shim = (overrides: Partial<PageShim> = {}): PageShim => ({
   mermaidNodeCount: 1,
   visibleSvgCount: 1,
   opaqueRegionCount: 0,
+  externalImageCount: 0,
   errorCount: 0,
   ...overrides,
 });
@@ -310,10 +313,25 @@ describe("deriveVerdict — external resources", () => {
   test("external HTTPS image references → partial:external_resources", () => {
     expect(
       deriveVerdict(
-        lex({ html: externalHtml }),
-        protocol({ html: externalHtml }),
-        protocol({ html: externalHtml }),
-        shim({ html: externalHtml }),
+        lex({ externalImageCount: 1, html: externalHtml }),
+        protocol({ externalImageCount: 1, html: externalHtml }),
+        protocol({ externalImageCount: 1, html: externalHtml }),
+        shim({ externalImageCount: 1, html: externalHtml }),
+        lifecycle(),
+      ),
+    ).toBe("partial:external_resources");
+  });
+
+  test("markdown path: external images observed top-level without html subfield → partial:external_resources", () => {
+    // Type-agnostic disclosure: markdown artifacts carry no html
+    // subfield, but their top-level externalImageCount is the verdict's
+    // authority for the partial status.
+    expect(
+      deriveVerdict(
+        lex({ externalImageCount: 1 }),
+        protocol({ externalImageCount: 1 }),
+        protocol({ externalImageCount: 1 }),
+        shim({ externalImageCount: 1 }),
         lifecycle(),
       ),
     ).toBe("partial:external_resources");
@@ -322,10 +340,10 @@ describe("deriveVerdict — external resources", () => {
   test("opaque content outranks external resources", () => {
     expect(
       deriveVerdict(
-        lex({ opaqueRegionCount: 1, html: externalHtml }),
-        protocol({ opaqueRegionCount: 1, html: externalHtml }),
-        protocol({ opaqueRegionCount: 1, html: externalHtml }),
-        shim({ opaqueRegionCount: 1, html: externalHtml }),
+        lex({ opaqueRegionCount: 1, externalImageCount: 1, html: externalHtml }),
+        protocol({ opaqueRegionCount: 1, externalImageCount: 1, html: externalHtml }),
+        protocol({ opaqueRegionCount: 1, externalImageCount: 1, html: externalHtml }),
+        shim({ opaqueRegionCount: 1, externalImageCount: 1, html: externalHtml }),
         lifecycle(),
       ),
     ).toBe("partial:opaque_content");
@@ -334,10 +352,10 @@ describe("deriveVerdict — external resources", () => {
   test("external resources outrank layout-unverified", () => {
     expect(
       deriveVerdict(
-        lex({ html: externalHtml }),
-        protocol({ html: externalHtml, visibleSvgCount: 0, viewBoxes: [] }),
-        protocol({ html: externalHtml, visibleSvgCount: 0, viewBoxes: [] }),
-        shim({ visibleSvgCount: 0, html: externalHtml }),
+        lex({ externalImageCount: 1, html: externalHtml }),
+        protocol({ externalImageCount: 1, html: externalHtml, visibleSvgCount: 0, viewBoxes: [] }),
+        protocol({ externalImageCount: 1, html: externalHtml, visibleSvgCount: 0, viewBoxes: [] }),
+        shim({ visibleSvgCount: 0, externalImageCount: 1, html: externalHtml }),
         lifecycle(),
       ),
     ).toBe("partial:external_resources");
@@ -406,12 +424,13 @@ describe("deriveVerdict — html trust and structural ordering", () => {
     canvasCount: 0,
     externalImageCount: 0,
   };
-  const htmlLex = (html = cleanHtml) =>
+  const htmlLex = (html = cleanHtml, overrides: Partial<LexicalCounters> = {}) =>
     lex({
       rendererRootSvgCount: 0,
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
       html,
+      ...overrides,
     });
   const htmlProtocol = (html = cleanHtml, overrides: Partial<ProtocolObservation> = {}) =>
     protocol({
@@ -434,13 +453,13 @@ describe("deriveVerdict — html trust and structural ordering", () => {
     });
 
   test("shim html divergence is tampered before external partial", () => {
-    const external = { ...cleanHtml, imageCount: 1, externalImageCount: 1 };
+    const external = { ...cleanHtml, imageCount: 1 };
     expect(
       deriveVerdict(
-        htmlLex(external),
-        htmlProtocol(external),
-        htmlProtocol(external),
-        htmlShim({ ...external, headingCount: 9 }),
+        htmlLex(external, { externalImageCount: 1 }),
+        htmlProtocol(external, { externalImageCount: 1 }),
+        htmlProtocol(external, { externalImageCount: 1 }),
+        htmlShim({ ...external, headingCount: 9 }, { externalImageCount: 1 }),
         lifecycle(),
       ),
     ).toBe("tampered");
@@ -459,45 +478,56 @@ describe("deriveVerdict — html trust and structural ordering", () => {
   });
 
   test("expected and observed html mismatch is error before partial statuses", () => {
-    const external = { ...cleanHtml, imageCount: 1, externalImageCount: 1 };
+    const external = { ...cleanHtml, imageCount: 1 };
     expect(
       deriveVerdict(
-        htmlLex(external),
-        htmlProtocol({ ...external, headingCount: 0 }),
-        htmlProtocol({ ...external, headingCount: 0 }),
-        htmlShim({ ...external, headingCount: 0 }),
+        htmlLex(external, { externalImageCount: 1 }),
+        htmlProtocol({ ...external, headingCount: 0 }, { externalImageCount: 1 }),
+        htmlProtocol({ ...external, headingCount: 0 }, { externalImageCount: 1 }),
+        htmlShim({ ...external, headingCount: 0 }, { externalImageCount: 1 }),
         lifecycle(),
       ),
     ).toBe("error");
   });
 
   test("matching external image is partial external resources", () => {
-    const external = { ...cleanHtml, imageCount: 1, externalImageCount: 1 };
+    const external = { ...cleanHtml, imageCount: 1 };
     expect(
       deriveVerdict(
-        htmlLex(external),
-        htmlProtocol(external),
-        htmlProtocol(external),
-        htmlShim(external),
+        htmlLex(external, { externalImageCount: 1 }),
+        htmlProtocol(external, { externalImageCount: 1 }),
+        htmlProtocol(external, { externalImageCount: 1 }),
+        htmlShim(external, { externalImageCount: 1 }),
         lifecycle(),
       ),
     ).toBe("partial:external_resources");
   });
 
   test("matching canvas plus external image is partial opaque content", () => {
-    const both = { ...cleanHtml, imageCount: 1, canvasCount: 1, externalImageCount: 1 };
+    const both = { ...cleanHtml, imageCount: 1, canvasCount: 1 };
     expect(
       deriveVerdict(
-        htmlLex(both),
-        htmlProtocol(both, { opaqueRegionCount: 1 }),
-        htmlProtocol(both, { opaqueRegionCount: 1 }),
-        htmlShim(both, { opaqueRegionCount: 1 }),
+        htmlLex(both, { externalImageCount: 1 }),
+        htmlProtocol(both, { opaqueRegionCount: 1, externalImageCount: 1 }),
+        htmlProtocol(both, { opaqueRegionCount: 1, externalImageCount: 1 }),
+        htmlShim(both, { opaqueRegionCount: 1, externalImageCount: 1 }),
         lifecycle(),
       ),
     ).toBe("partial:opaque_content");
   });
 
   test("matching plain html is ok without an SVG layout", () => {
+    expect(deriveVerdict(htmlLex(), htmlProtocol(), htmlProtocol(), htmlShim(), lifecycle())).toBe(
+      "ok",
+    );
+  });
+
+  test("clean html with zero viewBoxes still verdicts ok (layout axis does not apply)", () => {
+    // SHOULD-3 gate documented in the verdict precedence docblock:
+    // HTML artifacts have no viewBox axis, so the layout-observability
+    // branch is structurally unreachable for them. A clean HTML
+    // artifact with visibleSvgCount=0 and viewBoxes=[] returns ok when
+    // counts match.
     expect(deriveVerdict(htmlLex(), htmlProtocol(), htmlProtocol(), htmlShim(), lifecycle())).toBe(
       "ok",
     );

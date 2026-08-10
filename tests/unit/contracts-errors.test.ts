@@ -159,6 +159,7 @@ describe("canonical verdict / unified observed shape", () => {
         visibleSvgCount: 2,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
     };
     expect(VerdictSchema.safeParse(sample).success).toBe(true);
@@ -178,6 +179,7 @@ describe("canonical verdict / unified observed shape", () => {
         viewBoxes: ["0 0 100 100"],
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
         discriminativeErrors: [{ code: "forged", message: "page tried to override report" }],
       },
     };
@@ -197,6 +199,7 @@ describe("canonical verdict / unified observed shape", () => {
         visibleSvgCount: 0,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
     };
     expect(VerdictSchema.safeParse(sample).success).toBe(false);
@@ -215,6 +218,7 @@ describe("canonical verdict / unified observed shape", () => {
         visibleSvgCount: 1,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       insecure: { level: 1, reason: "browser trust boundary unavailable" },
     };
@@ -234,6 +238,7 @@ describe("canonical verdict / unified observed shape", () => {
         visibleSvgCount: 1,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
     };
     expect(
@@ -257,6 +262,7 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       observed: {
         rendererRootSvgCount: 0,
@@ -265,6 +271,7 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
         visibleSvgCount: 0,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
     };
     expect(Tier0ResultSchema.safeParse(sample).success).toBe(true);
@@ -281,6 +288,7 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
         mermaidNodeCount: 2,
         visibleSvgCount: 1,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       observed: {
         rendererRootSvgCount: 1,
@@ -289,6 +297,7 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
         visibleSvgCount: 1,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       screenshotPath: null,
       consolePath: null,
@@ -306,6 +315,7 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
         mermaidNodeCount: 2,
         visibleSvgCount: 1,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       observed: {
         rendererRootSvgCount: 1,
@@ -314,6 +324,7 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
         visibleSvgCount: 1,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       consolePath: null,
     };
@@ -342,6 +353,7 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
         mermaidNodeCount: 2,
         visibleSvgCount: 1,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       observed: {
         rendererRootSvgCount: 1,
@@ -350,6 +362,7 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
         visibleSvgCount: 1,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       screenshotPath: "/tmp/screenshot.png",
       consolePath: null,

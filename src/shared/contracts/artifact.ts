@@ -59,7 +59,7 @@ export const RenderRunSchema = z.object({
   /**
    * Retained-evidence carve-out: `true` exempts the row from the
    * last-N retention eviction. Pin/template call sites mark rows
-   * retained (Task 14); the cleanup policy skips them.
+   * retained; the cleanup policy skips them.
    */
   retained: z.boolean(),
   startedAt: IsoTimestampSchema,

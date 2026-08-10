@@ -16,6 +16,7 @@ function input(revisionSha: string, source = "fast"): Tier0Input {
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
+      externalImageCount: 0,
     },
   };
 }
@@ -44,6 +45,7 @@ function response(request) {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
+    externalImageCount: 0,
         errorCount: 0,
       },
     },

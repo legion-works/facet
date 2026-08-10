@@ -15,6 +15,7 @@ const protocol: ProtocolObservation = {
   mermaidNodeCount: 1,
   visibleSvgCount: 1,
   opaqueRegionCount: 0,
+  externalImageCount: 0,
   viewBoxes: ["0 0 100 100"],
   errorCount: 0,
   discriminativeErrors: [],
@@ -26,6 +27,7 @@ const shim: PageShim = {
   mermaidNodeCount: 1,
   visibleSvgCount: 1,
   opaqueRegionCount: 0,
+  externalImageCount: 0,
   errorCount: 0,
 };
 
@@ -46,6 +48,7 @@ describe("isolated probe failure", () => {
           mermaidNodeCount: 1,
           visibleSvgCount: 1,
           opaqueRegionCount: 0,
+          externalImageCount: 0,
         }),
         protocol,
         isolated,

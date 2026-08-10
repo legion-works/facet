@@ -320,6 +320,7 @@ async function runTier1Attempt(
         viewBoxes: observed.viewBoxes,
         errorCount: observed.errorCount,
         opaqueRegionCount: observed.opaqueRegionCount,
+        externalImageCount: observed.externalImageCount,
         ...(observed.html === undefined ? {} : { html: observed.html }),
         discriminativeErrors: observed.discriminativeErrors,
       },
@@ -511,7 +512,6 @@ function mergeProtocol(
     "listCount",
     "imageCount",
     "canvasCount",
-    "externalImageCount",
   ] as const;
   if (snapshot.html === undefined || getDocument.html === undefined) {
     if (snapshot.html !== getDocument.html) {
@@ -530,6 +530,12 @@ function mergeProtocol(
       }
     }
   }
+  if (snapshot.externalImageCount !== getDocument.externalImageCount) {
+    errors.push({
+      code: "protocol_divergence",
+      message: `DOMSnapshot.externalImageCount=${snapshot.externalImageCount} vs DOM.getDocument.externalImageCount=${getDocument.externalImageCount}`,
+    });
+  }
   return {
     rendererRootSvgCount: snapshot.rendererRootSvgCount,
     graphCount: snapshot.graphCount,
@@ -538,6 +544,7 @@ function mergeProtocol(
     viewBoxes: snapshot.viewBoxes,
     errorCount: snapshot.errorCount,
     opaqueRegionCount: snapshot.opaqueRegionCount,
+    externalImageCount: snapshot.externalImageCount,
     ...(snapshot.html === undefined ? {} : { html: snapshot.html }),
     discriminativeErrors: errors,
   };

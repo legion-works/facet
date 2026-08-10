@@ -71,6 +71,7 @@ export async function parseMermaid(bytes: Uint8Array): Promise<MermaidParseResul
         visibleSvgCount: 1,
         errorCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
     };
   } catch (error) {
@@ -84,6 +85,7 @@ export async function parseMermaid(bytes: Uint8Array): Promise<MermaidParseResul
         visibleSvgCount: 0,
         errorCount: 1,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       errors: [
         {

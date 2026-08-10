@@ -32,6 +32,7 @@ function observed(errorCount = 0) {
     mermaidNodeCount: 0,
     visibleSvgCount: 0,
     opaqueRegionCount: 0,
+    externalImageCount: 0,
     errorCount,
     ...(errorCount > 0
       ? { discriminativeErrors: [{ code: "synthetic_test", message: "synthetic test result" }] }
@@ -243,6 +244,7 @@ describe("insecure dispatcher semantics", () => {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
         errorCount: 0,
       },
       insecure: { level: 3, reason: expect.any(String) },

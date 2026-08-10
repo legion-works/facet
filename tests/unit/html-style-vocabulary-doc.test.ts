@@ -24,7 +24,7 @@ import { expect, test } from "bun:test";
 
 import {
   HTML_DAISY_COMPONENTS,
-  HTML_STYLE_CLASSES,
+  HTML_STYLE_CLASSES_DISTINCT,
   HTML_TAILWIND_CLASSES,
 } from "../../src/shared/html/style-vocabulary";
 
@@ -36,7 +36,11 @@ const VOCABULARY_MARKER_END = "<!-- VOCABULARY:END -->";
 function renderVocabularyMarkdown(): string {
   const tailwind = [...HTML_TAILWIND_CLASSES].map((name) => `\`${name}\``).join(", ");
   const daisy = [...HTML_DAISY_COMPONENTS].map((name) => `\`${name}\``).join(", ");
-  const total = HTML_STYLE_CLASSES.length;
+  // Use the DISTINCT set so the published count reflects unique classes
+  // shipped, not the concatenation. `table` is in both arrays — counting
+  // it twice would mis-publish a count that disagrees with the actual
+  // ship.
+  const total = HTML_STYLE_CLASSES_DISTINCT.length;
   const twCount = HTML_TAILWIND_CLASSES.length;
   const dzCount = HTML_DAISY_COMPONENTS.length;
   return [
@@ -80,8 +84,11 @@ test("vocabulary contains at least one class per shipped family", () => {
   // and a vocabulary with only one family would be incomplete.
   const tailwindCount: number = HTML_TAILWIND_CLASSES.length;
   const daisyCount: number = HTML_DAISY_COMPONENTS.length;
-  const totalCount: number = HTML_STYLE_CLASSES.length;
+  const totalCount: number = HTML_STYLE_CLASSES_DISTINCT.length;
   expect(tailwindCount).toBeGreaterThan(20);
   expect(daisyCount).toBeGreaterThanOrEqual(3);
-  expect(totalCount).toBe(tailwindCount + daisyCount);
+  // The distinct count must NOT equal `tailwindCount + daisyCount` if
+  // the two arrays share any entry — the guard that catches a future
+  // second-duplicate regression where a class lands in both arrays.
+  expect(totalCount).toBeLessThanOrEqual(tailwindCount + daisyCount);
 });

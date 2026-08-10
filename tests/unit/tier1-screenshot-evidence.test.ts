@@ -24,6 +24,7 @@ describe("Tier 1 screenshot evidence", () => {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       observed: {
         rendererRootSvgCount: 0,
@@ -31,6 +32,7 @@ describe("Tier 1 screenshot evidence", () => {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
         errorCount: 0,
       },
       consolePath: "/tmp/console.txt",
@@ -70,6 +72,7 @@ describe("Tier 1 screenshot evidence", () => {
         mermaidNodeCount: 0,
         visibleSvgCount: 1,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
       },
       observed: {
         rendererRootSvgCount: 1,
@@ -77,6 +80,7 @@ describe("Tier 1 screenshot evidence", () => {
         mermaidNodeCount: 0,
         visibleSvgCount: 1,
         opaqueRegionCount: 0,
+        externalImageCount: 0,
         errorCount: 0,
       },
       screenshotPath: null,

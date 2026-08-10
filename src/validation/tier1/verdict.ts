@@ -44,6 +44,7 @@ export interface PageShim {
   readonly mermaidNodeCount: number;
   readonly visibleSvgCount: number;
   readonly opaqueRegionCount: number;
+  readonly externalImageCount: number;
   readonly errorCount: number;
   readonly html?: ProtocolObservation["html"];
 }
@@ -83,8 +84,14 @@ export interface LifecycleSummary {
  *   7. Opaque content: expected > 0 but protocol observed 0 → `error`
  *   8. Opaque content: protocol observed > 0 → `partial:opaque_content`
  *   9. External resources: expected external images > 0 → `partial:external_resources`
- *  10. Layout observability: protocol visibleSvgCount === 0 AND every
- *      viewBox is zeroed → `partial:layout_unverified`
+ *  10. Layout observability (non-HTML only): protocol visibleSvgCount === 0
+ *      AND every viewBox is zeroed → `partial:layout_unverified`. The
+ *      branch is gated on `expected.html === undefined` because HTML
+ *      artifacts carry no viewBox axis — they have no SVG layout to
+ *      verify against, so `partial:layout_unverified` is structurally
+ *      unreachable for HTML. A clean HTML artifact with zero
+ *      `visibleSvgCount` and zero `viewBoxes` returns `ok` when its
+ *      counts match.
  *  11. Counts: protocol discriminativeErrors non-empty → `error`
  *  12. Counts: protocol observed !== expected lexical → `error`
  *  13. Otherwise → `ok`
@@ -123,7 +130,12 @@ export function deriveVerdict(
     return "error";
   }
   if (protocolObservation.opaqueRegionCount > 0) return "partial:opaque_content";
-  if ((protocolObservation.html?.externalImageCount ?? 0) > 0) {
+  // `externalImageCount` is the type-agnostic counter — markdown surfaces
+  // it from native `![](https://…)` token walks, HTML surfaces it from
+  // image elements, every other type carries 0 because their Tier 0
+  // policies already reject external references. Reading it at the top
+  // level keeps the verdict from depending on the HTML-shaped subfield.
+  if (protocolObservation.externalImageCount > 0) {
     return "partial:external_resources";
   }
   if (expected.html === undefined && !layoutObservable(protocolObservation)) {
@@ -157,7 +169,6 @@ const HTML_COUNT_KEYS = [
   "listCount",
   "imageCount",
   "canvasCount",
-  "externalImageCount",
 ] as const;
 
 function htmlCountsDiffer(
@@ -176,6 +187,7 @@ function shimDiverges(shim: PageShim, protocol: ProtocolObservation): boolean {
     shim.errorCount !== protocol.errorCount ||
     shim.visibleSvgCount !== protocol.visibleSvgCount ||
     shim.opaqueRegionCount !== protocol.opaqueRegionCount ||
+    shim.externalImageCount !== protocol.externalImageCount ||
     htmlCountsDiffer(shim.html, protocol.html)
   );
 }
@@ -188,6 +200,7 @@ function countsDiffer(left: ProtocolObservation, right: ProtocolObservation): bo
     left.visibleSvgCount !== right.visibleSvgCount ||
     left.errorCount !== right.errorCount ||
     left.opaqueRegionCount !== right.opaqueRegionCount ||
+    left.externalImageCount !== right.externalImageCount ||
     htmlCountsDiffer(left.html, right.html)
   );
 }

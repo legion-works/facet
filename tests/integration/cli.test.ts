@@ -115,6 +115,7 @@ const SEEDED_OBSERVED = {
   mermaidNodeCount: 0,
   visibleSvgCount: 1,
   opaqueRegionCount: 0,
+  externalImageCount: 0,
   errorCount: 0,
 };
 

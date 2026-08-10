@@ -8,9 +8,10 @@
  * state growing without bound.
  *
  * Retained-evidence carve-out: the `retained` column on `render_runs`
- * marks rows the policy must NOT delete (pinned/template revisions —
- * Task 14 wires the call sites). Cleanup walks oldest-first, skipping
- * retained rows; the eviction stops at N non-retained rows.
+ * marks rows the policy must NOT delete (pinned/template revisions
+ * — the call sites set the flag at the pin/template command site).
+ * Cleanup walks oldest-first, skipping retained rows; the eviction
+ * stops at N non-retained rows.
  *
  * On-disk evidence lives under the XDG-state evidence root (mode
  * 0700). Files referenced by `screenshot_path` and `console_path` are

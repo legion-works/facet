@@ -45,6 +45,7 @@ export const VERDICT_OBSERVED = {
   visibleSvgCount: 1,
   errorCount: 0,
   opaqueRegionCount: 0,
+  externalImageCount: 0,
 };
 
 export const HTML_STRUCTURE_COUNTS = {

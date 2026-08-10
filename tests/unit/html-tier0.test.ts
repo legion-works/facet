@@ -210,9 +210,9 @@ describe("HTML Tier 0 parser", () => {
     expect(result.html.headingCount).toBe(1);
   });
 
-  // The 9 reviewer's cases for the tokenizer-based <select> detector.
-  // Each must REJECT (case 1) or ACCEPT (cases 2-9) per the reviewer's
-  // measured behavior in production. A regression to the lexical scan
+  // The 9 cases for the tokenizer-based <select> detector. Each must
+  // REJECT (case 1) or ACCEPT (cases 2-9) per the production behavior
+  // measured against Chromium. A regression to the lexical scan
   // fails cases 1, 4, 5 (false negatives) or 6, 7, 8, 9 (false positives).
 
   test("REJECTS two-selects with table markup inside the second select", () => {
