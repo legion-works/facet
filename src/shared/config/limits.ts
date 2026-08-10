@@ -23,6 +23,13 @@ export const MAX_MERMAID_BLOCKS = 64;
  */
 export const MAX_MERMAID_NODES = 10_000;
 
+/**
+ * Bounds HTML token nesting before parse5 tree construction. At 10,000 nested
+ * elements, Tier 0 measured about 100 ms locally, leaving wide margin below
+ * the five-second worker timeout.
+ */
+export const MAX_HTML_NESTING_DEPTH = 10_000;
+
 /** Default in-memory cap for list responses. */
 export const DEFAULT_LIST_LIMIT = 50;
 export const MAX_LIST_LIMIT = 500;

@@ -177,10 +177,13 @@ describe("HTML Tier 0 parser", () => {
     expect(Array.from(source)).toEqual(before);
   });
 
-  test("handles deeply nested documents without overflowing the traversal stack", () => {
-    const depth = 20_000;
+  test("returns a typed verdict before parsing documents beyond the nesting budget", () => {
+    const depth = 10_001;
     const source = `${"<div>".repeat(depth)}safe${"</div>".repeat(depth)}`;
 
-    expect(parseHtml(bytes(source)).status).toBe("ok");
+    expect(parseHtml(bytes(source))).toMatchObject({
+      status: "error",
+      errors: [{ code: "html_nesting_depth_exceeded" }],
+    });
   });
 });

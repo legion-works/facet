@@ -1,5 +1,6 @@
-import { parse } from "parse5";
+import { parse, Tokenizer, type TokenHandler } from "parse5";
 
+import { MAX_HTML_NESTING_DEPTH } from "../../shared/config/limits";
 import type { DiscriminativeError, HtmlStructureCounts } from "../../shared/contracts/validation";
 import {
   HTML_STRUCTURAL_GROUPS,
@@ -27,6 +28,64 @@ export type HtmlParseResult = HtmlParseOk | HtmlParseFail;
 interface HtmlAttribute {
   readonly name: string;
   readonly value: string;
+}
+
+const HTML_VOID_ELEMENTS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+
+function exceedsHtmlNestingDepth(text: string): boolean {
+  const openTags: string[] = [];
+  const positionsByTag = new Map<string, number[]>();
+  let exceeded = false;
+  let tokenizer: Tokenizer;
+  const handler: TokenHandler = {
+    onComment: () => {},
+    onDoctype: () => {},
+    onStartTag: (token) => {
+      if (token.selfClosing || HTML_VOID_ELEMENTS.has(token.tagName)) return;
+      const position = openTags.length;
+      openTags.push(token.tagName);
+      const positions = positionsByTag.get(token.tagName) ?? [];
+      positions.push(position);
+      positionsByTag.set(token.tagName, positions);
+      if (openTags.length > MAX_HTML_NESTING_DEPTH) {
+        exceeded = true;
+        tokenizer.pause();
+      }
+    },
+    onEndTag: (token) => {
+      const positions = positionsByTag.get(token.tagName);
+      const position = positions?.at(-1);
+      if (position === undefined) return;
+      while (openTags.length > position) {
+        const name = openTags.pop()!;
+        const entries = positionsByTag.get(name)!;
+        entries.pop();
+        if (entries.length === 0) positionsByTag.delete(name);
+      }
+    },
+    onEof: () => {},
+    onCharacter: () => {},
+    onNullCharacter: () => {},
+    onWhitespaceCharacter: () => {},
+  };
+  tokenizer = new Tokenizer({}, handler);
+  tokenizer.write(text, true);
+  return exceeded;
 }
 
 function initialCounts(): HtmlStructureCounts {
@@ -226,6 +285,18 @@ export function parseHtml(bytes: Uint8Array): HtmlParseResult {
     };
   }
   const html = initialCounts();
+  if (exceedsHtmlNestingDepth(text)) {
+    return {
+      status: "error",
+      html,
+      errors: [
+        {
+          code: "html_nesting_depth_exceeded",
+          message: `HTML nesting exceeds the ${MAX_HTML_NESTING_DEPTH} element limit`,
+        },
+      ],
+    };
+  }
   const errors: DiscriminativeError[] = [];
   walk(parse(text), html, errors);
   return errors.length === 0 ? { status: "ok", html } : { status: "error", html, errors };
