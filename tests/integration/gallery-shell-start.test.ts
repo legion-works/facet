@@ -229,6 +229,28 @@ describe("gallery shell startup", () => {
     ).toBe("· layout · T1");
   });
 
+  test("labels insecure verdicts and preserves the full L3 status", async () => {
+    const harness = createRuntime(undefined, {
+      status: "insecure:unvalidated",
+      tier: 0,
+      revisionSha: "a".repeat(64),
+      artifactId: "artifact-1",
+      insecure: { level: 3, reason: "manual insecure level 3" },
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+    });
+    await startGallery(harness.runtime);
+    const badge = harness.elements.get("facet-verdict")!;
+    expect(badge.dataset["status"]).toBe("insecure:unvalidated");
+    expect(badge.querySelector<FakeElement>(".tier")?.textContent).toBe("· INSECURE L3 · T0");
+  });
+
   test("boots one frame, renders source, binds controls, and releases its lease", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);

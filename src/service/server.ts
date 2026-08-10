@@ -286,7 +286,16 @@ export async function startFacetService(
       contractVersion: "facet.v1",
     });
 
-    logger.info("service.ready", { port: actualPort, pid: process.pid });
+    logger.info("service.ready", {
+      port: actualPort,
+      pid: process.pid,
+      ...(insecureLevel > 0
+        ? {
+            insecureLevel,
+            insecureReason: options.insecureReason ?? `manual insecure level ${insecureLevel}`,
+          }
+        : {}),
+    });
 
     const stopPromise = new Promise<void>((resolve) => {
       resolveStop = () => {

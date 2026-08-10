@@ -178,17 +178,16 @@ async function runAdapter(
   const proc = Bun.spawn(["sh", adapter, ...args], {
     cwd: resolve(import.meta.dir, "../.."),
     env: { ...process.env, FACET_HOME: home },
-    stdio: ["pipe", "pipe", "pipe"],
+    // The service child inherits stderr by design so insecure boot warnings
+    // reach the operator. Keeping this adapter harness stderr ignored avoids
+    // waiting for a detached child to close the test subprocess pipe.
+    stdio: ["pipe", "pipe", "ignore"],
   });
   proc.stdin.write(stdin);
   proc.stdin.end();
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
+  const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
   if (exitCode !== 0) {
-    throw new Error(stderr);
+    throw new Error(`adapter exited with code ${exitCode}`);
   }
   return stdout;
 }

@@ -109,6 +109,61 @@ describe("insecure level boot threading", () => {
     expect(records).toContain(`{"kind":"Tier1","level":${level}}`);
   });
 
+  test.each(["1", "2", "3"])(
+    "emits an unsuppressible warning before ready at level %s",
+    async (level) => {
+      const fixture = makeFixture();
+      const result = await boot(fixture, level);
+      expect(result.code).toBe(0);
+      const lines = result.stderr.trim().split("\n");
+      expect(lines[0]).toBe(`WARN: FACET_INSECURE=${level} — manual insecure level ${level}`);
+      const ready = JSON.parse(lines[1]!) as Record<string, unknown>;
+      expect(ready).toMatchObject({
+        event: "service.ready",
+        insecureLevel: Number(level),
+        insecureReason: `manual insecure level ${level}`,
+      });
+    },
+  );
+
+  test("insecure warning ignores plausible suppressor environment variables", async () => {
+    const fixture = makeFixture();
+    const args = [
+      "src/service/main.ts",
+      "--db-path",
+      join(fixture.home, "facet.sqlite"),
+      "--install-token-path",
+      join(fixture.home, "install.token"),
+      "--promote-token-path",
+      join(fixture.home, "promote.token"),
+      "--lock-path",
+      join(fixture.home, "facet.lock"),
+      "--idle-timeout-ms",
+      "100",
+      "--tier0-runner-path",
+      fixture.runner,
+      "--tier1-runner-path",
+      fixture.tier1,
+    ];
+    const child = Bun.spawn([process.execPath, ...args], {
+      cwd: join(import.meta.dir, "../.."),
+      env: {
+        ...process.env,
+        FACET_HOME: fixture.home,
+        FACET_INSECURE: "1",
+        FACET_QUIET: "1",
+        NO_COLOR: "1",
+        CI: "1",
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    children.push(child);
+    const stderr = await new Response(child.stderr).text();
+    expect(await child.exited).toBe(0);
+    expect(stderr).toContain("WARN: FACET_INSECURE=1");
+  });
+
   test.each(["4", "abc", "1.5"])(
     "rejects invalid FACET_INSECURE=%s before binding",
     async (level) => {

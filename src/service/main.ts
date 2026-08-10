@@ -176,6 +176,10 @@ async function main(): Promise<void> {
     // Task 7 will populate this from auto-mode detection; keep the boot
     // contract stable while the current explicit levels have no reason.
     const insecureReason = null;
+    if (insecureLevel > 0) {
+      const reason = insecureReason ?? `manual insecure level ${insecureLevel}`;
+      process.stderr.write(`WARN: FACET_INSECURE=${insecureLevel} — ${reason}\n`);
+    }
     const tier0Factory = await loadRequiredTier0Runner(args.tier0RunnerPath);
     const configuredTier0Runner = tier0Factory(insecureLevel);
     let tier1Runner: Tier1Runner | undefined;
@@ -208,6 +212,12 @@ async function main(): Promise<void> {
         pid: process.pid,
         port: running.port,
         url: running.url,
+        ...(insecureLevel > 0
+          ? {
+              insecureLevel,
+              insecureReason: insecureReason ?? `manual insecure level ${insecureLevel}`,
+            }
+          : {}),
       })}\n`,
     );
     // Park here so the process stays alive — the idle controller will

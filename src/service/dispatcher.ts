@@ -330,7 +330,7 @@ export async function dispatch(
         status: enriched.status,
         expected: enriched.expected,
         observed: enriched.observed,
-        ...(enriched.insecure !== undefined ? { insecure: enriched.insecure } : {}),
+        insecure: enriched.insecure ?? null,
       });
       // 4. Tier 1 (optional). When configured, run the headless-shell
       // verifier over the SAME bytes and record a separate render_run.
@@ -363,7 +363,7 @@ export async function dispatch(
           ...(enrichedTier1.screenshotError !== undefined
             ? { screenshotError: enrichedTier1.screenshotError }
             : {}),
-          ...(enrichedTier1.insecure !== undefined ? { insecure: enrichedTier1.insecure } : {}),
+          insecure: enrichedTier1.insecure ?? null,
         });
         traceTier1Transport("publish:tier1-record:complete");
         tier1Verdict = enrichedTier1;

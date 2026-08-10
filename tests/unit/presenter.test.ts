@@ -93,6 +93,39 @@ describe("CLI presenter envelopes", () => {
     );
   });
 
+  test("insecure marker is disclosed before the status head", () => {
+    const readBack = validReadBackResult();
+    const publish = {
+      ...validPublishResult(),
+      tier1Verdict: {
+        ...readBack.verdict,
+        insecure: { level: 2, reason: "trust unavailable" },
+      },
+    };
+    expect(presentEnvelope(okEnvelope("request-1", publish), plain)).toEqual([
+      `● published · rev aaaaaaaa`,
+      `  read-back facet read-back --revision-sha ${"a".repeat(64)}`,
+      `INSECURE L2 — trust unavailable`,
+      `✓ ok · tier 1 · art-1 @ ${"a".repeat(8)}`,
+      "  observed  svg 1 · graphs 1 · nodes 2 · errors 0",
+    ]);
+  });
+
+  test("level 3 insecure marker is disclosed before the unvalidated status head", () => {
+    const readBack = validReadBackResult();
+    const publish = {
+      ...validPublishResult(),
+      tier1Verdict: {
+        ...readBack.verdict,
+        status: "insecure:unvalidated" as const,
+        insecure: { level: 3, reason: "trust unavailable" },
+      },
+    };
+    expect(presentEnvelope(okEnvelope("request-1", publish), plain)[2]).toBe(
+      "INSECURE L3 — trust unavailable",
+    );
+  });
+
   test("read-back, status, and fallback commands stay terse", () => {
     expect(presentEnvelope(okEnvelope("request-1", validReadBackResult()), plain)[0]).toBe(
       `✓ ok · tier 1 · art-1 @ ${"a".repeat(8)}`,

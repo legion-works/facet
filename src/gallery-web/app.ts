@@ -628,7 +628,9 @@ function setGalleryVerdict(document: Document, verdict: Verdict | null): void {
         : verdict.status === "partial:layout_unverified"
           ? "layout"
           : null;
-    tier.textContent = detail === null ? `· T${verdict.tier}` : `· ${detail} · T${verdict.tier}`;
+    const insecure = verdict.insecure === undefined ? null : `INSECURE L${verdict.insecure.level}`;
+    const suffix = insecure === null ? `T${verdict.tier}` : `${insecure} · T${verdict.tier}`;
+    tier.textContent = detail === null ? `· ${suffix}` : `· ${detail} · ${suffix}`;
   }
   const observed = verdict.observed;
   const counts = document.getElementById("facet-evidence-counts");

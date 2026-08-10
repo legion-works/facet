@@ -109,6 +109,9 @@ function verdictLines(verdict: Verdict, caps: PresenterCaps): string[] {
   ].join(paint("dim", " · "));
   const o = verdict.observed;
   const lines = [
+    ...(verdict.insecure === undefined
+      ? []
+      : [`INSECURE L${verdict.insecure.level} — ${verdict.insecure.reason}`]),
     head,
     row(
       "observed",

@@ -146,7 +146,7 @@ function spawnChild(
   onSpawn?.(args);
   return spawn(bunPath, args, {
     env: childEnv,
-    stdio: ["ignore", "ignore", "ignore"],
+    stdio: ["ignore", "ignore", "inherit"],
     detached: true,
   });
 }

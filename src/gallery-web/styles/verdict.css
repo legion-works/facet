@@ -116,6 +116,17 @@
   content: "⊘";
 }
 
+.facet-verdict[data-status="insecure:unvalidated"] {
+  border-color: var(--facet-fail);
+  background: var(--facet-fail);
+  color: var(--facet-tamper-ink);
+  font-weight: 700;
+  box-shadow: var(--facet-glow-danger);
+}
+.facet-verdict[data-status="insecure:unvalidated"]::before {
+  content: "⊘";
+}
+
 .facet-verdict[data-status="timeout"]::before {
   content: "◌";
 }
