@@ -36,11 +36,13 @@ import {
   Tier1ResultSchema,
   type ProtocolObservation,
   type InsecureLevel,
+  type IsolationProbeResult,
   type ScreenshotError,
   type Tier1Input,
   type Tier1Result,
 } from "../../shared/contracts/validation";
 import { FacetError } from "../../shared/errors/facet-error";
+import { probeLauncherAvailability } from "./browser-process";
 import { computeFacetPaths } from "../../shared/config/paths";
 import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
@@ -69,6 +71,11 @@ import { readPidStartTimeTicks } from "../../shared/util/process";
  */
 const CONSOLE_SUMMARY_CUP_BYTES = 64 * 1024;
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
+
+/** Probe the pinned wrapper and browser before selecting Tier 1. */
+export async function probeTier1Availability(): Promise<IsolationProbeResult> {
+  return probeLauncherAvailability();
+}
 
 function traceTier1(stage: string, startedAt: number, detail = ""): void {
   if (!TIER1_TRACE) return;

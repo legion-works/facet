@@ -45,6 +45,12 @@ import {
 } from "../sandbox/netns";
 
 export { resolveTier0Isolation } from "../sandbox/netns";
+
+/** Probe the host capability used by Tier 0 without bypassing its cache. */
+export function probeTier0Isolation() {
+  return probeNetnsSupport();
+}
+
 import { TIER0_OUTPUT_CAP_BYTES, TIER0_TIMEOUT_MS } from "../sandbox/limits";
 
 const TIER0_WORKER_ENTRY = resolvePath(import.meta.dir, "worker-entry.ts");
