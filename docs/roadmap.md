@@ -7,6 +7,21 @@ types may extend registries, but artifact code never gains host capabilities.
 
 • Artifact-content secret and PII scanning
 • HTML boundary re-review
+✓ DONE — Static `html` artifact type — script-free, no `<style>` block or
+`style=` attribute, styling from a vendored Tailwind/daisyUI subset.
+Generous element allowlist with a short known-dangerous deny set (D9,
+not D4); `<img src="https://…">` is permitted and downgrades to
+`partial:external_resources`. Tier 0 is a `parse5` prediction coupled
+to Chromium observation through a pinned differential corpus; three
+recovery families are rejected (`html_encoding_unsupported`,
+`html_recovery_unsupported` for `<select>` with table-scoped markup,
+`html_nesting_depth_exceeded`). Export produces byte-identical source
+via the frame-owned `data-facet-renderer-root` wrapper. See
+[HTML reference](reference/html.md) and
+[Structure](../STRUCTURE.md) for the policy / vocabulary / parser /
+renderer surface. Executable HTML, React/TSX artifacts, and
+artifact-supplied JavaScript remain out of scope and tracked under v2
+items below.
 ✓ DONE — Verdict path for structurally opaque content — the prerequisite for HTML mode,
 not a follow-up to it. Every observable a verdict is built from today
 (`rendererRootSvgCount`, `graphCount`, `mermaidNodeCount`, `visibleSvgCount`,

@@ -54,18 +54,35 @@ browser PIDs and profile directories after real cycles.
 
 Measured on the 16-core development host (Bun 1.3.14):
 
-| Measurement                        | Min / median / p95 / max             | Budget and purpose                                                                                            |
-| ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Bare `Bun.serve` RSS floor         | 36.47 / 37.53 / — / 37.97 MiB        | Same-run baseline                                                                                             |
-| Facet service RSS, 1 s idle        | 61.97 / 62.17 / — / 62.91 MiB        | ≤80 MiB absolute guard                                                                                        |
-| Facet RSS minus Bun floor          | 24.20 / 25.25 / — / 25.50 MiB        | ≤30 MiB regression detector                                                                                   |
-| Idle CPU, five 5 s windows         | 0 / 0.20 / 0.20 / 0.20%              | <0.5%; `/proc` tick quantization is ~0.2%, so the limit catches the third tick without flapping on one or two |
-| Tier 0 netns runner                | 135.34 / 140.41 / 145.97 / 148.42 ms | Attribution only                                                                                              |
-| Publish → revision committed       | — / — / ~153 / — ms                  | ≤200 ms validation-inclusive commitment                                                                       |
-| Revision committed → SSE delivered | — / — / ~1 / — ms                    | ≤25 ms notification regression detector                                                                       |
-| Publish → visible, N=20            | 286.73 / ~292 / 300.73 / 311.99 ms   | <300 ms commitment; currently not met, recorded-not-enforced                                                  |
-| Cold read-back, N=5                | 678.77 / 775.67 / — / 906.50 ms      | <1500 ms, stable-machine enforcement                                                                          |
-| Browser exit, N=20                 | 9.03 / 12.79 / 18.33 / 26.60 ms      | ≤100 ms, stable-machine enforcement                                                                           |
+| Measurement                        | Min / median / p95 / max             | Budget and purpose                                                                                                                                                                                    |
+| ---------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bare `Bun.serve` RSS floor         | 36.47 / 37.53 / — / 37.97 MiB        | Same-run baseline                                                                                                                                                                                     |
+| Facet service RSS, 1 s idle        | 61.97 / 62.17 / — / 62.91 MiB        | ≤80 MiB absolute guard                                                                                                                                                                                |
+| Facet RSS minus Bun floor          | 24.20 / 25.25 / — / 25.50 MiB        | ≤30 MiB regression detector                                                                                                                                                                           |
+| Idle CPU, five 5 s windows         | 0 / 0.20 / 0.20 / 0.20%              | <0.5%; `/proc` tick quantization is ~0.2%, so the limit catches the third tick without flapping on one or two                                                                                         |
+| Tier 0 netns runner, cold spawn    | 135.34 / 140.41 / 145.97 / 148.42 ms | First-publish attribution only (legacy per-spawn value); the pooled worker below supersedes it on the publish path                                                                                    |
+| Tier 0 netns worker, pooled warm   | 0.05 / 0.09 / 0.23 / 0.37 ms         | The actual per-publish cost after worker pooling (abbafd5): one persistent netns worker, request round-trip only; 50-sample median over the pooled worker                                             |
+| Tier 0 netns worker, pooled cold   | — / 125.55 / — / — ms                | First request after worker death / startup — pool cold-start, similar to the legacy per-spawn figure because the worker must still fork + unshare                                                     |
+| Publish → revision committed       | — / — / ~153 / — ms                  | ≤200 ms validation-inclusive commitment; the ~153 ms p95 is the LEGACY figure measured before worker pooling (dde2d75), retained because it is cited elsewhere as a design input — see the note below |
+| Revision committed → SSE delivered | — / — / ~1 / — ms                    | ≤25 ms notification regression detector                                                                                                                                                               |
+| Publish → visible, N=20            | 286.73 / ~292 / 300.73 / 311.99 ms   | <300 ms commitment; currently not met, recorded-not-enforced                                                                                                                                          |
+| Cold read-back, N=5                | 678.77 / 775.67 / — / 906.50 ms      | <1500 ms, stable-machine enforcement                                                                                                                                                                  |
+| Browser exit, N=20                 | 9.03 / 12.79 / 18.33 / 26.60 ms      | ≤100 ms, stable-machine enforcement                                                                                                                                                                   |
+
+Tier 0 worker pooling (abbafd5) replaced the legacy per-publish netns
+spawn. The legacy ~153 ms `publish → revision committed` p95 measured
+at dde2d75 included the full ~140 ms cold spawn on every publish; the
+pooled worker keeps a persistent netns child alive across requests, so
+warm publishes now pay only the round-trip (~0.09 ms median). The cold
+figure (~125 ms) remains for the spawn-on-startup-and-worker-death
+path. Method: 50 consecutive calls into a freshly-spawned pooled worker
+via `createTier0Runner(0)`, the first call measured as cold-start, the
+next 50 as warm round-trip. The legacy ~153 ms `publish → revision
+committed` figure is RETAINED in the row above (not erased) because it
+is cited elsewhere as a design input — the pooled warm / cold rows
+above it are the current measurement. A regression that re-introduces
+per-publish spawn costs would show up as the warm figure drifting back
+toward the cold figure, breaking the order-of-magnitude gap.
 
 The old 50 MiB RSS figure was written before the system existed and was never reachable as
 implemented. A bare runtime costs about 38 MiB; importing `src/service/server.ts` without starting

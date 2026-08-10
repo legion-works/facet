@@ -4,18 +4,19 @@ Styled starting points for every type Facet renders. Each is self-contained:
 inline data, fragment-only references, no remote fonts — a source that
 reaches outside the sandbox fails closed by design.
 
-| file                    | type       | publish                                                                                  |
-| ----------------------- | ---------- | ---------------------------------------------------------------------------------------- |
-| `status-report.md`      | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/status-report.md`     |
-| `legion-flow.mmd`       | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-flow.mmd`       |
-| `legion-sequence.mmd`   | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-sequence.mmd`   |
-| `metric-card.svg`       | `svg`      | `facet publish --artifact-id <id> --type svg --file templates/metric-card.svg`           |
-| `timeseries.vl.json`    | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/timeseries.vl.json`      |
-| `bar-compare.vl.json`   | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/bar-compare.vl.json`     |
-| `decision-record.md`    | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/decision-record.md`   |
-| `legion-boundaries.mmd` | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-boundaries.mmd` |
-| `legion-state.mmd`      | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-state.mmd`      |
-| `exemplar.md`           | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/exemplar.md`          |
+| file                      | type       | publish                                                                                  |
+| ------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| `status-report.md`        | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/status-report.md`     |
+| `legion-flow.mmd`         | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-flow.mmd`       |
+| `legion-sequence.mmd`     | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-sequence.mmd`   |
+| `metric-card.svg`         | `svg`      | `facet publish --artifact-id <id> --type svg --file templates/metric-card.svg`           |
+| `timeseries.vl.json`      | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/timeseries.vl.json`      |
+| `bar-compare.vl.json`     | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/bar-compare.vl.json`     |
+| `decision-record.md`      | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/decision-record.md`   |
+| `legion-boundaries.mmd`   | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-boundaries.mmd` |
+| `legion-state.mmd`        | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-state.mmd`      |
+| `exemplar.md`             | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/exemplar.md`          |
+| `html-status-report.html` | `html`     | `facet publish --artifact-id <id> --type html --file templates/html-status-report.html`  |
 
 `exemplar.md` is the reference artifact for the current surface: one publish
 carrying tables, checklists, a JSON fence, and three themed diagrams — and
@@ -52,3 +53,11 @@ diagram theme. Reuse it verbatim in docs and new diagrams:
   templates structural. Base typography inside the frame is currently
   browser-default; a vendored artifact stylesheet is a tracked follow-up.
 - Mermaid: at most 64 fenced blocks and 10,000 nodes per artifact.
+- HTML: static, script-free. No `<script>`, no `on*=` handlers, no
+  `<style>` block, no `style=` attribute, no `<meta>` / `<link>` /
+  `<form>` / `<iframe>`. Styling comes from the shipped class
+  vocabulary (`docs/reference/html.md`); a class outside that set
+  renders the element unstyled with no error and no trust
+  downgrade. `<img src="https://…">` is permitted and downgrades
+  the verdict to `partial:external_resources`; `http:`,
+  protocol-relative, and `javascript:` URLs fail closed.

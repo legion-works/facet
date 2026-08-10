@@ -1,0 +1,114 @@
+<!doctype html>
+<!--
+  HTML status report starter.
+
+  Neutral status / report page that exercises the shipped vocabulary
+  without script, event handlers, inline styles, external fonts or
+  media, unsupported classes, or Facet markers. Every `class=` token
+  on this page belongs to `src/shared/html/style-vocabulary.ts` — the
+  vocabulary-drift guard test
+  (tests/unit/html-style-vocabulary-doc.test.ts) and the starter
+  smoke test (tests/integration/html-starter-template.test.ts)
+  enforce that.
+
+  Publish:
+    facet publish --artifact-id <id> --type html \
+      --file templates/html-status-report.html
+-->
+<html lang="en">
+  <head>
+    <title>Status report</title>
+  </head>
+  <body class="bg-legion-paper text-legion-ink leading-relaxed">
+    <main class="max-w-2xl p-6 gap-4 flex flex-col">
+      <header class="flex flex-col gap-2">
+        <h1 class="text-2xl font-bold">Status report</h1>
+        <p class="text-legion-muted text-sm">
+          What shipped, what is verified, what is blocked — one page, verdict first, all numbers
+          traced to source.
+        </p>
+      </header>
+
+      <section class="flex flex-wrap gap-2">
+        <span class="badge">tier 0</span>
+        <span class="badge">tier 1</span>
+        <span class="badge">no script</span>
+      </section>
+
+      <section class="grid grid-cols-3 gap-4">
+        <div class="card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
+          <span class="text-xs text-legion-muted">verifications</span>
+          <span class="text-xl font-semibold">9,412</span>
+          <span class="text-xs text-legion-cyan">+261 today</span>
+        </div>
+
+        <div class="card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
+          <span class="text-xs text-legion-muted">tampered caught</span>
+          <span class="text-xl font-semibold">3</span>
+          <span class="text-xs text-legion-muted">unchanged</span>
+        </div>
+
+        <div class="card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
+          <span class="text-xs text-legion-muted">p95 publish → visible</span>
+          <span class="text-xl font-semibold">214 ms</span>
+          <span class="text-xs text-legion-cyan">−12 ms vs last week</span>
+        </div>
+      </section>
+
+      <section class="card border border-legion-line rounded-box p-4 gap-3 flex flex-col">
+        <h2 class="text-lg font-semibold">Counters</h2>
+
+        <table class="table table-zebra w-full">
+          <thead>
+            <tr>
+              <th class="text-left">metric</th>
+              <th class="text-right">value</th>
+              <th class="text-right">delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>html revisions</td>
+              <td class="text-right">412</td>
+              <td class="text-right">+18</td>
+            </tr>
+            <tr>
+              <td>script-free</td>
+              <td class="text-right">100%</td>
+              <td class="text-right">—</td>
+            </tr>
+            <tr>
+              <td>external images</td>
+              <td class="text-right">7</td>
+              <td class="text-right">+2</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card border border-legion-line rounded-box p-4 gap-3 flex flex-col">
+        <h2 class="text-lg font-semibold">This week</h2>
+
+        <ul class="flex flex-col gap-2">
+          <li class="flex items-center gap-2">
+            <span class="badge">shipped</span>
+            <span>static HTML artifact type with vendored styling</span>
+          </li>
+          <li class="flex items-center gap-2">
+            <span class="badge">shipped</span>
+            <span>parse5 prediction coupled to Chromium observation</span>
+          </li>
+          <li class="flex items-center gap-2">
+            <span class="badge">next</span>
+            <span>executable HTML and TSX artifacts</span>
+          </li>
+        </ul>
+      </section>
+
+      <footer class="text-xs text-legion-muted">
+        Published as a static, script-free HTML artifact. Every class on this page is from the
+        vendored vocabulary; every image and font is local or absent.
+      </footer>
+    </main>
+  </body>
+</html>

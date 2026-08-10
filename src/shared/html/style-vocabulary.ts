@@ -43,6 +43,7 @@ export const HTML_TAILWIND_CLASSES = [
   "leading-relaxed",
   "text-left",
   "text-center",
+  "text-right",
   "text-legion-ink",
   "text-legion-muted",
   "text-legion-cyan",

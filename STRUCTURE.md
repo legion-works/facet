@@ -26,6 +26,37 @@ fallback. Coverage lives in `tests/integration/insecure-auto.test.ts`,
 `tests/integration/insecure-level-threading.test.ts`, and
 `tests/integration/insecure-mode.test.ts`.
 
+Recent HTML artifact additions: `src/shared/html/policy.ts` exports
+`HTML_DENIED_ELEMENTS`, `HTML_STRUCTURAL_GROUPS`, `HTML_URL_BEARING_ATTRIBUTES`,
+`HTML_ALLOWED_ANCHOR_SCHEMES`, `HTML_ALLOWED_IMAGE_SCHEMES`, and the
+`isHtml*` policy helpers (the generous allowlist + short deny set from
+D9). `src/shared/html/style-vocabulary.ts` owns `HTML_TAILWIND_CLASSES`,
+`HTML_DAISY_COMPONENTS`, and `HTML_STYLE_CLASSES` (the canonical class
+list for the vendored Tailwind/daisyUI stylesheet; a drift guard in
+`tests/unit/html-style-vocabulary-doc.test.ts` asserts the published
+vocabulary matches the source). `src/validation/tier0/html.ts` exports
+`parseHtml` (the no-egress `parse5` prediction with `scriptingEnabled:
+false`, the nesting-depth bound, and the `<select>`-with-table
+recovery rejection). `src/gallery-web/frame/renderers/html.ts` exports
+`createHtmlRendererRoot` and `renderHtml` (frame-owned
+`data-facet-renderer-root` wrapper, identical module imported by both
+gallery and Tier 1 verifier — enforced by
+`scripts/check-renderer-bundle-parity.ts`). `src/gallery-web/frame/entries/html.ts`
+is the per-type static entry; `src/gallery-web/frame/styles/html-source.css`
+and the generated `html-vendored.css` are the vendored Tailwind/daisyUI
+bundle (built by `scripts/build-html-styles.ts`, drift-checked by
+`--check`). `src/validation/tier1/protocol-probe.ts` adds the
+`countSnapshotHtml` and `htmlRootIndexes` machinery that observes the
+rendered DOM under the marker. `src/shared/contracts/validation.ts`
+adds `HtmlStructureCountsSchema` and the `partial:external_resources`
+status. `src/service/store/schema.ts` exports `V6_SCHEMA_FRAGMENT` (the
+HTML `ARTIFACT_TYPES` row); `src/service/store/migrations.ts` applies
+v6 after v5. Coverage lives in
+`tests/unit/html-tier0.test.ts`, `tests/unit/html-renderer.test.ts`,
+`tests/integration/html-publish.test.ts`, `tests/integration/html-starter-template.test.ts`,
+`tests/acceptance/html-differential.test.ts`, `tests/acceptance/html-render.test.ts`,
+and `tests/acceptance/html-tier1-status.test.ts`.
+
 Opaque-content coverage lives in `tests/unit/tier1-screenshot-evidence.test.ts`
 and the related renderer fixtures and integration tests.
 

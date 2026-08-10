@@ -61,6 +61,40 @@ Renderer literals are `svg` and `canvas`. The `canvas` renderer is chart-only:
 a canvas chart expects `rendererRootSvgCount = 0` and `opaqueRegionCount = 1`;
 SVG renderers retain their structural root expectations.
 
+HTML artifacts carry their own structural observable — `HtmlStructureCounts` —
+anchored on the frame-owned `data-facet-renderer-root` wrapper. The fields
+are `rendererRootCount`, `headingCount`, `tableCount`, `listCount`,
+`imageCount`, `canvasCount`, and `externalImageCount`. The first is the
+HTML analogue of `rendererRootSvgCount`; the rest are scoped beneath the
+marker. See the [HTML reference](html.md) for the verdict claim these
+counts support and the precedence over `partial:opaque_content` and
+`partial:external_resources`.
+
+## Tier 0 vs Tier 1 channels for HTML
+
+Tier 0 is a WHATWG parser (`parse5@8.0.1`, `scriptingEnabled: false`)
+running in the existing netns worker with no egress. It produces the
+structural prediction that is stored with the revision SHA and forwarded
+to Tier 1. The parser handles every recovery family that the differential
+corpus accepts; three families — UTF-8 encoding ambiguity, `<select>`
+containing table-scoped markup, and nesting depth beyond the cap — are
+rejected before Tier 1 ever runs.
+
+Tier 1 is `chrome-headless-shell` `151.0.7922.77` inside its netns,
+rendering the artifact through the gallery's vendored HTML renderer. It
+observes the rendered DOM through CDP protocol authority, not the page
+shim, and computes its own `HtmlStructureCounts` from the snapshot.
+Agreement on every field is `ok`; disagreement is `tampered`.
+
+The two channels are independent: one parses bytes with no egress, the
+other renders in a browser. Their expected-vs-observed comparison is
+what makes an HTML verdict a real prediction rather than a self-claim.
+
+The differential corpus at `tests/acceptance/html-differential.test.ts`
+is the live gate that keeps the two parsers in agreement over a body
+of real documents. Any divergence in the corpus is a design input
+(shrink the accepted input set), never a verdict-comparison weakening.
+
 ## Retention policy
 
 Last-N retention runs INSIDE `recordRenderRun`'s write path. The

@@ -19,7 +19,7 @@ Facet stores the source bytes without interpreting them, then asks independent v
 
 ## What it does
 
-- Publishes `markdown`, `mermaid`, `svg`, and `chart` artifacts.
+- Publishes `markdown`, `mermaid`, `svg`, `chart`, and static `html` artifacts.
 - Stores immutable revisions and keeps a ring of up to 50 per artifact.
 - Runs Tier 0 browser-free checks, Tier 1 isolated browser validation, and Tier 2 display-only inspection.
 - Compares lexical expectations with protocol, isolated-world, and page-shim observations.
@@ -66,10 +66,10 @@ A screenshot is evidence of pixels. It is not evidence that the page's own repor
 ## What's in the box
 
 - **CLI contract** — `create`, `publish`, `list`, `read-back`, `status`, `open`, `promote`, `instantiate`, `pin`, and `export` (source/render with a mandatory sidecar).
-- **Artifact types** — Markdown, Mermaid, SVG, and Vega-Lite chart specs. Chart data must be inline; external `data.url` forms are rejected.
+- **Artifact types** — Markdown, Mermaid, SVG, Vega-Lite chart specs, and static HTML. Chart data must be inline; external `data.url` forms are rejected. HTML is script-free, has no `<style>` block or `style=` attribute, and styles from a vendored Tailwind/daisyUI vocabulary ([reference](docs/reference/html.md)).
 - **Gallery** — an offline-built shell with opaque-origin frames, frozen CSP, zoom controls, evidence channels, and revision SSE.
 - **Validation** — a 5 MiB source cap, up to 64 Mermaid blocks and 10,000 Mermaid nodes, and a 1 MiB SVG cap with 16 roots. Tier 1 uses pinned `chrome-headless-shell` `151.0.7922.77`.
-- **Templates** — ten checked-in starting points in [`templates/`](templates/), documented in [`templates/README.md`](templates/README.md).
+- **Templates** — eleven checked-in starting points in [`templates/`](templates/), documented in [`templates/README.md`](templates/README.md).
 
 ## Quickstart
 
@@ -94,7 +94,7 @@ Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) 
 ## Documentation
 
 - [Agents](docs/guides/agents.md) — the CLI workflow and adapter boundary.
-- [CLI reference](docs/reference/cli.md) · [Export](docs/reference/export.md) · [HTTP surface](docs/reference/http.md) · [Storage reference](docs/reference/storage.md) · [Validation reference](docs/reference/validation.md) · [Security](docs/reference/security.md)
+- [CLI reference](docs/reference/cli.md) · [Export](docs/reference/export.md) · [HTML reference](docs/reference/html.md) · [HTTP surface](docs/reference/http.md) · [Storage reference](docs/reference/storage.md) · [Validation reference](docs/reference/validation.md) · [Security](docs/reference/security.md)
 - [Architecture](ARCHITECTURE.md) · [Structure](STRUCTURE.md) · [v1 ship gate](docs/verification/v1-ship-gate.md) · [Roadmap](docs/roadmap.md)
 - [Contributing](CONTRIBUTING.md)
 
