@@ -10,21 +10,23 @@ the retention policy, and the revision-binding guarantee.
 verdict is decided in exactly one place (`src/validation/tier1/verdict.ts`).
 Every other layer is bound to it through `VerdictSchema.status`.
 
-| status                      | meaning                                                                                                                      |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `ok`                        | Counts agree across protocol + shim + isolated worlds, layout observable, no discriminative errors.                          |
-| `error`                     | Counts disagree with the lexical expectation OR the protocol surfaced a discriminative error.                                |
-| `partial:layout_unverified` | Counts agree but the layout is pass (no SVG rendered with non-degenerate viewBox). MUST carry a screenshot path on the wire. |
-| `tampered`                  | Page-shim or isolated-world observation diverges from protocol authority.                                                    |
-| `timeout`                   | The harness did not emit `render-complete` within `TIER1_RENDER_BARRIER_MS`.                                                 |
-| `shim_only`                 | Isolated-world channel missing; only the untrusted page-shim produced usable counts.                                         |
-| `probe_only`                | Both the page-shim and the isolated-world channel are missing; only the protocol channel is usable.                          |
+| status                      | meaning                                                                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ok`                        | Counts agree across protocol + shim + isolated worlds, layout observable, no discriminative errors.                                                                            |
+| `error`                     | Counts disagree with the lexical expectation OR the protocol surfaced a discriminative error.                                                                                  |
+| `partial:layout_unverified` | Counts agree but the layout pass is unverified (no SVG rendered with a non-degenerate viewBox). MUST carry a screenshot path on the wire.                                      |
+| `partial:opaque_content`    | An opaque DOM region was observed, so structural contents were not verified. MUST carry a screenshot path, or a typed `screenshotError` marker when capture fails transiently. |
+| `tampered`                  | Page-shim or isolated-world observation diverges from protocol authority.                                                                                                      |
+| `timeout`                   | The harness did not emit `render-complete` within `TIER1_RENDER_BARRIER_MS`.                                                                                                   |
+| `shim_only`                 | Isolated-world channel missing; only the untrusted page-shim produced usable counts.                                                                                           |
+| `probe_only`                | Both the page-shim and the isolated-world channel are missing; only the protocol channel is usable.                                                                            |
 
 A `partial:*` verdict is a verdict the verifier could not finalize, NOT
 a degraded `ok`. The screenshot is mandatory FOR `partial:` so a human
 or a re-verifier can see what the verifier saw — it is not a thing
-that upgrades the verdict. A `partial:` without a screenshot is
-rejected at the schema parse boundary.
+that upgrades the verdict. When capture fails transiently, the typed
+`screenshotError` marker records that honest degraded path. A `partial:`
+without a screenshot or marker is rejected at the schema parse boundary.
 
 ## Evidence captured per tier
 
@@ -39,12 +41,23 @@ mode 0700 — the canonical secret-bearing layout matches the DB file
 permissions.
 
 Tier 1 capture happens AFTER the verdict is derived so the
-`partial:layout_unverified` screenshot mandate is honored. The runner
+`partial:layout_unverified` and `partial:opaque_content` screenshot mandates are honored. The runner
 uses a deterministic 1280×800 viewport, requests full-artifact capture
 with `captureBeyondViewport`, and falls back to viewport-only when the
 PNG exceeds the 8 MiB cap. Before capture it emulates
 `prefers-reduced-motion: reduce` and awaits `document.fonts.ready`; these
 pre-flights keep repeated captures byte-identical (perf-spike finding).
+
+## Observed fields and renderer expectations
+
+The canonical observed fields include `rendererRootSvgCount`, `graphCount`,
+`mermaidNodeCount`, `visibleSvgCount`, `opaqueRegionCount`, `viewBoxes`,
+`errorCount`, and `discriminativeErrors`. `opaqueRegionCount` counts DOM
+regions whose contents are not structurally observable.
+
+Renderer literals are `svg` and `canvas`. The `canvas` renderer is chart-only:
+a canvas chart expects `rendererRootSvgCount = 0` and `opaqueRegionCount = 1`;
+SVG renderers retain their structural root expectations.
 
 ## Retention policy
 
@@ -81,9 +94,9 @@ enriched verdict — never the worker's placeholder identity.
 ```
 shared/contracts/validation.ts   canonical VerdictSchema + RenderStatus
                                  + Tier1Result refine (partial-screenshot)
-shared/contracts/artifact.ts     RenderRunSchema adds `retained`
-service/store/schema.ts          render_runs.retained INTEGER (v2 migration)
-service/store/migrations.ts      additive v2 migration
+shared/contracts/artifact.ts     RenderRunSchema adds `retained` and `screenshotErrorJson`
+service/store/schema.ts          V2_SCHEMA_FRAGMENT, V3_SCHEMA_FRAGMENT, V4_SCHEMA_FRAGMENT
+service/store/migrations.ts      additive v2, v3, and v4 migrations
 service/store/evidence-retention.ts
                                  last-N cleanup + 0700 directory ensure
 service/store/repository.ts      recordRenderRun wires retention + cleanup-on-failure

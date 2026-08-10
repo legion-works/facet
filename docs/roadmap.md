@@ -7,8 +7,8 @@ types may extend registries, but artifact code never gains host capabilities.
 
 • Artifact-content secret and PII scanning
 • HTML boundary re-review
-• Verdict path for structurally opaque content — the prerequisite for HTML mode, not a
-follow-up to it. Every observable a verdict is built from today
+✓ DONE — Verdict path for structurally opaque content — the prerequisite for HTML mode,
+not a follow-up to it. Every observable a verdict is built from today
 (`rendererRootSvgCount`, `graphCount`, `mermaidNodeCount`, `visibleSvgCount`,
 `viewBoxes`) is DOM structure read by protocol authority, independent of page JS —
 which is exactly why a monkeypatched in-page shim cannot forge a verdict. Content
@@ -16,8 +16,8 @@ that renders to an opaque bitmap (`<canvas>`, WebGL) exposes ONE element and no
 structure, so a canvas-bearing artifact can never earn a plain `ok`. Shipping HTML
 mode admits canvas whether or not we add it deliberately — any HTML artifact may
 carry a `<canvas>` and draw to it. Required: classify opaque regions and downgrade
-honestly (`partial:layout_unverified`, which already mandates a non-null
-`screenshotPath`) rather than asserting a structural claim the run could not check.
+honestly (`partial:opaque_content`, with a mandatory `screenshotPath` or typed
+`screenshotError` marker) rather than asserting a structural claim the run could not check.
 Same principle as Insecure mode: a verdict must never claim a trust property the run
 did not have.
 • Screenshot policy tuning
@@ -56,7 +56,7 @@ exactly what the operator sees.
 
 • TypeScript `ArtifactBuilder`
 ▸ Swappable UI library: let a TSX artifact declare its UI kit and resolve it through a registered provider — another typed registry extension, like `RendererRegistry`. Hard constraint: the kit is vendored/bundled offline (never a runtime CDN pull) and artifact code still gains zero host capabilities — the frozen-CSP + byte-dumb model binds it. Researched defaults (T1, re-verify at design time): **Base UI** for polished/composed work (headless primitives; `CSPProvider` v1.1.0+ threads the per-frame nonce into its 4 style-injecting components) + **daisyUI 5** for quick dashboards (56/58 components pure CSS → CSP-safe by construction; themes are CSS-var sets that slot into the design-token palette). Disqualified: shadcn/ui's default Radix variant — `react-style-singleton` injects scroll-lock `<style>` without nonce propagation in static builds (upstream open since 2023). Charts stay vega-lite (already vendored, SVG, no runtime style injection).
-▸ Canvas as a RENDERER BACKEND — never as an artifact type. Rejected as a peer type
+✓ DONE — Canvas as a RENDERER BACKEND — never as an artifact type. Rejected as a peer type
 (`artifactType: "canvas"`): a raw canvas yields no structural observable, so its
 verdict would rest on the page's own claim about what it drew — the precise forgery
 vector the trust core exists to close. Legitimate instead: verify at the SPEC layer,

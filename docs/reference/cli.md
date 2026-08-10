@@ -14,21 +14,25 @@ Errors use the same top level with `ok: false` and
 
 ## Verbs and flags
 
-| verb          | flags                                                                        |
-| ------------- | ---------------------------------------------------------------------------- |
-| `create`      | `--project-id`, `--slug`, `--title`                                          |
-| `publish`     | `--artifact-id`, `--type`, `--file`, `--note`, `--parent-revision-id`        |
-| `list`        | `--project-id`, `--slug-prefix`, `--limit`                                   |
-| `read-back`   | `--artifact-id`, `--revision-sha`, `--tier` (one of: `0`, `1`, `visual`)     |
-| `status`      | `--artifact-id`, `--start`                                                   |
-| `open`        | `--artifact-id`, `--revision-sha`                                            |
-| `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by` |
-| `instantiate` | `--name`, `--new-slug`, `--project-id`                                       |
-| `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                              |
-| `export`      | `--format`                                                                   |
+| verb          | flags                                                                               |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `create`      | `--project-id`, `--slug`, `--title`                                                 |
+| `publish`     | `--artifact-id`, `--type`, `--file`, `--note`, `--parent-revision-id`, `--renderer` |
+| `list`        | `--project-id`, `--slug-prefix`, `--limit`                                          |
+| `read-back`   | `--artifact-id`, `--revision-sha`, `--tier` (one of: `0`, `1`, `visual`)            |
+| `status`      | `--artifact-id`, `--start`                                                          |
+| `open`        | `--artifact-id`, `--revision-sha`                                                   |
+| `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`        |
+| `instantiate` | `--name`, `--new-slug`, `--project-id`                                              |
+| `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                     |
+| `export`      | `--format`                                                                          |
 
 `publish --file -` reads bytes from stdin. `--json` is shorthand for
 `--format json` on meta commands.
+
+`publish --renderer` selects the renderer persisted with the revision. It
+defaults to `svg`; `canvas` is valid only for chart artifacts. An invalid
+renderer value is a usage error and exits 64.
 
 ## Exit codes
 

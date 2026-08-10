@@ -59,6 +59,37 @@ describe("Tier 1 screenshot evidence", () => {
     ).not.toThrow();
   });
 
+  test("accepts a screenshot-unavailable marker on a non-partial result", () => {
+    const result = {
+      tier: 1 as const,
+      status: "ok" as const,
+      artifactId: "artifact",
+      revisionSha: "0".repeat(64),
+      expected: {
+        rendererRootSvgCount: 1,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+      },
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+      screenshotPath: null,
+      screenshotError: {
+        code: "screenshot_unavailable" as const,
+        message: "screenshot capture timed out",
+      },
+      consolePath: "/tmp/console.txt",
+    };
+
+    expect(() => Tier1ResultSchema.parse(result)).not.toThrow();
+  });
+
   test("sets the deterministic viewport before render ingress", async () => {
     const calls: string[] = [];
     const session = {

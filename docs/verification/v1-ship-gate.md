@@ -5,7 +5,7 @@ Date: 2026-08-08
 Pre-commit HEAD: `dde2d7518dcbc9aebcba50f3f938c1d9b84e3b85` · this document is
 part of the following commit.
 
-Runtime: Bun 1.3.14 · historical gate browser `chrome-headless-shell 131.0.6778.204` · active pin `151.0.7922.77`
+Runtime: Bun 1.3.14 · active gate browser `chrome-headless-shell 151.0.7922.77`
 
 ## Gates
 
