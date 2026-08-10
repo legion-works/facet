@@ -143,6 +143,17 @@ describe("CLI presenter envelopes", () => {
       "✓ ok · list",
     ]);
     expect(presentEnvelope(okEnvelope("request-1", {}), plain)).toEqual(["✓ ok"]);
+    expect(
+      presentEnvelope(
+        okEnvelope("request-1", {
+          command: "export",
+          format: "source",
+          bytes: "aGk=",
+          sidecar: {},
+        }),
+        plain,
+      ),
+    ).toEqual(["✓ ok · export"]);
   });
 
   test("color capability wraps semantic fragments in ANSI-16 codes", () => {

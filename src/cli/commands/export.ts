@@ -1,0 +1,88 @@
+/**
+ * `facet export` — fetch source or retained render bytes and write the
+ * artifact plus its disclosure sidecar locally.
+ *
+ * Output paths and overwrite policy stay outside the wire request so the
+ * service cannot be used as a general filesystem writer.
+ */
+
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, extname, resolve } from "node:path";
+
+import type { ExportFormat, ExportRequest } from "../../shared/contracts/commands/requests";
+import { ExportRequestSchema } from "../../shared/contracts/commands/requests";
+import type { ExportResult } from "../../shared/contracts/commands/results";
+import type { ArtifactType } from "../../shared/contracts/artifact";
+import { FacetError } from "../../shared/errors/facet-error";
+import { generateRequestId } from "../../shared/util/time";
+
+export interface ExportPaths {
+  readonly artifactPath: string;
+  readonly sidecarPath: string;
+}
+
+export function buildExportRequest(
+  args: Readonly<Record<string, string | boolean>>,
+): ExportRequest {
+  const artifactId = args["artifact-id"];
+  if (typeof artifactId !== "string" || artifactId.length === 0) {
+    throw new FacetError("invalid_request", "export: artifact id is required", {
+      retryable: false,
+    });
+  }
+  const revision = args["revision"];
+  return ExportRequestSchema.parse({
+    command: "export",
+    requestId: generateRequestId(),
+    artifactId,
+    ...(typeof revision === "string" ? { revisionSha: revision } : {}),
+    format: typeof args["format"] === "string" ? args["format"] : "source",
+  });
+}
+
+export function extensionForExport(
+  format: ExportFormat,
+  artifactType: ArtifactType,
+): ".md" | ".svg" | ".json" | ".png" {
+  if (format === "render") return ".png";
+  if (artifactType === "svg") return ".svg";
+  if (artifactType === "chart") return ".json";
+  return ".md";
+}
+
+function sidecarPathForArtifact(path: string): string {
+  const extension = extname(path);
+  return extension.length === 0
+    ? `${path}.facet.json`
+    : `${path.slice(0, -extension.length)}.facet.json`;
+}
+
+export function resolveExportPaths(
+  result: ExportResult,
+  outFlag: string | undefined,
+  cwd: string,
+): ExportPaths {
+  const extension = extensionForExport(result.format, result.sidecar.artifactType);
+  const artifactPath =
+    outFlag === undefined
+      ? resolve(cwd, `${result.sidecar.slug}-${result.sidecar.revisionSha.slice(0, 7)}${extension}`)
+      : resolve(cwd, outFlag);
+  return { artifactPath, sidecarPath: sidecarPathForArtifact(artifactPath) };
+}
+
+export function writeExportFiles(result: ExportResult, paths: ExportPaths, force: boolean): void {
+  if (!force) {
+    const existing = [paths.artifactPath, paths.sidecarPath].filter((path) => existsSync(path));
+    if (existing.length > 0) {
+      throw new FacetError(
+        "invalid_request",
+        `export output already exists: ${existing.join(", ")} (pass --force to replace)`,
+        { retryable: false, details: { reason: "output_exists" } },
+      );
+    }
+  }
+
+  mkdirSync(dirname(paths.artifactPath), { recursive: true });
+  writeFileSync(paths.artifactPath, Buffer.from(result.bytes, "base64"));
+  writeFileSync(paths.sidecarPath, `${JSON.stringify(result.sidecar, null, 2)}\n`, "utf8");
+}

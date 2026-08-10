@@ -44,6 +44,7 @@ import { collectFacetStatus } from "./commands/status";
 import { computeFacetPaths } from "../shared/config/paths";
 import { generateRequestId } from "../shared/util/time";
 import { buildPublishRequest, resolveSourceBytes } from "./commands/publish";
+import { buildExportRequest, resolveExportPaths, writeExportFiles } from "./commands/export";
 import { presentEnvelope, presenterCaps, shouldPresentPretty } from "./presenter";
 
 export interface CliIo {
@@ -133,6 +134,7 @@ async function executeVerb(
   stdinBytes: Uint8Array,
   resolved: { baseUrl: string; installToken: string },
   openLauncher?: (url: string) => void | Promise<void>,
+  cwd = process.cwd(),
 ): Promise<FacetEnvelope<CommandResult>> {
   const client = new FacetClient({
     baseUrl: resolved.baseUrl,
@@ -173,12 +175,7 @@ async function executeVerb(
       request = buildPinRequest(args);
       break;
     case "export":
-      request = {
-        command: "export",
-        requestId: `req-${crypto.randomUUID()}`,
-        artifactId: typeof args["artifact-id"] === "string" ? args["artifact-id"] : "",
-        format: args["format"] === "render" ? "render" : "source",
-      };
+      request = buildExportRequest(args);
       break;
     default: {
       const exhaustive: never = verb.verb;
@@ -187,6 +184,15 @@ async function executeVerb(
     }
   }
   const response = await client.sendCommand(request);
+  if (verb.verb === "export" && response.ok) {
+    const result = response.data as Extract<CommandResult, { command: "export" }>;
+    const paths = resolveExportPaths(
+      result,
+      typeof args.out === "string" ? args.out : undefined,
+      cwd,
+    );
+    writeExportFiles(result, paths, args.force === true);
+  }
   if (verb.verb === "open" && response.ok) {
     const openData = response.data as Extract<CommandResult, { command: "open" }>;
     await launchDisplay(
@@ -308,6 +314,7 @@ export async function runCli(
         installToken: resolved.installToken,
       },
       testHooks.openLauncher,
+      process.cwd(),
     );
     writeEnvelope(io, parsed, response);
     return { code: EXIT_CODES.OK, spawnedPid: resolved.metadata.pid };

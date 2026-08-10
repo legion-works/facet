@@ -95,7 +95,12 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
     { flag: "--revision-id", takesValue: true },
     { flag: "--pinned", takesValue: true },
   ],
-  export: [{ flag: "--format", takesValue: true }],
+  export: [
+    { flag: "--revision", takesValue: true },
+    { flag: "--format", takesValue: true, values: ["source", "render"] },
+    { flag: "--out", takesValue: true },
+    { flag: "--force", takesValue: false },
+  ],
 };
 
 /** Map CLI verb names to wire `command` names. Only `read-back` differs. */
@@ -144,16 +149,12 @@ function readFormat(argv: readonly string[]): "text" | "json" {
   return "text";
 }
 
-/** Strip `--format text|json` and `--json` from argv so the verb parser doesn't see them. */
+/** Strip only the meta-independent `--json` flag before verb parsing. */
 function withoutFormatFlags(argv: readonly string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === undefined) continue;
-    if (arg === "--format") {
-      i += 1;
-      continue;
-    }
     if (arg === "--json") continue;
     out.push(arg);
   }
@@ -162,7 +163,10 @@ function withoutFormatFlags(argv: readonly string[]): string[] {
 
 export function parseArgs(argv: readonly string[]): ParsedCommand {
   if (argv.length === 0) return { kind: "help", format: "text" };
-  const format = readFormat(argv);
+  const firstRaw = argv[0];
+  const isMeta =
+    firstRaw === "--help" || firstRaw === "-h" || firstRaw === "--version" || firstRaw === "-V";
+  const format = isMeta ? readFormat(argv) : "text";
   const jsonFlag = argv.includes("--json");
   const stripped = withoutFormatFlags(argv);
 
@@ -183,7 +187,11 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
     const flag = stripped[i];
     if (flag === undefined) continue;
     if (!flag.startsWith("--")) {
-      return { kind: "usage", message: `Unexpected positional argument: '${flag}'` };
+      if (command !== "export" || args["artifact-id"] !== undefined) {
+        return { kind: "usage", message: `Unexpected positional argument: '${flag}'` };
+      }
+      args["artifact-id"] = flag;
+      continue;
     }
     const def = flags.find((f) => f.flag === flag);
     if (def === undefined) {
@@ -205,6 +213,9 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
     } else {
       args[flag.slice(2)] = true;
     }
+  }
+  if (command === "export" && args["artifact-id"] === undefined) {
+    return { kind: "usage", message: "export: artifact id is required" };
   }
   return { kind: "verb", verb: command, args, format, jsonFlag };
 }

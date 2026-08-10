@@ -14,8 +14,8 @@
  *     written, exactly one process is observed.
  *   - contract-version mismatch on the metadata record surfaces as a
  *     typed error, never a silent connection attempt.
- *   - the reserved `export` verb returns the typed reserved envelope
- *     with a documented adapter-safe exit code.
+ *   - the `export` verb writes the artifact and mandatory sidecar locally
+ *     while preserving the single JSON envelope on stdout.
  *   - source ingestion works from --file AND from stdin.
  *
  * Each test is bounded (<10s) and tears down any service it spawned
@@ -218,6 +218,71 @@ function normalizeAdapterEnvelope(text: string): unknown {
 }
 
 describe("cli contract — surface", () => {
+  test("export parser accepts positional id and keeps export --format distinct from meta --format", async () => {
+    expect(parseArgs(["export", "artifact-1"])).toMatchObject({
+      kind: "verb",
+      verb: "export",
+      args: { "artifact-id": "artifact-1" },
+    });
+    expect(
+      parseArgs([
+        "export",
+        "artifact-1",
+        "--revision",
+        "a".repeat(64),
+        "--format",
+        "render",
+        "--out",
+        "out.png",
+        "--force",
+      ]),
+    ).toMatchObject({
+      kind: "verb",
+      verb: "export",
+      args: {
+        "artifact-id": "artifact-1",
+        revision: "a".repeat(64),
+        format: "render",
+        out: "out.png",
+        force: true,
+      },
+    });
+    expect(parseArgs(["export", "artifact-1", "--format", "invalid"]).kind).toBe("usage");
+    expect(parseArgs(["export", "--format", "render"]).kind).toBe("usage");
+    expect(parseArgs(["export", "artifact-1", "--no-sidecar"]).kind).toBe("usage");
+    expect(parseArgs(["--version", "--format", "json"])).toEqual({
+      kind: "version",
+      format: "json",
+    });
+    expect(parseArgs(["--help", "--format", "text"])).toEqual({
+      kind: "help",
+      format: "text",
+    });
+  });
+
+  test("meta --format json remains a version envelope", async () => {
+    const { env } = makeEnv("version-meta-format");
+    const io = makeIo();
+    const exit = await runCli(["--version", "--format", "json"], { ...io, env });
+    expect(exit.code).toBe(0);
+    expect(parseStdoutEnvelope(io.stdoutBuf.value).ok).toBe(true);
+  });
+
+  test("export usage errors exit 64 before service startup", async () => {
+    for (const [label, args] of [
+      ["missing-id", ["export"]],
+      ["unknown-format", ["export", "artifact-1", "--format", "bogus"]],
+      ["no-sidecar", ["export", "artifact-1", "--no-sidecar"]],
+    ] as const) {
+      const { env, home } = makeEnv(`export-${label}`);
+      const io = makeIo();
+      const exit = await runCli(args, { ...io, env });
+      expect(exit.code).toBe(64);
+      expect(parseStdoutEnvelope(io.stdoutBuf.value).ok).toBe(false);
+      expect(existsSync(join(home, "run", "facet.lock"))).toBe(false);
+    }
+  });
+
   test("publish parses --renderer canvas and builds a canvas request", () => {
     const parsed = parseArgs([
       "publish",
@@ -560,6 +625,178 @@ describe("cli contract — lazy spawn", () => {
 });
 
 describe("cli contract — wire", () => {
+  test("successful export always writes the mandatory sidecar and published bytes as one envelope", async () => {
+    const { env } = makeEnv("export-files");
+    const io = makeIo();
+    const originalCwd = process.cwd();
+    const exportCwd = join(scratchRoot, `export-cwd-${crypto.randomUUID()}`);
+    mkdirSync(exportCwd, { recursive: true });
+    process.chdir(exportCwd);
+    try {
+      const createIo = makeIo();
+      const createExit = await runCli(
+        ["create", "--project-id", "p", "--slug", "cli-export", "--title", "CLI export"],
+        { ...createIo, env },
+      );
+      expect(createExit.code).toBe(0);
+      const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+      if (!created.ok) throw new Error("create must succeed");
+      const artifactId = (created.data["artifact"] as { id: string }).id;
+
+      const source = "# exported from the CLI\n";
+      const publishIo = makeIo(source);
+      const publishExit = await runCli(
+        ["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"],
+        { ...publishIo, env },
+      );
+      expect(publishExit.code).toBe(0);
+      const published = parseStdoutEnvelope(publishIo.stdoutBuf.value);
+      if (!published.ok) throw new Error("publish must succeed");
+      const revisionSha = (published.data["revision"] as { sha256: string }).sha256;
+
+      const exit = await runCli(["export", artifactId], { ...io, env });
+      expect(exit.code).toBe(0);
+      expect(io.stdoutBuf.value.trim().split("\n")).toHaveLength(1);
+      const exported = parseStdoutEnvelope(io.stdoutBuf.value);
+      if (!exported.ok) throw new Error("export must succeed");
+      expect(exported.data["command"]).toBe("export");
+      const artifactPath = join(exportCwd, `cli-export-${revisionSha.slice(0, 7)}.md`);
+      const sidecarPath = join(exportCwd, `cli-export-${revisionSha.slice(0, 7)}.facet.json`);
+      expect(readFileSync(artifactPath, "utf8")).toBe(source);
+      expect(JSON.parse(readFileSync(sidecarPath, "utf8"))).toEqual(exported.data["sidecar"]);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  test("export preflights an existing sidecar and force replaces the pair", async () => {
+    const { env } = makeEnv("export-preflight");
+    const originalCwd = process.cwd();
+    const exportCwd = join(scratchRoot, `export-preflight-cwd-${crypto.randomUUID()}`);
+    mkdirSync(exportCwd, { recursive: true });
+    process.chdir(exportCwd);
+    try {
+      const createIo = makeIo();
+      await runCli(["create", "--project-id", "p", "--slug", "preflight", "--title", "Preflight"], {
+        ...createIo,
+        env,
+      });
+      const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+      if (!created.ok) throw new Error("create must succeed");
+      const artifactId = (created.data["artifact"] as { id: string }).id;
+      const publishIo = makeIo("fresh bytes");
+      await runCli(["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"], {
+        ...publishIo,
+        env,
+      });
+      const published = parseStdoutEnvelope(publishIo.stdoutBuf.value);
+      if (!published.ok) throw new Error("publish must succeed");
+      const revisionSha = (published.data["revision"] as { sha256: string }).sha256;
+      const artifactPath = join(exportCwd, "requested.md");
+      const sidecarPath = join(exportCwd, "requested.facet.json");
+
+      const first = makeIo();
+      await runCli(["export", artifactId, "--out", artifactPath], { ...first, env });
+      expect(existsSync(artifactPath)).toBe(true);
+      expect(existsSync(sidecarPath)).toBe(true);
+      rmSync(artifactPath);
+      const preservedSidecar = readFileSync(sidecarPath, "utf8");
+      const refused = makeIo();
+      const refusedExit = await runCli(["export", artifactId, "--out", artifactPath], {
+        ...refused,
+        env,
+      });
+      expect(refusedExit.code).toBe(0);
+      const refusedEnvelope = parseStdoutEnvelope(refused.stdoutBuf.value);
+      expect(refusedEnvelope.ok).toBe(false);
+      if (!refusedEnvelope.ok) expect(refusedEnvelope.error.code).toBe("invalid_request");
+      expect(existsSync(artifactPath)).toBe(false);
+      expect(readFileSync(sidecarPath, "utf8")).toBe(preservedSidecar);
+
+      writeFileSync(artifactPath, "stale artifact");
+      writeFileSync(sidecarPath, "stale sidecar\n");
+      const forced = makeIo();
+      const forcedExit = await runCli(["export", artifactId, "--out", artifactPath, "--force"], {
+        ...forced,
+        env,
+      });
+      expect(forcedExit.code).toBe(0);
+      expect(readFileSync(artifactPath, "utf8")).toBe("fresh bytes");
+      expect(JSON.parse(readFileSync(sidecarPath, "utf8"))).toMatchObject({ revisionSha });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  test("successful export option matrix always leaves the mandatory sidecar", async () => {
+    const originalCwd = process.cwd();
+    const exportCwd = join(scratchRoot, `export-matrix-cwd-${crypto.randomUUID()}`);
+    mkdirSync(exportCwd, { recursive: true });
+    const cases = [
+      { label: "out", flags: ["--out", join(exportCwd, "out.artifact")] as string[], env: {} },
+      {
+        label: "force",
+        flags: ["--out", join(exportCwd, "force.artifact"), "--force"] as string[],
+        env: {},
+      },
+      {
+        label: "json",
+        flags: ["--out", join(exportCwd, "json.artifact"), "--json"] as string[],
+        env: {},
+      },
+      {
+        label: "pretty",
+        flags: ["--out", join(exportCwd, "pretty.artifact")] as string[],
+        env: { FACET_PRETTY: "1" },
+      },
+      {
+        label: "insecure",
+        flags: ["--out", join(exportCwd, "insecure.artifact")] as string[],
+        env: { FACET_INSECURE: "3" },
+      },
+    ] as const;
+    process.chdir(exportCwd);
+    try {
+      for (const testCase of cases) {
+        const { env } = makeEnv(`export-matrix-${testCase.label}`);
+        Object.assign(env, testCase.env);
+        const createIo = makeIo();
+        await runCli(
+          [
+            "create",
+            "--project-id",
+            "p",
+            "--slug",
+            `matrix-${testCase.label}`,
+            "--title",
+            "Matrix",
+          ],
+          { ...createIo, env },
+        );
+        const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+        if (!created.ok) throw new Error(`create failed for ${testCase.label}`);
+        const artifactId = (created.data["artifact"] as { id: string }).id;
+        const publishIo = makeIo("matrix source");
+        await runCli(
+          ["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"],
+          { ...publishIo, env },
+        );
+        const published = parseStdoutEnvelope(publishIo.stdoutBuf.value);
+        if (!published.ok) throw new Error(`publish failed for ${testCase.label}`);
+        const exportIo = makeIo();
+        const exit = await runCli(["export", artifactId, ...testCase.flags], { ...exportIo, env });
+        expect(exit.code).toBe(0);
+        const out = testCase.flags[1];
+        if (typeof out !== "string") throw new Error("missing matrix output path");
+        expect(existsSync(out)).toBe(true);
+        expect(existsSync(out.replace(/\.artifact$/, ".facet.json"))).toBe(true);
+        expect(parseStdoutEnvelope(exportIo.stdoutBuf.value).ok).toBe(true);
+      }
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   test("every v1 verb emits exactly ONE strict envelope on stdout", async () => {
     const { env } = makeEnv("verbs");
     // create
@@ -719,17 +956,15 @@ describe("cli contract — wire", () => {
   });
 });
 
-describe("cli contract — reserved + errors", () => {
-  test("export without an artifact id returns a typed validation error until the CLI arm lands", async () => {
+describe("cli contract — errors", () => {
+  test("export without an artifact id returns a typed usage error before service startup", async () => {
     const { env } = makeEnv("export");
-    const warmIo = makeIo();
-    await runCli(["list", "--project-id", "warm"], { ...warmIo, env });
     const io = makeIo();
-    const exit = await runCli(["export", "--format", "html"], { ...io, env });
-    expect(exit.code).toBe(70);
+    const exit = await runCli(["export"], { ...io, env });
+    expect(exit.code).toBe(64);
     const env1 = parseStdoutEnvelope(io.stdoutBuf.value);
     expect(env1.ok).toBe(false);
-    if (!env1.ok) expect(env1.error.code).toBe("invalid_envelope");
+    if (!env1.ok) expect(env1.error.code).toBe("invalid_request");
   }, 20_000);
 
   test("unknown verb exits with a typed usage error envelope (adapter-safe)", async () => {

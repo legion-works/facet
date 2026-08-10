@@ -1,7 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 import type { Artifact, Revision } from "../../src/shared/contracts/artifact";
+import type { ExportResult } from "../../src/shared/contracts/commands/results";
 import type { Verdict } from "../../src/shared/contracts/validation";
+import {
+  buildExportRequest,
+  extensionForExport,
+  resolveExportPaths,
+  writeExportFiles,
+} from "../../src/cli/commands/export";
 import { buildExportSidecar } from "../../src/service/export";
 
 const artifact: Artifact = {
@@ -37,6 +47,120 @@ const observed = {
 };
 
 const exportedAt = "2026-08-10T01:02:03.000Z";
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true });
+});
+
+function validExportResultFor(
+  artifactType: ExportResult["sidecar"]["artifactType"] = "markdown",
+): ExportResult {
+  return {
+    command: "export",
+    requestId: "request-1",
+    format: "source",
+    bytes: Buffer.from([0, 1, 2, 255]).toString("base64"),
+    sidecar: {
+      artifactId: "artifact-1",
+      slug: "source-artifact",
+      revisionSha: "a".repeat(64),
+      artifactType,
+      renderer: "svg",
+      verdict: {
+        status: "ok",
+        tier: 0,
+        artifactId: "artifact-1",
+        revisionSha: "a".repeat(64),
+        observed,
+      },
+      format: "source",
+      exportedAt,
+    },
+  };
+}
+
+describe("export CLI helpers", () => {
+  test("builds only service-owned request fields and defaults to source", () => {
+    expect(
+      buildExportRequest({ "artifact-id": "artifact-1", out: "out.md", force: true }),
+    ).toMatchObject({
+      command: "export",
+      artifactId: "artifact-1",
+      format: "source",
+    });
+    expect(
+      buildExportRequest({
+        "artifact-id": "artifact-1",
+        revision: "a".repeat(64),
+        format: "render",
+      }),
+    ).toMatchObject({
+      command: "export",
+      artifactId: "artifact-1",
+      revisionSha: "a".repeat(64),
+      format: "render",
+    });
+    expect(
+      buildExportRequest({ "artifact-id": "artifact-1", out: "out.md", force: true }),
+    ).not.toHaveProperty("out");
+    expect(
+      buildExportRequest({ "artifact-id": "artifact-1", out: "out.md", force: true }),
+    ).not.toHaveProperty("force");
+  });
+
+  test("maps source artifact types and render to the CLI extension", () => {
+    expect(extensionForExport("source", "markdown")).toBe(".md");
+    expect(extensionForExport("source", "mermaid")).toBe(".md");
+    expect(extensionForExport("source", "svg")).toBe(".svg");
+    expect(extensionForExport("source", "chart")).toBe(".json");
+    expect(extensionForExport("render", "markdown")).toBe(".png");
+  });
+
+  test("resolves default, explicit, absolute, and extensionless output paths", () => {
+    const result = validExportResultFor("markdown");
+    expect(resolveExportPaths(result, undefined, "/tmp/facet-cwd")).toEqual({
+      artifactPath: "/tmp/facet-cwd/source-artifact-aaaaaaa.md",
+      sidecarPath: "/tmp/facet-cwd/source-artifact-aaaaaaa.facet.json",
+    });
+    expect(resolveExportPaths(result, "nested/custom.bin", "/tmp/facet-cwd")).toEqual({
+      artifactPath: "/tmp/facet-cwd/nested/custom.bin",
+      sidecarPath: "/tmp/facet-cwd/nested/custom.facet.json",
+    });
+    expect(resolveExportPaths(result, "/tmp/custom.svg", "/tmp/facet-cwd")).toEqual({
+      artifactPath: "/tmp/custom.svg",
+      sidecarPath: "/tmp/custom.facet.json",
+    });
+    expect(resolveExportPaths(result, "extensionless", "/tmp/facet-cwd").sidecarPath).toBe(
+      "/tmp/facet-cwd/extensionless.facet.json",
+    );
+  });
+
+  test("preflights the mandatory pair before writing when only the sidecar exists", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
+    tempDirs.push(root);
+    const result = validExportResultFor();
+    const paths = resolveExportPaths(result, join(root, "artifact.md"), root);
+    writeFileSync(paths.sidecarPath, "existing sidecar\n");
+
+    expect(() => writeExportFiles(result, paths, false)).toThrow(/already exists/);
+    expect(existsSync(paths.artifactPath)).toBe(false);
+    expect(readFileSync(paths.sidecarPath, "utf8")).toBe("existing sidecar\n");
+  });
+
+  test("writes unchanged bytes and a mandatory JSON sidecar, replacing both with force", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-export-cli-unit-"));
+    tempDirs.push(root);
+    const result = validExportResultFor("chart");
+    const paths = resolveExportPaths(result, join(root, "chart.json"), root);
+    writeExportFiles(result, paths, true);
+
+    expect(new Uint8Array(readFileSync(paths.artifactPath))).toEqual(
+      new Uint8Array([0, 1, 2, 255]),
+    );
+    expect(JSON.parse(readFileSync(paths.sidecarPath, "utf8"))).toEqual(result.sidecar);
+  });
+});
 
 describe("buildExportSidecar", () => {
   test("omits optional insecure and screenshotError keys for a secure verdict", () => {
