@@ -1,5 +1,6 @@
 import type { ArtifactType } from "../../../shared/contracts/artifact-types";
 import { isRenderer, type Renderer as RendererKind } from "../../../shared/contracts/renderers";
+import { HTML_STRUCTURAL_GROUPS } from "../../../shared/html/policy";
 
 export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/artifact-types";
 
@@ -62,9 +63,19 @@ export interface PageShimCounts {
   readonly visibleSvgCount: number;
   readonly opaqueRegionCount: number;
   readonly errorCount: number;
+  readonly html?: {
+    readonly rendererRootCount: number;
+    readonly headingCount: number;
+    readonly tableCount: number;
+    readonly listCount: number;
+    readonly imageCount: number;
+    readonly canvasCount: number;
+    readonly externalImageCount: number;
+  };
 }
 
 const RENDERER_ROOT_SELECTOR = 'svg[data-facet-renderer-root="true"]';
+const MARKED_ROOT_SELECTOR = '[data-facet-renderer-root="true"]';
 const RENDERER_GRAPH_ATTRIBUTE = "data-facet-renderer-graph";
 
 function safeSelectorElementsWithin(scope: ParentNode, selector: string): Element[] {
@@ -108,6 +119,50 @@ export function countPageShim(): PageShimCounts {
   const candidateSet = new Set(markedCandidates);
   const roots = markedCandidates.filter((root) => !hasMarkedRootAncestor(root, candidateSet));
   const graphRoots = roots.filter((root) => root.getAttribute(RENDERER_GRAPH_ATTRIBUTE) === "true");
+  const allMarkedCandidates = safeSelectorElements(MARKED_ROOT_SELECTOR);
+  const markedSet = new Set(allMarkedCandidates);
+  const htmlRoots = allMarkedCandidates.filter(
+    (root) => root.nodeName.toLowerCase() !== "svg" && !hasMarkedRootAncestor(root, markedSet),
+  );
+  const html =
+    htmlRoots.length === 0
+      ? undefined
+      : {
+          rendererRootCount: htmlRoots.length,
+          headingCount: 0,
+          tableCount: 0,
+          listCount: 0,
+          imageCount: 0,
+          canvasCount: 0,
+          externalImageCount: 0,
+        };
+  for (const root of htmlRoots) {
+    html!.headingCount += safeSelectorElementsWithin(
+      root,
+      HTML_STRUCTURAL_GROUPS.headings.join(","),
+    ).length;
+    html!.tableCount += safeSelectorElementsWithin(
+      root,
+      HTML_STRUCTURAL_GROUPS.tables.join(","),
+    ).length;
+    html!.listCount += safeSelectorElementsWithin(
+      root,
+      HTML_STRUCTURAL_GROUPS.lists.join(","),
+    ).length;
+    const images = safeSelectorElementsWithin(root, HTML_STRUCTURAL_GROUPS.images.join(","));
+    html!.imageCount += images.length;
+    html!.externalImageCount += images.filter((image) => {
+      try {
+        return new URL(image.getAttribute("src") ?? "").protocol === "https:";
+      } catch {
+        return false;
+      }
+    }).length;
+    html!.canvasCount += safeSelectorElementsWithin(
+      root,
+      HTML_STRUCTURAL_GROUPS.canvases.join(","),
+    ).length;
+  }
   const mermaidNodeCount = graphRoots.reduce(
     (count, root) => count + safeSelectorElementsWithin(root, "g.node").length,
     0,
@@ -125,6 +180,7 @@ export function countPageShim(): PageShimCounts {
     visibleSvgCount: roots.filter(nonDegenerateViewBox).length,
     opaqueRegionCount,
     errorCount: safeSelectorElements("[data-facet-error]").length,
+    ...(html === undefined ? {} : { html }),
   };
 }
 

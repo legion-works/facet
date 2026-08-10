@@ -624,3 +624,22 @@ describe("renderer registry — dispatch contract", () => {
     expect(marker!.textContent).toBe("boom");
   });
 });
+
+describe("page shim wire compatibility", () => {
+  test("SVG render-complete JSON remains byte-identical without an html key", () => {
+    while (shimDocument.body.firstChild !== null) {
+      shimDocument.body.firstChild.remove();
+    }
+    const root = shimDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
+    root.setAttribute("data-facet-renderer-root", "true");
+    root.setAttribute("data-facet-renderer-graph", "true");
+    root.setAttribute("viewBox", "0 0 100 100");
+    shimDocument.body.appendChild(root);
+
+    const message = JSON.stringify({ type: "render-complete", observed: registry.countPageShim() });
+    expect(message).toBe(
+      '{"type":"render-complete","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":0,"visibleSvgCount":1,"opaqueRegionCount":0,"errorCount":0}}',
+    );
+    root.remove();
+  });
+});

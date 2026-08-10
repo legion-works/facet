@@ -19,7 +19,8 @@
  *     treats both as authority and the test layer asserts agreement.
  */
 
-import type { ProtocolObservation } from "../../shared/contracts/validation";
+import type { HtmlStructureCounts, ProtocolObservation } from "../../shared/contracts/validation";
+import { HTML_STRUCTURAL_GROUPS } from "../../shared/html/policy";
 
 import type { VerifierCdpSession } from "./browser-process";
 import type { ResolvedChildFrame } from "./frame-target";
@@ -112,16 +113,21 @@ function attributeValue(
   return undefined;
 }
 
+function isMarkedRoot(
+  snapshot: SnapshotResponse,
+  document: SnapshotDocument,
+  nodeIndex: number,
+): boolean {
+  return attributeValue(snapshot, document, nodeIndex, "data-facet-renderer-root") === "true";
+}
+
 function isRendererRoot(
   snapshot: SnapshotResponse,
   document: SnapshotDocument,
   nodeIndex: number,
 ): boolean {
   const name = readString(snapshot.strings, document.nodes.nodeName[nodeIndex] ?? 0).toLowerCase();
-  return (
-    name === "svg" &&
-    attributeValue(snapshot, document, nodeIndex, "data-facet-renderer-root") === "true"
-  );
+  return name === "svg" && isMarkedRoot(snapshot, document, nodeIndex);
 }
 
 function hasAncestorIn(
@@ -137,6 +143,84 @@ function hasAncestorIn(
     parentIndex = document.nodes.parentIndex[parentIndex] ?? -1;
   }
   return false;
+}
+
+function htmlRootIndexes(snapshot: SnapshotResponse, documentIndex: number): number[] {
+  const document = snapshot.documents[documentIndex];
+  if (document === undefined) return [];
+  const candidates = new Set<number>();
+  for (let nodeIndex = 0; nodeIndex < document.nodes.nodeName.length; nodeIndex += 1) {
+    if (isMarkedRoot(snapshot, document, nodeIndex)) candidates.add(nodeIndex);
+  }
+  return [...candidates].filter((nodeIndex) => {
+    const name = readString(
+      snapshot.strings,
+      document.nodes.nodeName[nodeIndex] ?? 0,
+    ).toLowerCase();
+    return name !== "svg" && !hasAncestorIn(document, nodeIndex, candidates);
+  });
+}
+
+function isDescendantOf(
+  document: SnapshotDocument,
+  nodeIndex: number,
+  roots: ReadonlySet<number>,
+): boolean {
+  let parent = document.nodes.parentIndex[nodeIndex] ?? -1;
+  while (parent >= 0) {
+    if (roots.has(parent)) return true;
+    parent = document.nodes.parentIndex[parent] ?? -1;
+  }
+  return false;
+}
+
+function isExternalHttps(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function countSnapshotHtml(
+  snapshot: SnapshotResponse,
+  documentIndex: number,
+): HtmlStructureCounts | undefined {
+  const document = snapshot.documents[documentIndex];
+  if (document === undefined) return undefined;
+  const roots = htmlRootIndexes(snapshot, documentIndex);
+  if (roots.length === 0) return undefined;
+  const rootSet = new Set(roots);
+  const counts = {
+    rendererRootCount: roots.length,
+    headingCount: 0,
+    tableCount: 0,
+    listCount: 0,
+    imageCount: 0,
+    canvasCount: 0,
+    externalImageCount: 0,
+  };
+  for (let nodeIndex = 0; nodeIndex < document.nodes.nodeName.length; nodeIndex += 1) {
+    if (!isDescendantOf(document, nodeIndex, rootSet)) continue;
+    const name = readString(
+      snapshot.strings,
+      document.nodes.nodeName[nodeIndex] ?? 0,
+    ).toLowerCase();
+    if ((HTML_STRUCTURAL_GROUPS.headings as readonly string[]).includes(name))
+      counts.headingCount += 1;
+    if ((HTML_STRUCTURAL_GROUPS.tables as readonly string[]).includes(name)) counts.tableCount += 1;
+    if ((HTML_STRUCTURAL_GROUPS.lists as readonly string[]).includes(name)) counts.listCount += 1;
+    if ((HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)) {
+      counts.imageCount += 1;
+      if (isExternalHttps(attributeValue(snapshot, document, nodeIndex, "src"))) {
+        counts.externalImageCount += 1;
+      }
+    }
+    if ((HTML_STRUCTURAL_GROUPS.canvases as readonly string[]).includes(name))
+      counts.canvasCount += 1;
+  }
+  return counts;
 }
 
 function rendererRootIndexes(snapshot: SnapshotResponse, documentIndex: number): number[] {
@@ -271,6 +355,9 @@ export async function probeProtocolSnapshot(
     mermaidNodeCount: countGNode(snapshot, documentIndex, graphRoots),
     visibleSvgCount: viewBoxes.filter(isNonDegenerateViewBox).length,
     opaqueRegionCount: countByName(snapshot, documentIndex, "canvas"),
+    ...(countSnapshotHtml(snapshot, documentIndex) === undefined
+      ? {}
+      : { html: countSnapshotHtml(snapshot, documentIndex) }),
     viewBoxes,
     errorCount,
     discriminativeErrors: discriminativeErrors.map((entry) => ({
@@ -311,8 +398,14 @@ export async function probeProtocolGetDocument(
   let gNodeCount = 0;
   let opaqueRegionCount = 0;
   let visibleSvgCount = 0;
+  let html: HtmlStructureCounts | undefined;
   const viewBoxes: string[] = [];
-  const visit = (node: unknown, withinRendererRoot = false, withinGraphRoot = false): void => {
+  const visit = (
+    node: unknown,
+    withinRendererRoot = false,
+    withinGraphRoot = false,
+    withinHtmlRoot = false,
+  ): void => {
     if (node === null || typeof node !== "object") return;
     const record = node as {
       nodeName?: string;
@@ -332,9 +425,22 @@ export async function probeProtocolGetDocument(
       return undefined;
     };
     const name = (record.nodeName ?? "").toLowerCase();
-    const rendererRoot =
-      name === "svg" && findAttr("data-facet-renderer-root") === "true" && !withinRendererRoot;
+    const markedRoot = findAttr("data-facet-renderer-root") === "true";
+    const rendererRoot = name === "svg" && markedRoot && !withinRendererRoot;
+    const htmlRoot = name !== "svg" && markedRoot && !withinHtmlRoot;
     const graphRoot = rendererRoot && findAttr("data-facet-renderer-graph") === "true";
+    if (htmlRoot) {
+      html ??= {
+        rendererRootCount: 0,
+        headingCount: 0,
+        tableCount: 0,
+        listCount: 0,
+        imageCount: 0,
+        canvasCount: 0,
+        externalImageCount: 0,
+      };
+      html.rendererRootCount += 1;
+    }
     if (rendererRoot) {
       rendererRootSvgCount += 1;
       const vb = findAttr("viewBox");
@@ -351,15 +457,28 @@ export async function probeProtocolGetDocument(
     // covers the entire child-frame document so smuggled canvases stay visible.
     // getContext() would create a context and make the observation self-fulfilling.
     if (name === "canvas") opaqueRegionCount += 1;
+    if (withinHtmlRoot && html !== undefined) {
+      if ((HTML_STRUCTURAL_GROUPS.headings as readonly string[]).includes(name))
+        html.headingCount += 1;
+      if ((HTML_STRUCTURAL_GROUPS.tables as readonly string[]).includes(name)) html.tableCount += 1;
+      if ((HTML_STRUCTURAL_GROUPS.lists as readonly string[]).includes(name)) html.listCount += 1;
+      if ((HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)) {
+        html.imageCount += 1;
+        if (isExternalHttps(findAttr("src"))) html.externalImageCount += 1;
+      }
+      if ((HTML_STRUCTURAL_GROUPS.canvases as readonly string[]).includes(name))
+        html.canvasCount += 1;
+    }
     if (findAttr("data-facet-error") !== undefined) errorCount += 1;
     const nextWithinRendererRoot = withinRendererRoot || rendererRoot;
     const nextWithinGraphRoot = withinGraphRoot || graphRoot;
+    const nextWithinHtmlRoot = withinHtmlRoot || htmlRoot;
     if (record.children !== undefined)
       for (const child of record.children)
-        visit(child, nextWithinRendererRoot, nextWithinGraphRoot);
+        visit(child, nextWithinRendererRoot, nextWithinGraphRoot, nextWithinHtmlRoot);
     if (record.shadowRoots !== undefined)
       for (const shadow of record.shadowRoots)
-        visit(shadow, nextWithinRendererRoot, nextWithinGraphRoot);
+        visit(shadow, nextWithinRendererRoot, nextWithinGraphRoot, nextWithinHtmlRoot);
   };
   const frameDocument = findFrameDocument(result.root, owner.backendNodeId);
   if (frameDocument !== null) visit(frameDocument);
@@ -369,6 +488,7 @@ export async function probeProtocolGetDocument(
     mermaidNodeCount: gNodeCount,
     visibleSvgCount,
     opaqueRegionCount,
+    ...(html === undefined ? {} : { html }),
     viewBoxes,
     errorCount,
     discriminativeErrors:

@@ -223,7 +223,7 @@ describe("deriveVerdict — opaque content", () => {
     ).toBe("partial:opaque_content");
   });
 
-  test("undeclared-smuggled: observed opaque 1 caps mismatched ordinary counts → partial:opaque_content", () => {
+  test("undeclared-smuggled: expected mismatch wins before opaque partial", () => {
     expect(
       deriveVerdict(
         lex({ opaqueRegionCount: 0 }),
@@ -232,7 +232,7 @@ describe("deriveVerdict — opaque content", () => {
         shim({ opaqueRegionCount: 1, rendererRootSvgCount: 0, mermaidNodeCount: 0 }),
         lifecycle(),
       ),
-    ).toBe("partial:opaque_content");
+    ).toBe("error");
   });
 
   test("declared-canvas-zero-rendered: expected opaque 1 and observed opaque 0 → error", () => {
@@ -313,7 +313,7 @@ describe("deriveVerdict — external resources", () => {
         lex({ html: externalHtml }),
         protocol({ html: externalHtml }),
         protocol({ html: externalHtml }),
-        shim(),
+        shim({ html: externalHtml }),
         lifecycle(),
       ),
     ).toBe("partial:external_resources");
@@ -325,7 +325,7 @@ describe("deriveVerdict — external resources", () => {
         lex({ opaqueRegionCount: 1, html: externalHtml }),
         protocol({ opaqueRegionCount: 1, html: externalHtml }),
         protocol({ opaqueRegionCount: 1, html: externalHtml }),
-        shim({ opaqueRegionCount: 1 }),
+        shim({ opaqueRegionCount: 1, html: externalHtml }),
         lifecycle(),
       ),
     ).toBe("partial:opaque_content");
@@ -337,7 +337,7 @@ describe("deriveVerdict — external resources", () => {
         lex({ html: externalHtml }),
         protocol({ html: externalHtml, visibleSvgCount: 0, viewBoxes: [] }),
         protocol({ html: externalHtml, visibleSvgCount: 0, viewBoxes: [] }),
-        shim({ visibleSvgCount: 0 }),
+        shim({ visibleSvgCount: 0, html: externalHtml }),
         lifecycle(),
       ),
     ).toBe("partial:external_resources");
@@ -393,5 +393,113 @@ describe("deriveVerdict — expected/observed mismatch", () => {
       lifecycle(),
     );
     expect(status).toBe("error");
+  });
+});
+
+describe("deriveVerdict — html trust and structural ordering", () => {
+  const cleanHtml = {
+    rendererRootCount: 1,
+    headingCount: 1,
+    tableCount: 1,
+    listCount: 1,
+    imageCount: 0,
+    canvasCount: 0,
+    externalImageCount: 0,
+  };
+  const htmlLex = (html = cleanHtml) =>
+    lex({
+      rendererRootSvgCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      html,
+    });
+  const htmlProtocol = (html = cleanHtml, overrides: Partial<ProtocolObservation> = {}) =>
+    protocol({
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      viewBoxes: [],
+      html,
+      ...overrides,
+    });
+  const htmlShim = (html = cleanHtml, overrides: Partial<PageShim> = {}) =>
+    shim({
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      html,
+      ...overrides,
+    });
+
+  test("shim html divergence is tampered before external partial", () => {
+    const external = { ...cleanHtml, imageCount: 1, externalImageCount: 1 };
+    expect(
+      deriveVerdict(
+        htmlLex(external),
+        htmlProtocol(external),
+        htmlProtocol(external),
+        htmlShim({ ...external, headingCount: 9 }),
+        lifecycle(),
+      ),
+    ).toBe("tampered");
+  });
+
+  test("isolated html divergence is tampered", () => {
+    expect(
+      deriveVerdict(
+        htmlLex(),
+        htmlProtocol(),
+        htmlProtocol({ ...cleanHtml, tableCount: 0 }),
+        htmlShim(),
+        lifecycle(),
+      ),
+    ).toBe("tampered");
+  });
+
+  test("expected and observed html mismatch is error before partial statuses", () => {
+    const external = { ...cleanHtml, imageCount: 1, externalImageCount: 1 };
+    expect(
+      deriveVerdict(
+        htmlLex(external),
+        htmlProtocol({ ...external, headingCount: 0 }),
+        htmlProtocol({ ...external, headingCount: 0 }),
+        htmlShim({ ...external, headingCount: 0 }),
+        lifecycle(),
+      ),
+    ).toBe("error");
+  });
+
+  test("matching external image is partial external resources", () => {
+    const external = { ...cleanHtml, imageCount: 1, externalImageCount: 1 };
+    expect(
+      deriveVerdict(
+        htmlLex(external),
+        htmlProtocol(external),
+        htmlProtocol(external),
+        htmlShim(external),
+        lifecycle(),
+      ),
+    ).toBe("partial:external_resources");
+  });
+
+  test("matching canvas plus external image is partial opaque content", () => {
+    const both = { ...cleanHtml, imageCount: 1, canvasCount: 1, externalImageCount: 1 };
+    expect(
+      deriveVerdict(
+        htmlLex(both),
+        htmlProtocol(both, { opaqueRegionCount: 1 }),
+        htmlProtocol(both, { opaqueRegionCount: 1 }),
+        htmlShim(both, { opaqueRegionCount: 1 }),
+        lifecycle(),
+      ),
+    ).toBe("partial:opaque_content");
+  });
+
+  test("matching plain html is ok without an SVG layout", () => {
+    expect(deriveVerdict(htmlLex(), htmlProtocol(), htmlProtocol(), htmlShim(), lifecycle())).toBe(
+      "ok",
+    );
   });
 });

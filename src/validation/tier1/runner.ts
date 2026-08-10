@@ -320,6 +320,7 @@ async function runTier1Attempt(
         viewBoxes: observed.viewBoxes,
         errorCount: observed.errorCount,
         opaqueRegionCount: observed.opaqueRegionCount,
+        ...(observed.html === undefined ? {} : { html: observed.html }),
         discriminativeErrors: observed.discriminativeErrors,
       },
       screenshotPath: captured.screenshotPath,
@@ -503,6 +504,32 @@ function mergeProtocol(
       message: `DOMSnapshot.${name}=${fromSnapshot} vs DOM.getDocument.${name}=${fromDocument}`,
     });
   }
+  const htmlKeys = [
+    "rendererRootCount",
+    "headingCount",
+    "tableCount",
+    "listCount",
+    "imageCount",
+    "canvasCount",
+    "externalImageCount",
+  ] as const;
+  if (snapshot.html === undefined || getDocument.html === undefined) {
+    if (snapshot.html !== getDocument.html) {
+      errors.push({
+        code: "protocol_divergence",
+        message: "DOMSnapshot.html presence differs from DOM.getDocument.html",
+      });
+    }
+  } else {
+    for (const key of htmlKeys) {
+      if (snapshot.html[key] !== getDocument.html[key]) {
+        errors.push({
+          code: "protocol_divergence",
+          message: `DOMSnapshot.html.${key}=${snapshot.html[key]} vs DOM.getDocument.html.${key}=${getDocument.html[key]}`,
+        });
+      }
+    }
+  }
   return {
     rendererRootSvgCount: snapshot.rendererRootSvgCount,
     graphCount: snapshot.graphCount,
@@ -511,6 +538,7 @@ function mergeProtocol(
     viewBoxes: snapshot.viewBoxes,
     errorCount: snapshot.errorCount,
     opaqueRegionCount: snapshot.opaqueRegionCount,
+    ...(snapshot.html === undefined ? {} : { html: snapshot.html }),
     discriminativeErrors: errors,
   };
 }

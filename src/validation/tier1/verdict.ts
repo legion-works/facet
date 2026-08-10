@@ -45,6 +45,7 @@ export interface PageShim {
   readonly visibleSvgCount: number;
   readonly opaqueRegionCount: number;
   readonly errorCount: number;
+  readonly html?: ProtocolObservation["html"];
 }
 
 /**
@@ -100,6 +101,11 @@ export function deriveVerdict(
 ): RenderStatus {
   if (!lifecycle.renderComplete) return "timeout";
 
+  if (
+    protocolObservation.discriminativeErrors.some((error) => error.code === "protocol_divergence")
+  ) {
+    return "tampered";
+  }
   if (pageShim !== null && shimDiverges(pageShim, protocolObservation)) return "tampered";
   if (isolatedObservation !== null && countsDiffer(isolatedObservation, protocolObservation)) {
     return "tampered";
@@ -111,19 +117,18 @@ export function deriveVerdict(
   if (!shimAvailable) return "probe_only";
   if (!isolatedAvailable) return "shim_only";
 
+  if (protocolObservation.discriminativeErrors.length > 0) return "error";
+  if (!matchesExpected(expected, protocolObservation)) return "error";
   if (expected.opaqueRegionCount > 0 && protocolObservation.opaqueRegionCount === 0) {
     return "error";
   }
   if (protocolObservation.opaqueRegionCount > 0) return "partial:opaque_content";
-
-  if ((expected.html?.externalImageCount ?? 0) > 0) return "partial:external_resources";
-
-  if (!layoutObservable(protocolObservation)) return "partial:layout_unverified";
-
-  if (protocolObservation.discriminativeErrors.length > 0) return "error";
-
-  if (!matchesExpected(expected, protocolObservation)) return "error";
-
+  if ((protocolObservation.html?.externalImageCount ?? 0) > 0) {
+    return "partial:external_resources";
+  }
+  if (expected.html === undefined && !layoutObservable(protocolObservation)) {
+    return "partial:layout_unverified";
+  }
   return "ok";
 }
 
@@ -145,6 +150,24 @@ function isDegenerateViewBox(viewBox: string): boolean {
   return width <= 0 || height <= 0;
 }
 
+const HTML_COUNT_KEYS = [
+  "rendererRootCount",
+  "headingCount",
+  "tableCount",
+  "listCount",
+  "imageCount",
+  "canvasCount",
+  "externalImageCount",
+] as const;
+
+function htmlCountsDiffer(
+  left: ProtocolObservation["html"],
+  right: ProtocolObservation["html"],
+): boolean {
+  if (left === undefined || right === undefined) return left !== right;
+  return HTML_COUNT_KEYS.some((key) => left[key] !== right[key]);
+}
+
 function shimDiverges(shim: PageShim, protocol: ProtocolObservation): boolean {
   return (
     shim.rendererRootSvgCount !== protocol.rendererRootSvgCount ||
@@ -152,7 +175,8 @@ function shimDiverges(shim: PageShim, protocol: ProtocolObservation): boolean {
     shim.mermaidNodeCount !== protocol.mermaidNodeCount ||
     shim.errorCount !== protocol.errorCount ||
     shim.visibleSvgCount !== protocol.visibleSvgCount ||
-    shim.opaqueRegionCount !== protocol.opaqueRegionCount
+    shim.opaqueRegionCount !== protocol.opaqueRegionCount ||
+    htmlCountsDiffer(shim.html, protocol.html)
   );
 }
 
@@ -163,13 +187,15 @@ function countsDiffer(left: ProtocolObservation, right: ProtocolObservation): bo
     left.mermaidNodeCount !== right.mermaidNodeCount ||
     left.visibleSvgCount !== right.visibleSvgCount ||
     left.errorCount !== right.errorCount ||
-    left.opaqueRegionCount !== right.opaqueRegionCount
+    left.opaqueRegionCount !== right.opaqueRegionCount ||
+    htmlCountsDiffer(left.html, right.html)
   );
 }
 
 function matchesExpected(expected: LexicalCounters, protocol: ProtocolObservation): boolean {
   if (expected.rendererRootSvgCount !== protocol.rendererRootSvgCount) return false;
   if (expected.mermaidNodeCount !== protocol.mermaidNodeCount) return false;
+  if (expected.html !== undefined && htmlCountsDiffer(expected.html, protocol.html)) return false;
   // opaqueRegionCount is not compared here: expected > 0 / observed 0 returns
   // error above, observed > 0 returns partial:opaque_content above, and 0 / 0
   // is the only reachable ordinary path.

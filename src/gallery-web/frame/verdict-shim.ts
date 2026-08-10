@@ -13,6 +13,15 @@ export interface VerdictShimObserved {
   readonly mermaidNodeCount: number;
   readonly visibleSvgCount: number;
   readonly errorCount: number;
+  readonly html?: {
+    readonly rendererRootCount: number;
+    readonly headingCount: number;
+    readonly tableCount: number;
+    readonly listCount: number;
+    readonly imageCount: number;
+    readonly canvasCount: number;
+    readonly externalImageCount: number;
+  };
 }
 
 export interface VerdictShimReport {

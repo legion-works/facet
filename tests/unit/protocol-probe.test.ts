@@ -9,18 +9,16 @@ import type { VerifierCdpSession } from "../../src/validation/tier1/browser-proc
 const strings = [
   "child-frame",
   "#document",
-  "svg",
+  "div",
   "data-facet-renderer-root",
   "true",
-  "data-facet-renderer-graph",
-  "viewBox",
-  "0 0 100 100",
-  "g",
-  "class",
-  "node",
+  "h1",
+  "table",
+  "ul",
+  "img",
+  "src",
+  "https://example.test/a.png",
   "canvas",
-  "facet-error",
-  "data-facet-error",
 ];
 
 const snapshot = {
@@ -28,9 +26,9 @@ const snapshot = {
     {
       frameId: 0,
       nodes: {
-        nodeName: [1, 2, 2, 8, 8, 11, 12],
-        parentIndex: [-1, 0, 1, 1, 1, 1, 1],
-        attributes: [[], [3, 4, 5, 4, 6, 7], [3, 4, 5, 4, 6, 7], [9, 10], [9, 10], [], [13, 4]],
+        nodeName: [1, 2, 5, 6, 7, 8, 11, 2, 5],
+        parentIndex: [-1, 0, 1, 1, 1, 1, 1, 1, 7],
+        attributes: [[], [3, 4], [], [], [], [9, 10], [], [3, 4], []],
       },
     },
   ],
@@ -40,9 +38,10 @@ const snapshot = {
 const document = {
   root: {
     nodeName: "#document",
-    frameId: "parent-frame",
     children: [
+      { nodeName: "H1" },
       { nodeName: "CANVAS" },
+      { nodeName: "DIV", attributes: ["data-facet-renderer-root", "true"] },
       {
         nodeName: "IFRAME",
         backendNodeId: 41,
@@ -50,33 +49,22 @@ const document = {
           nodeName: "#document",
           children: [
             {
-              nodeName: "SVG",
-              attributes: [
-                "data-facet-renderer-root",
-                "true",
-                "data-facet-renderer-graph",
-                "true",
-                "viewBox",
-                "0 0 100 100",
-              ],
+              nodeName: "DIV",
+              attributes: ["data-facet-renderer-root", "true"],
               children: [
-                {
-                  nodeName: "SVG",
-                  attributes: [
-                    "data-facet-renderer-root",
-                    "true",
-                    "data-facet-renderer-graph",
-                    "true",
-                    "viewBox",
-                    "0 0 100 100",
-                  ],
-                },
-                { nodeName: "g", attributes: ["class", "node"] },
-                { nodeName: "g", attributes: ["class", "node"] },
+                { nodeName: "H1" },
+                { nodeName: "TABLE" },
+                { nodeName: "UL" },
+                { nodeName: "IMG", attributes: ["src", "https://example.test/a.png"] },
                 { nodeName: "CANVAS" },
-                { nodeName: "facet-error", attributes: ["data-facet-error", "true"] },
+                {
+                  nodeName: "DIV",
+                  attributes: ["data-facet-renderer-root", "true"],
+                  children: [{ nodeName: "H2" }],
+                },
               ],
             },
+            { nodeName: "H3" },
           ],
         },
       },
@@ -84,10 +72,7 @@ const document = {
   },
 };
 
-const childFrame = {
-  frameId: "child-frame",
-  url: "about:srcdoc",
-} as const;
+const childFrame = { frameId: "child-frame", url: "about:srcdoc" } as const;
 
 function session(): VerifierCdpSession {
   return {
@@ -101,19 +86,28 @@ function session(): VerifierCdpSession {
   };
 }
 
-describe("protocol probes — renderer-owned observables", () => {
-  test("DOMSnapshot primary and DOM.getDocument corroboration scope the canvas census to the child frame", async () => {
+describe("protocol probes — html marker scoping", () => {
+  test("html counts use the child-frame outermost owned wrapper and ignore parent decoys", async () => {
     const cdp = session();
     const fromSnapshot = await probeProtocolSnapshot(cdp, childFrame);
     const fromDocument = await probeProtocolGetDocument(cdp, childFrame);
 
-    for (const observation of [fromSnapshot, fromDocument]) {
-      expect(observation.rendererRootSvgCount).toBe(1);
-      expect(observation.graphCount).toBe(1);
-      expect(observation.mermaidNodeCount).toBe(2);
-      expect(observation.visibleSvgCount).toBe(1);
-      expect(observation.opaqueRegionCount).toBe(1);
-      expect(observation.errorCount).toBe(1);
-    }
+    const expected = {
+      rendererRootCount: 1,
+      headingCount: 2,
+      tableCount: 1,
+      listCount: 1,
+      imageCount: 1,
+      canvasCount: 1,
+      externalImageCount: 1,
+    };
+    expect(fromSnapshot.html).toEqual(expected);
+    expect(fromDocument.html).toEqual(expected);
+  });
+
+  test("artifact fake marker remains a descendant rather than a second root", async () => {
+    const observation = await probeProtocolGetDocument(session(), childFrame);
+    expect(observation.html?.rendererRootCount).toBe(1);
+    expect(observation.html?.headingCount).toBe(2);
   });
 });
