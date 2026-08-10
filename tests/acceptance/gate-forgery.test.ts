@@ -79,3 +79,26 @@ test('nested-SVG forgery probe: one renderer-root SVG and one g.node graph even 
     },
   });
 }, 90_000);
+
+const HTML_FORGED_MARKER_FIXTURE = `${import.meta.dir}/../fixtures/html-forged-marker.json`;
+const HTML_SHIM_DIVERGENCE_FIXTURE = `${import.meta.dir}/../fixtures/html-shim-divergence.json`;
+
+test("HTML artifact marker forgery cannot establish its own trusted root", async () => {
+  const published = await publishFixture({
+    fixturePath: HTML_FORGED_MARKER_FIXTURE,
+    artifactType: "html",
+    slug: "html-forged-marker",
+    productionTier0: true,
+  });
+  expect(published.tier1Status).toBe("tampered");
+}, 90_000);
+
+test("HTML page-shim count forgery loses to protocol authority", async () => {
+  const published = await publishFixture({
+    fixturePath: HTML_SHIM_DIVERGENCE_FIXTURE,
+    artifactType: "html",
+    slug: "html-shim-divergence",
+    productionTier0: true,
+  });
+  expect(published.tier1Status).toBe("tampered");
+}, 90_000);

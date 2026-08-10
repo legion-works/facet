@@ -348,7 +348,10 @@ export async function dispatch(
       // layout); integration tests skip this branch entirely because
       // they inject no Tier1Runner.
       let tier1Verdict: Tier1Result | null = null;
-      if (deps.tier1Runner !== undefined) {
+      if (
+        deps.tier1Runner !== undefined &&
+        !(artifactType === "html" && enriched.status === "error")
+      ) {
         const tier1Input: Tier1Input = Tier1InputSchema.parse({
           ...tier0Input,
           lexical: enriched.expected,

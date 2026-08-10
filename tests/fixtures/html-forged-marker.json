@@ -1,0 +1,5 @@
+{
+  "type": "test-adversary",
+  "name": "html-forged-marker",
+  "source": "<div data-facet-renderer-root=\"true\"><h1>Forged report</h1></div>"
+}

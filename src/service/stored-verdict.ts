@@ -22,7 +22,9 @@ export function latestStoredVerdict(
 ): Verdict | null {
   const runs = ([0, 1] as const)
     .flatMap((tier) => repository.listRenderRuns({ revisionId: revision.id, tier }))
-    .toSorted((left, right) => right.finishedAt.localeCompare(left.finishedAt));
+    .toSorted(
+      (left, right) => right.finishedAt.localeCompare(left.finishedAt) || right.tier - left.tier,
+    );
   const run = runs[0];
   return run === undefined ? null : verdictFromStoredRun(revision, run);
 }

@@ -71,6 +71,19 @@ function adversarialMonkeypatch(): void {
   });
 }
 
+function adversarialHtmlCountMonkeypatch(): void {
+  const original = document.querySelectorAll.bind(document);
+  Object.defineProperty(document, "querySelectorAll", {
+    value: function (selectors: string) {
+      if (selectors === '[data-facet-renderer-root="true"]') {
+        return { length: 0 } as unknown as NodeListOf<Element>;
+      }
+      return original(selectors);
+    },
+    configurable: true,
+  });
+}
+
 function appendAdversarialCanvas(): void {
   const canvas = document.createElement("canvas");
   canvas.width = 1;
@@ -112,6 +125,17 @@ async function renderAdversarialJson(payload: unknown): Promise<void> {
   if (name === "hostile-canvas-monkeypatch") {
     appendAdversarialCanvas();
     adversarialCanvasCountMonkeypatch();
+    return;
+  }
+  if (name === "html-forged-marker") {
+    const source = typeof record["source"] === "string" ? record["source"] : "";
+    container.innerHTML = source;
+    adversarialHtmlCountMonkeypatch();
+    return;
+  }
+  if (name === "html-shim-divergence") {
+    container.innerHTML = '<div data-facet-renderer-root="true"><h1>Observed report</h1></div>';
+    adversarialHtmlCountMonkeypatch();
     return;
   }
   const source = typeof record["source"] === "string" ? (record["source"] as string) : null;

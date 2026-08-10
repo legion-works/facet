@@ -28,6 +28,7 @@ import { stubTier0Runner } from "./stub-tier0-runner";
 import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
 import type { Renderer } from "../../src/shared/contracts/renderers";
 import type {
+  HtmlStructureCounts,
   InsecureLevel,
   InsecureMarker,
   ScreenshotError,
@@ -52,6 +53,7 @@ export interface AcceptanceVerdictObserved {
   readonly graphCount: number;
   readonly errorCount: number;
   readonly opaqueRegionCount: number;
+  readonly html?: HtmlStructureCounts;
   readonly discriminativeErrors?: readonly { readonly code: string; readonly message: string }[];
 }
 
@@ -276,6 +278,7 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
       graphCount: result.observed.graphCount,
       opaqueRegionCount: result.observed.opaqueRegionCount,
       errorCount: result.observed.errorCount,
+      ...(result.observed.html === undefined ? {} : { html: result.observed.html }),
       ...(result.observed.discriminativeErrors !== undefined
         ? { discriminativeErrors: result.observed.discriminativeErrors }
         : {}),

@@ -672,3 +672,39 @@ describe("render export", () => {
     }
   });
 });
+
+test("source export sidecar preserves a stored external-resource Tier 1 verdict", async () => {
+  const externalTier1: Tier1Runner = async (input) => ({
+    tier: 1,
+    status: "partial:external_resources",
+    artifactId: input.artifactType,
+    revisionSha: input.revisionSha,
+    expected: input.lexical,
+    observed: {
+      ...OBSERVED,
+      ...(input.lexical.html === undefined ? {} : { html: input.lexical.html }),
+    },
+    screenshotPath: null,
+    consolePath: null,
+    screenshotError: {
+      code: "screenshot_unavailable",
+      message: "deterministic export fixture",
+    },
+  });
+  const env = await startEnv({ tier0Runner: tier0("ok"), tier1Runner: externalTier1 });
+  try {
+    const artifactId = await createArtifact(env, "html-external-sidecar");
+    await publish(
+      env,
+      artifactId,
+      new TextEncoder().encode(
+        '<h1>External report</h1><img src="https://cdn.example.invalid/report.png">',
+      ),
+      "html",
+    );
+    const exported = await result(env, { command: "export", artifactId, format: "source" });
+    expect(exported.sidecar.verdict.status).toBe("partial:external_resources");
+  } finally {
+    await env.service.stop();
+  }
+});

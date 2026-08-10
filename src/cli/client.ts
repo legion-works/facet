@@ -33,6 +33,7 @@ import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
 import type { ArtifactType } from "../shared/contracts/artifact-types";
+import type { HtmlStructureCounts } from "../shared/contracts/validation";
 import type { Renderer } from "../shared/contracts/renderers";
 import type { InsecureMarker, ScreenshotError } from "../shared/contracts/validation";
 
@@ -282,6 +283,7 @@ export async function readBack(
     readonly visibleSvgCount: number;
     readonly opaqueRegionCount: number;
     readonly errorCount: number;
+    readonly html?: HtmlStructureCounts;
     readonly discriminativeErrors?: readonly { readonly code: string; readonly message: string }[];
   };
 }> {
@@ -316,6 +318,7 @@ export async function readBack(
       visibleSvgCount: parsed.verdict.observed.visibleSvgCount,
       opaqueRegionCount: parsed.verdict.observed.opaqueRegionCount,
       errorCount: parsed.verdict.observed.errorCount,
+      ...(parsed.verdict.observed.html === undefined ? {} : { html: parsed.verdict.observed.html }),
       ...(parsed.verdict.observed.discriminativeErrors !== undefined
         ? { discriminativeErrors: parsed.verdict.observed.discriminativeErrors }
         : {}),

@@ -54,6 +54,7 @@ interface ProtocolDomNode {
   readonly contentDocument?: unknown;
   readonly children?: unknown[];
   readonly shadowRoots?: unknown[];
+  readonly shadowRootType?: string;
 }
 
 function findFrameDocument(node: unknown, ownerBackendNodeId: number): unknown | null {
@@ -387,6 +388,7 @@ export async function probeProtocolGetDocument(
       contentDocument?: { nodeName: string; children?: unknown[] };
       children?: unknown[];
       shadowRoots?: unknown[];
+      shadowRootType?: string;
     };
   };
   const owner = (await session.send("DOM.getFrameOwner", {
@@ -405,6 +407,7 @@ export async function probeProtocolGetDocument(
     withinRendererRoot = false,
     withinGraphRoot = false,
     withinHtmlRoot = false,
+    withinMarkedRoot = false,
   ): void => {
     if (node === null || typeof node !== "object") return;
     const record = node as {
@@ -415,6 +418,7 @@ export async function probeProtocolGetDocument(
       contentDocument?: unknown;
       children?: unknown[];
       shadowRoots?: unknown[];
+      shadowRootType?: string;
     };
     const findAttr = (wanted: string): string | undefined => {
       const attrs = record.attributes;
@@ -427,7 +431,7 @@ export async function probeProtocolGetDocument(
     const name = (record.nodeName ?? "").toLowerCase();
     const markedRoot = findAttr("data-facet-renderer-root") === "true";
     const rendererRoot = name === "svg" && markedRoot && !withinRendererRoot;
-    const htmlRoot = name !== "svg" && markedRoot && !withinHtmlRoot;
+    const htmlRoot = name !== "svg" && markedRoot && !withinMarkedRoot;
     const graphRoot = rendererRoot && findAttr("data-facet-renderer-graph") === "true";
     if (htmlRoot) {
       html ??= {
@@ -473,12 +477,28 @@ export async function probeProtocolGetDocument(
     const nextWithinRendererRoot = withinRendererRoot || rendererRoot;
     const nextWithinGraphRoot = withinGraphRoot || graphRoot;
     const nextWithinHtmlRoot = withinHtmlRoot || htmlRoot;
+    const nextWithinMarkedRoot = withinMarkedRoot || markedRoot;
     if (record.children !== undefined)
       for (const child of record.children)
-        visit(child, nextWithinRendererRoot, nextWithinGraphRoot, nextWithinHtmlRoot);
+        visit(
+          child,
+          nextWithinRendererRoot,
+          nextWithinGraphRoot,
+          nextWithinHtmlRoot,
+          nextWithinMarkedRoot,
+        );
     if (record.shadowRoots !== undefined)
-      for (const shadow of record.shadowRoots)
-        visit(shadow, nextWithinRendererRoot, nextWithinGraphRoot, nextWithinHtmlRoot);
+      for (const shadow of record.shadowRoots) {
+        const shadowRecord = shadow as ProtocolDomNode;
+        if (shadowRecord.shadowRootType === "user-agent") continue;
+        visit(
+          shadow,
+          nextWithinRendererRoot,
+          nextWithinGraphRoot,
+          nextWithinHtmlRoot,
+          nextWithinMarkedRoot,
+        );
+      }
   };
   const frameDocument = findFrameDocument(result.root, owner.backendNodeId);
   if (frameDocument !== null) visit(frameDocument);
