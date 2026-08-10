@@ -34,6 +34,7 @@ import type {
   Tier1RunnerFactory,
 } from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
+import { defaultInsecureReason } from "./verdict-enrichment";
 
 interface MutableArgs {
   dbPath?: string;
@@ -250,7 +251,7 @@ async function main(): Promise<void> {
       }
     }
     if (insecureLevel > 0) {
-      const reason = insecureReason ?? `manual insecure level ${insecureLevel}`;
+      const reason = insecureReason ?? defaultInsecureReason(insecureLevel);
       process.stderr.write(`WARN: FACET_INSECURE=${insecureLevel} — ${reason}\n`);
     }
     const configuredTier0Runner = tier0Module.factory(insecureLevel);
@@ -287,7 +288,7 @@ async function main(): Promise<void> {
         ...(insecureLevel > 0
           ? {
               insecureLevel,
-              insecureReason: insecureReason ?? `manual insecure level ${insecureLevel}`,
+              insecureReason: insecureReason ?? defaultInsecureReason(insecureLevel),
             }
           : {}),
       })}\n`,

@@ -141,6 +141,54 @@ async function publish(env: TestEnv): Promise<Extract<CommandResult, { command: 
 }
 
 describe("insecure dispatcher semantics", () => {
+  test("gallery source exposes insecure markers while keeping secure verdicts marker-free", async () => {
+    const insecure = await startEnv(1, runners({ tier0: "ok", tier1: "ok" }));
+    const insecurePublished = await publish(insecure);
+    const insecureOpened = await command(insecure, {
+      command: "open",
+      artifactId: insecurePublished.revision.artifactId,
+      revisionSha: insecurePublished.revision.sha256,
+    });
+    if (insecureOpened.command !== "open") throw new Error("expected insecure open result");
+    const insecureSource = await fetch(
+      `${insecure.service.url}/api/v1/gallery/source?revisionSha=${insecurePublished.revision.sha256}`,
+      {
+        headers: {
+          authorization: `Bearer ${insecure.service.installToken}`,
+          host: new URL(insecure.service.url).host,
+          "x-gallery-lease": insecureOpened.lease.leaseId,
+          "x-gallery-artifact": insecurePublished.revision.artifactId,
+        },
+      },
+    );
+    expect(insecureSource.status).toBe(200);
+    const insecureBody = (await insecureSource.json()) as { verdict: { insecure?: unknown } };
+    expect(insecureBody.verdict.insecure).toEqual({ level: 1, reason: expect.any(String) });
+
+    const secure = await startEnv(undefined);
+    const securePublished = await publish(secure);
+    const secureOpened = await command(secure, {
+      command: "open",
+      artifactId: securePublished.revision.artifactId,
+      revisionSha: securePublished.revision.sha256,
+    });
+    if (secureOpened.command !== "open") throw new Error("expected secure open result");
+    const secureSource = await fetch(
+      `${secure.service.url}/api/v1/gallery/source?revisionSha=${securePublished.revision.sha256}`,
+      {
+        headers: {
+          authorization: `Bearer ${secure.service.installToken}`,
+          host: new URL(secure.service.url).host,
+          "x-gallery-lease": secureOpened.lease.leaseId,
+          "x-gallery-artifact": securePublished.revision.artifactId,
+        },
+      },
+    );
+    expect(secureSource.status).toBe(200);
+    const secureBody = (await secureSource.json()) as { verdict: { insecure?: unknown } };
+    expect(secureBody.verdict.insecure).toBeUndefined();
+  });
+
   test.each([1, 2] as const)(
     "level %d invokes both runners and marks every verdict",
     async (level) => {

@@ -27,7 +27,8 @@ operator's `FACET_INSECURE` value. `FACET_INSECURE_AUTO=1` may raise a level whe
 startup probes fail, but it never selects level 3. With auto mode off, hard
 `tier*_unavailable` errors remain hard errors.
 
-L1 and L2 statuses are real validator results and must be read with their
-`Verdict.insecure` marker. Do not call them unvalidated; only L3 owns
-`insecure:unvalidated`. Startup, the service-ready envelope, CLI output, and
-gallery badge are intentionally loud. The CLI emits an `INSECURE` line.
+Every insecure-level verdict carries its `Verdict.insecure` marker. L1 and L2
+statuses are real validator results — do not call them unvalidated. L3 also
+carries the marker and owns `insecure:unvalidated`. Startup, the service-ready
+envelope, CLI output, and gallery badge are intentionally loud. The CLI emits
+an `INSECURE` line.

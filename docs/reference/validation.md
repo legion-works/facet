@@ -92,9 +92,8 @@ enriched verdict — never the worker's placeholder identity.
 
 ## Layering
 
-Insecure execution conditions are metadata: `Verdict.insecure` carries the
-effective level and reason, but verdict derivation never consumes that marker.
-Only level 3 produces the `insecure:unvalidated` status.
+Insecure execution conditions are metadata: every insecure-level verdict carries a `Verdict.insecure` marker with the effective level and reason, but verdict derivation never consumes that marker.
+Level 3 additionally produces the `insecure:unvalidated` status.
 
 ```
 shared/contracts/validation.ts   canonical VerdictSchema + RenderStatus

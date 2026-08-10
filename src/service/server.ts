@@ -31,6 +31,7 @@ import { buildRouter } from "./router";
 import { createInstallTokenStore, createPromoteTokenStore } from "./security/token-store";
 import { createLeaseManager, type GalleryLeaseManager } from "./security/leases";
 import { createRevisionBroadcaster } from "./stream";
+import { defaultInsecureReason } from "./verdict-enrichment";
 import {
   InsecureLevelSchema,
   type InsecureLevel,
@@ -292,7 +293,7 @@ export async function startFacetService(
       ...(insecureLevel > 0
         ? {
             insecureLevel,
-            insecureReason: options.insecureReason ?? `manual insecure level ${insecureLevel}`,
+            insecureReason: options.insecureReason ?? defaultInsecureReason(insecureLevel),
           }
         : {}),
     });

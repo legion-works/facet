@@ -1,6 +1,6 @@
 import type { InsecureLevel, InsecureMarker } from "../shared/contracts/validation";
 
-const DEFAULT_INSECURE_REASON = (level: Exclude<InsecureLevel, 0>): string =>
+export const defaultInsecureReason = (level: InsecureLevel): string =>
   `manual insecure level ${level}`;
 
 export function insecureMarker(
@@ -8,7 +8,7 @@ export function insecureMarker(
   reason: string | null | undefined,
 ): InsecureMarker | undefined {
   if (level === 0) return undefined;
-  return { level, reason: reason ?? DEFAULT_INSECURE_REASON(level) };
+  return { level, reason: reason ?? defaultInsecureReason(level) };
 }
 
 export function enrichVerdict<T extends object>(
@@ -16,7 +16,7 @@ export function enrichVerdict<T extends object>(
   artifactId: string,
   revisionSha: string,
   insecure?: InsecureMarker,
-): T & { artifactId: string; revisionSha: string } {
+): T & { artifactId: string; revisionSha: string; insecure?: InsecureMarker } {
   return {
     ...result,
     ...(insecure !== undefined ? { insecure } : {}),

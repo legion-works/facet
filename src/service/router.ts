@@ -142,6 +142,7 @@ function latestStoredVerdict(
     ...(run.screenshotErrorJson !== null
       ? { screenshotError: JSON.parse(run.screenshotErrorJson) }
       : {}),
+    ...(run.insecureJson !== null ? { insecure: JSON.parse(run.insecureJson) } : {}),
   });
 }
 

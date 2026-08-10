@@ -137,20 +137,16 @@ function spawnChild(
     "--tier0-runner-path",
     tier0RunnerPath,
   ];
-  if (
+  const insecureBoot =
     ["1", "2", "3"].includes(options.env.FACET_INSECURE ?? "") ||
-    options.env.FACET_INSECURE_AUTO === "1"
-  ) {
+    options.env.FACET_INSECURE_AUTO === "1";
+  if (insecureBoot) {
     args.push("--tier1-runner-path", options.tier1RunnerPath ?? resolveDefaultTier1RunnerPath());
   }
   if (options.idleTimeoutMs !== undefined) {
     args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
   }
-  const stderr =
-    ["1", "2", "3"].includes(options.env.FACET_INSECURE ?? "") ||
-    options.env.FACET_INSECURE_AUTO === "1"
-      ? "inherit"
-      : "ignore";
+  const stderr = insecureBoot ? "inherit" : "ignore";
   onSpawn?.(args, stderr);
   return spawn(bunPath, args, {
     env: childEnv,
