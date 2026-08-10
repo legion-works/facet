@@ -42,6 +42,7 @@ import { FacetError } from "../shared/errors/facet-error";
 import { SOURCE_CAP_BYTES, TIER1_PINNED_VERSION } from "../shared/config/limits";
 import { computeLexicalExpectations } from "./lexical/expectations";
 import { enrichVerdict, insecureMarker } from "./verdict-enrichment";
+import { exportStoredSource } from "./export";
 
 import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
@@ -547,8 +548,7 @@ export async function dispatch(
       };
     }
     case "export": {
-      // Handled at the router's reserved-verb guard — never reached here.
-      throw new FacetError("reserved_not_implemented", "export reserved", { retryable: false });
+      return exportStoredSource({ repository: deps.repository, command, requestId });
     }
     default: {
       const exhaustive: never = command;

@@ -233,6 +233,34 @@ export class ArtifactRepository {
     }
   }
 
+  getArtifactById(id: string): Artifact | null {
+    try {
+      const row = this.db
+        .query(
+          "SELECT id, project_id, slug, title, created_at, updated_at FROM artifacts WHERE id = ?",
+        )
+        .get(id) as {
+        id: string;
+        project_id: string;
+        slug: string;
+        title: string;
+        created_at: string;
+        updated_at: string;
+      } | null;
+      if (row === null) return null;
+      return ArtifactSchema.parse({
+        id: row.id,
+        projectId: row.project_id,
+        slug: row.slug,
+        title: row.title,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      });
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
   listRenderRuns(input: { revisionId: string; tier: 0 | 1 }): RenderRun[] {
     try {
       const rows = this.db
@@ -417,6 +445,19 @@ export class ArtifactRepository {
         .query("SELECT * FROM revisions WHERE artifact_id = ? AND sha256 = ?")
         .get(artifactId, revisionSha) as SqlRevision | null;
       return row ? mapRevision(row) : null;
+    } catch (error) {
+      throw asStoreError(error);
+    }
+  }
+
+  getLatestRevision(artifactId: string): Revision | null {
+    try {
+      const row = this.db
+        .query(
+          "SELECT * FROM revisions WHERE artifact_id = ? ORDER BY revision_number DESC LIMIT 1",
+        )
+        .get(artifactId) as SqlRevision | null;
+      return row === null ? null : mapRevision(row);
     } catch (error) {
       throw asStoreError(error);
     }

@@ -327,23 +327,51 @@ describe("service API integration", () => {
     }
   });
 
-  test("export remains an honest intermediate failure until its dispatcher arm lands", async () => {
+  test("export returns immutable source bytes through the command API", async () => {
     const env = await startService();
     try {
+      const createRes = await envelopeRequest(env, {
+        schemaVersion: FACET_SCHEMA_VERSION,
+        requestId: "req-export-create",
+        command: "create",
+        projectId: "project-export",
+        slug: "api-export",
+        title: "API export",
+      });
+      const created = parseEnvelopeStrict(await createRes.text()) as {
+        ok: true;
+        data: { artifact: { id: string } };
+      };
+      const source = new Uint8Array([0, 255, 1, 2]);
+      const publishRes = await envelopeRequest(env, {
+        schemaVersion: FACET_SCHEMA_VERSION,
+        requestId: "req-export-publish",
+        command: "publish",
+        artifactId: created.data.artifact.id,
+        artifactType: "markdown",
+        bytes: Buffer.from(source).toString("base64"),
+      });
+      const published = parseEnvelopeStrict(await publishRes.text()) as {
+        ok: true;
+        data: { revision: { sha256: string } };
+      };
       const res = await envelopeRequest(env, {
         schemaVersion: FACET_SCHEMA_VERSION,
         requestId: "req-export",
         command: "export",
-        artifactId: "missing-artifact",
+        artifactId: created.data.artifact.id,
+        revisionSha: published.data.revision.sha256,
         format: "source",
       });
       const body = parseEnvelopeStrict(await res.text()) as {
-        ok: false;
-        error: { code: string };
+        ok: true;
+        data: { bytes: string; sidecar: { revisionSha: string; format: string } };
       };
-      expect(res.status).toBe(400);
-      expect(body.ok).toBe(false);
-      expect(body.error.code).toBe("reserved_not_implemented");
+      expect(res.status).toBe(200);
+      expect(body.ok).toBe(true);
+      expect(new Uint8Array(Buffer.from(body.data.bytes, "base64"))).toEqual(source);
+      expect(body.data.sidecar.revisionSha).toBe(published.data.revision.sha256);
+      expect(body.data.sidecar.format).toBe("source");
     } finally {
       await env.cleanup();
     }
