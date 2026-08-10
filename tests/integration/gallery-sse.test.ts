@@ -41,12 +41,32 @@ import {
 import { createChannelPair, type ChannelPair } from "../../src/gallery-web/frame/channels";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { HARNESS_CSP, buildHarnessSrcdoc } from "../../src/validation/tier1/harness";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const NONCE = "facet-nonce-abcd1234";
 const BOOTSTRAP_URL = "/gallery/frame/bootstrap.js";
 
 const ARTIFACT_SENTINEL = "FACET_SENTINEL_ARTIFACT_BYTES_ZZZ_9999";
+
+const CSP_BEFORE_EXTERNAL_IMAGES =
+  "default-src 'none'; script-src 'nonce-<BOOTSTRAP_NONCE>'; style-src 'unsafe-inline'; " +
+  "img-src data:; font-src data:; worker-src 'none'; connect-src 'none'; object-src 'none'; " +
+  "base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'";
+
+const CSP_WITH_EXTERNAL_IMAGES =
+  "default-src 'none'; script-src 'nonce-<BOOTSTRAP_NONCE>'; style-src 'unsafe-inline'; " +
+  "img-src data: https:; font-src data:; worker-src 'none'; connect-src 'none'; object-src 'none'; " +
+  "base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'";
+
+function cspDirectives(csp: string): ReadonlyMap<string, string> {
+  return new Map(
+    csp.split("; ").map((directive) => {
+      const [name, ...sources] = directive.split(" ");
+      return [name!, sources.join(" ")];
+    }),
+  );
+}
 
 function buildFreshNonce(): string {
   return "n-" + crypto.randomUUID().replace(/-/g, "");
@@ -80,6 +100,38 @@ describe("gallery shell — CSP + frame-document invariants", () => {
 });
 
 describe("gallery shell — FROZEN CSP", () => {
+  test("frozen CSP widens only img-src while every verdict-protecting directive stays exact", () => {
+    const previous = cspDirectives(CSP_BEFORE_EXTERNAL_IMAGES);
+    const next = cspDirectives(FROZEN_CSP_TEMPLATE);
+
+    expect(FROZEN_CSP_TEMPLATE).toBe(CSP_WITH_EXTERNAL_IMAGES);
+    expect(next.get("img-src")).toBe("data: https:");
+    expect(next.get("script-src")).toBe("'nonce-<BOOTSTRAP_NONCE>'");
+    expect(next.get("script-src")).not.toContain("'unsafe-inline'");
+    expect(next.get("connect-src")).toBe("'none'");
+    expect(next.get("object-src")).toBe("'none'");
+    expect(next.get("frame-src")).toBe("'none'");
+    expect(next.get("base-uri")).toBe("'none'");
+    expect(next.get("form-action")).toBe("'none'");
+    expect(next.get("worker-src")).toBe("'none'");
+    expect(next.get("media-src")).toBe("'none'");
+    expect(next.get("default-src")).toBe("'none'");
+    expect(next.get("font-src")).toBe("data:");
+    expect([...next].filter(([name]) => name !== "img-src")).toEqual(
+      [...previous].filter(([name]) => name !== "img-src"),
+    );
+  });
+
+  test("frozen CSP gallery and Tier 1 harness emit the identical policy", async () => {
+    const harness = await buildHarnessSrcdoc("html");
+    const harnessCsp = harness.srcdoc.match(
+      /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/,
+    )?.[1];
+
+    expect(HARNESS_CSP).toBe(FROZEN_CSP_TEMPLATE);
+    expect(harnessCsp).toBe(FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", harness.nonce));
+  });
+
   test("template includes script-src nonce, no 'unsafe-inline'", () => {
     expect(FROZEN_CSP_TEMPLATE).toContain("script-src 'nonce-");
     expect(FROZEN_CSP_TEMPLATE).not.toContain("script-src 'unsafe-inline'");
@@ -430,6 +482,7 @@ describe("gallery shell — no zod in frame bundle (boundary check stays clean)"
     "../../src/gallery-web/frame/renderers/mermaid.ts",
     "../../src/gallery-web/frame/renderers/svg.ts",
     "../../src/gallery-web/frame/renderers/chart.ts",
+    "../../src/gallery-web/frame/renderers/html-stub.ts",
   ];
   for (const relative of FRAME_FILES) {
     test(`${relative.split("/").pop()} has no zod references`, async () => {

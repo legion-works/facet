@@ -19,6 +19,7 @@ import {
   ProtocolObservationSchema,
   Tier0ResultSchema,
   Tier1ResultSchema,
+  VerdictSchema,
   VerdictObservedSchema,
   type HtmlStructureCounts,
 } from "../../src/shared/contracts/validation";
@@ -355,8 +356,8 @@ describe("HTML validation observables", () => {
     ).toEqual(HTML_COUNTS);
   });
 
-  test("markdown tier-one results retain their exact old wire form without html keys", () => {
-    const markdownBaseline = {
+  test("markdown contract surfaces retain their exact old wire form without html keys", () => {
+    const verdictBaseline = {
       status: "ok",
       tier: 1,
       artifactId: "art-markdown",
@@ -369,18 +370,54 @@ describe("HTML validation observables", () => {
         opaqueRegionCount: 0,
         errorCount: 0,
       },
+    };
+    const tier0Baseline = {
+      ...verdictBaseline,
+      tier: 0,
       expected: {
         rendererRootSvgCount: 1,
         mermaidNodeCount: 2,
         visibleSvgCount: 1,
         opaqueRegionCount: 0,
       },
+    };
+    const tier1Baseline = {
+      ...tier0Baseline,
+      tier: 1,
       screenshotPath: null,
       consolePath: null,
     };
-    const afterSchemaChange = Tier1ResultSchema.parse(markdownBaseline);
+    const readBackBaseline = {
+      requestId: REQUEST_ID,
+      command: "readBack" as const,
+      renderer: "svg" as const,
+      verdict: verdictBaseline,
+    };
+    const exportSidecarBaseline = {
+      artifactId: "art-markdown",
+      slug: "markdown-artifact",
+      revisionSha: "b".repeat(64),
+      artifactType: "markdown" as const,
+      renderer: "svg" as const,
+      verdict: verdictBaseline,
+      format: "source" as const,
+      exportedAt: "2026-08-10T00:00:00.000Z",
+    };
+    const surfaces = [
+      ["VerdictSchema", VerdictSchema.parse(verdictBaseline), verdictBaseline],
+      ["Tier0ResultSchema", Tier0ResultSchema.parse(tier0Baseline), tier0Baseline],
+      ["Tier1ResultSchema", Tier1ResultSchema.parse(tier1Baseline), tier1Baseline],
+      ["ReadBackResultSchema", ReadBackResultSchema.parse(readBackBaseline), readBackBaseline],
+      [
+        "ExportSidecarSchema",
+        ExportSidecarSchema.parse(exportSidecarBaseline),
+        exportSidecarBaseline,
+      ],
+    ] as const;
 
-    expect(JSON.stringify(afterSchemaChange)).toBe(JSON.stringify(markdownBaseline));
-    expect(JSON.stringify(afterSchemaChange)).not.toContain('"html"');
+    for (const [name, actual, baseline] of surfaces) {
+      expect(JSON.stringify(actual), name).toBe(JSON.stringify(baseline));
+      expect(JSON.stringify(actual), name).not.toContain('"html"');
+    }
   });
 });

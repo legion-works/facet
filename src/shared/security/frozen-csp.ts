@@ -2,7 +2,7 @@ export const FROZEN_CSP_TEMPLATE =
   "default-src 'none'; " +
   "script-src 'nonce-<BOOTSTRAP_NONCE>'; " +
   "style-src 'unsafe-inline'; " +
-  "img-src data:; " +
+  "img-src data: https:; " +
   "font-src data:; " +
   "worker-src 'none'; " +
   "connect-src 'none'; " +
