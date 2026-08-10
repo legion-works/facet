@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0](https://github.com/legion-works/facet/compare/v1.1.0...v1.2.0) (2026-08-10)
+
+
+### Features
+
+* add opaque renderer contracts ([d284fa3](https://github.com/legion-works/facet/commit/d284fa31e911a8e79d10cd5a0cfcf74ffc0fdb5d))
+* cap opaque content verdicts ([99ccb21](https://github.com/legion-works/facet/commit/99ccb21563856a08e9ed0576f8f265746287dfd0))
+* derive renderer-aware expectations ([c85acab](https://github.com/legion-works/facet/commit/c85acabd16e87cc13aa2c03c47f1d120ff5a21aa))
+* label opaque partial verdicts ([3a40003](https://github.com/legion-works/facet/commit/3a40003cfaae2b00c52afb7dd4c725a3544febee))
+* observe opaque render regions ([5bb677c](https://github.com/legion-works/facet/commit/5bb677c4e19d077c9d766139f6df28835e69d196))
+* persist revision renderer ([a452e0f](https://github.com/legion-works/facet/commit/a452e0fca1af3fc02c5eb03628ad47977278c7c7))
+* render charts with canvas backend ([27f9007](https://github.com/legion-works/facet/commit/27f90076f475ce8101927c3cb07ccbaa4cd12b0a))
+
+
+### Bug Fixes
+
+* honest verdict when opaque screenshot evidence is transiently unavailable ([1b96f29](https://github.com/legion-works/facet/commit/1b96f293da937d902465861b4d18058d9ec39830))
+* null isolated observations and frame-scoped canvas census ([7dcb7a5](https://github.com/legion-works/facet/commit/7dcb7a5a27557b5b23c917657eba88c591cefbec))
+
 ## [1.1.0](https://github.com/legion-works/facet/compare/v1.0.0...v1.1.0) (2026-08-09)
 
 
