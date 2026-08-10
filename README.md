@@ -27,6 +27,14 @@ Facet stores the source bytes without interpreting them, then asks independent v
 - Retains Tier 1 screenshots, console output, and protocol observations under an owner-only evidence directory.
 - Keeps the service byte-dumb: renderers and parsers stay outside `src/service/**`.
 
+<p align="center">
+  <img src="design/screenshots/gallery-mermaid.png" alt="facet gallery — a mermaid artifact on the verification stage, verdict badge ok · T0, evidence strip showing svg 1 · graphs 1 · nodes 6 · opaque 0 · errors 0" width="820">
+</p>
+
+<p align="center">
+  <img src="design/screenshots/gallery-chart.png" alt="facet gallery — a Vega-Lite chart artifact rendered under the frozen nonce-only CSP" width="820">
+</p>
+
 ## Verdict language
 
 The gallery and CLI use the same wire enum, glyph, hue, and treatment.
