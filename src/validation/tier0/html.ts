@@ -353,8 +353,15 @@ const TABLE_SCOPED_TAGS = new Set([
 const RCDATA_ELEMENTS = new Set(["textarea", "title"]);
 
 /** Raw text: no character references decoded, no tags at all (except the
- * matching end tag). */
-const RAWTEXT_ELEMENTS = new Set(["style", "xmp", "iframe", "noembed", "noframes", "noscript"]);
+ * matching end tag).
+ *
+ * `noscript` is deliberately absent: this file parses with
+ * `scriptingEnabled: false` (matching the frame's DOMParser), and under
+ * scripting-disabled parsing `<noscript>` content is normal markup rather
+ * than raw text. Listing it here would blind the tokenizer walk to elements
+ * the tree walk below can see. These two must agree.
+ */
+const RAWTEXT_ELEMENTS = new Set(["style", "xmp", "iframe", "noembed", "noframes"]);
 
 function detectUnsupportedRecoveryFamilies(text: string): string | null {
   let selectDepth = 0;

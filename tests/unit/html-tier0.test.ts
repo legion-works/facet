@@ -252,8 +252,20 @@ describe("HTML Tier 0 parser", () => {
     expect(errorCodes(source)).toEqual([]);
   });
 
-  test("ACCEPTS <select> inside <noscript> RAWTEXT content (scripting disabled)", () => {
+  test("REJECTS <select> with table markup inside <noscript> (scripting disabled)", () => {
+    // Under `scriptingEnabled: false` a <noscript> body is normal markup, not
+    // raw text, so the divergent select recovery is reachable inside it.
     const source = "<noscript><select><table><tr><td>x</td></tr></table></select></noscript>";
+    expect(errorCodes(source)).toEqual(["html_recovery_unsupported"]);
+  });
+
+  test("ACCEPTS a clean <select> inside <noscript>", () => {
+    const source = "<noscript><select><option>a</option></select></noscript>";
+    expect(errorCodes(source)).toEqual([]);
+  });
+
+  test("ACCEPTS a table inside <noscript> with no <select>", () => {
+    const source = "<noscript><table><tr><td>x</td></tr></table></noscript>";
     expect(errorCodes(source)).toEqual([]);
   });
 });
