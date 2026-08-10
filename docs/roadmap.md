@@ -77,6 +77,11 @@ The finding that settles canvas-as-a-type: **no permissively licensed library
 maintains a per-mark DOM mirror beside the bitmap** (Highcharts is the nearest prior
 art and is commercially licensed), so there is no structural surface for protocol
 probes to observe — the rejection above is a measured conclusion, not an assumption.
+• Animations — sequenced after HTML/React artifacts ship. Animated artifacts
+(CSS/SVG animation, transitions, animated charts) on top of the HTML/TSX mode.
+Verification note for design time: verdicts observe structure at a point in time,
+so an animated artifact verifies its static structure; animation fidelity is
+display-layer only unless a timeline probe is designed.
 • Forms `FormBridge`
 • FTS5 `SearchIndex`
 • Trilium `ExportSink`
