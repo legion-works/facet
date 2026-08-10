@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  captureScreenshotWithRetry,
   captureScreenshotWithFallback,
   configureTier1Viewport,
 } from "../../src/validation/tier1/runner";
+import { Tier1ResultSchema } from "../../src/shared/contracts/validation";
 import {
   TIER1_SCREENSHOT_CAP_BYTES,
   TIER1_VIEWPORT_HEIGHT,
@@ -11,6 +13,52 @@ import {
 } from "../../src/validation/tier1/limits";
 
 describe("Tier 1 screenshot evidence", () => {
+  test("requires a screenshot-unavailable marker only for partial results without a screenshot", () => {
+    const base = {
+      tier: 1 as const,
+      status: "partial:layout_unverified" as const,
+      artifactId: "artifact",
+      revisionSha: "0".repeat(64),
+      expected: {
+        rendererRootSvgCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+      },
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+      consolePath: "/tmp/console.txt",
+    };
+
+    expect(() => Tier1ResultSchema.parse({ ...base, screenshotPath: null })).toThrow();
+    expect(() =>
+      Tier1ResultSchema.parse({
+        ...base,
+        screenshotPath: null,
+        screenshotError: {
+          code: "screenshot_unavailable",
+          message: "screenshot capture timed out",
+        },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      Tier1ResultSchema.parse({ ...base, screenshotPath: "/tmp/screenshot.png" }),
+    ).not.toThrow();
+    expect(() =>
+      Tier1ResultSchema.parse({
+        ...base,
+        status: "ok",
+        screenshotPath: null,
+      }),
+    ).not.toThrow();
+  });
+
   test("sets the deterministic viewport before render ingress", async () => {
     const calls: string[] = [];
     const session = {
@@ -68,5 +116,37 @@ describe("Tier 1 screenshot evidence", () => {
     expect(calls).toHaveLength(2);
     expect(calls[0]?.params?.captureBeyondViewport).toBe(true);
     expect(calls[1]?.params?.captureBeyondViewport).toBe(false);
+  });
+
+  test("retries a bounded screenshot capture before recording it as unavailable", async () => {
+    let attempts = 0;
+    const session = { send: async <T = unknown>() => ({}) as T, detach: async () => {} };
+    const result = await captureScreenshotWithRetry(session, {
+      attempts: 2,
+      timeoutMs: 25,
+      capture: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("first capture failed");
+        return Buffer.from("recovered screenshot");
+      },
+    });
+
+    expect(attempts).toBe(2);
+    expect(result.screenshot).toEqual(Buffer.from("recovered screenshot"));
+    expect(result.screenshotError).toBeNull();
+  });
+
+  test("records a screenshot-unavailable marker after bounded capture retries exhaust", async () => {
+    const startedAt = performance.now();
+    const session = { send: async <T = unknown>() => ({}) as T, detach: async () => {} };
+    const result = await captureScreenshotWithRetry(session, {
+      attempts: 2,
+      timeoutMs: 25,
+      capture: async () => new Promise<Buffer>(() => {}),
+    });
+
+    expect(performance.now() - startedAt).toBeLessThan(200);
+    expect(result.screenshot).toBeNull();
+    expect(result.screenshotError).toMatchObject({ code: "screenshot_unavailable" });
   });
 });

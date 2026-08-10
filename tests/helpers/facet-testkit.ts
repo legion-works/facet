@@ -7,13 +7,11 @@
 // Tier 1 verifier (the test fixture is the unfakeable-proof path),
 // and exposes a tiny test-shaped surface the acceptance tests use.
 //
-// The Tier 1 runner injected here IS the production `runTier1`
-// implementation (`src/validation/tier1/runner.ts`); the helper
-// resolves its dependencies (puppeteer-core, pinned shell path)
-// from the same lookup the CLI uses, so acceptance tests cannot
-// drift from production launcher wiring.
+// Production-mode runs inject `runTier1` directly. Screenshot modes replace
+// only the post-verdict capture call so verdict gates do not depend on CDP timing.
 
 import { afterAll, beforeAll } from "bun:test";
+import { Buffer } from "node:buffer";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +26,7 @@ import { startFacetService, type RunningService } from "../../src/service/server
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
 import type { Renderer } from "../../src/shared/contracts/renderers";
+import type { ScreenshotError } from "../../src/shared/contracts/validation";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 
@@ -39,6 +38,7 @@ function traceTier1Transport(stage: string): void {
 export type ArtifactType = "markdown" | "mermaid" | "svg" | "chart";
 export type Tier = 0 | 1;
 export type Launcher = "production";
+export type ScreenshotMode = "live" | "deterministic" | "fail";
 
 // Acceptance-level verdict contract. This is the surface the acceptance gates
 // assert against; the full product schema supersedes it once the shared
@@ -57,6 +57,7 @@ export interface AcceptanceVerdict {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly observed: AcceptanceVerdictObserved;
+  readonly screenshotError?: ScreenshotError;
 }
 
 // Re-export the canonical egress types from `scripts/egress-penetration.ts`
@@ -68,6 +69,8 @@ export interface PublishedArtifact {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly tier1ScreenshotPath: string | null;
+  readonly tier1Status: string | null;
+  readonly tier1ScreenshotError: ScreenshotError | null;
 }
 
 export interface PublishFixtureOptions {
@@ -75,6 +78,7 @@ export interface PublishFixtureOptions {
   readonly artifactType: ArtifactType;
   readonly renderer?: Renderer;
   readonly slug?: string;
+  readonly screenshotMode?: ScreenshotMode;
 }
 
 export interface ReadBackFixtureOptions {
@@ -95,15 +99,30 @@ interface AcceptanceEnv {
   readonly client: FacetClient;
   readonly service: RunningService;
   readonly envDir: string;
+  readonly screenshotMode: ScreenshotMode;
 }
 
-async function startAcceptanceService(envDir: string): Promise<AcceptanceEnv> {
+async function startAcceptanceService(
+  envDir: string,
+  screenshotMode: ScreenshotMode,
+): Promise<AcceptanceEnv> {
   const dbPath = join(envDir, "facet.sqlite");
   const installTokenPath = join(envDir, "install.token");
   const promoteTokenPath = join(envDir, "promote.token");
   const lockPath = join(envDir, "facet.lock");
   // Lazy import keeps the Tier 1 verifier out of the unit-test bundle.
-  const { runTier1 } = await import("../../src/validation/tier1/runner");
+  const { createTier1RunnerForTests, runTier1 } = await import("../../src/validation/tier1/runner");
+  const tier1Runner =
+    screenshotMode === "live"
+      ? runTier1
+      : createTier1RunnerForTests({
+          captureScreenshot:
+            screenshotMode === "deterministic"
+              ? async () => Buffer.from("facet-test-screenshot")
+              : async () => {
+                  throw new Error("forced screenshot failure");
+                },
+        });
   const service = await startFacetService({
     dbPath,
     installTokenPath,
@@ -112,13 +131,13 @@ async function startAcceptanceService(envDir: string): Promise<AcceptanceEnv> {
     idleTimeoutMs: ACCEPTANCE_IDLE_TIMEOUT_MS,
     logger: createQuietLogger({ component: "acceptance" }),
     tier0Runner: stubTier0Runner,
-    tier1Runner: runTier1,
+    tier1Runner,
   });
   const client = new FacetClient({
     baseUrl: service.url,
     installToken: service.installToken,
   });
-  return { client, service, envDir };
+  return { client, service, envDir, screenshotMode };
 }
 
 async function isServiceReachable(candidate: AcceptanceEnv): Promise<boolean> {
@@ -136,8 +155,14 @@ async function isServiceReachable(candidate: AcceptanceEnv): Promise<boolean> {
   }
 }
 
-async function ensureEnv(): Promise<AcceptanceEnv> {
-  if (env !== null && (await isServiceReachable(env))) return env;
+async function ensureEnv(screenshotMode?: ScreenshotMode): Promise<AcceptanceEnv> {
+  if (
+    env !== null &&
+    (screenshotMode === undefined || env.screenshotMode === screenshotMode) &&
+    (await isServiceReachable(env))
+  ) {
+    return env;
+  }
 
   const previous = env;
   if (previous !== null) {
@@ -146,7 +171,7 @@ async function ensureEnv(): Promise<AcceptanceEnv> {
   }
 
   const envDir = previous?.envDir ?? mkdtempSync(join(tmpdir(), "facet-acceptance-"));
-  env = await startAcceptanceService(envDir);
+  env = await startAcceptanceService(envDir, screenshotMode ?? "live");
   if (!cleanupRegistered) {
     afterAll(async () => {
       if (env !== null) {
@@ -175,7 +200,7 @@ beforeAll(async () => {
 export async function publishFixture(opts: PublishFixtureOptions): Promise<PublishedArtifact> {
   traceTier1Transport("test:publish:start");
   const bytes = await Bun.file(opts.fixturePath).arrayBuffer();
-  const { client } = await ensureEnv();
+  const { client } = await ensureEnv(opts.screenshotMode ?? "live");
   const result = await publishArtifact(client, {
     artifactType: opts.artifactType,
     ...(opts.renderer !== undefined ? { renderer: opts.renderer } : {}),
@@ -187,6 +212,8 @@ export async function publishFixture(opts: PublishFixtureOptions): Promise<Publi
     artifactId: result.artifactId,
     revisionSha: result.revisionSha,
     tier1ScreenshotPath: result.tier1ScreenshotPath,
+    tier1Status: result.tier1Status,
+    tier1ScreenshotError: result.tier1ScreenshotError,
   };
 }
 
@@ -205,6 +232,7 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
     renderer: result.renderer,
     artifactId: result.artifactId,
     revisionSha: result.revisionSha,
+    ...(result.screenshotError !== undefined ? { screenshotError: result.screenshotError } : {}),
     observed: {
       rendererRootSvgCount: result.observed.rendererRootSvgCount,
       graphCount: result.observed.graphCount,

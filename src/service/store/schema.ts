@@ -72,3 +72,8 @@ ALTER TABLE render_runs ADD COLUMN retained INTEGER NOT NULL DEFAULT 0;
 export const V3_SCHEMA_FRAGMENT = `
 ALTER TABLE revisions ADD COLUMN renderer TEXT NOT NULL DEFAULT 'svg' CHECK(renderer IN ('svg','canvas'));
 `;
+
+/** The v4 fragment preserves typed screenshot-capture failures across read-back. */
+export const V4_SCHEMA_FRAGMENT = `
+ALTER TABLE render_runs ADD COLUMN screenshot_error_json TEXT;
+`;

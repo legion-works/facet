@@ -139,6 +139,9 @@ function latestStoredVerdict(
     artifactId: revision.artifactId,
     revisionSha: revision.sha256,
     observed: JSON.parse(run.observedJson),
+    ...(run.screenshotErrorJson !== null
+      ? { screenshotError: JSON.parse(run.screenshotErrorJson) }
+      : {}),
   });
 }
 

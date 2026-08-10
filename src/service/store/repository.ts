@@ -15,6 +15,7 @@ import {
   type Revision,
   type Template,
 } from "../../shared/contracts/artifact";
+import type { ScreenshotError } from "../../shared/contracts/validation";
 import { DEFAULT_LIST_LIMIT } from "../../shared/config/limits";
 import { now } from "../../shared/util/time";
 import { asStoreError, FacetStoreError, hardenDatabaseFiles } from "./database";
@@ -53,6 +54,7 @@ interface RenderRunInput {
   readonly observed: unknown;
   readonly screenshotPath?: string | null;
   readonly consolePath?: string | null;
+  readonly screenshotError?: ScreenshotError | null;
   /**
    * Retained-evidence carve-out: `true` exempts the row from the
    * last-N cleanup policy. Pin/template call sites set this; the
@@ -234,7 +236,7 @@ export class ArtifactRepository {
     try {
       const rows = this.db
         .query(
-          "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, retained, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC",
+          "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, retained, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC",
         )
         .all(input.revisionId, input.tier) as Array<{
         id: string;
@@ -245,6 +247,7 @@ export class ArtifactRepository {
         observed_json: string;
         screenshot_path: string | null;
         console_path: string | null;
+        screenshot_error_json: string | null;
         retained: number;
         started_at: string;
         finished_at: string;
@@ -259,6 +262,7 @@ export class ArtifactRepository {
           observedJson: row.observed_json,
           screenshotPath: row.screenshot_path,
           consolePath: row.console_path,
+          screenshotErrorJson: row.screenshot_error_json,
           retained: row.retained === 1,
           startedAt: row.started_at,
           finishedAt: row.finished_at,
@@ -439,6 +443,10 @@ export class ArtifactRepository {
       observedJson: JSON.stringify(input.observed),
       screenshotPath: input.screenshotPath ?? null,
       consolePath: input.consolePath ?? null,
+      screenshotErrorJson:
+        input.screenshotError === null || input.screenshotError === undefined
+          ? null
+          : JSON.stringify(input.screenshotError),
       retained,
       startedAt,
       finishedAt,
@@ -447,7 +455,7 @@ export class ArtifactRepository {
     try {
       this.db
         .query(
-          "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           value.id,
@@ -458,6 +466,7 @@ export class ArtifactRepository {
           value.observedJson,
           value.screenshotPath,
           value.consolePath,
+          value.screenshotErrorJson,
           value.retained ? 1 : 0,
           value.startedAt,
           value.finishedAt,

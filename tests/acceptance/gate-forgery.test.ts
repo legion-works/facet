@@ -30,6 +30,7 @@ test("undeclared canvas smuggling is capped as opaque content", async () => {
     fixturePath: CANVAS_SMUGGLE_FIXTURE,
     artifactType: "markdown",
     slug: "hostile-canvas-smuggle",
+    screenshotMode: "deterministic",
   });
   const verdict = await readBackFixture({
     artifactId: published.artifactId,

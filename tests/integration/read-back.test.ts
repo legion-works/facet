@@ -7,9 +7,9 @@
  *      (artifactId, revisionSha) the caller supplied. Two revisions
  *      published in quick succession MUST NOT cross-pollinate their
  *      verdicts; a stale sha MUST surface as `revision_not_found`.
- *   2. Screenshot mandate — `partial:layout_unverified` results carry
- *      a screenshot path; a result missing it MUST be rejected at the
- *      parse boundary so it can never land in the DB or the wire.
+ *   2. Screenshot mandate — partial results carry a screenshot path or a
+ *      typed screenshot-unavailable marker; a result missing both is rejected
+ *      at the parse boundary so it can never land in the DB or the wire.
  *   3. Evidence directory is mode 0700 on disk (the canonical Capper
  *      secret-bearing layout — same posture as the DB files).
  *   4. Last-N retention — `recordRenderRun` evicts the oldest runs
@@ -194,7 +194,7 @@ const placeholderIdentityTier1Runner: Tier1Runner = async (
  * Stub Tier 1 runner that records a screenshot at <evidenceDir>/<runId>/screenshot.png
  * and a bounded console summary at <evidenceDir>/<runId>/console.txt (carrying
  * the SENTINEL_CONSOLE marker). The status can be flipped per-test; the contract
- * is that `partial:layout_unverified` REQUIRES the screenshot path.
+ * is that partial verdicts require screenshot evidence or an explicit marker.
  */
 function buildStubTier1(input: {
   evidenceDir: string;
@@ -378,7 +378,7 @@ describe("read-back revision binding", () => {
 
 describe("screenshot mandate for partial verdicts", () => {
   for (const status of ["partial:layout_unverified", "partial:opaque_content"] as const) {
-    test(`${status} WITHOUT screenshot path is rejected at parse — publish fails`, async () => {
+    test(`${status} WITHOUT screenshot path or marker is rejected at parse — publish fails`, async () => {
       const tier1Runner = buildStubTier1({
         evidenceDir: scratchRoot,
         status,

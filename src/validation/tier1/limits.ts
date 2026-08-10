@@ -47,6 +47,10 @@ export const TIER1_RENDER_BARRIER_MS = 30_000;
  */
 export const TIER1_CDP_CALL_WATCHDOG_MS = 10_000;
 
+/** Screenshot evidence has a tighter deadline than the verifier transport watchdog. */
+export const TIER1_SCREENSHOT_CAPTURE_TIMEOUT_MS = 2_000;
+export const TIER1_SCREENSHOT_CAPTURE_ATTEMPTS = 2;
+
 /** Deterministic viewport used for Tier 1 layout and screenshot evidence. */
 export const TIER1_VIEWPORT_WIDTH = 1280;
 export const TIER1_VIEWPORT_HEIGHT = 800;

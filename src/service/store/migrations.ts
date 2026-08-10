@@ -1,7 +1,12 @@
 import type { Database } from "bun:sqlite";
 
 import { asStoreError, FacetStoreError } from "./database";
-import { INITIAL_SCHEMA, V2_SCHEMA_FRAGMENT, V3_SCHEMA_FRAGMENT } from "./schema";
+import {
+  INITIAL_SCHEMA,
+  V2_SCHEMA_FRAGMENT,
+  V3_SCHEMA_FRAGMENT,
+  V4_SCHEMA_FRAGMENT,
+} from "./schema";
 
 export interface MigrationOptions {
   readonly beforeRecordVersion?: (version: number) => void;
@@ -33,6 +38,12 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
     version: 3,
     apply: (db) => {
       db.exec(V3_SCHEMA_FRAGMENT);
+    },
+  },
+  {
+    version: 4,
+    apply: (db) => {
+      db.exec(V4_SCHEMA_FRAGMENT);
     },
   },
 ];

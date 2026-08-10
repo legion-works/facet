@@ -162,13 +162,14 @@ test("interrupted migration rolls back its version and recovers on retry", () =>
     { version: 1 },
     { version: 2 },
     { version: 3 },
+    { version: 4 },
   ]);
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'projects'").get()).toEqual({
     name: "projects",
   });
 });
 
-test("upgrades a populated v2 database and backfills renderer with the default", () => {
+test("upgrades a populated v2 database with renderer and screenshot-error columns", () => {
   const databasePath = pathFor("migration-v2-upgrade");
   const db = openDatabase({ databasePath });
   connections.push(db);
@@ -208,9 +209,15 @@ test("upgrades a populated v2 database and backfills renderer with the default",
     { version: 1 },
     { version: 2 },
     { version: 3 },
+    { version: 4 },
   ]);
   expect(db.query("SELECT renderer FROM revisions WHERE id = ?").get("revision-v2")).toEqual({
     renderer: "svg",
   });
   expect(new ArtifactRepository(db).getRevisionById("revision-v2")?.renderer).toBe("svg");
+  expect(
+    (db.query("PRAGMA table_info(render_runs)").all() as Array<{ name: string }>).some(
+      (column) => column.name === "screenshot_error_json",
+    ),
+  ).toBe(true);
 });

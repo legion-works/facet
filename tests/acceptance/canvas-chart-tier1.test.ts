@@ -9,6 +9,7 @@ test("canvas chart records an opaque-content Tier 1 verdict with screenshot evid
     artifactType: "chart",
     renderer: "canvas",
     slug: "canvas-chart-tier1",
+    screenshotMode: "deterministic",
   });
   const verdict = await readBackFixture({
     artifactId: published.artifactId,

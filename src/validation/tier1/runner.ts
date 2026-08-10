@@ -35,6 +35,7 @@ import { Buffer } from "node:buffer";
 import {
   Tier1ResultSchema,
   type ProtocolObservation,
+  type ScreenshotError,
   type Tier1Input,
   type Tier1Result,
 } from "../../shared/contracts/validation";
@@ -50,7 +51,9 @@ import { probeProtocolGetDocument, probeProtocolSnapshot } from "./protocol-prob
 import { probeIsolatedCounts } from "./isolated-probe";
 import {
   TIER1_RENDER_BARRIER_MS,
+  TIER1_SCREENSHOT_CAPTURE_ATTEMPTS,
   TIER1_SCREENSHOT_CAP_BYTES,
+  TIER1_SCREENSHOT_CAPTURE_TIMEOUT_MS,
   TIER1_VIEWPORT_HEIGHT,
   TIER1_VIEWPORT_WIDTH,
 } from "./limits";
@@ -92,6 +95,19 @@ interface ShimCapture {
   readonly renderComplete: boolean;
 }
 
+type ScreenshotCapture = (session: VerifierCdpSession) => Promise<Buffer | null>;
+
+/** Test-only hook for pinning the screenshot transport without changing verifier logic. */
+export interface Tier1RunnerTestHooks {
+  readonly captureScreenshot?: ScreenshotCapture;
+}
+
+export function createTier1RunnerForTests(
+  hooks: Tier1RunnerTestHooks,
+): (input: Tier1Input) => Promise<Tier1Result> {
+  return async (input) => runTier1WithHooks(input, hooks);
+}
+
 /**
  * Drive the verifier end-to-end. Returns the typed `Tier1Result`.
  * Throws `FacetError` only on system-level failures (no shell,
@@ -106,13 +122,20 @@ interface ShimCapture {
  * relaunch verifies the same bytes.
  */
 export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
+  return runTier1WithHooks(input, {});
+}
+
+async function runTier1WithHooks(
+  input: Tier1Input,
+  hooks: Tier1RunnerTestHooks,
+): Promise<Tier1Result> {
   const startedAt = Date.now();
   traceTier1("run:start", startedAt);
   let lastWedge: Tier1TransportWedgeError | undefined;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       traceTier1(`attempt:${attempt + 1}:start`, startedAt);
-      const result = await runTier1Attempt(input, startedAt);
+      const result = await runTier1Attempt(input, startedAt, hooks);
       traceTier1(`attempt:${attempt + 1}:complete`, startedAt, `status=${result.status}`);
       return result;
     } catch (error) {
@@ -135,7 +158,11 @@ export async function runTier1(input: Tier1Input): Promise<Tier1Result> {
   });
 }
 
-async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promise<Tier1Result> {
+async function runTier1Attempt(
+  input: Tier1Input,
+  startedAt = Date.now(),
+  hooks: Tier1RunnerTestHooks = {},
+): Promise<Tier1Result> {
   if (!Number.isInteger(input.artifactType === undefined)) {
     void (input.artifactType as unknown);
   }
@@ -247,18 +274,18 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
     );
     traceTier1("verdict:complete", startedAt, `status=${status}`);
 
-    // Capture evidence AFTER the verdict is known so a `partial:*`
-    // verdict always lands with a screenshot path (the schema refine
-    // enforces this; the runner honors it). Reduced-motion emulation
-    // + a document.fonts.ready await make the screenshot deterministic
-    // across re-runs (perf-spike finding: byte-identical across 20 runs).
-    const captured = await captureEvidence(target, {
-      screenshotPath,
-      consolePath,
-      observationPath,
-      protocolObservation,
-      pageShim: shim.pageShim,
-    });
+    // Capture follows derivation so a transport-only failure cannot rewrite the render verdict.
+    const captured = await captureEvidence(
+      target,
+      {
+        screenshotPath,
+        consolePath,
+        observationPath,
+        protocolObservation,
+        pageShim: shim.pageShim,
+      },
+      hooks.captureScreenshot,
+    );
     traceTier1("evidence:complete", startedAt);
 
     const observed = protocolObservation;
@@ -280,6 +307,9 @@ async function runTier1Attempt(input: Tier1Input, startedAt = Date.now()): Promi
       },
       screenshotPath: captured.screenshotPath,
       consolePath: captured.consolePath,
+      ...(status.startsWith("partial:") && captured.screenshotError !== null
+        ? { screenshotError: captured.screenshotError }
+        : {}),
     });
     return result;
   } catch (error) {
@@ -467,6 +497,7 @@ function mergeProtocol(
 
 interface EvidenceCapture {
   readonly screenshotPath: string | null;
+  readonly screenshotError: ScreenshotError | null;
   /**
    * Console summary path. The bounded console write is pure
    * filesystem IO and always succeeds, so this field is non-nullable
@@ -527,6 +558,60 @@ export async function captureScreenshotWithFallback(
   return (await capture(false)).screenshot;
 }
 
+interface ScreenshotRetryOptions {
+  readonly attempts?: number;
+  readonly timeoutMs?: number;
+  readonly capture?: ScreenshotCapture;
+}
+
+function screenshotFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `screenshot capture unavailable: ${message}`;
+}
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`screenshot capture timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+export async function captureScreenshotWithRetry(
+  session: VerifierCdpSession,
+  options: ScreenshotRetryOptions = {},
+): Promise<{
+  readonly screenshot: Buffer | null;
+  readonly screenshotError: ScreenshotError | null;
+}> {
+  const attempts = options.attempts ?? TIER1_SCREENSHOT_CAPTURE_ATTEMPTS;
+  const timeoutMs = options.timeoutMs ?? TIER1_SCREENSHOT_CAPTURE_TIMEOUT_MS;
+  const capture = options.capture ?? captureScreenshotWithFallback;
+  let failure: unknown = new Error("screenshot capture returned no data");
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const screenshot = await withTimeout(capture(session), timeoutMs);
+      if (screenshot !== null) return { screenshot, screenshotError: null };
+      failure = new Error("screenshot capture returned no data");
+    } catch (error) {
+      failure = error;
+    }
+  }
+  return {
+    screenshot: null,
+    screenshotError: { code: "screenshot_unavailable", message: screenshotFailureMessage(failure) },
+  };
+}
+
 async function captureEvidence(
   target: VerifierTarget,
   options: {
@@ -536,8 +621,10 @@ async function captureEvidence(
     readonly protocolObservation: ProtocolObservation;
     readonly pageShim: PageShim | null;
   },
+  captureScreenshot?: ScreenshotCapture,
 ): Promise<EvidenceCapture> {
   let screenshotPath: string | null = null;
+  let screenshotError: ScreenshotError | null = null;
   try {
     // Emulate reduced-motion so animations resolve to their final
     // frame; document.fonts.ready ensures webfont glyphs have laid
@@ -552,14 +639,21 @@ async function captureEvidence(
       awaitPromise: true,
       returnByValue: true,
     });
-    const screenshot = await captureScreenshotWithFallback(target.session);
+    const capture =
+      captureScreenshot === undefined
+        ? await captureScreenshotWithRetry(target.session)
+        : await captureScreenshotWithRetry(target.session, { capture: captureScreenshot });
+    screenshotError = capture.screenshotError;
+    const screenshot = capture.screenshot;
     if (screenshot !== null) {
       writeFileSync(options.screenshotPath, screenshot);
       screenshotPath = options.screenshotPath;
     }
-  } catch {
-    // screenshot is best-effort; a transport-wedged page cannot be
-    // captured but the verdict is still authoritative.
+  } catch (error) {
+    screenshotError = {
+      code: "screenshot_unavailable",
+      message: screenshotFailureMessage(error),
+    };
   }
   // Bounded console summary — never grow past CONSOLE_SUMMARY_CUP_BYTES.
   // The shim self-report + a fixed header covers the diagnostic surface;
@@ -578,5 +672,5 @@ async function captureEvidence(
     JSON.stringify(options.protocolObservation, null, 2),
     "utf8",
   );
-  return { screenshotPath, consolePath: options.consolePath };
+  return { screenshotPath, screenshotError, consolePath: options.consolePath };
 }

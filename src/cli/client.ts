@@ -33,6 +33,7 @@ import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
 import type { Renderer } from "../shared/contracts/renderers";
+import type { ScreenshotError } from "../shared/contracts/validation";
 
 export interface FacetClientOptions {
   readonly baseUrl: string;
@@ -183,6 +184,7 @@ export interface PublishArtifactResult {
   readonly revisionSha: string;
   readonly tier1Status: string | null;
   readonly tier1ScreenshotPath: string | null;
+  readonly tier1ScreenshotError: ScreenshotError | null;
 }
 
 export interface PublishArtifactOptions {
@@ -247,6 +249,7 @@ export async function publishArtifact(
     revisionSha: parsedPublish.revision.sha256,
     tier1Status,
     tier1ScreenshotPath: parsedPublish.tier1Verdict?.screenshotPath ?? null,
+    tier1ScreenshotError: parsedPublish.tier1Verdict?.screenshotError ?? null,
   };
 }
 
@@ -269,6 +272,7 @@ export async function readBack(
   readonly renderer: Renderer;
   readonly artifactId: string;
   readonly revisionSha: string;
+  readonly screenshotError?: ScreenshotError;
   readonly observed: {
     readonly rendererRootSvgCount: number;
     readonly graphCount: number;
@@ -298,6 +302,9 @@ export async function readBack(
     renderer: parsed.renderer,
     artifactId: parsed.verdict.artifactId,
     revisionSha: parsed.verdict.revisionSha,
+    ...(parsed.verdict.screenshotError !== undefined
+      ? { screenshotError: parsed.verdict.screenshotError }
+      : {}),
     observed: {
       rendererRootSvgCount: parsed.verdict.observed.rendererRootSvgCount,
       graphCount: parsed.verdict.observed.graphCount,

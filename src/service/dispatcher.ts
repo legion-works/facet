@@ -105,6 +105,7 @@ function buildVerdict(input: {
   tier: 0 | 1;
   status: string;
   observed: unknown;
+  screenshotError?: unknown;
 }): Verdict {
   const observed = VerdictObservedSchema.parse(input.observed);
   return VerdictSchema.parse({
@@ -113,6 +114,7 @@ function buildVerdict(input: {
     artifactId: input.artifactId,
     revisionSha: input.revisionSha,
     observed,
+    ...(input.screenshotError !== undefined ? { screenshotError: input.screenshotError } : {}),
   });
 }
 
@@ -323,6 +325,9 @@ export async function dispatch(
             ? { screenshotPath: enrichedTier1.screenshotPath }
             : {}),
           ...(enrichedTier1.consolePath !== null ? { consolePath: enrichedTier1.consolePath } : {}),
+          ...(enrichedTier1.screenshotError !== undefined
+            ? { screenshotError: enrichedTier1.screenshotError }
+            : {}),
         });
         traceTier1Transport("publish:tier1-record:complete");
         tier1Verdict = enrichedTier1;
@@ -388,6 +393,9 @@ export async function dispatch(
         tier,
         status: runs[0]!.status,
         observed: observedJson,
+        ...(runs[0]!.screenshotErrorJson !== null
+          ? { screenshotError: JSON.parse(runs[0]!.screenshotErrorJson) }
+          : {}),
       });
       traceTier1Transport(`readback:build-complete status=${verdict.status}`);
       return { command: "readBack", requestId, renderer: revision.renderer, verdict };

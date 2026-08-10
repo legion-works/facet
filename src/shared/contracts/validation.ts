@@ -38,6 +38,16 @@ export const DiscriminativeErrorSchema = z.object({
 export type DiscriminativeError = z.infer<typeof DiscriminativeErrorSchema>;
 
 /**
+ * Evidence capture failed after the render verdict was derived. This stays
+ * outside `observed.discriminativeErrors`, which the verdict ladder consumes.
+ */
+export const ScreenshotErrorSchema = z.object({
+  code: z.literal("screenshot_unavailable"),
+  message: z.string().min(1),
+});
+export type ScreenshotError = z.infer<typeof ScreenshotErrorSchema>;
+
+/**
  * Lexical counters computed from the source bytes WITHOUT parsing or
  * rendering. The verifier compares these against its own observations
  * so an attacker cannot make a forged page's `svgCount` agree with
@@ -88,6 +98,7 @@ export const VerdictSchema = z.object({
   artifactId: z.string().min(1),
   revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   observed: VerdictObservedSchema,
+  screenshotError: ScreenshotErrorSchema.optional(),
 });
 export type Verdict = z.infer<typeof VerdictSchema>;
 
@@ -153,21 +164,24 @@ export type Tier1Runner = (input: Tier1Input) => Promise<Tier1Result>;
 /**
  * Tier 1 result: extends Tier 0 with screenshot/console paths.
  *
- * Any `partial:` status REQUIRES a screenshot path: the verdict is partial
- * precisely because the verifier could not fully confirm the render, and
- * the screenshot is the audit trail that
- * lets a human (or a future re-verification) see what the verifier
- * saw. A partial verdict without a screenshot is rejected at the
- * parse boundary so it can never reach the DB or the wire.
+ * Partial verdicts require screenshot evidence or a typed explanation for
+ * why capture failed after the render verdict was already derived.
  */
 export const Tier1ResultSchema = Tier0ResultSchema.extend({
   tier: z.literal(1),
   screenshotPath: z.string().nullable(),
   consolePath: z.string().nullable(),
-}).refine((value) => !value.status.startsWith("partial:") || value.screenshotPath !== null, {
-  message: "partial verdict requires a non-null screenshotPath",
-  path: ["screenshotPath"],
-});
+  screenshotError: ScreenshotErrorSchema.optional(),
+}).refine(
+  (value) =>
+    !value.status.startsWith("partial:") ||
+    value.screenshotPath !== null ||
+    value.screenshotError !== undefined,
+  {
+    message: "partial verdict requires screenshot evidence or a screenshot-unavailable marker",
+    path: ["screenshotPath"],
+  },
+);
 export type Tier1Result = z.infer<typeof Tier1ResultSchema>;
 
 /**
