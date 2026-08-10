@@ -1,18 +1,35 @@
 <!doctype html>
+<!--
+  Recovery family: template contents. A <template> element holds an inert
+  DocumentFragment that must NOT count toward the rendered document.
+  This fixture proves the inertness by packing a heading, table, and list
+  INSIDE the template. If a parser counted template contents toward the
+  rendered structure, the counts would diverge from Chromium's inert
+  treatment.
+-->
 <html>
   <body>
-    <h1>Template content report</h1>
-    <p>The template element holds inert DOM that must not count toward the
-       rendered structure. Both parsers agree: the contents are not part of
-       the rendered document.</p>
+    <h1>Template content probe</h1>
+    <p>
+      The template element holds inert DOM that must not count toward the rendered structure. Both
+      parsers agree: the contents are inert.
+    </p>
     <template>
       <div>
-        <h2>inert heading</h2>
-        <table><tr><td>inert cell</td></tr></table>
-        <ul><li>inert list item</li></ul>
+        <h2>inert heading (must NOT be counted)</h2>
+        <table>
+          <tr>
+            <td>inert table cell (must NOT be counted)</td>
+          </tr>
+        </table>
+        <ul>
+          <li>inert list item (must NOT be counted)</li>
+        </ul>
       </div>
     </template>
     <p>after template</p>
-    <ul><li>visible list item</li></ul>
+    <ul>
+      <li>visible list item (must be counted)</li>
+    </ul>
   </body>
 </html>

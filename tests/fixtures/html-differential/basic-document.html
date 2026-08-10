@@ -1,5 +1,15 @@
 <!doctype html>
+<!--
+  Baseline well-formed document. The HTML structure is explicit (doctype,
+  html, head, body) so no recovery happens. This is the "no family fires"
+  row that proves the harness agrees on the common case — every count
+  group is exercised here so a regression that zeros any of them reddens
+  this fixture first.
+-->
 <html>
+  <head>
+    <title>Well-formed baseline</title>
+  </head>
   <body>
     <h1>Quarterly report</h1>
     <h2>Summary</h2>
@@ -17,6 +27,6 @@
       <li>First</li>
       <li>Second</li>
     </ol>
-    <img src="https://cdn.example/chart.png" />
+    <img src="https://cdn.example/chart.png" alt="chart" />
   </body>
 </html>

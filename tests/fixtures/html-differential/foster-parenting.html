@@ -1,17 +1,30 @@
 <!doctype html>
 <html>
   <body>
-    <h1>Foster parenting report</h1>
+    <h1>Foster parenting probe</h1>
+    <!--
+      The misplaced block content below sits DIRECTLY inside <table>, OUTSIDE
+      any cell. The HTML spec's "in table" insertion mode moves it BEFORE the
+      <table> element (foster parenting). If a parser does NOT foster parent,
+      these nodes stay inside the table and break subsequent <tr> parsing.
+
+      Chromium DOMParser and parse5 with scriptingEnabled=false both implement
+      WHATWG foster parenting identically — this fixture is what the count
+      agreement relies on.
+    -->
     <table>
-      <tbody>
-        <tr>
-          <td>
-            <div>fostered block content (div must move out of table per HTML spec)</div>
-            <span>inline foster content also escapes the table</span>
-          </td>
-        </tr>
-      </tbody>
+      <div>fostered block before any row</div>
+      <tr>
+        <td>cell</td>
+      </tr>
+      <span>fostered inline element</span>
+      <tr>
+        <td>second cell</td>
+      </tr>
+      <p>fostered paragraph element</p>
     </table>
-    <ul><li>after-table list</li></ul>
+    <ul>
+      <li>after-table list</li>
+    </ul>
   </body>
 </html>

@@ -1,17 +1,37 @@
+<!--
+  A realistic sloppy report that an LLM or a status generator might emit:
+  implicit html/body (no doctype, no head), unclosed paragraphs, an
+  unclosed table with implicit <tr>/<td> closes, and a list where each
+  <li> opens without closing. All three of those recovery families
+  (implicit elements, implied end tags, character references) fire here,
+  so this row exercises the corpus's most common real-world input shape.
+-->
 <h1>Generated weekly status</h1>
-<p>This report was emitted by the team status generator and contains
-   the typical sloppy markup such a tool produces: unclosed paragraphs,
-   misnested formatting, and a stray table outside any container.</p>
-<p>First section
-<p>Second section (the previous <code>p</code> is closed by implication here)
+<p>
+  This report was emitted by the team status generator and contains the typical sloppy markup such a
+  tool produces: unclosed paragraphs, a stray table outside any container, and a list without
+  explicit <code>li</code> closes.
+</p>
+<p>First section</p>
+<p>Second section (the previous <code>p</code> is closed by implication here)</p>
 <table>
-  <tr><th>name</th><th>count</th>
-  <tr><td>apples<td>14
-  <tr><td>pears<td>9
+  <tr>
+    <th>name</th>
+    <th>count</th>
+  </tr>
+  <tr>
+    <td>apples</td>
+    <td>
+      14
+      <tr>
+        <td>pears</td>
+        <td>9</td>
+      </tr>
+    </td>
+  </tr>
 </table>
-<p>Closing paragraph with <b>bold <i>and italic</b> only bold</i> plain.
 <ul>
-  <li>one
-  <li>two
-  <li>three
+  <li>one</li>
+  <li>two</li>
+  <li>three</li>
 </ul>

@@ -1,0 +1,32 @@
+<!doctype html>
+<!--
+  Recovery family: <noscript> scripting flag.
+  When scripting IS enabled (browsers executing JS), <noscript> content is
+  treated as raw text and its inner elements do NOT parse.
+  When scripting IS NOT enabled (DOMParser, server-side rendering, our
+  frame bundle inside a sandboxed iframe), <noscript> content parses as
+  REAL elements.
+  parse5 defaults to scriptingEnabled=true; Chromium's DOMParser parses
+  with scripting disabled. parseHtml must pass scriptingEnabled=false so
+  the prediction matches the actual render path. Without that, a valid
+  document with a <noscript> fallback would produce a false tampered
+  verdict — exactly D11's failure mode.
+-->
+<html>
+  <body>
+    <h1>Main heading</h1>
+    <p>Main body text visible to all clients.</p>
+    <noscript>
+      <h2>Fallback heading shown only when scripting is disabled</h2>
+      <ul>
+        <li>Fallback item one</li>
+        <li>Fallback item two</li>
+      </ul>
+      <table>
+        <tr>
+          <td>Fallback cell</td>
+        </tr>
+      </table>
+    </noscript>
+  </body>
+</html>

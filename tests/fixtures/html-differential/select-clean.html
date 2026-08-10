@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  Recovery family: bare <select> (no table markup inside). This case
+  does NOT diverge — both parsers handle <select><option>...</option></select>
+  identically. The fixture exists to prove the recovery rejection is
+  NARROW (only <select> with table-scoped markup is rejected), and to
+  document that bare <select> is an accepted input shape.
+-->
+<html>
+  <body>
+    <h1>Select without table markup (accepted)</h1>
+    <select>
+      <option value="a">Option A</option>
+      <option value="b">Option B</option>
+      <option value="c">Option C</option>
+    </select>
+    <ul>
+      <li>after-select list</li>
+    </ul>
+  </body>
+</html>

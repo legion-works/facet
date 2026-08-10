@@ -1,13 +1,27 @@
 <!doctype html>
+<!--
+  Recovery family: character references. Named entities (&amp;, &copy;),
+  numeric entities (&#65;, &#x42;), and ambiguous bare ampersands all
+  exercise the tokenizer's reference decoder. The structural counts are
+  unaffected (these are text content, not elements) — but the agreement
+  is still load-bearing because the tokenizer must decode the same bytes
+  the same way for downstream text comparisons to hold.
+-->
 <html>
   <body>
-    <h1>Character references report</h1>
+    <h1>Character references probe</h1>
     <p>Named: &amp; &lt; &gt; &copy; &nbsp; &#xA9; &Auml;</p>
     <p>Numeric: &#65; &#x42;</p>
-    <p>Ambiguous bare ampersand must not be consumed: &not-a-real-entity; stays literal-ish.</p>
+    <p>Ambiguous bare ampersand: &not-a-real-entity; stays literal-ish.</p>
     <table>
-      <tbody><tr><td>&lt;tag&gt; inside table</td></tr></tbody>
+      <tbody>
+        <tr>
+          <td>&lt;tag&gt; inside table</td>
+        </tr>
+      </tbody>
     </table>
-    <ul><li>item &amp; another</li></ul>
+    <ul>
+      <li>item &amp; another</li>
+    </ul>
   </body>
 </html>

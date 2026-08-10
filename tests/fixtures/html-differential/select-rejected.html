@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  This fixture is REJECTED. parse5 and Chromium diverge on <select>
+  containing table-scoped markup: parse5 drops the table content under
+  the "in select in table" insertion mode, Chromium keeps it. Rather than
+  guarantee agreement on a construct static HTML reports do not need,
+  parseHtml rejects the family with html_recovery_unsupported before the
+  browser is ever invoked.
+-->
+<html>
+  <body>
+    <h1>Select with table markup (rejected)</h1>
+    <select>
+      <option>a</option>
+      <table>
+        <tbody>
+          <tr>
+            <td>divergent cell</td>
+          </tr>
+        </tbody>
+      </table>
+    </select>
+  </body>
+</html>

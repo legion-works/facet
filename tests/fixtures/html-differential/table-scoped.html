@@ -1,0 +1,38 @@
+<!doctype html>
+<!--
+  Recovery family: table-scoped insertion modes. <caption>, <colgroup>,
+  and <col> only make sense inside <table>. The HTML parser inserts them
+  at the right position even when the source order is wrong (e.g. a
+  <caption> after a <tr> is still placed before the first row in the
+  recovered tree). This fixture proves the recovery fires by emitting
+  caption and colgroup in non-canonical order.
+-->
+<html>
+  <body>
+    <h1>Table-scoped probe</h1>
+    <table>
+      <tr>
+        <td>row before caption</td>
+      </tr>
+      <caption>
+        caption inserted before first row by recovery
+      </caption>
+      <tr>
+        <td>row after caption</td>
+      </tr>
+      <colgroup>
+        <col span="1" />
+        <col span="1" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>name</th>
+          <th>value</th>
+        </tr>
+      </thead>
+    </table>
+    <ul>
+      <li>after-table list</li>
+    </ul>
+  </body>
+</html>

@@ -1,13 +1,17 @@
 <!doctype html>
+<!--
+  Recovery family: adoption agency. Active formatting elements (<b>, <i>)
+  get reconstructed when a later block breaks an inner one. The HTML spec
+  closes the inner element by adoption agency (it pops from the active
+  list and re-opens with reconstructed ancestors). Chromium and parse5
+  both implement this identically — this fixture proves the recovery fires
+  by nesting <b><i> with the WRONG end-tag order.
+-->
 <html>
   <body>
-    <h1>Adoption agency report</h1>
-    <p>Misnested formatting elements trigger the active-formatting-elements
-       adoption-agency algorithm when a later block breaks an inner one.
-       Both Chromium and parse5 implement the algorithm identically for
-       well-formed input, so the recovered structure must agree.</p>
+    <h1>Adoption agency probe</h1>
     <p><b><i>bold-then-italic fragment ends here without closing italic</b>
     <p><i><b>italic-then-bold fragment ends here without closing bold</i>
-    <ul><li>item</li></ul>
+    <ul><li>list after formatting reconstruction</li></ul>
   </body>
 </html>

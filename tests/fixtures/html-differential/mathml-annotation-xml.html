@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  Recovery family: MathML annotation-xml breakout. An <annotation-xml>
+  element with encoding="text/html" (or "application/xhtml+xml") breaks
+  out of MathML and re-enters the HTML parsing mode for its contents.
+  Both parsers implement this WHATWG-specified breakout identically.
+-->
+<html>
+  <body>
+    <h1>MathML annotation-xml breakout probe</h1>
+    <math xmlns="http://www.w3.org/1998/Math/MathML">
+      <mrow>
+        <mi>x</mi>
+        <mo>=</mo>
+        <mn>1</mn>
+        <annotation-xml encoding="text/html">
+          <p>HTML paragraph inside MathML via annotation-xml breakout</p>
+        </annotation-xml>
+      </mrow>
+    </math>
+    <ul>
+      <li>after MathML list</li>
+    </ul>
+  </body>
+</html>

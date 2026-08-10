@@ -1,7 +1,24 @@
+<!--
+  Recovery family: implicit document elements. No doctype, no <html>,
+  no <head>, no <body>. The HTML parser must insert html, head, and body
+  implicitly before placing the heading under body. If a parser skips
+  this recovery, the document has no body and the structural counts
+  collapse to zero — Chromium and parse5 agree that all four implicit
+  elements fire here.
+-->
 <h1>Implicit document</h1>
-<p>No doctype, no html, no head, no body. The parser must insert
-   html, head, body implicitly and place the heading under body.</p>
+<p>
+  No doctype, no html, no head, no body. The parser must insert html, head, body implicitly and
+  place the heading under body.
+</p>
 <table>
-  <tbody><tr><td>row</td></tr></tbody>
+  <tbody>
+    <tr>
+      <td>row</td>
+    </tr>
+  </tbody>
 </table>
-<ul><li>one</li><li>two</li></ul>
+<ul>
+  <li>one</li>
+  <li>two</li>
+</ul>

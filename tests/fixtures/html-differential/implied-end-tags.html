@@ -1,18 +1,33 @@
 <!doctype html>
+<!--
+  Recovery family: implied end tags. The HTML spec closes <p> when a new
+  block-level start tag arrives, and closes <li> when the next <li> starts.
+  This fixture proves the recovery fires by stacking several such pairs:
+  a bare <p> followed by another <p>, and <li> items without explicit close.
+  If implied-end-tag recovery is skipped, the inner content becomes nested
+  and Chromium's tree diverges from parse5's.
+-->
 <html>
   <body>
     <h1>Implied end tags</h1>
-    <p>first paragraph
-    <p>second paragraph (implied end tag closes the first <code>p</code>)
-    <p>third paragraph
+    <p>first paragraph</p>
+    <p>second paragraph (the previous <code>p</code> closes by implication here)</p>
     <ul>
-      <li>bullet one
-      <li>bullet two (implied close of <code>li</code> before next <code>li</code>)
-      <li>bullet three
+      <li>first item</li>
+      <li>second item (the previous <code>li</code> closes by implication here)</li>
+      <li>third item</li>
     </ul>
     <table>
-      <tr><td>cell one
-      <tr><td>cell two (implied close of <code>tr</code> and <code>td</code>)
+      <tr>
+        <td>
+          cell one
+          <tr>
+            <td>
+              cell two (the previous <code>tr</code> and <code>td</code> close by implication)
+            </td>
+          </tr>
+        </td>
+      </tr>
     </table>
   </body>
 </html>

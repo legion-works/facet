@@ -26,7 +26,7 @@ import type { VerifierCdpSession } from "./browser-process";
 import type { ResolvedChildFrame } from "./frame-target";
 
 /** Raw shape of `DOMSnapshot.captureSnapshot` for one document. */
-interface SnapshotDocument {
+export interface SnapshotDocument {
   readonly frameId: number;
   readonly nodes: {
     readonly nodeName: number[];
@@ -44,7 +44,7 @@ interface SnapshotDocument {
   };
 }
 
-interface SnapshotResponse {
+export interface SnapshotResponse {
   readonly documents: readonly SnapshotDocument[];
   readonly strings: readonly string[];
 }
@@ -184,7 +184,7 @@ function isExternalHttps(value: string | undefined): boolean {
   }
 }
 
-function countSnapshotHtml(
+export function countSnapshotHtml(
   snapshot: SnapshotResponse,
   documentIndex: number,
 ): HtmlStructureCounts | undefined {

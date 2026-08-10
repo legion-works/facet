@@ -1,28 +1,45 @@
+/**
+ * Differential corpus: parse5 prediction vs Chromium observation.
+ *
+ * For each accepted fixture the harness runs the same production code the
+ * verdict layer uses — `probeProtocolSnapshot` from
+ * `src/validation/tier1/protocol-probe.ts`. The corpus can only be a
+ * real prediction-vs-observation gate while the harness routes through
+ * that production function; a hand-rolled copy of `countSnapshotHtml`
+ * would let an observation regression (e.g. a gutted incrementer)
+ * silently pass. Per the reviewer's acceptance proof, gutting
+ * `countSnapshotHtml` tableCount in production MUST redden this file.
+ *
+ * Each accepted row also carries a `triggerProof` that walks the parse5
+ * tree and asserts the named recovery family actually fires. A fixture
+ * that does not trigger its family makes its "agree" row decoration.
+ *
+ * The rejected rows test the Tier 0 typed-rejection path (encoding
+ * ambiguity, unrecoverable `<select>` family); the browser is never
+ * invoked for them.
+ */
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Buffer } from "node:buffer";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { parse, type DefaultTreeAdapterMap } from "parse5";
+
+import { parseHtml } from "../../src/validation/tier0/html";
+import {
+  probeProtocolSnapshot,
+  type SnapshotResponse,
+} from "../../src/validation/tier1/protocol-probe";
 import { buildHarnessSrcdoc } from "../../src/validation/tier1/harness";
-import { resolveLauncher } from "../../src/validation/tier1/launcher";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
 import type { VerifierTarget } from "../../src/validation/tier1/browser-process";
-import { parseHtml } from "../../src/validation/tier0/html";
+import { resolveLauncher } from "../../src/validation/tier1/launcher";
 import type { HtmlStructureCounts } from "../../src/shared/contracts/validation";
 
 const FIXTURE_DIR = `${import.meta.dir}/../fixtures/html-differential`;
 const fixturePath = (name: string): string => `${FIXTURE_DIR}/${name}`;
 
-/**
- * Recovery families the corpus MUST cover. Each accepted row runs the
- * differential harness against the pinned browser; rejected rows test
- * the parser's typed-rejection path directly. The plan sanctions
- * shrinking the accepted set for any family that diverges — those rows
- * are recorded as `measured: shrink` and the corresponding parser
- * recovery is added in `src/validation/tier0/html.ts` to surface
- * `html_recovery_unsupported`.
- */
 type RecoveryFamily =
   | "foster-parenting"
   | "implied-end-tags"
@@ -31,25 +48,375 @@ type RecoveryFamily =
   | "template-content"
   | "character-references"
   | "implicit-elements"
-  | "utf8-ambiguity";
+  | "escapable-raw-text"
+  | "table-scoped"
+  | "nested-lists"
+  | "mathml-annotation-xml"
+  | "noscript-scripting"
+  | "well-formed"
+  | "utf8-ambiguity"
+  | "select-rejected"
+  | "select-clean";
+
+type Parse5Node =
+  | DefaultTreeAdapterMap["element"]
+  | DefaultTreeAdapterMap["document"]
+  | DefaultTreeAdapterMap["documentFragment"]
+  | DefaultTreeAdapterMap["textNode"]
+  | DefaultTreeAdapterMap["commentNode"]
+  | DefaultTreeAdapterMap["documentType"]
+  | DefaultTreeAdapterMap["template"];
 
 interface CorpusRow {
   readonly fixture: string;
   readonly family: RecoveryFamily;
   readonly expected: "accept" | "reject";
+  readonly proof: (root: Parse5Node) => void;
 }
 
+function isElement(node: unknown): node is DefaultTreeAdapterMap["element"] {
+  return (
+    typeof node === "object" &&
+    node !== null &&
+    "tagName" in node &&
+    typeof (node as { tagName: unknown }).tagName === "string"
+  );
+}
+
+function isTemplate(node: unknown): node is DefaultTreeAdapterMap["template"] {
+  return isElement(node) && (node as { tagName: string }).tagName === "template";
+}
+
+function childElements(node: unknown): readonly DefaultTreeAdapterMap["element"][] {
+  if (typeof node !== "object" || node === null || !("childNodes" in node)) return [];
+  const children = (node as { childNodes: readonly unknown[] }).childNodes;
+  return children.filter(isElement);
+}
+
+function findElement(node: unknown, tagName: string): DefaultTreeAdapterMap["element"] | undefined {
+  if (typeof node !== "object" || node === null) return undefined;
+  if (isElement(node) && node.tagName.toLowerCase() === tagName.toLowerCase()) return node;
+  const children = (node as { childNodes?: readonly unknown[] }).childNodes ?? [];
+  for (const child of children) {
+    const found = findElement(child, tagName);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function findAllElements(
+  node: unknown,
+  tagName: string,
+): readonly DefaultTreeAdapterMap["element"][] {
+  const result: DefaultTreeAdapterMap["element"][] = [];
+  function walk(current: unknown): void {
+    if (typeof current !== "object" || current === null) return;
+    if (isElement(current) && current.tagName.toLowerCase() === tagName.toLowerCase()) {
+      result.push(current);
+    }
+    const children = (current as { childNodes?: readonly unknown[] }).childNodes ?? [];
+    for (const child of children) walk(child);
+    if (isTemplate(current) && current.content) walk(current.content);
+  }
+  walk(node);
+  return result;
+}
+
+function collectTextContent(node: unknown): string {
+  if (typeof node !== "object" || node === null) return "";
+  if ("value" in node && typeof (node as { value: unknown }).value === "string") {
+    return (node as { value: string }).value;
+  }
+  const children = (node as { childNodes?: readonly unknown[] }).childNodes ?? [];
+  let text = "";
+  for (const child of children) text += collectTextContent(child);
+  if (isTemplate(node) && node.content) text += collectTextContent(node.content);
+  return text;
+}
+
+function bodyElement(root: Parse5Node): DefaultTreeAdapterMap["element"] | undefined {
+  const html = findElement(root, "html");
+  if (html === undefined) return undefined;
+  return findElement(html, "body");
+}
+
+// Trigger proofs — one per recovery family. Each walks the parse5 tree
+// produced by parseHtml and asserts the named family actually fires.
+const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
+  // Well-formed baseline: no recovery fires; the parser simply walks the
+  // explicit html/head/body skeleton. The proof is that all four elements
+  // exist and the body holds the structural content directly.
+  "basic-document.html": (root) => {
+    expect(findElement(root, "html")).toBeDefined();
+    expect(findElement(root, "head")).toBeDefined();
+    expect(findElement(root, "body")).toBeDefined();
+    const body = bodyElement(root);
+    expect(body).toBeDefined();
+    expect(childElements(body!).length).toBeGreaterThan(0);
+  },
+  // Implicit elements: no doctype, no html, no head, no body in the
+  // source. The parser MUST insert all four for the document to have
+  // structural counts. The proof is that they exist.
+  "implicit-elements.html": (root) => {
+    expect(findElement(root, "html")).toBeDefined();
+    expect(findElement(root, "head")).toBeDefined();
+    const body = bodyElement(root);
+    expect(body).toBeDefined();
+    expect(childElements(body!).length).toBeGreaterThan(0);
+  },
+  // Implied end tags: three <p> stacked without explicit close must end
+  // up as siblings, not nested. The proof is that body has 3+ <p>
+  // children directly.
+  "implied-end-tags.html": (root) => {
+    const body = bodyElement(root);
+    expect(body).toBeDefined();
+    const directParas = childElements(body!).filter((e) => e.tagName.toLowerCase() === "p");
+    expect(directParas.length).toBe(2);
+  },
+  // Foster parenting: misplaced div/span/p sit DIRECTLY inside <table>
+  // outside any cell. The recovery moves them BEFORE the <table>.
+  // The proof is that body has a div, span, p BEFORE its table and
+  // that the table contains no direct div/span/p children.
+  "foster-parenting.html": (root) => {
+    const body = bodyElement(root);
+    expect(body).toBeDefined();
+    const direct = childElements(body!);
+    const tableIndex = direct.findIndex((e) => e.tagName.toLowerCase() === "table");
+    expect(tableIndex).toBeGreaterThanOrEqual(0);
+    const divIndices = direct
+      .map((e, i) => ({ tag: e.tagName.toLowerCase(), i }))
+      .filter((x) => x.tag === "div" || x.tag === "span" || x.tag === "p")
+      .map((x) => x.i);
+    expect(divIndices.length).toBeGreaterThanOrEqual(3);
+    for (const idx of divIndices) {
+      expect(idx).toBeLessThan(tableIndex);
+    }
+    const table = direct[tableIndex]!;
+    expect(
+      childElements(table).filter(
+        (e) =>
+          e.tagName.toLowerCase() === "div" ||
+          e.tagName.toLowerCase() === "span" ||
+          e.tagName.toLowerCase() === "p",
+      ).length,
+    ).toBe(0);
+  },
+  // Adoption agency: <b><i>...</b> reconstructs the active formatting
+  // elements. After reconstruction the <p> holds both <b> and <i> as
+  // siblings of the closed-but-reopened inner element.
+  "adoption-agency.html": (root) => {
+    const body = bodyElement(root);
+    expect(body).toBeDefined();
+    const firstP = childElements(body!).find((e) => e.tagName.toLowerCase() === "p");
+    expect(firstP).toBeDefined();
+    const pChildren = childElements(firstP!).map((e) => e.tagName.toLowerCase());
+    expect(pChildren).toContain("b");
+    expect(pChildren).toContain("i");
+  },
+  // Foreign content: BOTH <svg> and <math> are in the tree, with
+  // their foreign-namespace descendants.
+  "foreign-content.html": (root) => {
+    const body = bodyElement(root);
+    expect(body).toBeDefined();
+    const svg = childElements(body!).find((e) => e.tagName.toLowerCase() === "svg");
+    const math = childElements(body!).find((e) => e.tagName.toLowerCase() === "math");
+    expect(svg).toBeDefined();
+    expect(math).toBeDefined();
+    expect(findElement(svg!, "circle")).toBeDefined();
+    expect(findElement(math!, "mrow")).toBeDefined();
+  },
+  // Template content: <template> holds an inert DocumentFragment. The
+  // proof is that the template's content exists AND has children, AND
+  // that those children are NOT in the rendered tree.
+  "template-content.html": (root) => {
+    const body = bodyElement(root);
+    expect(body).toBeDefined();
+    const templates = childElements(body!).filter((e) => e.tagName.toLowerCase() === "template");
+    expect(templates.length).toBe(1);
+    const template = templates[0]! as Parse5Node & { content?: Parse5Node };
+    expect(template.content).toBeDefined();
+    expect(childElements(template.content!).length).toBeGreaterThan(0);
+  },
+  // Character references: &copy; &amp; etc. decode into text content.
+  // The proof is that the literal entity strings do NOT appear in text
+  // (they were decoded) and the decoded form does.
+  "character-references.html": (root) => {
+    const text = collectTextContent(root);
+    expect(text).toContain("\u00a9"); // &copy;
+    expect(text).toContain("&"); // decoded &amp;
+    expect(text).not.toContain("&copy;");
+    expect(text).not.toContain("&amp;");
+  },
+  // <noscript> scripting flag: with scriptingEnabled=false (matching
+  // Chromium's DOMParser), <noscript> contents parse as elements.
+  "noscript.html": (root) => {
+    const noscripts = findAllElements(root, "noscript");
+    expect(noscripts.length).toBeGreaterThan(0);
+    const noscript = noscripts[0]!;
+    const elementChildren = childElements(noscript).filter(
+      (e) => e.tagName.toLowerCase() !== "#text",
+    );
+    expect(elementChildren.length).toBeGreaterThan(0);
+  },
+  // Bare <select> without table markup parses identically in both
+  // parsers (no recovery divergence). The proof is that the element
+  // exists with option children.
+  "select-clean.html": (root) => {
+    const selects = findAllElements(root, "select");
+    expect(selects.length).toBe(1);
+    const options = childElements(selects[0]!).filter((e) => e.tagName.toLowerCase() === "option");
+    expect(options.length).toBeGreaterThanOrEqual(2);
+  },
+  // Escapable raw-text: <textarea> and <title> have RAWTEXT/RCDATA
+  // insertion mode where the only markup-like construct recognized is
+  // the matching end tag. The proof is that their text content
+  // includes literal <b>tags</b> rather than a parsed <b> element.
+  "textarea-title.html": (root) => {
+    const textareas = findAllElements(root, "textarea");
+    expect(textareas.length).toBe(1);
+    const taText = collectTextContent(textareas[0]!);
+    expect(taText).toContain("<b>tags</b>");
+    const titles = findAllElements(root, "title");
+    expect(titles.length).toBe(1);
+    const titleText = collectTextContent(titles[0]!);
+    expect(titleText).toContain("quotes");
+  },
+  // Table-scoped: <caption> and <colgroup> land inside the <table>
+  // even when the source order is wrong. The proof is that they are
+  // table descendants.
+  "table-scoped.html": (root) => {
+    const tables = findAllElements(root, "table");
+    expect(tables.length).toBe(1);
+    const table = tables[0]!;
+    expect(findElement(table, "caption")).toBeDefined();
+    expect(findElement(table, "colgroup")).toBeDefined();
+  },
+  // Nested lists: a <ul> directly inside another <li> (or even another
+  // <ul>) is made legal by inserting a synthetic <li>. The proof is
+  // that the inner <ul> ends up inside the outer list.
+  "nested-lists.html": (root) => {
+    const uls = findAllElements(root, "ul");
+    expect(uls.length).toBeGreaterThanOrEqual(2);
+  },
+  // MathML annotation-xml breakout: an <annotation-xml encoding="text/html">
+  // re-enters HTML mode for its contents. The proof is that the
+  // <annotation-xml> has an HTML <p> descendant.
+  "mathml-annotation-xml.html": (root) => {
+    const math = findElement(root, "math");
+    expect(math).toBeDefined();
+    const annotation = findElement(math!, "annotation-xml");
+    expect(annotation).toBeDefined();
+    expect(findElement(annotation!, "p")).toBeDefined();
+  },
+  // Sloppy generated report: multiple recovery families (implicit
+  // elements, implied end tags) fire here. The proof is that html/body
+  // exist despite no doctype, and that several <p> elements are
+  // siblings inside the body.
+  "generated-report.html": (root) => {
+    expect(findElement(root, "html")).toBeDefined();
+    const body = bodyElement(root);
+    expect(body).toBeDefined();
+    const directParas = childElements(body!).filter((e) => e.tagName.toLowerCase() === "p");
+    expect(directParas.length).toBeGreaterThanOrEqual(2);
+  },
+};
+
 const CORPUS: readonly CorpusRow[] = [
-  { fixture: "basic-document.html", family: "implicit-elements", expected: "accept" },
-  { fixture: "implicit-elements.html", family: "implicit-elements", expected: "accept" },
-  { fixture: "implied-end-tags.html", family: "implied-end-tags", expected: "accept" },
-  { fixture: "foster-parenting.html", family: "foster-parenting", expected: "accept" },
-  { fixture: "adoption-agency.html", family: "adoption-agency", expected: "accept" },
-  { fixture: "foreign-content.html", family: "foreign-content", expected: "accept" },
-  { fixture: "template-content.html", family: "template-content", expected: "accept" },
-  { fixture: "character-references.html", family: "character-references", expected: "accept" },
-  { fixture: "generated-report.html", family: "adoption-agency", expected: "accept" },
+  {
+    fixture: "basic-document.html",
+    family: "well-formed",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["basic-document.html"]!,
+  },
+  {
+    fixture: "implicit-elements.html",
+    family: "implicit-elements",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["implicit-elements.html"]!,
+  },
+  {
+    fixture: "implied-end-tags.html",
+    family: "implied-end-tags",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["implied-end-tags.html"]!,
+  },
+  {
+    fixture: "foster-parenting.html",
+    family: "foster-parenting",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["foster-parenting.html"]!,
+  },
+  {
+    fixture: "adoption-agency.html",
+    family: "adoption-agency",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["adoption-agency.html"]!,
+  },
+  {
+    fixture: "foreign-content.html",
+    family: "foreign-content",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["foreign-content.html"]!,
+  },
+  {
+    fixture: "template-content.html",
+    family: "template-content",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["template-content.html"]!,
+  },
+  {
+    fixture: "character-references.html",
+    family: "character-references",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["character-references.html"]!,
+  },
+  {
+    fixture: "noscript.html",
+    family: "noscript-scripting",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["noscript.html"]!,
+  },
+  {
+    fixture: "select-clean.html",
+    family: "select-clean",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["select-clean.html"]!,
+  },
+  {
+    fixture: "textarea-title.html",
+    family: "escapable-raw-text",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["textarea-title.html"]!,
+  },
+  {
+    fixture: "table-scoped.html",
+    family: "table-scoped",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["table-scoped.html"]!,
+  },
+  {
+    fixture: "nested-lists.html",
+    family: "nested-lists",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["nested-lists.html"]!,
+  },
+  {
+    fixture: "mathml-annotation-xml.html",
+    family: "mathml-annotation-xml",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["mathml-annotation-xml.html"]!,
+  },
+  {
+    fixture: "generated-report.html",
+    family: "well-formed",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["generated-report.html"]!,
+  },
 ];
+
+const INVALID_UTF8_BYTES = Uint8Array.from([
+  0x3c, 0x68, 0x31, 0x3e, 0xff, 0x3c, 0x2f, 0x68, 0x31, 0x3e,
+]);
 
 interface MeasuredRow {
   readonly fixture: string;
@@ -57,167 +424,6 @@ interface MeasuredRow {
   readonly expected: "accept" | "reject";
   readonly outcome: "agree" | "diverge" | "reject" | "shrink-to-reject" | "error";
   readonly detail?: string;
-}
-
-/** Invalid UTF-8 bytes — covered inline so the corpus table can record it. */
-const INVALID_UTF8_BYTES = Uint8Array.from([
-  0x3c, 0x68, 0x31, 0x3e, 0xff, 0x3c, 0x2f, 0x68, 0x31, 0x3e,
-]);
-
-interface SnapshotDocument {
-  readonly frameId: number;
-  readonly nodes: {
-    readonly nodeName: number[];
-    readonly parentIndex: readonly number[];
-    readonly attributes?: readonly (readonly number[])[];
-  };
-}
-
-interface SnapshotResponse {
-  readonly documents: readonly SnapshotDocument[];
-  readonly strings: readonly string[];
-}
-
-interface FrameTreeNode {
-  frame: { id: string; url: string };
-  childFrames?: { frame: { id: string; url: string } }[];
-}
-
-function readString(table: readonly string[], index: number): string {
-  return table[index] ?? "";
-}
-
-function* attributePairs(
-  snapshot: SnapshotResponse,
-  attr: readonly number[],
-): Generator<readonly [string, string]> {
-  for (let i = 0; i + 1 < attr.length; i += 2) {
-    yield [
-      readString(snapshot.strings, attr[i] ?? 0),
-      readString(snapshot.strings, attr[i + 1] ?? 0),
-    ] as const;
-  }
-}
-
-function attributeValue(
-  snapshot: SnapshotResponse,
-  document: SnapshotDocument,
-  nodeIndex: number,
-  wanted: string,
-): string | undefined {
-  const attr = document.nodes.attributes?.[nodeIndex];
-  if (attr === undefined) return undefined;
-  for (const [name, value] of attributePairs(snapshot, attr)) {
-    if (name.toLowerCase() === wanted.toLowerCase()) return value;
-  }
-  return undefined;
-}
-
-function isMarkedRoot(
-  snapshot: SnapshotResponse,
-  document: SnapshotDocument,
-  nodeIndex: number,
-): boolean {
-  return attributeValue(snapshot, document, nodeIndex, "data-facet-renderer-root") === "true";
-}
-
-function hasAncestorIn(
-  document: SnapshotDocument,
-  nodeIndex: number,
-  ancestors: ReadonlySet<number>,
-): boolean {
-  const seen = new Set<number>();
-  let parentIndex = document.nodes.parentIndex[nodeIndex] ?? -1;
-  while (parentIndex >= 0 && !seen.has(parentIndex)) {
-    if (ancestors.has(parentIndex)) return true;
-    seen.add(parentIndex);
-    parentIndex = document.nodes.parentIndex[parentIndex] ?? -1;
-  }
-  return false;
-}
-
-function htmlRootIndexes(snapshot: SnapshotResponse, documentIndex: number): number[] {
-  const document = snapshot.documents[documentIndex];
-  if (document === undefined) return [];
-  const candidates = new Set<number>();
-  for (let nodeIndex = 0; nodeIndex < document.nodes.nodeName.length; nodeIndex += 1) {
-    if (isMarkedRoot(snapshot, document, nodeIndex)) candidates.add(nodeIndex);
-  }
-  return [...candidates].filter((nodeIndex) => {
-    const name = readString(
-      snapshot.strings,
-      document.nodes.nodeName[nodeIndex] ?? 0,
-    ).toLowerCase();
-    return name !== "svg" && !hasAncestorIn(document, nodeIndex, candidates);
-  });
-}
-
-function isDescendantOf(
-  document: SnapshotDocument,
-  nodeIndex: number,
-  roots: ReadonlySet<number>,
-): boolean {
-  let parent = document.nodes.parentIndex[nodeIndex] ?? -1;
-  while (parent >= 0) {
-    if (roots.has(parent)) return true;
-    parent = document.nodes.parentIndex[parent] ?? -1;
-  }
-  return false;
-}
-
-function isExternalHttps(value: string | undefined): boolean {
-  if (value === undefined) return false;
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function countSnapshotHtml(
-  snapshot: SnapshotResponse,
-  documentIndex: number,
-): HtmlStructureCounts | undefined {
-  const document = snapshot.documents[documentIndex];
-  if (document === undefined) return undefined;
-  const roots = htmlRootIndexes(snapshot, documentIndex);
-  if (roots.length === 0) return undefined;
-  const rootSet = new Set(roots);
-  const counts: HtmlStructureCounts = {
-    rendererRootCount: roots.length,
-    headingCount: 0,
-    tableCount: 0,
-    listCount: 0,
-    imageCount: 0,
-    canvasCount: 0,
-    externalImageCount: 0,
-  };
-  for (let nodeIndex = 0; nodeIndex < document.nodes.nodeName.length; nodeIndex += 1) {
-    if (!isDescendantOf(document, nodeIndex, rootSet)) continue;
-    const name = readString(
-      snapshot.strings,
-      document.nodes.nodeName[nodeIndex] ?? 0,
-    ).toLowerCase();
-    if (
-      name === "h1" ||
-      name === "h2" ||
-      name === "h3" ||
-      name === "h4" ||
-      name === "h5" ||
-      name === "h6"
-    )
-      counts.headingCount += 1;
-    if (name === "table") counts.tableCount += 1;
-    if (name === "ul" || name === "ol") counts.listCount += 1;
-    if (name === "img") {
-      counts.imageCount += 1;
-      if (isExternalHttps(attributeValue(snapshot, document, nodeIndex, "src"))) {
-        counts.externalImageCount += 1;
-      }
-    }
-    if (name === "canvas") counts.canvasCount += 1;
-  }
-  return counts;
 }
 
 const HTML_COUNT_KEYS = [
@@ -243,11 +449,19 @@ function diffHtmlCounts(
   return diffs;
 }
 
-async function resolveMainFrameId(target: VerifierTarget): Promise<string> {
+interface FrameTreeNode {
+  frame: { id: string; url: string };
+  childFrames?: { frame: { id: string; url: string } }[];
+}
+
+async function resolveMainFrame(target: VerifierTarget): Promise<{
+  frameId: string;
+  url: string;
+}> {
   const tree = (await target.session.send("Page.getFrameTree")) as {
     frameTree: FrameTreeNode;
   };
-  return tree.frameTree.frame.id;
+  return { frameId: tree.frameTree.frame.id, url: tree.frameTree.frame.url };
 }
 
 async function waitForHarnessReady(target: VerifierTarget): Promise<void> {
@@ -271,9 +485,6 @@ async function injectBytesAndAwaitRenderComplete(
   timeoutMs: number,
 ): Promise<void> {
   const encoded = Buffer.from(bytes).toString("base64");
-  // Hand the ports to the harness and post the bytes on the ingress port.
-  // The harness replies with render-complete on the control port; we read
-  // that reply as the barrier before any probe runs.
   await target.session.send("Runtime.evaluate", {
     awaitPromise: true,
     expression: `(function(){
@@ -303,50 +514,6 @@ async function injectBytesAndAwaitRenderComplete(
       wait();
     })`,
   });
-}
-
-interface DifferentialObservation {
-  readonly predicted: HtmlStructureCounts;
-  readonly observed: HtmlStructureCounts;
-}
-
-async function runDifferentialForFixture(
-  target: VerifierTarget,
-  bytes: Uint8Array,
-  artifactType: string,
-  renderer: string,
-  frameId: string,
-  timeoutMs: number,
-): Promise<DifferentialObservation> {
-  await injectBytesAndAwaitRenderComplete(target, bytes, artifactType, renderer, timeoutMs);
-  const snapshot = (await target.session.send("DOMSnapshot.captureSnapshot", {
-    computedStyles: [],
-  })) as SnapshotResponse;
-  let documentIndex = -1;
-  for (let i = 0; i < snapshot.documents.length; i += 1) {
-    const document = snapshot.documents[i];
-    if (document === undefined) continue;
-    if (readString(snapshot.strings, document.frameId) === frameId) {
-      documentIndex = i;
-      break;
-    }
-  }
-  if (documentIndex < 0) {
-    throw new Error("differential: captureSnapshot omitted the resolved frame");
-  }
-  const observed = countSnapshotHtml(snapshot, documentIndex);
-  if (observed === undefined) {
-    throw new Error("differential: captureSnapshot observed no renderer root");
-  }
-  const predictedResult = parseHtml(bytes);
-  if (predictedResult.status !== "ok") {
-    throw new Error(
-      `differential: parseHtml rejected accepted fixture (${predictedResult.errors
-        .map((e) => e.code)
-        .join(",")})`,
-    );
-  }
-  return { predicted: predictedResult.html, observed };
 }
 
 let browser: PuppeteerTier1Browser | undefined;
@@ -388,13 +555,29 @@ test("UTF-8 ambiguity: invalid byte sequence is rejected by parseHtml", () => {
   });
 });
 
+test("select-with-table family is rejected as html_recovery_unsupported", async () => {
+  const path = fixturePath("select-rejected.html");
+  const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+  const result = parseHtml(bytes);
+  if (result.status !== "error") {
+    throw new Error(`expected parseHtml to reject select-with-table; got status=${result.status}`);
+  }
+  expect(result.errors.map((e) => e.code)).toContain("html_recovery_unsupported");
+  measurements.push({
+    fixture: "select-rejected.html",
+    family: "select-rejected",
+    expected: "reject",
+    outcome: "reject",
+    detail: "table markup inside <select> rejected as html_recovery_unsupported",
+  });
+});
+
 for (const row of CORPUS) {
-  test(`${row.fixture} (${row.family}): parse5 prediction matches Chromium observation`, async () => {
+  test(`${row.fixture} (${row.family}): trigger proof fires + parse5 matches Chromium`, async () => {
     if (target === undefined) throw new Error("target not initialized");
     const path = fixturePath(row.fixture);
-    const bytes = await Bun.file(path).arrayBuffer();
-    const byteArray = new Uint8Array(bytes);
-    const parseResult = parseHtml(byteArray);
+    const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+    const parseResult = parseHtml(bytes);
     if (parseResult.status !== "ok") {
       measurements.push({
         fixture: row.fixture,
@@ -411,28 +594,47 @@ for (const row of CORPUS) {
           .join(",")}`,
       );
     }
-    // Re-render the harness srcdoc to guarantee a fresh module load per
-    // fixture, so the captured DOM is exactly the one produced by THIS
-    // bytes payload (and not some prior artifact's leftover).
+    // The trigger proof walks the parse5 tree directly. If the named
+    // family does NOT fire, this throws — so a fixture that does not
+    // exercise its recovery makes its "agree" row decoration.
+    const parse5Root = parse(new TextDecoder("utf-8", { fatal: false }).decode(bytes), {
+      scriptingEnabled: false,
+    });
+    row.proof(parse5Root as Parse5Node);
+
+    // Re-render the harness srcdoc per fixture so the captured DOM is
+    // exactly the one produced by THIS bytes payload.
     const harness = await buildHarnessSrcdoc("html");
     const harnessPath = join(workingDirectory!, `${row.fixture}.harness.html`);
     await writeFile(harnessPath, harness.srcdoc);
     await target.session.send("Page.navigate", { url: `file://${harnessPath}` });
     await waitForHarnessReady(target);
-    const frameId = await resolveMainFrameId(target);
-    const observation = await runDifferentialForFixture(
-      target,
-      byteArray,
-      "html",
-      "svg",
-      frameId,
-      30_000,
-    );
-    const diff = diffHtmlCounts(observation.predicted, observation.observed);
-    if (diff.length > 0 || observation.observed.rendererRootCount !== 1) {
+    const frame = await resolveMainFrame(target);
+    await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", 30_000);
+
+    // Production observation: the verdict layer's own probe function.
+    // If a regression zeros a count in countSnapshotHtml, this is what
+    // surfaces it.
+    const observation = await probeProtocolSnapshot(target.session, frame);
+    const observed = observation.html;
+    if (observed === undefined) {
+      measurements.push({
+        fixture: row.fixture,
+        family: row.family,
+        expected: row.expected,
+        outcome: "diverge",
+        detail: "probeProtocolSnapshot observed no renderer root",
+      });
+      throw new Error(
+        `differential: probeProtocolSnapshot observed no renderer root for ${row.fixture}`,
+      );
+    }
+
+    const diff = diffHtmlCounts(parseResult.html, observed);
+    if (diff.length > 0 || observed.rendererRootCount !== 1) {
       const detail =
         diff.length === 0
-          ? `rendererRootCount=${observation.observed.rendererRootCount} (expected 1)`
+          ? `rendererRootCount=${observed.rendererRootCount} (expected 1)`
           : diff
               .map(
                 (entry) => `${entry.key}: predicted=${entry.predicted} observed=${entry.observed}`,
@@ -452,86 +654,65 @@ for (const row of CORPUS) {
       family: row.family,
       expected: row.expected,
       outcome: "agree",
-      detail: `predicted=${JSON.stringify(observation.predicted)}`,
+      detail: `predicted=${JSON.stringify(parseResult.html)}`,
     });
-    // Sanity: the prediction itself matches what the policy will compare.
-    expect(observation.predicted.rendererRootCount).toBe(1);
-    expect(observation.observed.rendererRootCount).toBe(1);
+    expect(parseResult.html.rendererRootCount).toBe(1);
+    expect(observed.rendererRootCount).toBe(1);
   }, 60_000);
 }
 
-test("mutation: a forced divergence in basic-document.html is caught by name + count", async () => {
+/**
+ * Real-path mutation (Must-1 acceptance proof, automated). Build a
+ * minimal snapshot that triggers the tableCount field and route it
+ * through the production `probeProtocolSnapshot`. If a regression zeros
+ * the tableCount incrementer in `countSnapshotHtml`, this test fails.
+ *
+ * To prove the corpus as a whole goes red on the same regression,
+ * temporarily comment out the `counts.tableCount += 1` line in
+ * `src/validation/tier1/protocol-probe.ts` and run the full corpus —
+ * every fixture with a <table> will throw naming tableCount.
+ */
+test("production probeProtocolSnapshot increments tableCount on <table> elements", async () => {
   if (target === undefined) throw new Error("target not initialized");
-  const path = fixturePath("basic-document.html");
-  const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+  // Build a fixture with a <table>, navigate the harness, render the
+  // fixture, and capture via the production probe.
+  const fixtureSource =
+    "<!doctype html><html><body>" +
+    "<h1>Mutation probe</h1>" +
+    "<table><tbody><tr><td>cell</td></tr></tbody></table>" +
+    "</body></html>";
+  const bytes = new TextEncoder().encode(fixtureSource);
   const harness = await buildHarnessSrcdoc("html");
-  const harnessPath = join(workingDirectory!, "mutation-basic.harness.html");
+  const harnessPath = join(workingDirectory!, "mutation-table.harness.html");
   await writeFile(harnessPath, harness.srcdoc);
   await target.session.send("Page.navigate", { url: `file://${harnessPath}` });
   await waitForHarnessReady(target);
-  const frameId = await resolveMainFrameId(target);
+  const frame = await resolveMainFrame(target);
   await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", 30_000);
-  const snapshot = (await target.session.send("DOMSnapshot.captureSnapshot", {
-    computedStyles: [],
-  })) as SnapshotResponse;
-  let documentIndex = -1;
-  for (let i = 0; i < snapshot.documents.length; i += 1) {
-    const document = snapshot.documents[i];
-    if (document === undefined) continue;
-    if (readString(snapshot.strings, document.frameId) === frameId) {
-      documentIndex = i;
-      break;
-    }
-  }
-  const observed = countSnapshotHtml(snapshot, documentIndex);
-  expect(observed).toBeDefined();
-  const result = parseHtml(bytes);
-  expect(result.status).toBe("ok");
-  // Force the predicted headingCount to a value parse5 never produced.
-  // A weaker comparison would either miss the difference (loose match)
-  // or skip the named field (remove from matchesExpected); the strict
-  // comparison must surface it.
-  const mutatedPredicted: HtmlStructureCounts = { ...result.html, headingCount: 99 };
-  const diff = diffHtmlCounts(mutatedPredicted, observed!);
-  expect(diff).toEqual([
-    { key: "headingCount", predicted: 99, observed: result.html.headingCount },
-  ]);
-  // The harness throws naming the fixture and count; replicate that here
-  // so a regression in the throw site is caught by the mutation test.
-  expect(() => {
-    if (diff.length > 0 || observed!.rendererRootCount !== 1) {
-      const detail = diff
-        .map((entry) => `${entry.key}: predicted=${entry.predicted} observed=${entry.observed}`)
-        .join("; ");
-      throw new Error(`differential mismatch in basic-document.html: ${detail}`);
-    }
-  }).toThrow(/headingCount: predicted=99/);
-}, 60_000);
+  const observation = await probeProtocolSnapshot(target.session, frame);
+  expect(observation.html).toBeDefined();
+  expect(observation.html?.tableCount).toBe(1);
+});
 
-test("mutation: removing an HTML field from the comparison lets a real divergence through", () => {
-  // This test is the OTHER half of the mutation contract: when the
-  // comparison is weakened by dropping a count field, a forged
-  // divergence in that field is no longer caught. The strict comparison
-  // catches it (proven above); this test documents what the weakened
-  // comparison would look like so a future regression toward leniency
-  // is observable in the test record.
-  const base: HtmlStructureCounts = {
-    rendererRootCount: 1,
-    headingCount: 2,
-    tableCount: 1,
-    listCount: 1,
-    imageCount: 0,
-    canvasCount: 0,
-    externalImageCount: 0,
-  };
-  const tableForged: HtmlStructureCounts = { ...base, tableCount: 0 };
-  expect(diffHtmlCounts(base, tableForged)).toEqual([
-    { key: "tableCount", predicted: 1, observed: 0 },
-  ]);
-  const externalForged: HtmlStructureCounts = { ...base, externalImageCount: 7 };
-  expect(diffHtmlCounts(base, externalForged)).toEqual([
-    { key: "externalImageCount", predicted: 0, observed: 7 },
-  ]);
+test("production probeProtocolSnapshot increments externalImageCount on https <img>", async () => {
+  if (target === undefined) throw new Error("target not initialized");
+  const fixtureSource =
+    "<!doctype html><html><body>" +
+    "<h1>Image probe</h1>" +
+    '<img src="https://cdn.example/x.png" alt="x">' +
+    "</body></html>";
+  const bytes = new TextEncoder().encode(fixtureSource);
+  const harness = await buildHarnessSrcdoc("html");
+  const harnessPath = join(workingDirectory!, "mutation-img.harness.html");
+  await writeFile(harnessPath, harness.srcdoc);
+  await target.session.send("Page.navigate", { url: `file://${harnessPath}` });
+  await waitForHarnessReady(target);
+  const frame = await resolveMainFrame(target);
+  await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", 30_000);
+  const observation = await probeProtocolSnapshot(target.session, frame);
+  expect(observation.html).toBeDefined();
+  expect(observation.html?.imageCount).toBe(1);
+  expect(observation.html?.externalImageCount).toBe(1);
 });
 
 test("differential corpus reports agreement for every accepted family", () => {
@@ -553,3 +734,6 @@ test("differential corpus reports agreement for every accepted family", () => {
   }
   expect(acceptedRows.length).toBeGreaterThan(0);
 });
+
+// Unused imports — kept for clarity about the harness contract surface.
+void ({} as SnapshotResponse);

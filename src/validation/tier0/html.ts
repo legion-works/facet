@@ -297,7 +297,69 @@ export function parseHtml(bytes: Uint8Array): HtmlParseResult {
       ],
     };
   }
+  const recovery = detectUnsupportedRecoveryFamilies(text);
+  if (recovery !== null) {
+    return {
+      status: "error",
+      html,
+      errors: [
+        {
+          code: "html_recovery_unsupported",
+          message: recovery,
+        },
+      ],
+    };
+  }
   const errors: DiscriminativeError[] = [];
-  walk(parse(text), html, errors);
+  walk(parse(text, { scriptingEnabled: false }), html, errors);
   return errors.length === 0 ? { status: "ok", html } : { status: "error", html, errors };
+}
+
+/**
+ * Lexical probe for constructs whose recovery behaviour the parse5 prediction
+ * cannot guarantee against Chromium's DOMParser. Returns the rejection message
+ * for the FIRST unsupported construct found, or null if the bytes survive.
+ *
+ * Today the only sanctioned reject is the `<select>` family: parse5 drops
+ * table-scoped markup inside select (the WHATWG "in select in table" mode
+ * keeps it on Chromium). Shrinking the accepted input set here is cheaper
+ * than guaranteeing agreement on a niche construct static HTML reports do
+ * not actually need.
+ */
+function detectUnsupportedRecoveryFamilies(text: string): string | null {
+  const lower = text.toLowerCase();
+  const selectAt = lower.indexOf("<select");
+  if (selectAt >= 0 && !textContainsUnrecoverableSelect(lower, selectAt)) {
+    // A bare <select> with no table-scoped markup inside is fine; we
+    // only reject the family when it would actually trigger the
+    // divergent recovery branch.
+    return null;
+  }
+  if (selectAt >= 0) {
+    return "HTML <select> with table-scoped markup diverges from Chromium DOMParser";
+  }
+  return null;
+}
+
+const TABLE_INSIDE_SELECT_TAGS = [
+  "<table",
+  "<tr",
+  "<td",
+  "<th",
+  "<tbody",
+  "<thead",
+  "<tfoot",
+  "<caption",
+  "<colgroup",
+  "<col ",
+  "<col>",
+] as const;
+
+function textContainsUnrecoverableSelect(lower: string, selectAt: number): boolean {
+  const closeAt = lower.indexOf("</select", selectAt);
+  const end = closeAt < 0 ? lower.length : closeAt;
+  for (const tag of TABLE_INSIDE_SELECT_TAGS) {
+    if (lower.indexOf(tag, selectAt) >= 0 && lower.indexOf(tag, selectAt) < end) return true;
+  }
+  return false;
 }

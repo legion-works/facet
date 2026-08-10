@@ -1,0 +1,23 @@
+<!doctype html>
+<!--
+  Recovery family: escapable raw-text elements. <textarea> and <title> use
+  the "escapable raw text" insertion mode where the only markup-like
+  construct recognized is the matching end tag — entity references are
+  NOT decoded, character references ARE decoded. Both parsers handle this
+  identically; this fixture proves it by stuffing both with the same
+  character references and special characters.
+-->
+<html>
+  <head>
+    <title>Title with &amp; and &copy; and "quotes"</title>
+  </head>
+  <body>
+    <h1>Escapable raw text probe</h1>
+    <textarea rows="3" cols="40">
+Textarea content with &amp; and &lt;b&gt;tags&lt;/b&gt; shown literally, &copy; decoded.</textarea
+    >
+    <ul>
+      <li>after-textarea list</li>
+    </ul>
+  </body>
+</html>

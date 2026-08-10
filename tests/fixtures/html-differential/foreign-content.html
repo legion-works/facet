@@ -1,17 +1,32 @@
 <!doctype html>
+<!--
+  Recovery family: foreign content (SVG and MathML). Both parsers detect the
+  SVG/MathML namespace and switch the insertion mode to "in foreign content"
+  — different rules from HTML. This fixture includes BOTH SVG (with
+  foreignObject that breaks back into HTML) AND MathML so any single-sided
+  regression would surface here. The structural counts (headings, tables,
+  lists) only see the HTML-namespace descendants, which is the same
+  population both parsers agree on.
+-->
 <html>
   <body>
-    <h1>Foreign content report</h1>
-    <svg width="120" height="60" viewBox="0 0 120 60">
+    <h1>Foreign content probe</h1>
+    <svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 120 60">
       <circle cx="30" cy="30" r="20" fill="red"></circle>
       <foreignObject x="60" y="10" width="50" height="40">
         <p xmlns="http://www.w3.org/1999/xhtml">foreign paragraph</p>
       </foreignObject>
     </svg>
     <math xmlns="http://www.w3.org/1998/Math/MathML">
-      <mrow><mi>x</mi><mo>=</mo><mn>1</mn></mrow>
+      <mrow>
+        <mi>x</mi>
+        <mo>=</mo>
+        <mn>1</mn>
+      </mrow>
     </math>
     <p>after foreign content</p>
-    <ul><li>item after foreign</li></ul>
+    <ul>
+      <li>item after foreign</li>
+    </ul>
   </body>
 </html>

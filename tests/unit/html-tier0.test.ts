@@ -186,4 +186,27 @@ describe("HTML Tier 0 parser", () => {
       errors: [{ code: "html_nesting_depth_exceeded" }],
     });
   });
+
+  test("rejects <select> containing table-scoped markup as an unrecoverable family", () => {
+    const source =
+      "<select><option>a</option>" +
+      "<table><tbody><tr><td>b</td></tr></tbody></table>" +
+      "</select>";
+    expect(errorCodes(source)).toContain("html_recovery_unsupported");
+  });
+
+  test("permits bare <select> without table-scoped markup (no divergence to recover)", () => {
+    const source = "<select><option>a</option><option>b</option></select>";
+    expect(errorCodes(source)).toEqual([]);
+  });
+
+  test("parses <noscript> content as elements under scriptingEnabled=false", () => {
+    // Chromium's DOMParser parses noscript content as elements (scripting
+    // disabled). parse5 must do the same or the prediction diverges from
+    // observation — which is exactly D11's false-tampered risk.
+    const source = "<noscript><h1>fallback heading</h1><p>fallback body</p></noscript>";
+    const result = parseHtml(bytes(source));
+    expect(result.status).toBe("ok");
+    expect(result.html.headingCount).toBe(1);
+  });
 });

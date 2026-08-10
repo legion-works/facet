@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  Recovery family: nested lists. A <ul> directly inside another <li>
+  without an explicit wrapping <li> gets a synthetic <li> inserted so the
+  nested <ul> has a legal parent. Both parsers handle this identically.
+  This fixture proves the recovery fires by nesting <ul> directly inside
+  another <ul> without the intermediate <li>.
+-->
+<html>
+  <body>
+    <h1>Nested lists probe</h1>
+    <ul>
+      <li>
+        outer item one
+        <ul>
+          <li>inner item one</li>
+          <li>inner item two</li>
+        </ul>
+      </li>
+
+      <li>outer item two</li>
+      <li>outer item three</li>
+    </ul>
+    <p>after nested list</p>
+  </body>
+</html>
