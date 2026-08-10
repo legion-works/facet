@@ -25,7 +25,7 @@ Errors use the same top level with `ok: false` and
 | `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`        |
 | `instantiate` | `--name`, `--new-slug`, `--project-id`                                              |
 | `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                     |
-| `export`      | `--format`                                                                          |
+| `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`         |
 
 `publish --file -` reads bytes from stdin. `--json` is shorthand for
 `--format json` on meta commands.
@@ -54,8 +54,6 @@ INSECURE L1 — auto:tier 1 unavailable
 
 ## Reserved surface
 
-`export` is parsed but returns `accepted: false` with a typed
-`reserved_not_implemented` result. HTML remains a reserved artifact type and
-returns `unsupported_reserved_type`.
+HTML remains a reserved artifact type and returns `unsupported_reserved_type`.
 
-→ [Architecture](../../ARCHITECTURE.md) → [Validation](validation.md) · [Storage](storage.md) · [Security](security.md) · [HTTP](http.md)
+→ [Architecture](../../ARCHITECTURE.md) → [Export](export.md) · [Validation](validation.md) · [Storage](storage.md) · [Security](security.md) · [HTTP](http.md)

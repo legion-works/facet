@@ -21,7 +21,7 @@ honestly (`partial:opaque_content`, with a mandatory `screenshotPath` or typed
 Same principle as Insecure mode: a verdict must never claim a trust property the run
 did not have.
 • Screenshot policy tuning
-• Export slot
+✓ DONE — Export slot — source and stored-render byte exports with a mandatory sidecar.
 • Browser pin upgrades
 ✓ DONE — Insecure mode — explicit opt-in relaxation tiers (`FACET_INSECURE=1|2|3`) with forced-floor composition, loud startup/envelope/CLI/gallery disclosure, and explicit `insecure` verdict markers. L1 removes Tier 1 netns isolation, L2 removes both validator netns layers, and L3 skips validation entirely. Levels are boot-only; no per-request escalation.
 • Performance budgets are now measured by `scripts/perf-gate.ts`. Current budgets and purposes:

@@ -74,6 +74,7 @@ printf '%s' "$SOURCE" | facet publish --artifact-id <id> --type markdown --file 
 facet read-back --artifact-id <id> --revision-sha <sha> --tier 0
 facet read-back --artifact-id <id> --revision-sha <sha> --tier visual
 facet open --artifact-id <id> --revision-sha <sha>
+facet export <artifactId> --format source
 ```
 
 Use the SHA returned by the publish envelope. Tier 0 is browser-free; visual read-back is explicit Tier 1 escalation. `open` asks a human to inspect the sandboxed gallery. The CLI always writes one JSON envelope per verb to stdout; diagnostics go to stderr.
@@ -83,7 +84,7 @@ Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) 
 ## Documentation
 
 - [Agents](docs/guides/agents.md) — the CLI workflow and adapter boundary.
-- [CLI reference](docs/reference/cli.md) · [HTTP surface](docs/reference/http.md) · [Storage reference](docs/reference/storage.md) · [Validation reference](docs/reference/validation.md) · [Security](docs/reference/security.md)
+- [CLI reference](docs/reference/cli.md) · [Export](docs/reference/export.md) · [HTTP surface](docs/reference/http.md) · [Storage reference](docs/reference/storage.md) · [Validation reference](docs/reference/validation.md) · [Security](docs/reference/security.md)
 - [Architecture](ARCHITECTURE.md) · [Structure](STRUCTURE.md) · [v1 ship gate](docs/verification/v1-ship-gate.md) · [Roadmap](docs/roadmap.md)
 - [Contributing](CONTRIBUTING.md)
 
