@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.0](https://github.com/legion-works/facet/compare/v1.3.0...v1.4.0) (2026-08-10)
+
+
+### Features
+
+* add the facet export cli verb ([832bf8b](https://github.com/legion-works/facet/commit/832bf8b2209c87fe5b5e416e3a90a2ae0218d267))
+* export retained tier 1 screenshot evidence ([d07a2aa](https://github.com/legion-works/facet/commit/d07a2aa9ef1ef0e12378e66fd3a48755a2d2b803))
+* export stored source bytes with a verdict sidecar ([60518b2](https://github.com/legion-works/facet/commit/60518b24c83bfd439998a87f3f564470b862d280))
+* ratify the export command contract ([3998997](https://github.com/legion-works/facet/commit/39989973b074ee1d4cc75b2814d4b62fa20ce62f))
+
+
+### Bug Fixes
+
+* correct export transport, confinement, and stale references ([6de663c](https://github.com/legion-works/facet/commit/6de663c57f83a80895e3a75cc35f816b5c01f60b))
+* keep export file pairs atomic and sanitize derived names ([183a33c](https://github.com/legion-works/facet/commit/183a33cb6bb7bd6bfeffc9493ebf1dcdbf4e0d15))
+* write export pairs atomically ([9513ee5](https://github.com/legion-works/facet/commit/9513ee5272d2302ac819422f7b3872f39c6df230))
+
 ## [1.3.0](https://github.com/legion-works/facet/compare/v1.2.0...v1.3.0) (2026-08-10)
 
 
