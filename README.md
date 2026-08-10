@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/legion-works/facet/actions/workflows/ci.yml"><img src="https://github.com/legion-works/facet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE">MIT OR Apache-2.0</a>
+  <a href="LICENSE-MIT">MIT</a> OR <a href="LICENSE-APACHE">Apache-2.0</a>
 </p>
 
 ---
@@ -94,7 +94,7 @@ Facet is a young, single-maintainer project. It targets local and single-operato
 
 ## License
 
-MIT OR Apache-2.0, at your option. See [LICENSE](LICENSE).
+MIT OR Apache-2.0, at your option. See [LICENSE-MIT](LICENSE-MIT) or [LICENSE-APACHE](LICENSE-APACHE).
 
 ---
 
