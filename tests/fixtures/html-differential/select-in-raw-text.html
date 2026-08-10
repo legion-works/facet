@@ -1,0 +1,22 @@
+<!doctype html>
+<!--
+  Recovery family: <select>-looking text inside RCDATA / RAWTEXT /
+  comment / attribute contexts. The lexical scan that this fixture
+  replaces false-positive rejected ALL of these — a guard that
+  refused valid documents drove a false `tampered` verdict through
+  the harness in production. The tokenizer-based detector skips
+  every one because the tokenizer is in the right mode when the
+  `<select>` text appears.
+-->
+<html>
+  <head>
+    <title>Title with literal &lt;select&gt; markup</title>
+  </head>
+  <body>
+    <h1>False-positive guard probe</h1>
+    <!-- <select><table>x</table></select> -->
+    <p data-sample="<select><table>x</table></select>">Attribute value probe.</p>
+    <textarea rows="2" cols="40"><select><table>x</table></select></textarea>
+    <ul><li>after-textarea list</li></ul>
+  </body>
+</html>

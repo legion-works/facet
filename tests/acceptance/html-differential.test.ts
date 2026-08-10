@@ -27,10 +27,7 @@ import { join } from "node:path";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 
 import { parseHtml } from "../../src/validation/tier0/html";
-import {
-  probeProtocolSnapshot,
-  type SnapshotResponse,
-} from "../../src/validation/tier1/protocol-probe";
+import { probeProtocolSnapshot } from "../../src/validation/tier1/protocol-probe";
 import { buildHarnessSrcdoc } from "../../src/validation/tier1/harness";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
 import type { VerifierTarget } from "../../src/validation/tier1/browser-process";
@@ -56,7 +53,8 @@ type RecoveryFamily =
   | "well-formed"
   | "utf8-ambiguity"
   | "select-rejected"
-  | "select-clean";
+  | "select-clean"
+  | "select-false-positive-guard";
 
 type Parse5Node =
   | DefaultTreeAdapterMap["element"]
@@ -202,16 +200,23 @@ const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
     ).toBe(0);
   },
   // Adoption agency: <b><i>...</b> reconstructs the active formatting
-  // elements. After reconstruction the <p> holds both <b> and <i> as
-  // siblings of the closed-but-reopened inner element.
+  // elements. After reconstruction the first <p> contains the original
+  // <b> with its <i> child AND a reconstructed <i> sibling. The second
+  // <p>'s `</i>` closes the inner active formatting — the algorithm
+  // reconstructs <b> at the current insertion point (the outer <i>), so
+  // the second <p> has ONE direct child whose tagName is "i" (the
+  // reconstructed outer). A well-formed document with <b> + <i> as
+  // siblings inside each <p> has TWO direct children for each <p>;
+  // the recovery case has only one. This discriminator is exact.
   "adoption-agency.html": (root) => {
     const body = bodyElement(root);
     expect(body).toBeDefined();
-    const firstP = childElements(body!).find((e) => e.tagName.toLowerCase() === "p");
-    expect(firstP).toBeDefined();
-    const pChildren = childElements(firstP!).map((e) => e.tagName.toLowerCase());
-    expect(pChildren).toContain("b");
-    expect(pChildren).toContain("i");
+    const ps = childElements(body!).filter((e) => e.tagName.toLowerCase() === "p");
+    expect(ps.length).toBeGreaterThanOrEqual(2);
+    const secondP = ps[1]!;
+    const secondChildren = childElements(secondP);
+    expect(secondChildren.length).toBe(1);
+    expect(secondChildren[0]!.tagName.toLowerCase()).toBe("i");
   },
   // Foreign content: BOTH <svg> and <math> are in the tree, with
   // their foreign-namespace descendants.
@@ -319,6 +324,23 @@ const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
     const directParas = childElements(body!).filter((e) => e.tagName.toLowerCase() === "p");
     expect(directParas.length).toBeGreaterThanOrEqual(2);
   },
+  // False-positive guard: <select>-looking text in comment / attribute /
+  // <textarea> / <title> must NOT be tokenized as a tag. The proof is
+  // that no <select> / <table> element exists in the parsed tree, the
+  // <textarea> text contains the literal <select> markup, and the
+  // attribute value contains the literal markup.
+  "select-in-raw-text.html": (root) => {
+    expect(findAllElements(root, "select")).toHaveLength(0);
+    expect(findAllElements(root, "table")).toHaveLength(0);
+    const ta = findElement(root, "textarea");
+    expect(ta).toBeDefined();
+    expect(collectTextContent(ta!)).toContain("<select><table>x</table></select>");
+    const ps = findAllElements(root, "p");
+    const withAttr = ps.find((p) =>
+      p.attrs?.some((a) => a.value.includes("<select><table>x</table></select>")),
+    );
+    expect(withAttr).toBeDefined();
+  },
 };
 
 const CORPUS: readonly CorpusRow[] = [
@@ -381,6 +403,12 @@ const CORPUS: readonly CorpusRow[] = [
     family: "select-clean",
     expected: "accept",
     proof: TRIGGER_PROOFS["select-clean.html"]!,
+  },
+  {
+    fixture: "select-in-raw-text.html",
+    family: "select-false-positive-guard",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["select-in-raw-text.html"]!,
   },
   {
     fixture: "textarea-title.html",
@@ -572,6 +600,29 @@ test("select-with-table family is rejected as html_recovery_unsupported", async 
   });
 });
 
+test("two-selects document (table markup in the SECOND select) is rejected through the harness", async () => {
+  // The lexical scan this replaces false-negative ACCEPTED this document:
+  // it found <select> at index 0, looked only between <select> and </select>
+  // of THAT first select, missed the second <select>'s table markup. The
+  // tokenizer-based detector walks every <select> open tag and catches both.
+  // This MUST redden through the real Tier 0 + Chromium harness path, not
+  // just the unit test — the lexical scan passed the unit test too.
+  const path = fixturePath("select-two-selects.html");
+  const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+  const result = parseHtml(bytes);
+  if (result.status !== "error") {
+    throw new Error(`expected parseHtml to reject two-selects; got status=${result.status}`);
+  }
+  expect(result.errors.map((e) => e.code)).toContain("html_recovery_unsupported");
+  measurements.push({
+    fixture: "select-two-selects.html",
+    family: "select-rejected",
+    expected: "reject",
+    outcome: "reject",
+    detail: "table markup inside second <select> rejected as html_recovery_unsupported",
+  });
+});
+
 for (const row of CORPUS) {
   test(`${row.fixture} (${row.family}): trigger proof fires + parse5 matches Chromium`, async () => {
     if (target === undefined) throw new Error("target not initialized");
@@ -672,6 +723,92 @@ for (const row of CORPUS) {
  * `src/validation/tier1/protocol-probe.ts` and run the full corpus —
  * every fixture with a <table> will throw naming tableCount.
  */
+
+// Unused imports — kept for clarity about the harness contract surface.
+interface NegativeDocument {
+  readonly family: RecoveryFamily;
+  readonly source: string;
+  readonly reason: string;
+}
+
+const NEGATIVE_DOCUMENTS: readonly NegativeDocument[] = [
+  {
+    family: "well-formed",
+    source: "<head><title>x</title></head>",
+    reason: "no <body> — bodyElement() must be undefined",
+  },
+  {
+    family: "implicit-elements",
+    source: "<!doctype html><html><body>x</body></html>",
+    reason: "explicit <html><body> — DocumentType is present in tree, not absent",
+  },
+  {
+    family: "implied-end-tags",
+    source: "<p>a</p><ul><li>b</li></ul>",
+    reason: "only one <p> direct child — proof asserts exactly 2",
+  },
+  {
+    family: "foster-parenting",
+    source: "<table><tbody><tr><td>cell</td></tr></tbody></table>",
+    reason: "no misplaced content — proof asserts div/span/p appear BEFORE <table>",
+  },
+  {
+    family: "adoption-agency",
+    source: "<p><b>bold</b><i>italic</i></p><p><b>x</b><i>y</i></p>",
+    reason:
+      "well-formed formatting — proof asserts only the second <p> has reconstructed <b> and <i>",
+  },
+  {
+    family: "foreign-content",
+    source: "<p>no foreign content</p>",
+    reason: "no <svg> or <math> — proof requires both",
+  },
+  {
+    family: "template-content",
+    source: "<p>no template</p>",
+    reason: "no <template> — proof asserts template.content has children",
+  },
+  {
+    family: "character-references",
+    source: "<p>plain text with no entities</p>",
+    reason: "no character references — proof asserts \\u00a9 appears in text",
+  },
+  {
+    family: "noscript-scripting",
+    source: "<p>plain paragraph, no noscript</p>",
+    reason: "no <noscript> — proof asserts noscript has element children",
+  },
+  {
+    family: "select-clean",
+    source: "<p>no select</p>",
+    reason: "no <select> — proof asserts select has option children",
+  },
+  {
+    family: "escapable-raw-text",
+    source: "<textarea>hello world</textarea>",
+    reason: "no literal markup in textarea — proof asserts <b>tags</b> text",
+  },
+  {
+    family: "table-scoped",
+    source: "<table><tbody><tr><td>cell</td></tr></tbody></table>",
+    reason: "no <caption> or <colgroup> — proof requires both inside <table>",
+  },
+  {
+    family: "nested-lists",
+    source: "<ul><li>one</li><li>two</li><li>three</li></ul>",
+    reason: "no nested <ul> — proof asserts >=2 <ul>",
+  },
+  {
+    family: "mathml-annotation-xml",
+    source: "<math><mrow><mi>x</mi></mrow></math>",
+    reason: "no <annotation-xml> — proof asserts annotation-xml has <p>",
+  },
+  {
+    family: "select-false-positive-guard",
+    source: "<p><select><option>a</option></select></p>",
+    reason: "real <select> element — proof asserts zero <select> elements in tree",
+  },
+];
 test("production probeProtocolSnapshot increments tableCount on <table> elements", async () => {
   if (target === undefined) throw new Error("target not initialized");
   // Build a fixture with a <table>, navigate the harness, render the
@@ -735,5 +872,18 @@ test("differential corpus reports agreement for every accepted family", () => {
   expect(acceptedRows.length).toBeGreaterThan(0);
 });
 
-// Unused imports — kept for clarity about the harness contract surface.
-void ({} as SnapshotResponse);
+// Discrimination test for trigger proofs (Must 2). Each proof must FAIL
+// on its NEGATIVE document — a proof that passes on both the positive
+// fixture and the negative document tests nothing. This list is the
+// evidence: it reports the exact negative document per family and the
+// reason it should reject the proof.
+for (const negative of NEGATIVE_DOCUMENTS) {
+  const proofKey = CORPUS.find((row) => row.family === negative.family)?.fixture;
+  test(`trigger proof discriminates: ${negative.family} FAILS on its negative document`, () => {
+    expect(proofKey).toBeDefined();
+    const proof = TRIGGER_PROOFS[proofKey!]!;
+    expect(proof).toBeDefined();
+    const tree = parse(negative.source, { scriptingEnabled: false }) as Parse5Node;
+    expect(() => proof(tree)).toThrow();
+  });
+}

@@ -1,4 +1,4 @@
-import { parse, Tokenizer, type TokenHandler } from "parse5";
+import { parse, Tokenizer, TokenizerMode, type TokenHandler } from "parse5";
 
 import { MAX_HTML_NESTING_DEPTH } from "../../shared/config/limits";
 import type { DiscriminativeError, HtmlStructureCounts } from "../../shared/contracts/validation";
@@ -316,50 +316,86 @@ export function parseHtml(bytes: Uint8Array): HtmlParseResult {
 }
 
 /**
- * Lexical probe for constructs whose recovery behaviour the parse5 prediction
- * cannot guarantee against Chromium's DOMParser. Returns the rejection message
- * for the FIRST unsupported construct found, or null if the bytes survive.
+ * Tokenize the source and detect constructs whose recovery behaviour the
+ * parse5 prediction cannot guarantee against Chromium's DOMParser. Returns
+ * the rejection message for the FIRST unsupported construct found, or null
+ * if the bytes survive.
  *
  * Today the only sanctioned reject is the `<select>` family: parse5 drops
  * table-scoped markup inside select (the WHATWG "in select in table" mode
  * keeps it on Chromium). Shrinking the accepted input set here is cheaper
  * than guaranteeing agreement on a niche construct static HTML reports do
  * not actually need.
+ *
+ * Tokenizing (not scanning) is non-negotiable: a string scan cannot
+ * distinguish a `<select>` tag from the same characters appearing inside
+ * a comment, an attribute value, or a raw-text / RCDATA element's content.
+ * parse5's tree builder normally toggles tokenizer modes; a naive token
+ * detector therefore scores 7/9 and still false-positives on
+ * `<textarea>` / `<title>` content. We toggle the tokenizer mode
+ * ourselves on each RCDATA / RAWTEXT element so the score is 9/9.
  */
+const TABLE_SCOPED_TAGS = new Set([
+  "table",
+  "tr",
+  "td",
+  "th",
+  "tbody",
+  "thead",
+  "tfoot",
+  "caption",
+  "colgroup",
+  "col",
+]);
+
+/** Escapable raw-text: character references ARE decoded, only the matching
+ * end tag is recognized. */
+const RCDATA_ELEMENTS = new Set(["textarea", "title"]);
+
+/** Raw text: no character references decoded, no tags at all (except the
+ * matching end tag). */
+const RAWTEXT_ELEMENTS = new Set(["style", "xmp", "iframe", "noembed", "noframes", "noscript"]);
+
 function detectUnsupportedRecoveryFamilies(text: string): string | null {
-  const lower = text.toLowerCase();
-  const selectAt = lower.indexOf("<select");
-  if (selectAt >= 0 && !textContainsUnrecoverableSelect(lower, selectAt)) {
-    // A bare <select> with no table-scoped markup inside is fine; we
-    // only reject the family when it would actually trigger the
-    // divergent recovery branch.
-    return null;
-  }
-  if (selectAt >= 0) {
-    return "HTML <select> with table-scoped markup diverges from Chromium DOMParser";
-  }
-  return null;
-}
-
-const TABLE_INSIDE_SELECT_TAGS = [
-  "<table",
-  "<tr",
-  "<td",
-  "<th",
-  "<tbody",
-  "<thead",
-  "<tfoot",
-  "<caption",
-  "<colgroup",
-  "<col ",
-  "<col>",
-] as const;
-
-function textContainsUnrecoverableSelect(lower: string, selectAt: number): boolean {
-  const closeAt = lower.indexOf("</select", selectAt);
-  const end = closeAt < 0 ? lower.length : closeAt;
-  for (const tag of TABLE_INSIDE_SELECT_TAGS) {
-    if (lower.indexOf(tag, selectAt) >= 0 && lower.indexOf(tag, selectAt) < end) return true;
-  }
-  return false;
+  let selectDepth = 0;
+  let divergent: string | null = null;
+  let tokenizer: Tokenizer;
+  const handler: TokenHandler = {
+    onComment: () => {},
+    onDoctype: () => {},
+    onStartTag: (token) => {
+      const tag = token.tagName.toLowerCase();
+      if (tag === "select") {
+        selectDepth += 1;
+        return;
+      }
+      if (divergent !== null) return;
+      if (selectDepth > 0 && TABLE_SCOPED_TAGS.has(tag)) {
+        divergent = `HTML <select> contains table-scoped <${tag}>; parse5 drops it, Chromium DOMParser keeps it`;
+        tokenizer.pause();
+        return;
+      }
+      // Toggle tokenizer mode so <select> / table markup inside raw text
+      // is not tokenized as a tag. This is the single detail that
+      // decides 9/9 vs 7/9.
+      if (RCDATA_ELEMENTS.has(tag)) {
+        tokenizer.state = TokenizerMode.RCDATA;
+      } else if (RAWTEXT_ELEMENTS.has(tag)) {
+        tokenizer.state = TokenizerMode.RAWTEXT;
+      }
+    },
+    onEndTag: (token) => {
+      const tag = token.tagName.toLowerCase();
+      if (tag === "select") {
+        if (selectDepth > 0) selectDepth -= 1;
+      }
+    },
+    onEof: () => {},
+    onCharacter: () => {},
+    onNullCharacter: () => {},
+    onWhitespaceCharacter: () => {},
+  };
+  tokenizer = new Tokenizer({}, handler);
+  tokenizer.write(text, true);
+  return divergent;
 }

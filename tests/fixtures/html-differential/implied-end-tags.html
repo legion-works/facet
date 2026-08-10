@@ -2,32 +2,33 @@
 <!--
   Recovery family: implied end tags. The HTML spec closes <p> when a new
   block-level start tag arrives, and closes <li> when the next <li> starts.
-  This fixture proves the recovery fires by stacking several such pairs:
-  a bare <p> followed by another <p>, and <li> items without explicit close.
-  If implied-end-tag recovery is skipped, the inner content becomes nested
-  and Chromium's tree diverges from parse5's.
+
+  This fixture INTENTIONALLY leaves the closing tags off so the recovery
+  has to fire. oxfmt must NEVER rewrite this file; it is parser fixture
+  exempt (see .oxfmtrc.json ignorePatterns). If the file ever shows
+  explicit </p> or </li> tags, oxfmt has rewritten it and the recovery
+  no longer fires — the assertion below is testing the WRONG thing.
+
+  The proof that this family fires is "the parsed tree has 2 <p>
+  elements as direct body children" — but a well-formed document with
+  explicit </p></p> produces the same tree. The trigger proof therefore
+  cannot distinguish implicit from explicit close at the tree level;
+  the discrimination test uses a different-shape negative
+  (single <p> + <ul>) that fails the "exactly 2 <p>" assertion.
 -->
 <html>
   <body>
     <h1>Implied end tags</h1>
-    <p>first paragraph</p>
-    <p>second paragraph (the previous <code>p</code> closes by implication here)</p>
+    <p>first paragraph
+    <p>second paragraph (the previous p closes by implication here)
     <ul>
-      <li>first item</li>
-      <li>second item (the previous <code>li</code> closes by implication here)</li>
-      <li>third item</li>
+      <li>first item
+      <li>second item (the previous li closes by implication here)
+      <li>third item
     </ul>
     <table>
-      <tr>
-        <td>
-          cell one
-          <tr>
-            <td>
-              cell two (the previous <code>tr</code> and <code>td</code> close by implication)
-            </td>
-          </tr>
-        </td>
-      </tr>
+      <tr><td>cell one
+      <tr><td>cell two (the previous tr and td close by implication)
     </table>
   </body>
 </html>

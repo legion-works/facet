@@ -1,37 +1,31 @@
 <!--
   A realistic sloppy report that an LLM or a status generator might emit:
   implicit html/body (no doctype, no head), unclosed paragraphs, an
-  unclosed table with implicit <tr>/<td> closes, and a list where each
-  <li> opens without closing. All three of those recovery families
-  (implicit elements, implied end tags, character references) fire here,
-  so this row exercises the corpus's most common real-world input shape.
+  unclosed table with implicit tr/td closes, and a list where each
+  li opens without closing. Two recovery families (implicit elements,
+  implied end tags) fire here, so this row exercises the corpus's most
+  common real-world input shape.
+
+  This fixture INTENTIONALLY leaves the closing tags off so the
+  recovery has to fire. oxfmt must NEVER rewrite this file; it is
+  parser fixture exempt (see .oxfmtrc.json ignorePatterns). If the
+  file ever shows explicit closing tags, oxfmt has rewritten it and
+  the recovery no longer fires.
 -->
 <h1>Generated weekly status</h1>
-<p>
-  This report was emitted by the team status generator and contains the typical sloppy markup such a
-  tool produces: unclosed paragraphs, a stray table outside any container, and a list without
-  explicit <code>li</code> closes.
-</p>
-<p>First section</p>
-<p>Second section (the previous <code>p</code> is closed by implication here)</p>
+<p>This report was emitted by the team status generator and contains
+   the typical sloppy markup such a tool produces: unclosed paragraphs,
+   a stray table outside any container, and a list without explicit
+   li closes.</p>
+<p>First section
+<p>Second section (the previous p is closed by implication here)
 <table>
-  <tr>
-    <th>name</th>
-    <th>count</th>
-  </tr>
-  <tr>
-    <td>apples</td>
-    <td>
-      14
-      <tr>
-        <td>pears</td>
-        <td>9</td>
-      </tr>
-    </td>
-  </tr>
+  <tr><th>name</th><th>count</th>
+  <tr><td>apples<td>14
+  <tr><td>pears<td>9
 </table>
 <ul>
-  <li>one</li>
-  <li>two</li>
-  <li>three</li>
+  <li>one
+  <li>two
+  <li>three
 </ul>

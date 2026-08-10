@@ -1,23 +1,28 @@
 <!doctype html>
 <!--
-  Recovery family: nested lists. A <ul> directly inside another <li>
-  without an explicit wrapping <li> gets a synthetic <li> inserted so the
-  nested <ul> has a legal parent. Both parsers handle this identically.
-  This fixture proves the recovery fires by nesting <ul> directly inside
-  another <ul> without the intermediate <li>.
+  Recovery family: nested lists. A <ul> directly inside another <ul>
+  (NOT inside an <li>) has a synthetic <li> inserted so the nested <ul>
+  has a legal parent. Both parsers handle this identically.
+
+  This fixture puts the inner <ul> as a DIRECT CHILD of the outer <ul>,
+  not inside an <li> wrapper. The HTML parser inserts a synthetic <li>
+  to wrap the inner <ul>. If the recovery does NOT fire, the inner <ul>
+  would not be a child of an <li>.
+
+  The proof asserts the inner <ul> ends up inside an <li> parent — a
+  well-formed document with <ul> directly inside <li> (the normal
+  shape) has the inner <ul> at li-depth 1, while the recovered
+  document has it at li-depth 2 (inside the synthetic <li>).
 -->
 <html>
   <body>
     <h1>Nested lists probe</h1>
     <ul>
-      <li>
-        outer item one
-        <ul>
-          <li>inner item one</li>
-          <li>inner item two</li>
-        </ul>
-      </li>
-
+      <li>outer item one</li>
+      <ul>
+        <li>inner item one</li>
+        <li>inner item two</li>
+      </ul>
       <li>outer item two</li>
       <li>outer item three</li>
     </ul>

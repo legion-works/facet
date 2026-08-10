@@ -4,5 +4,5 @@
   "useTabs": false,
   "singleQuote": false,
   "semi": true,
-  "ignorePatterns": ["tests/fixtures/html-differential/adoption-agency.html"]
+  "ignorePatterns": ["tests/fixtures/html-differential/"]
 }

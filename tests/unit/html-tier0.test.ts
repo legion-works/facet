@@ -209,4 +209,51 @@ describe("HTML Tier 0 parser", () => {
     expect(result.status).toBe("ok");
     expect(result.html.headingCount).toBe(1);
   });
+
+  // The 9 reviewer's cases for the tokenizer-based <select> detector.
+  // Each must REJECT (case 1) or ACCEPT (cases 2-9) per the reviewer's
+  // measured behavior in production. A regression to the lexical scan
+  // fails cases 1, 4, 5 (false negatives) or 6, 7, 8, 9 (false positives).
+
+  test("REJECTS two-selects with table markup inside the second select", () => {
+    const source =
+      "<select><option>a</option></select><select><table><tr><td>x</td></tr></table></select>";
+    expect(errorCodes(source)).toContain("html_recovery_unsupported");
+  });
+
+  test("ACCEPTS <select> inside an HTML comment (text, not a tag)", () => {
+    const source = "<p><!-- <select><table>x</table></select> --></p>";
+    expect(errorCodes(source)).toEqual([]);
+  });
+
+  test("ACCEPTS <select> inside a double-quoted attribute value", () => {
+    const source = '<div data-x="<select><table>x</table></select>">safe</div>';
+    expect(errorCodes(source)).toEqual([]);
+  });
+
+  test("ACCEPTS <select> inside a single-quoted attribute value", () => {
+    const source = "<div data-x='<select><table>x</table></select>'>safe</div>";
+    expect(errorCodes(source)).toEqual([]);
+  });
+
+  test("ACCEPTS <select> inside <textarea> RCDATA content", () => {
+    const source = "<textarea><select><table><tr><td>x</td></tr></table></select></textarea>";
+    expect(errorCodes(source)).toEqual([]);
+  });
+
+  test("ACCEPTS <select> inside <title> RCDATA content", () => {
+    const source =
+      "<head><title><select><table><tr><td>x</td></tr></table></select></title></head>";
+    expect(errorCodes(source)).toEqual([]);
+  });
+
+  test("ACCEPTS <select> inside <xmp> RAWTEXT content", () => {
+    const source = "<xmp><select><table><tr><td>x</td></tr></table></select></xmp>";
+    expect(errorCodes(source)).toEqual([]);
+  });
+
+  test("ACCEPTS <select> inside <noscript> RAWTEXT content (scripting disabled)", () => {
+    const source = "<noscript><select><table><tr><td>x</td></tr></table></select></noscript>";
+    expect(errorCodes(source)).toEqual([]);
+  });
 });

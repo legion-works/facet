@@ -3,18 +3,26 @@
   Recovery family: escapable raw-text elements. <textarea> and <title> use
   the "escapable raw text" insertion mode where the only markup-like
   construct recognized is the matching end tag — entity references are
-  NOT decoded, character references ARE decoded. Both parsers handle this
-  identically; this fixture proves it by stuffing both with the same
-  character references and special characters.
+  NOT decoded, character references ARE decoded.
+
+  This fixture uses LITERAL <b>tags</b> markup (not escaped) so the
+  proof discriminates RCDATA handling from entity-decoding: in RCDATA,
+  <b> is treated as text (the only markup recognized is the matching
+  end tag). A parser that did NOT enter RCDATA mode would try to parse
+  <b> as an element, and the literal text would be missing.
+
+  Both parsers handle RCDATA identically; the fixture proves the
+  recovery fires by stuffing both elements with the same literal and
+  character-reference content.
 -->
 <html>
   <head>
-    <title>Title with &amp; and &copy; and "quotes"</title>
+    <title>Title with literal <b>tags</b> and "quotes"</title>
   </head>
   <body>
     <h1>Escapable raw text probe</h1>
     <textarea rows="3" cols="40">
-Textarea content with &amp; and &lt;b&gt;tags&lt;/b&gt; shown literally, &copy; decoded.</textarea
+Textarea content with literal <b>tags</b> shown as text, and a character reference &copy; decoded.</textarea
     >
     <ul>
       <li>after-textarea list</li>

@@ -1,0 +1,23 @@
+<!doctype html>
+<!--
+  This fixture is REJECTED. Two <select> elements where the SECOND
+  contains table-scoped markup. The lexical scan that this replaces
+  missed the second <select> and let the document through — a false
+  negative that drove a real divergence through the harness. The
+  tokenizer-based detector catches both selects.
+-->
+<html>
+  <body>
+    <h1>Two selects</h1>
+    <select>
+      <option>a</option>
+    </select>
+    <select>
+      <table>
+        <tbody>
+          <tr><td>divergent cell</td></tr>
+        </tbody>
+      </table>
+    </select>
+  </body>
+</html>
