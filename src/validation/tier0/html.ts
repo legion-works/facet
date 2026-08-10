@@ -68,6 +68,10 @@ function childNodes(node: unknown): readonly unknown[] {
   return isRecord(node) && Array.isArray(node.childNodes) ? node.childNodes : [];
 }
 
+function templateContent(node: unknown): unknown | null {
+  return isRecord(node) && isRecord(node.content) ? node.content : null;
+}
+
 function isHttpsUrl(value: string): boolean {
   try {
     return new URL(value.trim()).protocol.toLowerCase() === "https:";
@@ -115,6 +119,7 @@ function validateUrl(
   value: string,
   counts: HtmlStructureCounts,
   errors: DiscriminativeError[],
+  countStructure: boolean,
 ): void {
   const candidates = attributeName === "srcset" ? srcsetCandidates(value) : [value];
   for (const candidate of candidates) {
@@ -126,53 +131,81 @@ function validateUrl(
       );
       continue;
     }
-    if (tagName === "img" && isHttpsUrl(candidate)) {
+    if (countStructure && (tagName === "img" || tagName === "source") && isHttpsUrl(candidate)) {
       counts.externalImageCount += 1;
     }
   }
 }
 
-function walk(node: unknown, counts: HtmlStructureCounts, errors: DiscriminativeError[]): void {
-  const element = elementDetails(node);
-  if (element !== null) {
-    const { tagName, attrs } = element;
-    if (isHtmlDeniedElement(tagName)) {
-      addError(errors, "html_denied_element", `HTML contains denied <${tagName}> element`);
+function walk(root: unknown, counts: HtmlStructureCounts, errors: DiscriminativeError[]): void {
+  const stack: Array<{ readonly node: unknown; readonly countStructure: boolean }> = [
+    { node: root, countStructure: true },
+  ];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    const element = elementDetails(current.node);
+    if (element !== null) {
+      const { tagName, attrs } = element;
+      if (isHtmlDeniedElement(tagName)) {
+        addError(errors, "html_denied_element", `HTML contains denied <${tagName}> element`);
+      }
+      if (
+        current.countStructure &&
+        (HTML_STRUCTURAL_GROUPS.headings as readonly string[]).includes(tagName)
+      )
+        counts.headingCount += 1;
+      if (
+        current.countStructure &&
+        (HTML_STRUCTURAL_GROUPS.tables as readonly string[]).includes(tagName)
+      )
+        counts.tableCount += 1;
+      if (
+        current.countStructure &&
+        (HTML_STRUCTURAL_GROUPS.lists as readonly string[]).includes(tagName)
+      )
+        counts.listCount += 1;
+      if (
+        current.countStructure &&
+        (HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(tagName)
+      )
+        counts.imageCount += 1;
+      if (
+        current.countStructure &&
+        (HTML_STRUCTURAL_GROUPS.canvases as readonly string[]).includes(tagName)
+      )
+        counts.canvasCount += 1;
+      for (const attribute of attrs) {
+        const name = attribute.name.toLowerCase();
+        if (isHtmlEventHandlerAttribute(name) || isHtmlInlineStyleAttribute(name)) {
+          addError(
+            errors,
+            "html_denied_attribute",
+            `HTML <${tagName}> contains denied ${name} attribute`,
+          );
+          continue;
+        }
+        if (isHtmlUrlBearingAttribute(tagName, name)) {
+          validateUrl(tagName, name, attribute.value, counts, errors, current.countStructure);
+          continue;
+        }
+        if (isHtmlUrlAttributeName(name)) {
+          addError(
+            errors,
+            "html_denied_url_scheme",
+            `HTML <${tagName}> ${name} is not an allowed URL-bearing attribute`,
+          );
+        }
+      }
+      if (tagName === "template") {
+        const content = templateContent(current.node);
+        if (content !== null) stack.push({ node: content, countStructure: false });
+      }
     }
-    if ((HTML_STRUCTURAL_GROUPS.headings as readonly string[]).includes(tagName))
-      counts.headingCount += 1;
-    if ((HTML_STRUCTURAL_GROUPS.tables as readonly string[]).includes(tagName))
-      counts.tableCount += 1;
-    if ((HTML_STRUCTURAL_GROUPS.lists as readonly string[]).includes(tagName))
-      counts.listCount += 1;
-    if ((HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(tagName))
-      counts.imageCount += 1;
-    if ((HTML_STRUCTURAL_GROUPS.canvases as readonly string[]).includes(tagName))
-      counts.canvasCount += 1;
-    for (const attribute of attrs) {
-      const name = attribute.name.toLowerCase();
-      if (isHtmlEventHandlerAttribute(name) || isHtmlInlineStyleAttribute(name)) {
-        addError(
-          errors,
-          "html_denied_attribute",
-          `HTML <${tagName}> contains denied ${name} attribute`,
-        );
-        continue;
-      }
-      if (isHtmlUrlBearingAttribute(tagName, name)) {
-        validateUrl(tagName, name, attribute.value, counts, errors);
-        continue;
-      }
-      if (isHtmlUrlAttributeName(name)) {
-        addError(
-          errors,
-          "html_denied_url_scheme",
-          `HTML <${tagName}> ${name} is not an allowed URL-bearing attribute`,
-        );
-      }
+    const children = childNodes(current.node);
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push({ node: children[index], countStructure: current.countStructure });
     }
   }
-  for (const child of childNodes(node)) walk(child, counts, errors);
 }
 
 export function parseHtml(bytes: Uint8Array): HtmlParseResult {

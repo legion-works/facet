@@ -20,6 +20,7 @@ export const HTML_STRUCTURAL_GROUPS = {
 
 export const HTML_URL_BEARING_ATTRIBUTES = {
   img: ["src", "srcset"],
+  source: ["srcset"],
   a: ["href"],
 } as const;
 
@@ -69,15 +70,17 @@ export function isAllowedHtmlUrl(
   if (element === null || !isHtmlUrlBearingAttribute(element, attributeName)) return false;
   const trimmed = value.trim();
   if (trimmed.startsWith("//")) return false;
-  if (!hasScheme(trimmed)) return true;
-  let scheme: string;
+  let url: URL;
   try {
-    scheme = new URL(trimmed).protocol.toLowerCase();
+    url = new URL(trimmed, "https://facet.invalid/");
   } catch {
     return false;
   }
+  const scheme = url.protocol.toLowerCase();
   switch (element) {
     case "img":
+    case "source":
+      if (scheme === "data:") return isImageDataUrl(url);
       return (HTML_ALLOWED_IMAGE_SCHEMES as readonly string[]).includes(scheme);
     case "a":
       return (HTML_ALLOWED_ANCHOR_SCHEMES as readonly string[]).includes(scheme);
@@ -88,6 +91,18 @@ export function isAllowedHtmlUrl(
   }
 }
 
-function hasScheme(value: string): boolean {
-  return /^[a-z][a-z\d+.-]*:/i.test(value);
+function isImageDataUrl(url: URL): boolean {
+  const comma = url.pathname.indexOf(",");
+  if (comma < 0) return false;
+  const metadata = url.pathname.slice(0, comma);
+  const separator = metadata.indexOf(";");
+  const encodedMediaType = (separator < 0 ? metadata : metadata.slice(0, separator)).trim();
+  let mediaType: string;
+  try {
+    mediaType = decodeURIComponent(encodedMediaType).toLowerCase();
+  } catch {
+    return false;
+  }
+  const parts = mediaType.split("/");
+  return parts.length === 2 && parts[0] === "image" && parts[1]!.length > 0;
 }

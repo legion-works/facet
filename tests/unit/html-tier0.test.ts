@@ -55,6 +55,27 @@ describe("HTML Tier 0 parser", () => {
     });
   });
 
+  test("rejects denied elements nested inside template contents", () => {
+    expect(errorCodes("<template><script>alert(1)</script></template>")).toContain(
+      "html_denied_element",
+    );
+  });
+
+  test("inspects template contents without counting their unrendered structure", () => {
+    expect(parseHtml(bytes('<template><img src="x.png"><h1>t</h1></template>'))).toEqual({
+      status: "ok",
+      html: {
+        rendererRootCount: 1,
+        headingCount: 0,
+        tableCount: 0,
+        listCount: 0,
+        imageCount: 0,
+        canvasCount: 0,
+        externalImageCount: 0,
+      },
+    });
+  });
+
   test.each(["script", "iframe", "object", "embed", "form", "link", "meta", "base", "style"])(
     "rejects %s elements",
     (element) => {
@@ -102,6 +123,43 @@ describe("HTML Tier 0 parser", () => {
     expect(errorCodes(source)).toContain("html_denied_url_scheme");
   });
 
+  test.each([
+    "java\nscript:alert(1)",
+    "java\tscript:alert(1)",
+    "java\rscript:alert(1)",
+    " \tJaVa\nScRiPt:alert(1)\r ",
+    "java&#10;script:alert(1)",
+  ])("rejects canonicalized executable href schemes: %s", (href) => {
+    expect(errorCodes(`<a href="${href}">bad</a>`)).toContain("html_denied_url_scheme");
+  });
+
+  test("permits picture source srcset candidates and counts external image candidates", () => {
+    expect(
+      parseHtml(
+        bytes(
+          '<picture><source srcset="images/local.png 1x, https://cdn.example/two.png 2x"><img src="fallback.png"></picture>',
+        ),
+      ),
+    ).toEqual({
+      status: "ok",
+      html: {
+        rendererRootCount: 1,
+        headingCount: 0,
+        tableCount: 0,
+        listCount: 0,
+        imageCount: 1,
+        canvasCount: 0,
+        externalImageCount: 1,
+      },
+    });
+  });
+
+  test("rejects non-image data media types", () => {
+    expect(errorCodes('<img src="data:text/html;base64,PHNjcmlwdD4=">')).toContain(
+      "html_denied_url_scheme",
+    );
+  });
+
   test("checks every srcset candidate rather than accepting a safe prefix", () => {
     expect(
       errorCodes('<img srcset="data:image/png;base64,AAA 1x, javascript:alert(1) 2x">'),
@@ -117,5 +175,12 @@ describe("HTML Tier 0 parser", () => {
       errors: [{ code: "html_encoding_unsupported" }],
     });
     expect(Array.from(source)).toEqual(before);
+  });
+
+  test("handles deeply nested documents without overflowing the traversal stack", () => {
+    const depth = 20_000;
+    const source = `${"<div>".repeat(depth)}safe${"</div>".repeat(depth)}`;
+
+    expect(parseHtml(bytes(source)).status).toBe("ok");
   });
 });
