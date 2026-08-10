@@ -138,6 +138,23 @@ function bodyElement(root: Parse5Node): DefaultTreeAdapterMap["element"] | undef
   return findElement(html, "body");
 }
 
+// Walks every descendant of root looking for a DocumentType node. Used
+// to discriminate the implicit-elements recovery: when the source
+// omits <!doctype html>, the parser MUST NOT introduce a DocumentType
+// node — so the parsed tree has none. A negative with an explicit
+// declaration has one and the proof fails.
+function hasDocumentType(node: unknown): boolean {
+  if (typeof node !== "object" || node === null) return false;
+  const record = node as Record<string, unknown>;
+  if (record["nodeName"] === "#documentType") return true;
+  const children = record["childNodes"];
+  if (!Array.isArray(children)) return false;
+  for (const child of children) {
+    if (hasDocumentType(child)) return true;
+  }
+  return false;
+}
+
 // Trigger proofs — one per recovery family. Each walks the parse5 tree
 // produced by parseHtml and asserts the named family actually fires.
 const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
@@ -154,13 +171,18 @@ const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
   },
   // Implicit elements: no doctype, no html, no head, no body in the
   // source. The parser MUST insert all four for the document to have
-  // structural counts. The proof is that they exist.
+  // structural counts. The proof discriminates on the recovery itself:
+  // the synthetic <html>/<head>/<body> are present (both forms produce
+  // them), but the source had NO doctype, so the parsed tree carries
+  // NO DocumentType node. A negative with an explicit <!doctype html>
+  // declaration has a DocumentType in the tree and fails this check.
   "implicit-elements.html": (root) => {
     expect(findElement(root, "html")).toBeDefined();
     expect(findElement(root, "head")).toBeDefined();
     const body = bodyElement(root);
     expect(body).toBeDefined();
     expect(childElements(body!).length).toBeGreaterThan(0);
+    expect(hasDocumentType(root)).toBe(false);
   },
   // Implied end tags: three <p> stacked without explicit close must end
   // up as siblings, not nested. The proof is that body has 3+ <p>
@@ -242,15 +264,17 @@ const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
     expect(template.content).toBeDefined();
     expect(childElements(template.content!).length).toBeGreaterThan(0);
   },
-  // Character references: &copy; &amp; etc. decode into text content.
-  // The proof is that the literal entity strings do NOT appear in text
-  // (they were decoded) and the decoded form does.
+  // Character references: &nbsp; &copy; &amp; etc. decode into text
+  // content. The proof discriminates on the DECODING specifically by
+  // asserting U+00A0 (which only enters the text via &nbsp; decoding —
+  // the literal U+00A0 cannot appear as such in source text the parser
+  // would accept, and the non-recovery negative uses a regular space).
   "character-references.html": (root) => {
     const text = collectTextContent(root);
-    expect(text).toContain("\u00a9"); // &copy;
-    expect(text).toContain("&"); // decoded &amp;
+    expect(text).toContain("\u00a0"); // &nbsp; → non-breaking space
+    expect(text).toContain("\u00a9"); // &copy; → copyright sign
+    expect(text).not.toContain("&nbsp;");
     expect(text).not.toContain("&copy;");
-    expect(text).not.toContain("&amp;");
   },
   // <noscript> scripting flag: with scriptingEnabled=false (matching
   // Chromium's DOMParser), <noscript> contents parse as elements.
@@ -272,15 +296,19 @@ const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
     const options = childElements(selects[0]!).filter((e) => e.tagName.toLowerCase() === "option");
     expect(options.length).toBeGreaterThanOrEqual(2);
   },
-  // Escapable raw-text: <textarea> and <title> have RAWTEXT/RCDATA
-  // insertion mode where the only markup-like construct recognized is
-  // the matching end tag. The proof is that their text content
-  // includes literal <b>tags</b> rather than a parsed <b> element.
+  // Escapable raw-text: <textarea> and <title> have RCDATA insertion
+  // mode where the only markup-like construct recognized is the matching
+  // end tag. The proof discriminates on the recovery: literal <b>tags</b>
+  // survives as text (RCDATA, not parsed), and character references
+  // ARE decoded (RCDATA, not RAWTEXT) — so the textarea text contains
+  // both "<b>tags</b>" AND "\u00a9" (decoded from &copy;). A negative
+  // with plain text and no entities satisfies neither assertion.
   "textarea-title.html": (root) => {
     const textareas = findAllElements(root, "textarea");
     expect(textareas.length).toBe(1);
     const taText = collectTextContent(textareas[0]!);
     expect(taText).toContain("<b>tags</b>");
+    expect(taText).toContain("\u00a9"); // decoded &copy;
     const titles = findAllElements(root, "title");
     expect(titles.length).toBe(1);
     const titleText = collectTextContent(titles[0]!);
@@ -296,12 +324,24 @@ const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
     expect(findElement(table, "caption")).toBeDefined();
     expect(findElement(table, "colgroup")).toBeDefined();
   },
-  // Nested lists: a <ul> directly inside another <li> (or even another
-  // <ul>) is made legal by inserting a synthetic <li>. The proof is
-  // that the inner <ul> ends up inside the outer list.
+  // Nested lists: a <ul> directly inside another <ul> (NOT inside an
+  // <li>) is foster-reparented by the parser: the inner <ul> ends up
+  // as a direct sibling of the outer <li> children of the outer <ul>,
+  // NOT nested inside an <li>. The proof discriminates on the recovery:
+  // the outer <ul> has FOUR direct children (li, ul, li, li), proving
+  // the inner <ul> was reparented to the outer <ul>'s child list. A
+  // well-formed negative with <ul> properly nested inside <li> has
+  // the inner <ul> as a DESCENDANT of an <li>, never a direct child
+  // of the outer <ul>, and yields three direct children only.
   "nested-lists.html": (root) => {
     const uls = findAllElements(root, "ul");
-    expect(uls.length).toBeGreaterThanOrEqual(2);
+    expect(uls.length).toBe(2);
+    const outer = uls[0]!;
+    const directUlChildren = childElements(outer).filter((e) => e.tagName.toLowerCase() === "ul");
+    expect(directUlChildren.length).toBe(1);
+    // The outer <ul> has four direct children: li, ul, li, li — the
+    // inner <ul> is reparented to be a sibling of the outer <li>s.
+    expect(childElements(outer).length).toBe(4);
   },
   // MathML annotation-xml breakout: an <annotation-xml encoding="text/html">
   // re-enters HTML mode for its contents. The proof is that the
@@ -342,6 +382,128 @@ const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
     expect(withAttr).toBeDefined();
   },
 };
+
+/**
+ * Per-family non-recovering negative documents.
+ *
+ * The trigger proof for a family must FAIL on this list. Each negative
+ * KEEPS the construct the recovery would have acted on (a `<select>`
+ * stays a `<select>`, an unclosed `<p>` stays an unclosed `<p>`, an
+ * `<annotation-xml>` stays an `<annotation-xml>`), but presents it in a
+ * shape where the recovery does not fire — a legal alternative, an
+ * explicit close, a different encoding, or the empty case.
+ *
+ * The previous design used negatives that REMOVED the construct
+ * entirely (e.g. `<p>no template</p>` for `template-content`). Those
+ * negatives proved only that the proof needs the ELEMENT to exist,
+ * not that the proof tracks the RECOVERY itself. A proof that asserts
+ * "template.content has children" will trivially fail on a document
+ * with no template — for the wrong reason. Keeping the construct and
+ * changing its shape is what makes the discrimination land on the
+ * recovery behavior, not on element presence.
+ *
+ * Where the parsed tree is identical between recovery and explicit
+ * forms (implied-end-tags is the canonical case: `<p>x<p>y</p>` parses
+ * to `<p>x</p><p>y</p>` either way), the negative uses a SHAPE change
+ * that the proof's discriminator rejects — fewer elements, a wrong
+ * count, or the absence of the recovered output. The discrimination
+ * is the proof's exact assertion, never an unrelated structural check.
+ */
+interface NegativeDocument {
+  readonly family: RecoveryFamily;
+  readonly source: string;
+  readonly reason: string;
+}
+
+const NEGATIVE_DOCUMENTS: readonly NegativeDocument[] = [
+  {
+    family: "well-formed",
+    source: "<head><title>x</title></head>",
+    reason: "construct kept but body missing — proof asserts bodyElement() is defined",
+  },
+  {
+    family: "implicit-elements",
+    source: "<!doctype html><html><body>x</body></html>",
+    reason: "construct kept with explicit skeleton — proof asserts NO DocumentType node in tree",
+  },
+  {
+    family: "implied-end-tags",
+    source: "<p>a</p><ul><li>b</li></ul>",
+    reason:
+      "construct kept with explicit close but only one <p> — proof asserts exactly 2 siblings",
+  },
+  {
+    family: "foster-parenting",
+    source: "<table><tbody><tr><td><div>a</div><span>b</span><p>c</p></td></tr></tbody></table>",
+    reason:
+      "div/span/p present but legally nested inside <td> — no foster parenting fires; proof asserts they appear BEFORE <table>",
+  },
+  {
+    family: "adoption-agency",
+    source: "<p><b>bold</b><i>italic</i></p><p><b>x</b><i>y</i></p>",
+    reason:
+      "construct kept with properly nested formatting — proof asserts the second <p> has only ONE direct child, an <i> from adoption-agency reconstruction",
+  },
+  {
+    family: "foreign-content",
+    source: "<svg></svg><math></math>",
+    reason:
+      "<svg> and <math> kept but empty — proof asserts foreign-namespace descendants (circle, mrow)",
+  },
+  {
+    family: "template-content",
+    source: "<div><h2>plain visible heading</h2></div>",
+    reason:
+      "construct kept as a plain <div> in place of the <template> — proof asserts template.content has children, but no template exists here",
+  },
+  {
+    family: "character-references",
+    source: "<p>plain text with no entities, only regular spaces between words</p>",
+    reason:
+      "construct kept as plain text — proof asserts U+00A0 (from &nbsp;) appears in text; literal source cannot supply U+00A0",
+  },
+  {
+    family: "noscript-scripting",
+    source: "<noscript>just text, no element children</noscript>",
+    reason:
+      "<noscript> kept but contains only text — proof asserts noscript has element children from scripting-disabled parsing",
+  },
+  {
+    family: "select-clean",
+    source: "<select></select>",
+    reason: "<select> kept but empty — proof asserts option children exist",
+  },
+  {
+    family: "escapable-raw-text",
+    source: "<textarea>plain text without entities or literal markup</textarea>",
+    reason:
+      "RCDATA construct kept but content is plain — proof asserts literal <b>tags</b> AND decoded &copy; in textarea text",
+  },
+  {
+    family: "table-scoped",
+    source: "<table><tbody><tr><td>cell</td></tr></tbody></table>",
+    reason: "<table> kept but no caption/colgroup — proof asserts both are inside the table",
+  },
+  {
+    family: "nested-lists",
+    source: "<ul><li>one<ul><li>two</li></ul></li><li>three</li><li>four</li></ul>",
+    reason:
+      "inner <ul> properly nested inside <li> — proof asserts the outer <ul> has FOUR direct children including the inner <ul> as a sibling",
+  },
+  {
+    family: "mathml-annotation-xml",
+    source:
+      '<math><mrow><annotation-xml encoding="application/mathml+xml"><mrow><mi>x</mi></mrow></annotation-xml></mrow></math>',
+    reason:
+      "<annotation-xml> kept with a MathML-mode encoding — content stays in MathML, so no <p> HTML element appears; proof asserts <p> descendant",
+  },
+  {
+    family: "select-false-positive-guard",
+    source: "<p><select><option>a</option></select></p>",
+    reason:
+      "real <select> element present — proof asserts zero <select> elements in the parsed tree",
+  },
+];
 
 const CORPUS: readonly CorpusRow[] = [
   {
@@ -724,91 +886,6 @@ for (const row of CORPUS) {
  * every fixture with a <table> will throw naming tableCount.
  */
 
-// Unused imports — kept for clarity about the harness contract surface.
-interface NegativeDocument {
-  readonly family: RecoveryFamily;
-  readonly source: string;
-  readonly reason: string;
-}
-
-const NEGATIVE_DOCUMENTS: readonly NegativeDocument[] = [
-  {
-    family: "well-formed",
-    source: "<head><title>x</title></head>",
-    reason: "no <body> — bodyElement() must be undefined",
-  },
-  {
-    family: "implicit-elements",
-    source: "<!doctype html><html><body>x</body></html>",
-    reason: "explicit <html><body> — DocumentType is present in tree, not absent",
-  },
-  {
-    family: "implied-end-tags",
-    source: "<p>a</p><ul><li>b</li></ul>",
-    reason: "only one <p> direct child — proof asserts exactly 2",
-  },
-  {
-    family: "foster-parenting",
-    source: "<table><tbody><tr><td>cell</td></tr></tbody></table>",
-    reason: "no misplaced content — proof asserts div/span/p appear BEFORE <table>",
-  },
-  {
-    family: "adoption-agency",
-    source: "<p><b>bold</b><i>italic</i></p><p><b>x</b><i>y</i></p>",
-    reason:
-      "well-formed formatting — proof asserts only the second <p> has reconstructed <b> and <i>",
-  },
-  {
-    family: "foreign-content",
-    source: "<p>no foreign content</p>",
-    reason: "no <svg> or <math> — proof requires both",
-  },
-  {
-    family: "template-content",
-    source: "<p>no template</p>",
-    reason: "no <template> — proof asserts template.content has children",
-  },
-  {
-    family: "character-references",
-    source: "<p>plain text with no entities</p>",
-    reason: "no character references — proof asserts \\u00a9 appears in text",
-  },
-  {
-    family: "noscript-scripting",
-    source: "<p>plain paragraph, no noscript</p>",
-    reason: "no <noscript> — proof asserts noscript has element children",
-  },
-  {
-    family: "select-clean",
-    source: "<p>no select</p>",
-    reason: "no <select> — proof asserts select has option children",
-  },
-  {
-    family: "escapable-raw-text",
-    source: "<textarea>hello world</textarea>",
-    reason: "no literal markup in textarea — proof asserts <b>tags</b> text",
-  },
-  {
-    family: "table-scoped",
-    source: "<table><tbody><tr><td>cell</td></tr></tbody></table>",
-    reason: "no <caption> or <colgroup> — proof requires both inside <table>",
-  },
-  {
-    family: "nested-lists",
-    source: "<ul><li>one</li><li>two</li><li>three</li></ul>",
-    reason: "no nested <ul> — proof asserts >=2 <ul>",
-  },
-  {
-    family: "mathml-annotation-xml",
-    source: "<math><mrow><mi>x</mi></mrow></math>",
-    reason: "no <annotation-xml> — proof asserts annotation-xml has <p>",
-  },
-  {
-    family: "select-false-positive-guard",
-    source: "<p><select><option>a</option></select></p>",
-    reason: "real <select> element — proof asserts zero <select> elements in tree",
-  },
-];
 test("production probeProtocolSnapshot increments tableCount on <table> elements", async () => {
   if (target === undefined) throw new Error("target not initialized");
   // Build a fixture with a <table>, navigate the harness, render the
@@ -874,9 +951,11 @@ test("differential corpus reports agreement for every accepted family", () => {
 
 // Discrimination test for trigger proofs (Must 2). Each proof must FAIL
 // on its NEGATIVE document — a proof that passes on both the positive
-// fixture and the negative document tests nothing. This list is the
-// evidence: it reports the exact negative document per family and the
-// reason it should reject the proof.
+// fixture and the negative document tests nothing. NEGATIVE_DOCUMENTS
+// (defined alongside TRIGGER_PROOFS earlier in this file) keeps the
+// construct for every family but presents it in a shape where the
+// recovery does not fire, so each failure is on the recovery itself,
+// not on element presence.
 for (const negative of NEGATIVE_DOCUMENTS) {
   const proofKey = CORPUS.find((row) => row.family === negative.family)?.fixture;
   test(`trigger proof discriminates: ${negative.family} FAILS on its negative document`, () => {
