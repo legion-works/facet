@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { startFacetService } from "../../src/service/server";
+import { openDatabase } from "../../src/service/store/database";
 import { CommandResultSchema } from "../../src/shared/contracts/commands";
 import { FACET_SCHEMA_VERSION } from "../../src/shared/contracts/envelope";
 import type {
@@ -145,6 +146,36 @@ function tier1(status: Tier1Result["status"]): Tier1Runner {
     screenshotPath: null,
     consolePath: null,
   });
+}
+
+function evidenceTier1(input: {
+  evidenceDir: string;
+  screenshot: Uint8Array | null;
+  calls: { value: number };
+  paths: string[];
+}): Tier1Runner {
+  return async (t1Input: Tier1Input): Promise<Tier1Result> => {
+    input.calls.value += 1;
+    const screenshot = input.screenshot;
+    const runDir = join(input.evidenceDir, "stub", t1Input.revisionSha, crypto.randomUUID());
+    mkdirSync(runDir, { recursive: true });
+    const screenshotPath = screenshot === null ? null : join(runDir, "screenshot.png");
+    if (screenshotPath !== null) {
+      if (screenshot === null) throw new Error("missing screenshot bytes");
+      writeFileSync(screenshotPath, screenshot);
+      input.paths.push(screenshotPath);
+    }
+    return {
+      tier: 1,
+      status: "ok",
+      artifactId: t1Input.artifactType,
+      revisionSha: t1Input.revisionSha,
+      expected: t1Input.lexical,
+      observed: OBSERVED,
+      screenshotPath,
+      consolePath: null,
+    };
+  };
 }
 
 function tier0(status: Tier0Result["status"]): Tier0Runner {
@@ -293,6 +324,186 @@ describe("source export", () => {
       } finally {
         await env.service.stop();
       }
+    }
+  });
+});
+
+describe("render export", () => {
+  test("render export returns the stored screenshot bytes without rerendering", async () => {
+    const envDir = join(scratchRoot, "render-success");
+    const screenshot = new Uint8Array([137, 80, 78, 71, 0, 1, 2, 3]);
+    const calls = { value: 0 };
+    const paths: string[] = [];
+    const env = await startEnv({
+      envDir,
+      tier1Runner: evidenceTier1({
+        evidenceDir: join(envDir, "evidence"),
+        screenshot,
+        calls,
+        paths,
+      }),
+    });
+    try {
+      const artifactId = await createArtifact(env, "render-success");
+      const published = await publish(env, artifactId, SOURCE_ONE);
+      expect(calls.value).toBe(1);
+      const source = await result(env, {
+        command: "export",
+        artifactId,
+        revisionSha: published.revisionSha,
+        format: "source",
+      });
+      const rendered = await result(env, {
+        command: "export",
+        artifactId,
+        revisionSha: published.revisionSha,
+        format: "render",
+      });
+      expect(Buffer.from(rendered.bytes as string, "base64")).toEqual(Buffer.from(screenshot));
+      expect(rendered.sidecar.format).toBe("render");
+      expect(rendered.sidecar.verdict.tier).toBe(1);
+      expect(rendered.sidecar.verdict.revisionSha).toBe(published.revisionSha);
+      expect(rendered.sidecar.verdict.status).toBe("ok");
+      expect(source.sidecar.format).toBe("source");
+
+      const screenshotPath = paths[0];
+      if (screenshotPath === undefined) throw new Error("missing stub screenshot path");
+      rmSync(screenshotPath);
+      const missing = await request(env, {
+        command: "export",
+        artifactId,
+        revisionSha: published.revisionSha,
+        format: "render",
+      });
+      expect(missing.status).toBe(404);
+      expect((await missing.json()).error.code).toBe("evidence_unavailable");
+      expect(calls.value).toBe(1);
+    } finally {
+      await env.service.stop();
+    }
+  });
+
+  test("a Tier 1 run without screenshot evidence returns typed evidence_unavailable", async () => {
+    const envDir = join(scratchRoot, "render-null");
+    const env = await startEnv({
+      envDir,
+      tier1Runner: evidenceTier1({
+        evidenceDir: join(envDir, "evidence"),
+        screenshot: null,
+        calls: { value: 0 },
+        paths: [],
+      }),
+    });
+    try {
+      const artifactId = await createArtifact(env, "render-null");
+      const revisionSha = (await publish(env, artifactId, SOURCE_ONE)).revisionSha;
+      const response = await request(env, {
+        command: "export",
+        artifactId,
+        revisionSha,
+        format: "render",
+      });
+      expect(response.status).toBe(404);
+      expect((await response.json()).error.code).toBe("evidence_unavailable");
+    } finally {
+      await env.service.stop();
+    }
+  });
+
+  test("no Tier 1 run, including L3 publish, returns typed evidence_unavailable", async () => {
+    for (const options of [{}, { insecureLevel: 3 as const }]) {
+      const env = await startEnv(options);
+      try {
+        const artifactId = await createArtifact(
+          env,
+          `render-no-tier1-${options.insecureLevel ?? 0}`,
+        );
+        const revisionSha = (await publish(env, artifactId, SOURCE_ONE)).revisionSha;
+        const response = await request(env, {
+          command: "export",
+          artifactId,
+          revisionSha,
+          format: "render",
+        });
+        expect(response.status).toBe(404);
+        expect((await response.json()).error.code).toBe("evidence_unavailable");
+      } finally {
+        await env.service.stop();
+      }
+    }
+  });
+
+  test("a retained Tier 1 row with a deleted screenshot still returns typed evidence_unavailable", async () => {
+    const envDir = join(scratchRoot, "render-retained");
+    const paths: string[] = [];
+    const env = await startEnv({
+      envDir,
+      tier1Runner: evidenceTier1({
+        evidenceDir: join(envDir, "evidence"),
+        screenshot: new Uint8Array([1, 2, 3]),
+        calls: { value: 0 },
+        paths,
+      }),
+    });
+    let active = env;
+    try {
+      const artifactId = await createArtifact(active, "render-retained");
+      const revisionSha = (await publish(active, artifactId, SOURCE_ONE)).revisionSha;
+      const screenshotPath = paths[0];
+      if (screenshotPath === undefined) throw new Error("missing stub screenshot path");
+      await active.service.stop();
+      rmSync(screenshotPath);
+      const db = openDatabase(active.dbPath);
+      const revision = db
+        .query("SELECT id FROM revisions WHERE artifact_id = ? AND sha256 = ?")
+        .get(artifactId, revisionSha) as { id: string } | null;
+      if (revision === null) throw new Error("missing seeded revision");
+      db.query("UPDATE render_runs SET retained = 1 WHERE revision_id = ? AND tier = 1").run(
+        revision.id,
+      );
+      db.close();
+      active = await startEnv({ envDir });
+      const response = await request(active, {
+        command: "export",
+        artifactId,
+        revisionSha,
+        format: "render",
+      });
+      expect(response.status).toBe(404);
+      expect((await response.json()).error.code).toBe("evidence_unavailable");
+    } finally {
+      await active.service.stop();
+    }
+  });
+
+  test("an evicted Tier 1 screenshot returns typed evidence_unavailable", async () => {
+    const envDir = join(scratchRoot, "render-evicted");
+    const env = await startEnv({
+      envDir,
+      tier1Runner: evidenceTier1({
+        evidenceDir: join(envDir, "evidence"),
+        screenshot: new Uint8Array([4, 5, 6]),
+        calls: { value: 0 },
+        paths: [],
+      }),
+    });
+    try {
+      const artifactId = await createArtifact(env, "render-evicted");
+      let evictedRevisionSha = "";
+      for (let index = 0; index < 11; index += 1) {
+        const revision = await publish(env, artifactId, new Uint8Array([index, 42]));
+        if (index === 0) evictedRevisionSha = revision.revisionSha;
+      }
+      const response = await request(env, {
+        command: "export",
+        artifactId,
+        revisionSha: evictedRevisionSha,
+        format: "render",
+      });
+      expect(response.status).toBe(404);
+      expect((await response.json()).error.code).toBe("evidence_unavailable");
+    } finally {
+      await env.service.stop();
     }
   });
 });

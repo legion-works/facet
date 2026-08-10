@@ -42,7 +42,7 @@ import { FacetError } from "../shared/errors/facet-error";
 import { SOURCE_CAP_BYTES, TIER1_PINNED_VERSION } from "../shared/config/limits";
 import { computeLexicalExpectations } from "./lexical/expectations";
 import { enrichVerdict, insecureMarker } from "./verdict-enrichment";
-import { exportStoredSource } from "./export";
+import { exportStoredRender, exportStoredSource } from "./export";
 
 import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
@@ -548,7 +548,9 @@ export async function dispatch(
       };
     }
     case "export": {
-      return exportStoredSource({ repository: deps.repository, command, requestId });
+      return command.format === "render"
+        ? exportStoredRender({ repository: deps.repository, command, requestId })
+        : exportStoredSource({ repository: deps.repository, command, requestId });
     }
     default: {
       const exhaustive: never = command;

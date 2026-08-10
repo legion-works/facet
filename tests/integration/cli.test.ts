@@ -30,6 +30,9 @@ import { join, resolve } from "node:path";
 
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 import { FacetError } from "../../src/shared/errors/facet-error";
+import { ArtifactRepository } from "../../src/service/store/repository";
+import { openDatabase } from "../../src/service/store/database";
+import { runMigrations } from "../../src/service/store/migrations";
 
 import {
   runCli,
@@ -104,6 +107,66 @@ function makeEnv(label: string): { env: NodeJS.ProcessEnv; home: string } {
       FACET_HOME: home,
     },
   };
+}
+
+const SEEDED_OBSERVED = {
+  rendererRootSvgCount: 1,
+  graphCount: 0,
+  mermaidNodeCount: 0,
+  visibleSvgCount: 1,
+  opaqueRegionCount: 0,
+  errorCount: 0,
+};
+
+function seedRenderEvidence(
+  home: string,
+  screenshot: Uint8Array | null,
+): {
+  artifactId: string;
+  revisionSha: string;
+  screenshotPath: string | null;
+} {
+  const dbPath = join(home, "db", "facet.sqlite");
+  const evidenceDir = join(home, "evidence");
+  mkdirSync(evidenceDir, { recursive: true });
+  const db = openDatabase(dbPath);
+  runMigrations(db);
+  try {
+    const repository = new ArtifactRepository(db, { evidenceRoot: evidenceDir });
+    const project = repository.createProject({ projectRoot: "/facet" });
+    const artifact = repository.createArtifact({
+      projectId: project.id,
+      slug: "seeded-render",
+      title: "Seeded render",
+    });
+    const source = new Uint8Array([9, 8, 7, 6]);
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source,
+    });
+    const seededScreenshot = screenshot;
+    const screenshotPath =
+      seededScreenshot === null
+        ? null
+        : join(evidenceDir, "seeded", revision.sha256, "screenshot.png");
+    if (screenshotPath !== null) {
+      if (seededScreenshot === null) throw new Error("missing screenshot bytes");
+      mkdirSync(join(evidenceDir, "seeded", revision.sha256), { recursive: true });
+      writeFileSync(screenshotPath, seededScreenshot);
+    }
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: SEEDED_OBSERVED,
+      screenshotPath,
+    });
+    return { artifactId: artifact.id, revisionSha: revision.sha256, screenshotPath };
+  } finally {
+    db.close();
+  }
 }
 
 /**
@@ -625,6 +688,75 @@ describe("cli contract — lazy spawn", () => {
 });
 
 describe("cli contract — wire", () => {
+  test("render export reads seeded Tier 1 screenshot bytes and defaults to .png", async () => {
+    const { env, home } = makeEnv("render-export");
+    const screenshot = new Uint8Array([137, 80, 78, 71, 11, 12, 13]);
+    const seeded = seedRenderEvidence(home, screenshot);
+    const originalCwd = process.cwd();
+    const exportCwd = join(scratchRoot, `render-export-cwd-${crypto.randomUUID()}`);
+    mkdirSync(exportCwd, { recursive: true });
+    process.chdir(exportCwd);
+    try {
+      const io = makeIo();
+      const exit = await runCli(
+        ["export", seeded.artifactId, "--revision", seeded.revisionSha, "--format", "render"],
+        { ...io, env },
+      );
+      expect(exit.code).toBe(0);
+      const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+      expect(envelope.ok).toBe(true);
+      if (!envelope.ok) throw new Error("render export must succeed");
+      const expectedPath = join(exportCwd, `seeded-render-${seeded.revisionSha.slice(0, 7)}.png`);
+      const expectedSidecarPath = join(
+        exportCwd,
+        `seeded-render-${seeded.revisionSha.slice(0, 7)}.facet.json`,
+      );
+      expect(readFileSync(expectedPath)).toEqual(Buffer.from(screenshot));
+      expect(JSON.parse(readFileSync(expectedSidecarPath, "utf8"))).toEqual(
+        envelope.data["sidecar"],
+      );
+      expect((envelope.data["sidecar"] as { format: string }).format).toBe("render");
+      expect((envelope.data["sidecar"] as { verdict: { tier: number } }).verdict.tier).toBe(1);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  test("render export missing evidence emits one typed envelope and writes no files", async () => {
+    const { env, home } = makeEnv("render-export-missing");
+    const seeded = seedRenderEvidence(home, null);
+    const originalCwd = process.cwd();
+    const exportCwd = join(scratchRoot, `render-export-missing-cwd-${crypto.randomUUID()}`);
+    mkdirSync(exportCwd, { recursive: true });
+    process.chdir(exportCwd);
+    try {
+      const outputPath = join(exportCwd, "missing.png");
+      const io = makeIo();
+      const exit = await runCli(
+        [
+          "export",
+          seeded.artifactId,
+          "--revision",
+          seeded.revisionSha,
+          "--format",
+          "render",
+          "--out",
+          outputPath,
+        ],
+        { ...io, env },
+      );
+      expect(exit.code).toBe(0);
+      expect(io.stdoutBuf.value.trim().split("\n")).toHaveLength(1);
+      const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+      expect(envelope.ok).toBe(false);
+      if (!envelope.ok) expect(envelope.error.code).toBe("evidence_unavailable");
+      expect(existsSync(outputPath)).toBe(false);
+      expect(existsSync(outputPath.replace(/\.png$/, ".facet.json"))).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   test("successful export always writes the mandatory sidecar and published bytes as one envelope", async () => {
     const { env } = makeEnv("export-files");
     const io = makeIo();
