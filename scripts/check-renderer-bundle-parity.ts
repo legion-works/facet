@@ -12,14 +12,14 @@ const EXPECTED_RENDERERS: Readonly<Record<ArtifactType, readonly string[]>> = {
   mermaid: ["mermaid.ts", "svg.ts"],
   svg: ["svg.ts"],
   chart: ["chart.ts", "svg.ts"],
-  html: ["html-stub.ts"],
+  html: ["html.ts"],
 };
 const EXPECTED_INITIAL_RENDERERS: Readonly<Record<ArtifactType, readonly string[]>> = {
   markdown: ["markdown.ts"],
   mermaid: ["mermaid.ts", "svg.ts"],
   svg: ["svg.ts"],
   chart: ["chart.ts", "svg.ts"],
-  html: ["html-stub.ts"],
+  html: ["html.ts"],
 };
 
 interface BuildMetafileOutput {

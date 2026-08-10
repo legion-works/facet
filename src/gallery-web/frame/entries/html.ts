@@ -1,5 +1,6 @@
 import { startGalleryFrame } from "../bootstrap";
-import { renderHtmlStub } from "../renderers/html-stub";
+import "../styles/html-vendored.css";
+import { renderHtml } from "../renderers/html";
 import { createRendererRegistry } from "../renderers/registry";
 
-startGalleryFrame(createRendererRegistry([["html", renderHtmlStub]]));
+startGalleryFrame(createRendererRegistry([["html", renderHtml]]));

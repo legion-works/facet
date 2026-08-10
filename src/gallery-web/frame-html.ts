@@ -35,8 +35,12 @@ export function buildFrameAttributes(src = "/gallery/frame"): FrameAttributes {
   };
 }
 
-export function buildFrameDocument(options: { nonce: string; bootstrapUrl: string }): string {
-  const { nonce, bootstrapUrl } = options;
+export function buildFrameDocument(options: {
+  nonce: string;
+  bootstrapUrl: string;
+  vendoredStyles?: string;
+}): string {
+  const { nonce, bootstrapUrl, vendoredStyles = "" } = options;
   // The script tag is `type="module"` on purpose: Vega's bundled source
   // declares `function addEventListener(...)` at the top level, and a
   // classic `<script>` would hoist that into `window.addEventListener`,
@@ -74,6 +78,9 @@ export function buildFrameDocument(options: { nonce: string; bootstrapUrl: strin
     `#artifact blockquote{border-left:3px solid #444a73;margin:0 0 0 8px;padding-left:12px;color:#a9b8e8}` +
     `#artifact hr{border:0;border-top:1px solid #2f334d}` +
     `</style>` +
+    (vendoredStyles.length === 0
+      ? ""
+      : `<style>${vendoredStyles.replace(/<\/style/gi, "<\\/style")}</style>`) +
     "</head><body>" +
     `<main id="artifact"></main>` +
     `<script type="module" nonce="${nonce}" src="${escapedBootstrapUrl}"></script>` +

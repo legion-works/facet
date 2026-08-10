@@ -43,7 +43,7 @@ describe("gallery and Tier 1 renderer bundle parity", () => {
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({
       chart: ["chart.ts", "svg.ts"],
-      html: ["html-stub.ts"],
+      html: ["html.ts"],
       markdown: ["markdown.ts", "mermaid.ts", "svg.ts"],
       mermaid: ["mermaid.ts", "svg.ts"],
       svg: ["svg.ts"],
@@ -51,9 +51,9 @@ describe("gallery and Tier 1 renderer bundle parity", () => {
   });
 
   test("the check turns red when a verifier bundle uses the wrong renderer entry", async () => {
-    const result = await runParityCheck({ parityMutation: "markdown=chart" });
+    const result = await runParityCheck({ parityMutation: "html=chart" });
     expect(result.exitCode).not.toBe(0);
-    expect(result.stderr).toContain("renderer bundle parity mismatch for markdown");
+    expect(result.stderr).toContain("renderer bundle parity mismatch for html");
   });
 
   test("the check turns red when plain markdown statically reaches Mermaid", async () => {

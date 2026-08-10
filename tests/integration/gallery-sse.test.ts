@@ -482,7 +482,7 @@ describe("gallery shell — no zod in frame bundle (boundary check stays clean)"
     "../../src/gallery-web/frame/renderers/mermaid.ts",
     "../../src/gallery-web/frame/renderers/svg.ts",
     "../../src/gallery-web/frame/renderers/chart.ts",
-    "../../src/gallery-web/frame/renderers/html-stub.ts",
+    "../../src/gallery-web/frame/renderers/html.ts",
   ];
   for (const relative of FRAME_FILES) {
     test(`${relative.split("/").pop()} has no zod references`, async () => {

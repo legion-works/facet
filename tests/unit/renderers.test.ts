@@ -127,26 +127,12 @@ let registry: typeof import("../../src/gallery-web/frame/renderers/registry");
 let markdown: typeof import("../../src/gallery-web/frame/renderers/markdown");
 let svg: typeof import("../../src/gallery-web/frame/renderers/svg");
 let chart: typeof import("../../src/gallery-web/frame/renderers/chart");
-let htmlStub: typeof import("../../src/gallery-web/frame/renderers/html-stub");
 
 beforeAll(async () => {
   registry = await import("../../src/gallery-web/frame/renderers/registry");
   markdown = await import("../../src/gallery-web/frame/renderers/markdown");
   svg = await import("../../src/gallery-web/frame/renderers/svg");
   chart = await import("../../src/gallery-web/frame/renderers/chart");
-  htmlStub = await import("../../src/gallery-web/frame/renderers/html-stub");
-});
-
-describe("HTML renderer placeholder", () => {
-  test("fails closed with html_renderer_not_implemented until the HTML renderer lands", async () => {
-    await expect(
-      htmlStub.renderHtmlStub(
-        { container: freshContainer() },
-        new TextEncoder().encode("<main>HTML</main>"),
-        "svg",
-      ),
-    ).rejects.toMatchObject({ code: "html_renderer_not_implemented" });
-  });
 });
 
 describe("markdown renderer — raw HTML is DATA, never elements", () => {
@@ -581,7 +567,7 @@ describe("renderer registry — dispatch contract", () => {
     });
   });
 
-  test("registry resolves the four implemented types", () => {
+  test("registry resolves the five implemented types", () => {
     const reg = registry.createRendererRegistry(
       registry.ARTIFACT_TYPES.map((type) => [type, NOOP_RENDERER] as const),
     );

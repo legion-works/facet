@@ -51,6 +51,7 @@ function parseArtifactType(artifactType: string): ArtifactType {
 
 async function buildBootstrapBundleUncached(artifactType: ArtifactType): Promise<{
   readonly code: string;
+  readonly styles: string;
   readonly bytes: number;
 }> {
   const result = await build({
@@ -64,17 +65,23 @@ async function buildBootstrapBundleUncached(artifactType: ArtifactType): Promise
     throw new Error(`harness bundle failed: ${result.logs.map((log) => log.message).join("\n")}`);
   }
   const outputs = result.outputs;
-  const output = outputs[0];
+  const output = outputs.find((candidate) => candidate.path.endsWith(".js"));
   if (output === undefined) {
     throw new Error("harness bundle produced no output");
   }
-  const text = await output.text();
-  return { code: text, bytes: text.length };
+  const styles = await Promise.all(
+    outputs
+      .filter((candidate) => candidate.path.endsWith(".css"))
+      .map((candidate) => candidate.text()),
+  );
+  const code = await output.text();
+  const styleText = styles.join("\n");
+  return { code, styles: styleText, bytes: code.length + styleText.length };
 }
 
 const bundlePromises = new Map<
   ArtifactType,
-  Promise<{ readonly code: string; readonly bytes: number }>
+  Promise<{ readonly code: string; readonly styles: string; readonly bytes: number }>
 >();
 
 /**
@@ -86,7 +93,7 @@ const bundlePromises = new Map<
  */
 function buildBootstrapBundle(
   artifactType: ArtifactType,
-): Promise<{ readonly code: string; readonly bytes: number }> {
+): Promise<{ readonly code: string; readonly styles: string; readonly bytes: number }> {
   let bundlePromise = bundlePromises.get(artifactType);
   if (bundlePromise === undefined) {
     bundlePromise = buildBootstrapBundleUncached(artifactType).catch((error: unknown) => {
@@ -121,7 +128,7 @@ export async function buildHarnessSrcdoc(artifactType: string): Promise<{
 }> {
   const rendererType = parseArtifactType(artifactType);
   const nonce = freshNonce();
-  const { code, bytes } = await buildBootstrapBundle(rendererType);
+  const { code, styles, bytes } = await buildBootstrapBundle(rendererType);
   const escaped = code.replace(/<\/script/gi, "<\\/script");
   const csp = HARNESS_CSP.replace("<BOOTSTRAP_NONCE>", nonce);
   const srcdoc =
@@ -129,6 +136,7 @@ export async function buildHarnessSrcdoc(artifactType: string): Promise<{
     `<meta charset="utf-8">` +
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<style>html,body,#artifact{margin:0;min-height:100%;background:transparent}</style>` +
+    (styles.length === 0 ? "" : `<style>${styles.replace(/<\/style/gi, "<\\/style")}</style>`) +
     "</head><body>" +
     `<main id="artifact"></main>` +
     `<script type="module" nonce="${nonce}">${escaped}</script>` +

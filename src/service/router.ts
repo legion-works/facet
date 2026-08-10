@@ -424,6 +424,13 @@ export function buildRouter(deps: RouterDeps): {
           buildFrameDocument({
             nonce,
             bootstrapUrl: `${FRAME_BOOTSTRAP_PREFIX}${artifactType.data}.js`,
+            ...(artifactType.data === "html"
+              ? {
+                  vendoredStyles: await Bun.file(
+                    join(galleryRoot, "frame", "bootstrap", "html.css"),
+                  ).text(),
+                }
+              : {}),
           }),
           {
             status: 200,
