@@ -7,6 +7,8 @@ import {
 } from "../../src/shared/errors/facet-error";
 import {
   LexicalCountersSchema,
+  InsecureLevelSchema,
+  InsecureMarkerSchema,
   ProtocolObservationSchema,
   RenderStatusSchema,
   Tier0ResultSchema,
@@ -81,11 +83,35 @@ describe("validation tier and render status", () => {
       "timeout",
       "shim_only",
       "probe_only",
+      "insecure:unvalidated",
     ];
     for (const status of statuses) {
       expect(RenderStatusSchema.safeParse(status).success).toBe(true);
     }
     expect(RenderStatusSchema.safeParse("unknown").success).toBe(false);
+  });
+
+  test("InsecureLevelSchema accepts only integer levels 0 through 3", () => {
+    for (const level of [0, 1, 2, 3])
+      expect(InsecureLevelSchema.safeParse(level).success).toBe(true);
+    for (const level of ["1", 1.5, -1, 4])
+      expect(InsecureLevelSchema.safeParse(level).success).toBe(false);
+  });
+
+  test("InsecureMarkerSchema requires a non-zero level and non-empty reason", () => {
+    expect(InsecureMarkerSchema.safeParse({ level: 1, reason: "not validated" }).success).toBe(
+      true,
+    );
+    expect(InsecureMarkerSchema.safeParse({ level: 2, reason: "not validated" }).success).toBe(
+      true,
+    );
+    expect(InsecureMarkerSchema.safeParse({ level: 3, reason: "not validated" }).success).toBe(
+      true,
+    );
+    expect(InsecureMarkerSchema.safeParse({ level: 0, reason: "not validated" }).success).toBe(
+      false,
+    );
+    expect(InsecureMarkerSchema.safeParse({ level: 1, reason: "" }).success).toBe(false);
   });
 
   test("checkRendererSupported only permits canvas for charts", () => {
@@ -173,6 +199,48 @@ describe("canonical verdict / unified observed shape", () => {
     };
     expect(VerdictSchema.safeParse(sample).success).toBe(false);
   });
+
+  test("VerdictSchema accepts an insecure marker without changing observed errors", () => {
+    const sample = {
+      status: "insecure:unvalidated" as const,
+      tier: 1 as const,
+      artifactId: "art-1",
+      revisionSha: "a".repeat(64),
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 1,
+        visibleSvgCount: 1,
+        errorCount: 0,
+        opaqueRegionCount: 0,
+      },
+      insecure: { level: 1, reason: "browser trust boundary unavailable" },
+    };
+    expect(VerdictSchema.safeParse(sample).success).toBe(true);
+  });
+
+  test("VerdictSchema rejects insecure level zero and empty reasons", () => {
+    const base = {
+      status: "ok" as const,
+      tier: 1 as const,
+      artifactId: "art-1",
+      revisionSha: "a".repeat(64),
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 1,
+        visibleSvgCount: 1,
+        errorCount: 0,
+        opaqueRegionCount: 0,
+      },
+    };
+    expect(
+      VerdictSchema.safeParse({ ...base, insecure: { level: 0, reason: "bad" } }).success,
+    ).toBe(false);
+    expect(VerdictSchema.safeParse({ ...base, insecure: { level: 1, reason: "" } }).success).toBe(
+      false,
+    );
+  });
 });
 
 describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
@@ -256,5 +324,34 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
           .success,
       ).toBe(true);
     }
+  });
+
+  test("Tier1ResultSchema retains insecure markers with ordinary statuses", () => {
+    const base = {
+      revisionSha: "a".repeat(64),
+      tier: 1 as const,
+      artifactId: "art-1",
+      expected: {
+        rendererRootSvgCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+      },
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        errorCount: 0,
+        opaqueRegionCount: 0,
+      },
+      screenshotPath: "/tmp/screenshot.png",
+      consolePath: null,
+      insecure: { level: 2, reason: "trust unavailable" },
+    };
+    expect(Tier1ResultSchema.safeParse({ ...base, status: "ok" }).success).toBe(true);
+    expect(Tier1ResultSchema.safeParse({ ...base, status: "partial:opaque_content" }).success).toBe(
+      true,
+    );
   });
 });

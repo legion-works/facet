@@ -25,6 +25,7 @@ import {
   type ProtocolObservation,
   LexicalCountersSchema,
   type LexicalCounters,
+  VerdictSchema,
 } from "../../src/shared/contracts/validation";
 import { deriveVerdict } from "../../src/validation/tier1/verdict";
 
@@ -75,6 +76,20 @@ const lifecycle = (overrides: Partial<LifecycleSummary> = {}): LifecycleSummary 
 describe("deriveVerdict — happy path", () => {
   test("matches counts on every channel → ok", () => {
     expect(deriveVerdict(lex(), protocol(), protocol(), shim(), lifecycle())).toBe("ok");
+  });
+
+  test("insecure marker is attached outside deriveVerdict and does not alter observed errors", () => {
+    const status = deriveVerdict(lex(), protocol(), protocol(), shim(), lifecycle());
+    expect(status).toBe("ok");
+    const verdict = VerdictSchema.parse({
+      status,
+      tier: 1,
+      artifactId: "art-1",
+      revisionSha: "a".repeat(64),
+      observed: { ...protocol(), discriminativeErrors: [] },
+      insecure: { level: 1, reason: "trust unavailable" },
+    });
+    expect(verdict.observed.discriminativeErrors).toEqual([]);
   });
 });
 

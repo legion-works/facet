@@ -26,6 +26,7 @@ export const RenderStatusSchema = z.enum([
   "timeout",
   "shim_only",
   "probe_only",
+  "insecure:unvalidated",
 ]);
 export type RenderStatus = z.infer<typeof RenderStatusSchema>;
 
@@ -46,6 +47,20 @@ export const ScreenshotErrorSchema = z.object({
   message: z.string().min(1),
 });
 export type ScreenshotError = z.infer<typeof ScreenshotErrorSchema>;
+
+export const InsecureLevelSchema = z.union([
+  z.literal(0),
+  z.literal(1),
+  z.literal(2),
+  z.literal(3),
+]);
+export type InsecureLevel = z.infer<typeof InsecureLevelSchema>;
+
+export const InsecureMarkerSchema = z.object({
+  level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  reason: z.string().min(1),
+});
+export type InsecureMarker = z.infer<typeof InsecureMarkerSchema>;
 
 /**
  * Lexical counters computed from the source bytes WITHOUT parsing or
@@ -99,6 +114,7 @@ export const VerdictSchema = z.object({
   revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   observed: VerdictObservedSchema,
   screenshotError: ScreenshotErrorSchema.optional(),
+  insecure: InsecureMarkerSchema.optional(),
 });
 export type Verdict = z.infer<typeof VerdictSchema>;
 

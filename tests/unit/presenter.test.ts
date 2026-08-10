@@ -78,6 +78,21 @@ describe("CLI presenter envelopes", () => {
     );
   });
 
+  test("insecure status renders through the verdict map", () => {
+    const readBack = validReadBackResult();
+    const publish = {
+      ...validPublishResult(),
+      tier1Verdict: {
+        ...readBack.verdict,
+        status: "insecure:unvalidated",
+        insecure: { level: 1, reason: "trust unavailable" },
+      },
+    };
+    expect(presentEnvelope(okEnvelope("request-1", publish), plain)).toContain(
+      `⊘ insecure · unvalidated · tier 1 · art-1 @ ${"a".repeat(8)}`,
+    );
+  });
+
   test("read-back, status, and fallback commands stay terse", () => {
     expect(presentEnvelope(okEnvelope("request-1", validReadBackResult()), plain)[0]).toBe(
       `✓ ok · tier 1 · art-1 @ ${"a".repeat(8)}`,

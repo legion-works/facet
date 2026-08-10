@@ -57,6 +57,7 @@ export const VERDICT_GLYPH: Record<RenderStatus, string> = {
   timeout: "◌",
   shim_only: "◇",
   probe_only: "◈",
+  "insecure:unvalidated": "⊘",
 };
 
 const SGR = {
@@ -81,6 +82,7 @@ const STATUS_TONE: Record<RenderStatus, Tone> = {
   timeout: "dim",
   shim_only: "dim",
   probe_only: "dim",
+  "insecure:unvalidated": "redInverse",
 };
 
 function makePaint(caps: PresenterCaps) {
