@@ -111,6 +111,26 @@ describe("gallery shell — FROZEN CSP", () => {
   });
 });
 
+describe("gallery shell — verdict status styling", () => {
+  test("external resources keeps the explicit amber partial treatment", async () => {
+    const cssPath = new URL("../../src/gallery-web/styles/verdict.css", import.meta.url).pathname;
+    const css = await Bun.file(cssPath).text();
+    const selector = '.facet-verdict[data-status="partial:external_resources"]';
+    const ruleStart = css.indexOf(selector);
+    const rule = css.slice(ruleStart, css.indexOf("}", ruleStart) + 1);
+    const glyphSelector = `${selector}::before`;
+    const glyphStart = css.indexOf(glyphSelector);
+    const glyphRule = css.slice(glyphStart, css.indexOf("}", glyphStart) + 1);
+
+    expect(ruleStart).toBeGreaterThanOrEqual(0);
+    expect(rule).toContain("var(--facet-partial-border)");
+    expect(rule).toContain("var(--facet-partial-fill)");
+    expect(rule).toContain("var(--facet-partial)");
+    expect(glyphStart).toBeGreaterThanOrEqual(0);
+    expect(glyphRule).toContain('content: "◐"');
+  });
+});
+
 describe("gallery shell — frame document generation", () => {
   test("document contains charset, artifact mount, and no CSP meta", () => {
     const document = buildFrameDocument({

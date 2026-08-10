@@ -39,17 +39,19 @@ Facet stores the source bytes without interpreting them, then asks independent v
 
 The gallery and CLI use the same wire enum, glyph, hue, and treatment.
 
-| enum (wire, verbatim)       | glyph | hue       | treatment                        |
-| --------------------------- | ----- | --------- | -------------------------------- |
-| `ok`                        | `✓`   | `#c3e88d` | outline — proof, not celebration |
-| `error`                     | `✗`   | `#ff757f` | outline                          |
-| `partial:layout_unverified` | `◐`   | `#ffc777` | outline; screenshot required     |
-| `tampered`                  | `⊘`   | `#ff757f` | filled alarm badge               |
-| `timeout`                   | `◌`   | `#737aa2` | dim outline                      |
-| `shim_only`                 | `◇`   | `#737aa2` | dim outline                      |
-| `probe_only`                | `◈`   | `#737aa2` | dim outline                      |
+| enum (wire, verbatim)        | glyph | hue       | treatment                        |
+| ---------------------------- | ----- | --------- | -------------------------------- |
+| `ok`                         | `✓`   | `#c3e88d` | outline — proof, not celebration |
+| `error`                      | `✗`   | `#ff757f` | outline                          |
+| `partial:layout_unverified`  | `◐`   | `#ffc777` | outline; screenshot required     |
+| `partial:opaque_content`     | `◐`   | `#ffc777` | outline; screenshot required     |
+| `partial:external_resources` | `◐`   | `#ffc777` | outline; screenshot required     |
+| `tampered`                   | `⊘`   | `#ff757f` | filled alarm badge               |
+| `timeout`                    | `◌`   | `#737aa2` | dim outline                      |
+| `shim_only`                  | `◇`   | `#737aa2` | dim outline                      |
+| `probe_only`                 | `◈`   | `#737aa2` | dim outline                      |
 
-The wire contract also carries `partial:opaque_content` when structure is hidden behind an opaque region, and `insecure:unvalidated` when level 3 intentionally skips validation. A missing verdict is `UNVERIFIED` with no tier.
+`partial:external_resources` means an artifact references external HTTPS images the no-egress verifier could not load. `insecure:unvalidated` means level 3 intentionally skipped validation. A missing verdict is `UNVERIFIED` with no tier.
 
 ## Why not just screenshot it?
 

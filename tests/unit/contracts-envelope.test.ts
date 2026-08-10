@@ -10,8 +10,39 @@ import {
   type FacetEnvelope,
   type FacetErrorBody,
 } from "../../src/shared/contracts/envelope";
+import {
+  ExportSidecarSchema,
+  ReadBackResultSchema,
+} from "../../src/shared/contracts/commands/results";
+import {
+  LexicalCountersSchema,
+  ProtocolObservationSchema,
+  Tier0ResultSchema,
+  Tier1ResultSchema,
+  VerdictObservedSchema,
+  type HtmlStructureCounts,
+} from "../../src/shared/contracts/validation";
+import {
+  HTML_DENIED_ELEMENTS,
+  HTML_STRUCTURAL_GROUPS,
+  isAllowedHtmlUrl,
+  isHtmlDeniedElement,
+  isHtmlEventHandlerAttribute,
+  isHtmlInlineStyleAttribute,
+  isHtmlUrlBearingAttribute,
+} from "../../src/shared/html/policy";
 
 const REQUEST_ID = "req-0001";
+
+const HTML_COUNTS: HtmlStructureCounts = {
+  rendererRootCount: 1,
+  headingCount: 2,
+  tableCount: 1,
+  listCount: 1,
+  imageCount: 3,
+  canvasCount: 0,
+  externalImageCount: 2,
+};
 
 describe("FACET_SCHEMA_VERSION", () => {
   test("is the literal facet.v1 string", () => {
@@ -232,5 +263,124 @@ describe("parseEnvelope", () => {
     expect(json.startsWith("{")).toBe(true);
     const round = JSON.parse(json);
     expect(round).toEqual(envelope);
+  });
+});
+
+describe("HTML validation observables", () => {
+  test("policy centralizes structural tags and rejects dangerous element and attribute forms", () => {
+    expect(HTML_STRUCTURAL_GROUPS).toEqual({
+      headings: ["h1", "h2", "h3", "h4", "h5", "h6"],
+      tables: ["table"],
+      lists: ["ul", "ol"],
+      images: ["img"],
+      canvases: ["canvas"],
+    });
+    expect(HTML_DENIED_ELEMENTS).toContain("style");
+    expect(isHtmlDeniedElement("ScRiPt")).toBe(true);
+    expect(isHtmlEventHandlerAttribute("oNcLiCk")).toBe(true);
+    expect(isHtmlInlineStyleAttribute("STYLE")).toBe(true);
+    expect(isHtmlUrlBearingAttribute("img", "srcset")).toBe(true);
+    expect(isHtmlUrlBearingAttribute("a", "href")).toBe(true);
+    expect(isHtmlUrlBearingAttribute("div", "href")).toBe(false);
+    expect(isAllowedHtmlUrl("img", "src", "https://cdn.example/image.png")).toBe(true);
+    expect(isAllowedHtmlUrl("img", "src", "data:image/png;base64,AA==")).toBe(true);
+    expect(isAllowedHtmlUrl("img", "src", "../image.png")).toBe(true);
+    expect(isAllowedHtmlUrl("img", "src", "//cdn.example/image.png")).toBe(false);
+    expect(isAllowedHtmlUrl("a", "href", "mailto:ops@example.test")).toBe(true);
+    expect(isAllowedHtmlUrl("a", "href", "#details")).toBe(true);
+    expect(isAllowedHtmlUrl("a", "href", "./details")).toBe(true);
+    expect(isAllowedHtmlUrl("a", "href", "javascript:alert(1)")).toBe(false);
+    expect(isAllowedHtmlUrl("img", "src", "https://[")).toBe(false);
+  });
+
+  test("HTML counts round-trip through tier results, read-back, and export sidecars", () => {
+    const expected = {
+      rendererRootSvgCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+      html: HTML_COUNTS,
+    };
+    const observed = {
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+      errorCount: 0,
+      html: HTML_COUNTS,
+    };
+    const protocol = {
+      ...observed,
+      viewBoxes: [],
+      discriminativeErrors: [],
+    };
+    const tier0 = Tier0ResultSchema.parse({
+      status: "partial:external_resources",
+      tier: 0,
+      artifactId: "art-html",
+      revisionSha: "a".repeat(64),
+      expected,
+      observed,
+    });
+    const tier1 = Tier1ResultSchema.parse({
+      ...tier0,
+      tier: 1,
+      screenshotPath: "/tmp/html.png",
+      consolePath: null,
+    });
+
+    expect(LexicalCountersSchema.parse(expected).html).toEqual(HTML_COUNTS);
+    expect(VerdictObservedSchema.parse(observed).html).toEqual(HTML_COUNTS);
+    expect(ProtocolObservationSchema.parse(protocol).html).toEqual(HTML_COUNTS);
+    expect(
+      ReadBackResultSchema.parse({
+        command: "readBack",
+        requestId: REQUEST_ID,
+        renderer: "svg",
+        verdict: tier1,
+      }).verdict.observed.html,
+    ).toEqual(HTML_COUNTS);
+    expect(
+      ExportSidecarSchema.parse({
+        artifactId: "art-html",
+        slug: "html-artifact",
+        revisionSha: "a".repeat(64),
+        artifactType: "html",
+        renderer: "svg",
+        verdict: tier1,
+        format: "source",
+        exportedAt: "2026-08-10T00:00:00.000Z",
+      }).verdict.observed.html,
+    ).toEqual(HTML_COUNTS);
+  });
+
+  test("markdown tier-one results retain their exact old wire form without html keys", () => {
+    const markdownBaseline = {
+      status: "ok",
+      tier: 1,
+      artifactId: "art-markdown",
+      revisionSha: "b".repeat(64),
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+      expected: {
+        rendererRootSvgCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+      },
+      screenshotPath: null,
+      consolePath: null,
+    };
+    const afterSchemaChange = Tier1ResultSchema.parse(markdownBaseline);
+
+    expect(JSON.stringify(afterSchemaChange)).toBe(JSON.stringify(markdownBaseline));
+    expect(JSON.stringify(afterSchemaChange)).not.toContain('"html"');
   });
 });

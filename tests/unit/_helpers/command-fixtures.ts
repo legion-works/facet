@@ -47,6 +47,16 @@ export const VERDICT_OBSERVED = {
   opaqueRegionCount: 0,
 };
 
+export const HTML_STRUCTURE_COUNTS = {
+  rendererRootCount: 1,
+  headingCount: 0,
+  tableCount: 0,
+  listCount: 0,
+  imageCount: 1,
+  canvasCount: 0,
+  externalImageCount: 1,
+};
+
 export function validCreateRequest() {
   return {
     command: "create" as const,

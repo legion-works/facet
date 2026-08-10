@@ -229,6 +229,40 @@ describe("gallery shell startup", () => {
     ).toBe("· layout · T1");
   });
 
+  test("labels external-resource partial verdicts and reports HTML evidence", async () => {
+    const harness = createRuntime(undefined, {
+      status: "partial:external_resources",
+      tier: 1,
+      revisionSha: "a".repeat(64),
+      artifactId: "artifact-1",
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+        html: {
+          rendererRootCount: 1,
+          headingCount: 2,
+          tableCount: 1,
+          listCount: 1,
+          imageCount: 3,
+          canvasCount: 0,
+          externalImageCount: 2,
+        },
+      },
+    });
+    await startGallery(harness.runtime);
+
+    expect(
+      harness.elements.get("facet-verdict")?.querySelector<FakeElement>(".tier")?.textContent,
+    ).toBe("· external · T1");
+    expect(harness.elements.get("facet-evidence-counts")?.textContent).toBe(
+      "roots 1 · headings 2 · tables 1 · lists 1 · images 3 · canvas 0 · external 2",
+    );
+  });
+
   test("labels insecure verdicts and preserves the full L3 status", async () => {
     const harness = createRuntime(undefined, {
       status: "insecure:unvalidated",

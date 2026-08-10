@@ -80,6 +80,7 @@ describe("validation tier and render status", () => {
       "error",
       "partial:layout_unverified",
       "partial:opaque_content",
+      "partial:external_resources",
       "tampered",
       "timeout",
       "shim_only",
@@ -316,7 +317,11 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
       },
       consolePath: null,
     };
-    for (const status of ["partial:layout_unverified", "partial:opaque_content"] as const) {
+    for (const status of [
+      "partial:layout_unverified",
+      "partial:opaque_content",
+      "partial:external_resources",
+    ] as const) {
       expect(Tier1ResultSchema.safeParse({ ...base, status, screenshotPath: null }).success).toBe(
         false,
       );
@@ -354,5 +359,8 @@ describe("Tier0/Tier1 result schemas derive from VerdictSchema", () => {
     expect(Tier1ResultSchema.safeParse({ ...base, status: "partial:opaque_content" }).success).toBe(
       true,
     );
+    expect(
+      Tier1ResultSchema.safeParse({ ...base, status: "partial:external_resources" }).success,
+    ).toBe(true);
   });
 });

@@ -627,7 +627,9 @@ function setGalleryVerdict(document: Document, verdict: Verdict | null): void {
         ? "opaque"
         : verdict.status === "partial:layout_unverified"
           ? "layout"
-          : null;
+          : verdict.status === "partial:external_resources"
+            ? "external"
+            : null;
     const insecure = verdict.insecure === undefined ? null : `INSECURE L${verdict.insecure.level}`;
     const suffix = insecure === null ? `T${verdict.tier}` : `${insecure} · T${verdict.tier}`;
     tier.textContent = detail === null ? `· ${suffix}` : `· ${detail} · ${suffix}`;
@@ -635,7 +637,10 @@ function setGalleryVerdict(document: Document, verdict: Verdict | null): void {
   const observed = verdict.observed;
   const counts = document.getElementById("facet-evidence-counts");
   if (counts !== null)
-    counts.textContent = `svg ${observed.rendererRootSvgCount} · graphs ${observed.graphCount} · nodes ${observed.mermaidNodeCount} · opaque ${observed.opaqueRegionCount} · errors ${observed.errorCount}`;
+    counts.textContent =
+      observed.html === undefined
+        ? `svg ${observed.rendererRootSvgCount} · graphs ${observed.graphCount} · nodes ${observed.mermaidNodeCount} · opaque ${observed.opaqueRegionCount} · errors ${observed.errorCount}`
+        : `roots ${observed.html.rendererRootCount} · headings ${observed.html.headingCount} · tables ${observed.html.tableCount} · lists ${observed.html.listCount} · images ${observed.html.imageCount} · canvas ${observed.html.canvasCount} · external ${observed.html.externalImageCount}`;
   const channels = document.getElementById("facet-evidence-channels");
   if (channels !== null) {
     channels.dataset.agree = verdict.status === "tampered" ? "false" : "true";

@@ -10,17 +10,18 @@ the retention policy, and the revision-binding guarantee.
 verdict is decided in exactly one place (`src/validation/tier1/verdict.ts`).
 Every other layer is bound to it through `VerdictSchema.status`.
 
-| status                      | meaning                                                                                                                                                                        |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ok`                        | Counts agree across protocol + shim + isolated worlds, layout observable, no discriminative errors.                                                                            |
-| `error`                     | Counts disagree with the lexical expectation OR the protocol surfaced a discriminative error.                                                                                  |
-| `partial:layout_unverified` | Counts agree but the layout pass is unverified (no SVG rendered with a non-degenerate viewBox). MUST carry a screenshot path on the wire.                                      |
-| `partial:opaque_content`    | An opaque DOM region was observed, so structural contents were not verified. MUST carry a screenshot path, or a typed `screenshotError` marker when capture fails transiently. |
-| `tampered`                  | Page-shim or isolated-world observation diverges from protocol authority.                                                                                                      |
-| `timeout`                   | The harness did not emit `render-complete` within `TIER1_RENDER_BARRIER_MS`.                                                                                                   |
-| `shim_only`                 | Isolated-world channel missing; only the untrusted page-shim produced usable counts.                                                                                           |
-| `probe_only`                | Both the page-shim and the isolated-world channel are missing; only the protocol channel is usable.                                                                            |
-| `insecure:unvalidated`      | Level 3 intentionally skipped validation. The artifact is not represented as validated.                                                                                        |
+| status                       | meaning                                                                                                                                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ok`                         | Counts agree across protocol + shim + isolated worlds, layout observable, no discriminative errors.                                                                                       |
+| `error`                      | Counts disagree with the lexical expectation OR the protocol surfaced a discriminative error.                                                                                             |
+| `partial:layout_unverified`  | Counts agree but the layout pass is unverified (no SVG rendered with a non-degenerate viewBox). MUST carry a screenshot path on the wire.                                                 |
+| `partial:opaque_content`     | An opaque DOM region was observed, so structural contents were not verified. MUST carry a screenshot path, or a typed `screenshotError` marker when capture fails transiently.            |
+| `partial:external_resources` | The artifact references external HTTPS images the no-egress verifier could not observe. MUST carry a screenshot path, or a typed `screenshotError` marker when capture fails transiently. |
+| `tampered`                   | Page-shim or isolated-world observation diverges from protocol authority.                                                                                                                 |
+| `timeout`                    | The harness did not emit `render-complete` within `TIER1_RENDER_BARRIER_MS`.                                                                                                              |
+| `shim_only`                  | Isolated-world channel missing; only the untrusted page-shim produced usable counts.                                                                                                      |
+| `probe_only`                 | Both the page-shim and the isolated-world channel are missing; only the protocol channel is usable.                                                                                       |
+| `insecure:unvalidated`       | Level 3 intentionally skipped validation. The artifact is not represented as validated.                                                                                                   |
 
 A `partial:*` verdict is a verdict the verifier could not finalize, NOT
 a degraded `ok`. The screenshot is mandatory FOR `partial:` so a human
@@ -42,7 +43,7 @@ mode 0700 — the canonical secret-bearing layout matches the DB file
 permissions.
 
 Tier 1 capture happens AFTER the verdict is derived so the
-`partial:layout_unverified` and `partial:opaque_content` screenshot mandates are honored. The runner
+`partial:layout_unverified`, `partial:opaque_content`, and `partial:external_resources` screenshot mandates are honored. The runner
 uses a deterministic 1280×800 viewport, requests full-artifact capture
 with `captureBeyondViewport`, and falls back to viewport-only when the
 PNG exceeds the 8 MiB cap. Before capture it emulates

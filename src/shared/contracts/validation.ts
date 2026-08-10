@@ -22,6 +22,7 @@ export const RenderStatusSchema = z.enum([
   "error",
   "partial:layout_unverified",
   "partial:opaque_content",
+  "partial:external_resources",
   "tampered",
   "timeout",
   "shim_only",
@@ -62,6 +63,17 @@ export const InsecureMarkerSchema = z.object({
 });
 export type InsecureMarker = z.infer<typeof InsecureMarkerSchema>;
 
+export const HtmlStructureCountsSchema = z.object({
+  rendererRootCount: z.number().int().nonnegative(),
+  headingCount: z.number().int().nonnegative(),
+  tableCount: z.number().int().nonnegative(),
+  listCount: z.number().int().nonnegative(),
+  imageCount: z.number().int().nonnegative(),
+  canvasCount: z.number().int().nonnegative(),
+  externalImageCount: z.number().int().nonnegative(),
+});
+export type HtmlStructureCounts = z.infer<typeof HtmlStructureCountsSchema>;
+
 /**
  * Lexical counters computed from the source bytes WITHOUT parsing or
  * rendering. The verifier compares these against its own observations
@@ -74,6 +86,7 @@ export const LexicalCountersSchema = z.object({
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
   opaqueRegionCount: z.number().int().nonnegative(),
+  html: HtmlStructureCountsSchema.optional(),
 });
 export type LexicalCounters = z.infer<typeof LexicalCountersSchema>;
 
@@ -95,6 +108,7 @@ export const VerdictObservedSchema = z.object({
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
   opaqueRegionCount: z.number().int().nonnegative(),
+  html: HtmlStructureCountsSchema.optional(),
   viewBoxes: z.array(z.string()).optional(),
   errorCount: z.number().int().nonnegative(),
   discriminativeErrors: z.array(DiscriminativeErrorSchema).optional(),
@@ -225,6 +239,7 @@ export const ProtocolObservationSchema = z.object({
   mermaidNodeCount: z.number().int().nonnegative(),
   visibleSvgCount: z.number().int().nonnegative(),
   opaqueRegionCount: z.number().int().nonnegative(),
+  html: HtmlStructureCountsSchema.optional(),
   viewBoxes: z.array(z.string()),
   errorCount: z.number().int().nonnegative(),
   discriminativeErrors: z.array(DiscriminativeErrorSchema),

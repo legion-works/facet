@@ -364,4 +364,35 @@ describe("buildExportSidecar", () => {
       message: "capture failed",
     });
   });
+
+  test("preserves external-resource status and HTML observables in the export sidecar", () => {
+    const htmlVerdict: Verdict = {
+      status: "partial:external_resources",
+      tier: 1,
+      artifactId: artifact.id,
+      revisionSha: revision.sha256,
+      observed: {
+        ...observed,
+        html: {
+          rendererRootCount: 1,
+          headingCount: 2,
+          tableCount: 1,
+          listCount: 1,
+          imageCount: 3,
+          canvasCount: 0,
+          externalImageCount: 2,
+        },
+      },
+    };
+    const sidecar = buildExportSidecar({
+      artifact,
+      revision: { ...revision, artifactType: "html" },
+      verdict: htmlVerdict,
+      format: "source",
+      exportedAt,
+    });
+
+    expect(sidecar.verdict.status).toBe("partial:external_resources");
+    expect(sidecar.verdict.observed.html?.externalImageCount).toBe(2);
+  });
 });

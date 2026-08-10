@@ -81,11 +81,12 @@ export interface LifecycleSummary {
  *   6. Channel availability: only isolated missing → `shim_only`
  *   7. Opaque content: expected > 0 but protocol observed 0 → `error`
  *   8. Opaque content: protocol observed > 0 → `partial:opaque_content`
- *   9. Layout observability: protocol visibleSvgCount === 0 AND every
+ *   9. External resources: expected external images > 0 → `partial:external_resources`
+ *  10. Layout observability: protocol visibleSvgCount === 0 AND every
  *      viewBox is zeroed → `partial:layout_unverified`
- *  10. Counts: protocol discriminativeErrors non-empty → `error`
- *  11. Counts: protocol observed !== expected lexical → `error`
- *  12. Otherwise → `ok`
+ *  11. Counts: protocol discriminativeErrors non-empty → `error`
+ *  12. Counts: protocol observed !== expected lexical → `error`
+ *  13. Otherwise → `ok`
  *
  * Tampered wins over partial: a forge attempt that hides layout
  * observability (no viewBoxes) is still a forge attempt.
@@ -114,6 +115,8 @@ export function deriveVerdict(
     return "error";
   }
   if (protocolObservation.opaqueRegionCount > 0) return "partial:opaque_content";
+
+  if ((expected.html?.externalImageCount ?? 0) > 0) return "partial:external_resources";
 
   if (!layoutObservable(protocolObservation)) return "partial:layout_unverified";
 

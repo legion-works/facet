@@ -3,7 +3,11 @@ import { describe, expect, test } from "bun:test";
 import { presentEnvelope, presenterCaps, shouldPresentPretty } from "../../src/cli/presenter";
 import { errEnvelope, okEnvelope } from "../../src/shared/contracts/envelope";
 import { FacetError } from "../../src/shared/errors/facet-error";
-import { validPublishResult, validReadBackResult } from "./_helpers/command-fixtures";
+import {
+  HTML_STRUCTURE_COUNTS,
+  validPublishResult,
+  validReadBackResult,
+} from "./_helpers/command-fixtures";
 
 const plain = { color: false } as const;
 
@@ -75,6 +79,27 @@ describe("CLI presenter envelopes", () => {
 
     expect(presentEnvelope(okEnvelope("request-1", publish), plain)).toContain(
       `◐ partial · opaque_content · tier 1 · art-1 @ ${"a".repeat(8)}`,
+    );
+  });
+
+  test("external resources partial output keeps the partial glyph and explicit status label", () => {
+    const readBack = validReadBackResult();
+    const publish = {
+      ...validPublishResult(),
+      tier1Verdict: {
+        ...readBack.verdict,
+        status: "partial:external_resources" as const,
+        observed: {
+          ...readBack.verdict.observed,
+          html: HTML_STRUCTURE_COUNTS,
+        },
+        screenshotPath: "/tmp/html.png",
+        consolePath: null,
+      },
+    };
+
+    expect(presentEnvelope(okEnvelope("request-1", publish), plain)).toContain(
+      `◐ partial · external_resources · tier 1 · art-1 @ ${"a".repeat(8)}`,
     );
   });
 

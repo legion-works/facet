@@ -25,6 +25,7 @@ import {
 import { startFacetService, type RunningService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
+import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
 import type { Renderer } from "../../src/shared/contracts/renderers";
 import type {
   InsecureLevel,
@@ -39,7 +40,6 @@ function traceTier1Transport(stage: string): void {
   process.stderr.write(`[tier1-transport] ${stage}\n`);
 }
 
-export type ArtifactType = "markdown" | "mermaid" | "svg" | "chart";
 export type Tier = 0 | 1;
 export type Launcher = "production";
 export type ScreenshotMode = "live" | "deterministic" | "fail";

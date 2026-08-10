@@ -296,6 +296,54 @@ describe("deriveVerdict — opaque content", () => {
   });
 });
 
+describe("deriveVerdict — external resources", () => {
+  const externalHtml = {
+    rendererRootCount: 1,
+    headingCount: 0,
+    tableCount: 0,
+    listCount: 0,
+    imageCount: 1,
+    canvasCount: 0,
+    externalImageCount: 1,
+  };
+
+  test("external HTTPS image references → partial:external_resources", () => {
+    expect(
+      deriveVerdict(
+        lex({ html: externalHtml }),
+        protocol({ html: externalHtml }),
+        protocol({ html: externalHtml }),
+        shim(),
+        lifecycle(),
+      ),
+    ).toBe("partial:external_resources");
+  });
+
+  test("opaque content outranks external resources", () => {
+    expect(
+      deriveVerdict(
+        lex({ opaqueRegionCount: 1, html: externalHtml }),
+        protocol({ opaqueRegionCount: 1, html: externalHtml }),
+        protocol({ opaqueRegionCount: 1, html: externalHtml }),
+        shim({ opaqueRegionCount: 1 }),
+        lifecycle(),
+      ),
+    ).toBe("partial:opaque_content");
+  });
+
+  test("external resources outrank layout-unverified", () => {
+    expect(
+      deriveVerdict(
+        lex({ html: externalHtml }),
+        protocol({ html: externalHtml, visibleSvgCount: 0, viewBoxes: [] }),
+        protocol({ html: externalHtml, visibleSvgCount: 0, viewBoxes: [] }),
+        shim({ visibleSvgCount: 0 }),
+        lifecycle(),
+      ),
+    ).toBe("partial:external_resources");
+  });
+});
+
 describe("deriveVerdict — lifecycle and timing", () => {
   test("render-complete never arrived → timeout", () => {
     const status = deriveVerdict(

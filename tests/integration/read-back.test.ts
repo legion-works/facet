@@ -492,7 +492,11 @@ describe("read-back revision binding", () => {
 });
 
 describe("screenshot mandate for partial verdicts", () => {
-  for (const status of ["partial:layout_unverified", "partial:opaque_content"] as const) {
+  for (const status of [
+    "partial:layout_unverified",
+    "partial:opaque_content",
+    "partial:external_resources",
+  ] as const) {
     test(`${status} WITHOUT screenshot path or marker is rejected at parse — publish fails`, async () => {
       const tier1Runner = buildStubTier1({
         evidenceDir: scratchRoot,
