@@ -6,3 +6,8 @@ coverage/
 
 # Local build context — never committed.
 .facet-build/
+
+# Operator-owned archives dropped in the working tree. Ignored so a broad
+# `git add -A` cannot sweep one into history, where the blob would persist
+# after any later removal.
+*.zip
