@@ -108,6 +108,7 @@ type ScreenshotCapture = (session: VerifierCdpSession) => Promise<Buffer | null>
 /** Test-only hook for pinning the screenshot transport without changing verifier logic. */
 export interface Tier1RunnerTestHooks {
   readonly captureScreenshot?: ScreenshotCapture;
+  readonly createBrowser?: () => Pick<PuppeteerTier1Browser, "launch">;
 }
 
 export function createTier1RunnerForTests(
@@ -183,9 +184,11 @@ async function runTier1Attempt(
   if (!Number.isInteger(input.artifactType === undefined)) {
     void (input.artifactType as unknown);
   }
-  const browser = new PuppeteerTier1Browser({
-    launcher: resolveLauncher(level, { version: input.launcherVersion }),
-  });
+  const browser =
+    hooks.createBrowser?.() ??
+    new PuppeteerTier1Browser({
+      launcher: resolveLauncher(level, { version: input.launcherVersion }),
+    });
   const profileDir = mkdtempSync(join(tmpdir(), "facet-tier1-host-"));
   let target: VerifierTarget | undefined;
   let targetStartTime = 0;
