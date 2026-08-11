@@ -8,6 +8,7 @@ import {
   publishFixture,
   readBackFixture,
   stopAcceptanceServiceForTests,
+  type AcceptanceVerdict,
 } from "../helpers/facet-testkit";
 
 const FIXTURE_PATH = `${import.meta.dir}/../fixtures/plain-markdown.md`;
@@ -37,6 +38,17 @@ function restoreTestEnv(snapshot: TestEnv): void {
     if (snapshot[key] === undefined) delete process.env[key];
     else process.env[key] = snapshot[key];
   }
+}
+
+function expectRunnableVerdict(verdict: AcceptanceVerdict, level?: 1 | 2): void {
+  expect({
+    status: verdict.status,
+    errors: verdict.observed.discriminativeErrors,
+    insecure: verdict.insecure,
+  }).toMatchObject({
+    status: expect.not.stringMatching(/^error$/),
+    ...(level === undefined ? {} : { insecure: { level } }),
+  });
 }
 
 async function withTestEnv<T>(
@@ -92,7 +104,7 @@ describe("insecure sandbox launch paths", () => {
           "tier1_unavailable",
         );
       } else {
-        expect(verdict.status).not.toBe("error");
+        expectRunnableVerdict(verdict);
       }
     });
   }, 90_000);
@@ -113,8 +125,7 @@ describe("insecure sandbox launch paths", () => {
         tier: 1,
         insecureLevel: 1,
       });
-      expect(verdict.status).not.toBe("error");
-      expect(verdict.insecure).toMatchObject({ level: 1 });
+      expectRunnableVerdict(verdict, 1);
     });
   }, 90_000);
 
@@ -140,8 +151,7 @@ describe("insecure sandbox launch paths", () => {
           insecureLevel: 2,
           productionTier0: true,
         });
-        expect(directVerdict.status).not.toBe("error");
-        expect(directVerdict.insecure).toMatchObject({ level: 2 });
+        expectRunnableVerdict(directVerdict, 2);
 
         unlinkSync(directMarker);
         const level0 = await publishFixture({
