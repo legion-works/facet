@@ -53,6 +53,10 @@ function traceLaunch(stage: string, startedAt: number): void {
   process.stderr.write(`[tier1] +${Date.now() - startedAt}ms browser:${stage}\n`);
 }
 
+function isBadFileDescriptorSpawn(error: unknown): error is Error & { readonly code: "EBADF" } {
+  return error instanceof Error && "code" in error && error.code === "EBADF";
+}
+
 class PuppeteerCdpSessionAdapter implements VerifierCdpSession {
   constructor(private readonly inner: CDPSession) {}
 
@@ -200,6 +204,9 @@ export class PuppeteerTier1Browser {
       const message = error instanceof Error ? error.message : String(error);
       if (error instanceof Error && error.name === "TimeoutError") {
         throw new Tier1TransportWedgeError(`launch: ${message}`);
+      }
+      if (isBadFileDescriptorSpawn(error)) {
+        throw new Tier1TransportWedgeError(`launch EBADF: ${message}`);
       }
       throw new Error(`tier1: puppeteer launch failed: ${message}`, { cause: error });
     } finally {

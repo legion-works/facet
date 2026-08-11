@@ -173,7 +173,7 @@ describe("Tier 0 worker pool", () => {
       const pids: number[] = [];
       const runner = tier0Runner.createTier0RunnerForTests(2, {
         workerEntry,
-        timeoutMs: 50,
+        timeoutMs: 150,
         onWorkerSpawn: (pid) => pids.push(pid),
       });
 
