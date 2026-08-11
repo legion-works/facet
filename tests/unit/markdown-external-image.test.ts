@@ -123,3 +123,99 @@ describe("parseMarkdown — type-agnostic external image disclosure", () => {
     }
   });
 });
+
+/**
+ * Per-container coverage.
+ *
+ * Marked emits a fixed set of block / inline token shapes; this is
+ * every container that carries children (the recursive shapes) and a
+ * few leaves that test specific red-flag paths. The per-container
+ * table below pins the count the walker MUST reach for an image
+ * placed in each shape.
+ *
+ *   shape                  | image counter must hit
+ *   -----------------------+-------------------------
+ *   paragraph (top-level)   | yes
+ *   heading                 | yes
+ *   blockquote              | yes (image inside paragraph child)
+ *   list_item               | yes (image inside paragraph child)
+ *   list                    | yes (multiple items, each contributes)
+ *   ordered list_item       | yes
+ *   table header cell       | yes
+ *   table body cell         | yes
+ *   nested list_item        | yes
+ *   em (emphasis) wrapping  | yes
+ *   link wrapping           | yes
+ *   tableCell (nested)      | yes
+ *
+ * The fixture below places exactly one image in each shape; the total
+ * count the walker reports MUST equal the number of images placed. If
+ * the walker regresses (e.g. forgets to recurse `items[]` for lists),
+ * the total drops by the per-shape count and the test reddens.
+ *
+ * SHOULD-B rides free on the same recursion: the raw-HTML red flags
+ * (`<script>`, `on*=`, external `href`/`src`) MUST be detected when
+ * smuggled into a list item or table cell, the same as a top-level
+ * smuggled reference. The second fixture below proves both halves
+ * together.
+ */
+describe("parseMarkdown — container recursion is complete", () => {
+  test("counts one image in every container shape Marked emits", () => {
+    const source = [
+      "# H1 ![h](https://cdn.example/h.png)",
+      "",
+      "Paragraph ![p](https://cdn.example/p.png).",
+      "",
+      "> Quote ![q](https://cdn.example/q.png).",
+      "",
+      "- Unordered item ![u](https://cdn.example/u.png)",
+      "- Second item with ![v](https://cdn.example/v.png)",
+      "",
+      "1. Ordered item ![o](https://cdn.example/o.png)",
+      "2. Second ordered ![p2](https://cdn.example/p2.png)",
+      "",
+      "   - Nested item ![n](https://cdn.example/n.png)",
+      "",
+      "| Header ![th](https://cdn.example/th.png) | Header2 ![th2](https://cdn.example/th2.png) |",
+      "| --- | --- |",
+      "| Cell ![tc1](https://cdn.example/tc1.png) | Cell2 ![tc2](https://cdn.example/tc2.png) |",
+      "",
+      "*emphasis wrapping ![em](https://cdn.example/em.png)*",
+      "",
+      "[link wrapping ![li](https://cdn.example/li.png)](https://example.com)",
+      "",
+    ].join("\n");
+    const result = parseMarkdown(bytes(source));
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") {
+      // 14 images placed (1 per shape × 14 shapes):
+      // h, p, q, u, v, o, p2, n, th, th2, tc1, tc2, em, li
+      expect(result.observed.externalImageCount).toBe(14);
+    }
+  });
+
+  test("red flags (script / on* / external) reach every container shape", () => {
+    // SHOULD-B: a `<script>` in a list item must reject the document
+    // the same as a top-level smuggled script.
+    const listScript = ["- list item with <script>alert(1)</script>", ""].join("\n");
+    expect(parseMarkdown(bytes(listScript)).status).toBe("error");
+
+    // ...and an `on*=` handler in a table cell.
+    const tableOnHandler = [
+      "| header |",
+      "| --- |",
+      '| cell with <button onclick="alert(1)">x</button> |',
+      "",
+    ].join("\n");
+    expect(parseMarkdown(bytes(tableOnHandler)).status).toBe("error");
+
+    // ...and an external `src=` smuggled into a table cell.
+    const tableExternal = [
+      "| header |",
+      "| --- |",
+      '| cell with <img src="https://cdn.example/smuggled.png"> |',
+      "",
+    ].join("\n");
+    expect(parseMarkdown(bytes(tableExternal)).status).toBe("error");
+  });
+});

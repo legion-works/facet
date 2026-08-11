@@ -115,3 +115,39 @@ FROM revisions;
 DROP TABLE revisions;
 ALTER TABLE revisions_v6 RENAME TO revisions;
 `;
+
+/**
+ * The v7 backfill repairs render_runs.observed_json rows written by
+ * prior releases that did NOT include the `opaqueRegionCount` and
+ * `externalImageCount` counters. A strict `VerdictObservedSchema.parse`
+ * would 400 read-back / export / gallery-source on every pre-arc
+ * artifact; the schema-level repair writes a 0 for every missing
+ * counter so future reads don't have to.
+ *
+ * The migration is idempotent: `json_extract(observed_json, '$.x')` is
+ * null when the field is absent, and `COALESCE` replaces that null with
+ * 0. Re-running the migration against an already-migrated row is a
+ * no-op because `COALESCE(null, 0)` and `COALESCE(0, 0)` both yield 0
+ * and the rebuilt JSON is identical to the existing one.
+ *
+ * This is the schema-side companion to the runtime tolerant read in
+ * `src/service/stored-verdict.ts` `withTolerantObserved`. The tolerant
+ * read defends the boundary against a row that was written before
+ * this migration ran; the migration moves the on-disk JSON to the
+ * current shape so future readers can be strict again if they want.
+ */
+export const V7_SCHEMA_FRAGMENT = `
+UPDATE render_runs
+SET observed_json = json_set(
+  json_set(
+    observed_json,
+    '$.opaqueRegionCount',
+    COALESCE(json_extract(observed_json, '$.opaqueRegionCount'), 0)
+  ),
+  '$.externalImageCount',
+  COALESCE(json_extract(observed_json, '$.externalImageCount'), 0)
+)
+WHERE
+  json_type(observed_json, '$.opaqueRegionCount') IS NULL
+  OR json_type(observed_json, '$.externalImageCount') IS NULL
+`;

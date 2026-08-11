@@ -79,16 +79,29 @@ test("docs/reference/html.md vocabulary matches src/shared/html/style-vocabulary
   }
 });
 
+test("vocabulary dedup pins the exact duplicate set (catches second-duplicate regressions)", () => {
+  // A guard that only checks `totalCount ≤ tailwindCount + daisyCount`
+  // is a tautology — it is ALWAYS true and cannot catch a second
+  // duplicate. The durable guard is the actual set of classes that
+  // appear in BOTH arrays: that set must equal exactly the known
+  // duplicates. Adding a second class to both arrays (e.g.
+  // duplicating `border`) makes this test fail BEFORE any doc
+  // regeneration, catching the regression at the source.
+  const tailwindSet = new Set<string>(HTML_TAILWIND_CLASSES);
+  const daisySet = new Set<string>(HTML_DAISY_COMPONENTS);
+  const duplicates: string[] = [];
+  for (const name of tailwindSet) {
+    if (daisySet.has(name)) duplicates.push(name);
+  }
+  duplicates.sort();
+  expect(duplicates).toEqual(["table"]);
+});
+
 test("vocabulary contains at least one class per shipped family", () => {
   // Sanity checks — a vocabulary with zero classes would be vacuous
   // and a vocabulary with only one family would be incomplete.
   const tailwindCount: number = HTML_TAILWIND_CLASSES.length;
   const daisyCount: number = HTML_DAISY_COMPONENTS.length;
-  const totalCount: number = HTML_STYLE_CLASSES_DISTINCT.length;
   expect(tailwindCount).toBeGreaterThan(20);
   expect(daisyCount).toBeGreaterThanOrEqual(3);
-  // The distinct count must NOT equal `tailwindCount + daisyCount` if
-  // the two arrays share any entry — the guard that catches a future
-  // second-duplicate regression where a class lands in both arrays.
-  expect(totalCount).toBeLessThanOrEqual(tailwindCount + daisyCount);
 });

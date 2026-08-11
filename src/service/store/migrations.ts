@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import { asStoreError, FacetStoreError } from "./database";
+export { INITIAL_SCHEMA } from "./schema";
 import {
   INITIAL_SCHEMA,
   V2_SCHEMA_FRAGMENT,
@@ -8,6 +9,7 @@ import {
   V4_SCHEMA_FRAGMENT,
   V5_SCHEMA_FRAGMENT,
   V6_SCHEMA_FRAGMENT,
+  V7_SCHEMA_FRAGMENT,
 } from "./schema";
 
 export interface MigrationOptions {
@@ -58,6 +60,20 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
     version: 6,
     apply: (db) => {
       db.exec(V6_SCHEMA_FRAGMENT);
+    },
+  },
+  {
+    version: 7,
+    apply: (db) => {
+      // Backfill the observed_json columns on rows written before
+      // `opaqueRegionCount` (opaque-content arc) and `externalImageCount`
+      // (this arc) were added. The schema-level repair is the
+      // companion to the runtime tolerant read; either one alone
+      // would fix this specific break, but treating the instance
+      // (`VerdictObservedSchema.optional()`) would leave the next
+      // counter addition to recur. Treating the boundary makes it
+      // durable.
+      db.exec(V7_SCHEMA_FRAGMENT);
     },
   },
 ];

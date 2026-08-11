@@ -43,6 +43,7 @@ import { SOURCE_CAP_BYTES, TIER1_PINNED_VERSION } from "../shared/config/limits"
 import { computeLexicalExpectations } from "./lexical/expectations";
 import { enrichVerdict, insecureMarker } from "./verdict-enrichment";
 import { exportStoredRender, exportStoredSource } from "./export";
+import { withTolerantObserved } from "./stored-verdict";
 
 import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
@@ -441,6 +442,8 @@ export async function dispatch(
           details: { revisionId: revision.id, tier },
         });
       }
+      // Tolerate counters the pre-arc schema did not include (see
+      // stored-verict.ts `withTolerantObserved` for the WHY).
       const observedJson = JSON.parse(runs[0]!.observedJson);
       const verdict = enrichVerdict(
         buildVerdict({
@@ -448,7 +451,7 @@ export async function dispatch(
           revisionSha: command.revisionSha,
           tier,
           status: runs[0]!.status,
-          observed: observedJson,
+          observed: withTolerantObserved(observedJson),
           ...(runs[0]!.insecureJson !== null
             ? { insecure: JSON.parse(runs[0]!.insecureJson) }
             : {}),

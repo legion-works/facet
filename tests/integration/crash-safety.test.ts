@@ -170,6 +170,7 @@ test("interrupted migration rolls back its version and recovers on retry", () =>
     { version: 4 },
     { version: 5 },
     { version: 6 },
+    { version: 7 },
   ]);
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'projects'").get()).toEqual({
     name: "projects",
@@ -219,6 +220,7 @@ test("upgrades a populated v2 database with renderer and screenshot-error column
     { version: 4 },
     { version: 5 },
     { version: 6 },
+    { version: 7 },
   ]);
   expect(db.query("SELECT renderer FROM revisions WHERE id = ?").get("revision-v2")).toEqual({
     renderer: "svg",
@@ -265,6 +267,18 @@ test("upgrades a populated v4 database and preserves render-run bytes without in
   );
   const expectedJson = JSON.stringify({ rendererRootSvgCount: 1 });
   const observedJson = JSON.stringify({ rendererRootSvgCount: 1, errorCount: 0 });
+  // The v7 migration backfills the observed_json column with zeros
+  // for counters the pre-arc shape omitted (`opaqueRegionCount` and
+  // `externalImageCount`); this is the exact reason the migration
+  // exists. The post-migration JSON carries those fields too, so
+  // the read-back assertion compares against the backfilled shape,
+  // not the on-disk shape as it was first planted.
+  const backfilledObservedJson = JSON.stringify({
+    rendererRootSvgCount: 1,
+    errorCount: 0,
+    opaqueRegionCount: 0,
+    externalImageCount: 0,
+  });
   db.query(
     "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
@@ -291,6 +305,7 @@ test("upgrades a populated v4 database and preserves render-run bytes without in
     { version: 4 },
     { version: 5 },
     { version: 6 },
+    { version: 7 },
   ]);
   expect(
     db
@@ -300,7 +315,7 @@ test("upgrades a populated v4 database and preserves render-run bytes without in
       .get("run-v4"),
   ).toEqual({
     expected_json: expectedJson,
-    observed_json: observedJson,
+    observed_json: backfilledObservedJson,
     screenshot_error_json: JSON.stringify({
       code: "capture_failed",
       message: "old screenshot error",

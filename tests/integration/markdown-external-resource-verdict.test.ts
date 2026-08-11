@@ -13,6 +13,12 @@
  * Two companion cases pin the no-false-downgrade side: a markdown
  * artifact with a `data:` image still verdicts `ok`, and a markdown
  * artifact with no image at all still verdicts `ok`.
+ *
+ * Test shape — the production Tier 0 runner parses the source for
+ * real, then a custom Tier 1 runner applies the production
+ * `deriveVerdict` over a synthetic observation sourced from the
+ * same lexical. Tier 1 is where the verdict is computed in the real
+ * pipeline, so this is where the downgrade lands.
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -20,8 +26,15 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { startFacetService, type RunningService } from "../../src/service/server";
-import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { createTier0Runner } from "../../src/validation/tier0/runner";
+import { deriveVerdict } from "../../src/validation/tier1/verdict";
+import type {
+  Tier1Input,
+  Tier1Result,
+  Tier0Runner,
+  Tier1Runner,
+} from "../../src/shared/contracts/validation";
 import { CommandResultSchema, type CommandResult } from "../../src/shared/contracts/commands";
 import { FACET_SCHEMA_VERSION } from "../../src/shared/contracts/envelope";
 
@@ -35,8 +48,89 @@ interface MdEnv {
   service: RunningService;
 }
 
+// Custom Tier 1 runner that mirrors the real pipeline's verdict
+// derivation: synthesize a protocol observation from the lexical
+// expectation (the markdown carries no viewBoxes / visible SVGs)
+// and call the production `deriveVerdict` over it. The page-shim
+// and isolated-world channels are absent, so the verdict would
+// otherwise fall through to `probe_only`; we mirror the protocol
+// observation into those stand-ins so the partial branches
+// (`external_resources`, `opaque_content`) are reachable without a
+// real browser. This stays at the Tier 1 layer where
+// `deriveVerdict` is actually invoked in production — keeping the
+// Tier 0 stub a stub and the verdict derivation production-
+// equivalent.
+function markdownTier1Runner(): Tier1Runner {
+  return async (input: Tier1Input): Promise<Tier1Result> => {
+    const externalImageCount = input.lexical.externalImageCount;
+    const protocolObservation = {
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      viewBoxes: [],
+      errorCount: 0,
+      opaqueRegionCount: 0,
+      externalImageCount,
+      discriminativeErrors: [],
+    };
+    const status = deriveVerdict(
+      input.lexical,
+      protocolObservation,
+      protocolObservation,
+      {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+        externalImageCount,
+        errorCount: 0,
+      },
+      { bootReady: true, renderComplete: true },
+    );
+    return {
+      tier: 1,
+      status,
+      artifactId: input.artifactType,
+      revisionSha: input.revisionSha,
+      expected: input.lexical,
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        externalImageCount,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+      screenshotPath: null,
+      consolePath: null,
+      ...(status.startsWith("partial:")
+        ? {
+            screenshotError: {
+              code: "screenshot_unavailable" as const,
+              message: "test-fixture: no browser harness",
+            },
+          }
+        : {}),
+    };
+  };
+}
+
 async function startEnv(): Promise<MdEnv> {
   const envDir = join(scratchRoot, crypto.randomUUID());
+  // The markdown external-image downgrade IS the property under test,
+  // so this suite injects:
+  //   - the PRODUCTION Tier 0 runner — the stub would zero the count
+  //     and the test would degenerate to a tautology.
+  //   - a Tier 1 runner that runs the production `deriveVerdict` over
+  //     a synthetic observation sourced from the same lexical the
+  //     Tier 0 worker emitted. Tier 0 alone would store status=ok
+  //     for a markdown parser pass; the downgrade is applied at the
+  //     Tier 1 verdict layer in production.
+  const tier0Runner: Tier0Runner = createTier0Runner(0);
+  const tier1Runner = markdownTier1Runner();
   const service = await startFacetService({
     dbPath: join(envDir, "facet.sqlite"),
     installTokenPath: join(envDir, "install.token"),
@@ -44,7 +138,8 @@ async function startEnv(): Promise<MdEnv> {
     lockPath: join(envDir, "facet.lock"),
     idleTimeoutMs: 5_000,
     logger: createQuietLogger({ component: "md-external-test" }),
-    tier0Runner: stubTier0Runner,
+    tier0Runner,
+    tier1Runner,
   });
   return { service };
 }
@@ -115,11 +210,15 @@ describe("markdown external-image disclosure is type-agnostic", () => {
         source,
         "external-image-downgrade",
       );
+      // The Tier 1 verdict is what carries the type-agnostic
+      // external_resources partial — Tier 0 alone reports `ok` for
+      // a markdown parser pass. Tier 1 runs `deriveVerdict` over
+      // the lexical and observation and downgrades here.
       const verdict = await request(service, {
         command: "readBack",
         artifactId,
         revisionSha,
-        tier: 0,
+        tier: 1,
       });
       if (verdict.command !== "readBack") throw new Error("expected readBack");
       expect(verdict.verdict.status).toBe("partial:external_resources");
@@ -142,7 +241,7 @@ describe("markdown external-image disclosure is type-agnostic", () => {
         command: "readBack",
         artifactId,
         revisionSha,
-        tier: 0,
+        tier: 1,
       });
       if (verdict.command !== "readBack") throw new Error("expected readBack");
       expect(verdict.verdict.status).not.toBe("partial:external_resources");
@@ -165,7 +264,7 @@ describe("markdown external-image disclosure is type-agnostic", () => {
         command: "readBack",
         artifactId,
         revisionSha,
-        tier: 0,
+        tier: 1,
       });
       if (verdict.command !== "readBack") throw new Error("expected readBack");
       expect(verdict.verdict.status).not.toBe("partial:external_resources");

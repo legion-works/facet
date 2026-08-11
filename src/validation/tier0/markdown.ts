@@ -79,6 +79,19 @@ function isExternalHttpsUrl(value: string): boolean {
  * image per token regardless of which authoring form produced it.
  * Raw-HTML `src="https://…"` is the smuggling pattern and is rejected
  * below.
+ *
+ * Container recursion enumerates every shape Marked actually emits
+ * with children: `tokens[]` (blockquote, paragraph, heading, list_item,
+ * em, strong, link, image, del, tableCell), `items[]` (list carries
+ * ListItem tokens; each item has its own `tokens[]`), `header[]`
+ * (table header cells; each cell carries its own `tokens[]`), and
+ * `rows[][]` (table body rows of cells; each cell carries its own
+ * `tokens[]`). Missing any of these silently misses every image a real
+ * status report places in a list or table — see the per-container
+ * shape table in the regression report. The walker ALSO recurses the
+ * raw-HTML red flags into the same containers: a `<script>` or `on*=`
+ * smuggled into a list item or table cell must still reject the
+ * document, the same as a top-level smuggled reference.
  */
 function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
   for (const token of tokens) {
@@ -101,17 +114,41 @@ function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
       const image = token as Tokens.Image;
       if (isExternalHttpsUrl(image.href ?? "")) counts.externalImageCount += 1;
     }
-    // Recurse into containers (paragraph, list, blockquote, table).
+    // Recurse every container Marked actually emits with children.
     const recurseTokens = (sub: Token[] | undefined): void => {
       if (Array.isArray(sub)) walkTokens(sub, counts);
     };
     const t = token as unknown as Record<string, unknown>;
+    // tokens[] — blockquote, paragraph, heading, list_item, em,
+    // strong, link, image (inline children), del, tableCell.
     recurseTokens(t["tokens"] as Token[] | undefined);
-    const header = t["header"] as { tokens?: Token[] } | undefined;
-    if (header !== undefined) recurseTokens(header.tokens);
-    const rows = t["rows"] as Array<{ tokens?: Token[] }> | undefined;
+    // items[] — list carries ListItem tokens (each with its own
+    // tokens[] walked above when we visit them).
+    const items = t["items"] as Token[] | undefined;
+    if (Array.isArray(items)) walkTokens(items, counts);
+    // header[] — table header cells. Each cell carries its own
+    // tokens[] walked when we visit the cell token below.
+    const headerCells = t["header"] as Array<{ tokens?: Token[] }> | undefined;
+    if (Array.isArray(headerCells)) {
+      for (const cell of headerCells) {
+        if (cell !== null && typeof cell === "object") {
+          recurseTokens(cell.tokens as Token[] | undefined);
+        }
+      }
+    }
+    // rows[][] — table body rows, each row is an array of cells,
+    // each cell carries its own tokens[].
+    const rows = t["rows"] as Array<Array<{ tokens?: Token[] } | null>> | undefined;
     if (Array.isArray(rows)) {
-      for (const row of rows) recurseTokens(row.tokens);
+      for (const row of rows) {
+        if (Array.isArray(row)) {
+          for (const cell of row) {
+            if (cell !== null && typeof cell === "object") {
+              recurseTokens(cell.tokens as Token[] | undefined);
+            }
+          }
+        }
+      }
     }
   }
 }
