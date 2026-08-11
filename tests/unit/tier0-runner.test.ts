@@ -1,8 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import type { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { rmSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
+import { PassThrough } from "node:stream";
 
 import * as tier0Runner from "../../src/validation/tier0/runner";
+import * as sandbox from "../../src/validation/sandbox/netns";
 import type { Tier0Input } from "../../src/shared/contracts/validation";
 
 function input(revisionSha: string, source = "fast"): Tier0Input {
@@ -118,6 +122,18 @@ async function waitForPidExit(pid: number): Promise<boolean> {
   return false;
 }
 
+function fakeWorker(): { readonly child: ChildProcess; readonly stderr: PassThrough } {
+  const stderr = new PassThrough();
+  const child = Object.assign(new EventEmitter(), {
+    pid: process.pid,
+    stdin: new PassThrough(),
+    stdout: new PassThrough(),
+    stderr,
+    kill: () => true,
+  }) as unknown as ChildProcess;
+  return { child, stderr };
+}
+
 describe("Tier 0 insecure isolation selection", () => {
   test.each([0, 1] as const)("level %d selects the netns worker path", (level) => {
     expect(tier0Runner.resolveTier0Isolation(level)).toBe("netns");
@@ -212,6 +228,48 @@ describe("Tier 0 worker pool", () => {
       expect(pids).toHaveLength(2);
       expect(pids[1]).not.toBe(pids[0]);
     });
+  });
+
+  test("retains spawn error metadata and buffered stderr", async () => {
+    const { child: worker, stderr } = fakeWorker();
+    let markSpawned: () => void;
+    const spawned = new Promise<void>((resolve) => {
+      markSpawned = resolve;
+    });
+    const spawn = spyOn(sandbox, "spawnDirectWorker").mockImplementation(() => {
+      markSpawned();
+      return worker;
+    });
+    const stderrWrite = spyOn(process.stderr, "write").mockImplementation(() => true);
+    const runner = tier0Runner.createTier0RunnerForTests(2, {});
+    const spawnError = Object.assign(new Error("spawn /bin/sh EMFILE"), {
+      code: "EMFILE",
+      errno: -24,
+      syscall: "spawn /bin/sh",
+    });
+    try {
+      const pending = runner(input("b".repeat(64)));
+      await spawned;
+      await new Promise<void>((resolve) => {
+        stderr.once("data", () => resolve());
+        stderr.write("worker bootstrap failed");
+      });
+      queueMicrotask(() => worker.emit("error", spawnError));
+      await expect(pending).rejects.toMatchObject({
+        code: "tier0_worker_died",
+        message: expect.stringMatching(/EMFILE.*worker bootstrap failed/),
+        details: {
+          code: "EMFILE",
+          errno: -24,
+          syscall: "spawn /bin/sh",
+          stderr: "worker bootstrap failed",
+        },
+      });
+    } finally {
+      runner.close?.();
+      spawn.mockRestore();
+      stderrWrite.mockRestore();
+    }
   });
 
   test("trailing worker output is a typed protocol error and output over the cap is typed", async () => {

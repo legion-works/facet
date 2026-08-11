@@ -178,6 +178,37 @@ function workerDiedError(code: number | null, signal: NodeJS.Signals | null): Fa
   });
 }
 
+function workerStartError(error: unknown, stderr: Buffer): FacetError {
+  const fields =
+    error !== null && typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const message = error instanceof Error ? error.message : String(error);
+  const code = typeof fields.code === "string" ? fields.code : null;
+  const errno =
+    typeof fields.errno === "string" || typeof fields.errno === "number" ? fields.errno : null;
+  const syscall = typeof fields.syscall === "string" ? fields.syscall : null;
+  const stderrText = stderr.toString("utf8").trim() || null;
+  const diagnostics = [
+    `error=${message}`,
+    ...(code === null ? [] : [`code=${code}`]),
+    ...(errno === null ? [] : [`errno=${errno}`]),
+    ...(syscall === null ? [] : [`syscall=${syscall}`]),
+    ...(stderrText === null ? [] : [`stderr=${stderrText}`]),
+  ];
+  return new FacetError(
+    "tier0_worker_died",
+    `Worker process failed to start: ${diagnostics.join("; ")}`,
+    {
+      retryable: false,
+      details: {
+        code,
+        errno,
+        syscall,
+        stderr: stderrText,
+      },
+    },
+  );
+}
+
 function parseWorkerResponse(
   line: Buffer,
   requestId: string,
@@ -215,6 +246,7 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
   let child: ChildProcess | null = null;
   let pending: PendingRequest | null = null;
   let stdoutBuffer = Buffer.alloc(0);
+  let stderrBuffer = Buffer.alloc(0);
   let queued: Promise<void> = Promise.resolve();
   let requestSequence = 0;
   let closed = false;
@@ -237,6 +269,7 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
     if (child !== target) return;
     child = null;
     stdoutBuffer = Buffer.alloc(0);
+    stderrBuffer = Buffer.alloc(0);
     if (!kill) return;
     try {
       target.kill("SIGKILL");
@@ -327,14 +360,16 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
         : spawnDirectWorker(["run", options.workerEntry]);
     child = started;
     options.onWorkerSpawn?.(started.pid!);
+    started.stderr?.on("data", (chunk: Buffer) => {
+      stderrBuffer = Buffer.concat([stderrBuffer, Buffer.from(chunk)]).subarray(
+        0,
+        options.outputCap,
+      );
+    });
     started.stderr?.pipe(process.stderr, { end: false });
     started.stdout?.on("data", (chunk: Buffer) => handleStdout(started, Buffer.from(chunk)));
-    started.once("error", () => {
-      failWorker(
-        started,
-        new FacetError("tier0_worker_died", "Worker process failed to start", { retryable: false }),
-        false,
-      );
+    started.once("error", (error) => {
+      failWorker(started, workerStartError(error, stderrBuffer), false);
     });
     started.once("exit", (code, signal) => {
       failWorker(started, workerDiedError(code, signal), false);

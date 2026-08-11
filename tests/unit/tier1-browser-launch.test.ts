@@ -29,7 +29,7 @@ const input = {
   networkNamespace: "test-only",
 };
 
-test("promotes a bad-file-descriptor browser spawn to a typed transport wedge", async () => {
+test("preserves a bad-file-descriptor browser spawn as a launch error", async () => {
   const error = Object.assign(new Error("bad file descriptor, epoll_ctl"), { code: "EBADF" });
   const launch = spyOn(puppeteer, "launch").mockRejectedValue(error);
   try {
@@ -37,8 +37,11 @@ test("promotes a bad-file-descriptor browser spawn to a typed transport wedge", 
       await new PuppeteerTier1Browser({ launcher }).launch();
       throw new Error("expected browser launch to fail");
     } catch (received) {
-      expect(received).toBeInstanceOf(Tier1TransportWedgeError);
-      expect(received).toHaveProperty("message", expect.stringContaining("EBADF"));
+      expect(received).not.toBeInstanceOf(Tier1TransportWedgeError);
+      expect(received).toHaveProperty(
+        "message",
+        expect.stringContaining("tier1: puppeteer launch failed: bad file descriptor"),
+      );
     }
   } finally {
     launch.mockRestore();

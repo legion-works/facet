@@ -62,6 +62,11 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-bun
+      - name: permit Tier 0 network namespaces
+        shell: bash
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          unshare --map-current-user --user --net -- /bin/true
       - name: stress changed tests
         shell: bash
         run: |
