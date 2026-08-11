@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.5.0](https://github.com/legion-works/facet/compare/v1.4.0...v1.5.0) (2026-08-11)
+
+
+### Features
+
+* add html observables and the external-resource status ([072bfa7](https://github.com/legion-works/facet/commit/072bfa749c506d07fdd77439b2ff930e9466fe4d))
+* implement the html artifact type contract ([56c52af](https://github.com/legion-works/facet/commit/56c52af8cc1401f7e851cd85b3df8a00075439d5))
+* observe and verdict html structure in tier 1 ([b0cc2fa](https://github.com/legion-works/facet/commit/b0cc2fa807c1777152b6c5fe114dfef29502bd70))
+* parse static html in tier 0 ([e54323b](https://github.com/legion-works/facet/commit/e54323b55a4c7e885f527dfbeee437f0d1851e66))
+* permit external https images in the frozen csp ([29d000e](https://github.com/legion-works/facet/commit/29d000ed634b37511887feb39be3af55d0eae7e4))
+* render html in a frame-owned root with vendored styling ([061c68b](https://github.com/legion-works/facet/commit/061c68ba222782e17cd37f165d90743293408fb3))
+
+
+### Bug Fixes
+
+* bound html nesting depth ([6171bbf](https://github.com/legion-works/facet/commit/6171bbfe7e40fc7a809869139add61c8fd4ce88c))
+* close template and url scheme policy bypasses ([d5a3d6a](https://github.com/legion-works/facet/commit/d5a3d6a47953317ee7437994e079a5a2b4c1885d))
+* count external references in every markdown container ([e7f4c89](https://github.com/legion-works/facet/commit/e7f4c89776ea8c6ecd69256bb7ba5b1e2e1b993c))
+* couple the differential corpus to production observation ([05a162f](https://github.com/legion-works/facet/commit/05a162feadedfaac12bc12ef049ba345afcfc7d5))
+* detect unsupported select recovery by tokenizing ([ce68832](https://github.com/legion-works/facet/commit/ce6883200c6d18d5fb4356a03d4f55270425970e))
+* disclose external references for every artifact type ([e51fb33](https://github.com/legion-works/facet/commit/e51fb331e512c2e28ccf174fa8070864e8e5d619))
+* exclude user-agent shadow content from html observation ([04e3267](https://github.com/legion-works/facet/commit/04e3267d9bb5051140f3b076d1a63655594229a0))
+* move tier 0 gates to isolated CI and retry EBADF ([f76e968](https://github.com/legion-works/facet/commit/f76e968cc30de5b14b1986f9ab44c6aff6c52f00))
+* retain sandbox launch diagnostics ([e7e7de5](https://github.com/legion-works/facet/commit/e7e7de58e009b069e3848cdb1b6016a21f63fbd3))
+* scope sandbox env and decouple EBADF unit gate ([39612ca](https://github.com/legion-works/facet/commit/39612cae7822ae27c1fb14d7090f305e61761376))
+* treat noscript as parsed markup in the select detector ([e151833](https://github.com/legion-works/facet/commit/e1518336cbc8263e7b98f4a585d915d607bc3a9e))
+* type the missing-result worker protocol failure ([200d400](https://github.com/legion-works/facet/commit/200d4001b72fd943c3ba226daacd38aea68e617c))
+
+
+### Performance Improvements
+
+* pool the tier 0 worker ([abbafd5](https://github.com/legion-works/facet/commit/abbafd54ec37e0ed541f01d051c6b0aeb8d89f54))
+
 ## [1.4.0](https://github.com/legion-works/facet/compare/v1.3.0...v1.4.0) (2026-08-10)
 
 
