@@ -224,6 +224,11 @@ export type Tier0WorkerResult = z.infer<typeof Tier0WorkerResultSchema>;
 
 /** Tier 1 input: headless-shell-backed verifier on top of Tier 0. */
 export const Tier1InputSchema = Tier0InputSchema.extend({
+  /**
+   * Bytes Tier 1 renders. This is the published source for every type except
+   * static TSX, which supplies the retained compiled HTML derived from it.
+   */
+  source: z.instanceof(Uint8Array<ArrayBuffer>),
   /** Pinned chrome-headless-shell version that must run this verification. */
   launcherVersion: z.string().min(1),
   /** Network namespace name the verifier must be confined to. */

@@ -8,9 +8,8 @@
  * become executable.
  *
  * Lifecycle:
- *   1. Read the per-frame nonce from the frame document's own URL (the
- *      bundle is static across frames; the nonce is fresh per frame).
- *   2. Verify the `ports` handshake nonce, wire the transferred ports.
+ *   1. Read the per-frame CSP nonce and channel secret from the frame URL.
+ *   2. Verify the `ports` channel secret, wire the transferred ports.
  *   3. Emit `boot-ready` on the control port.
  *   4. Receive the artifact on the ingress port (one-shot), close it.
  *   5. Dispatch through the renderer registry; await render-complete
@@ -59,15 +58,15 @@ if (containerElement === null) {
 }
 const container: HTMLElement = containerElement;
 
-// The frame document's own URL carries the per-frame nonce (the service
-// validates its shape before echoing it into the CSP header), and the
-// handshake must match it. Read it from `location` rather than the script
-// tag: `document.currentScript` is ALWAYS null in a module script, and a
-// nonce content attribute is hidden from DOM reads. Keeping the nonce off
-// the bundle URL leaves ONE cacheable bundle valid across frames.
-const nonce = new URLSearchParams(location.search).get("nonce") ?? "";
+// Nested srcdoc documents inherit this CSP and can read their meta content,
+// so the CSP nonce cannot authenticate the shell's transferable ports.
+// The distinct URL secret is not exposed to the nested opaque origin.
+const frameParams = new URLSearchParams(location.search);
+const nonce = frameParams.get("nonce") ?? "";
+const handshakeNonce = frameParams.get("handshake") ?? "";
 
 let controlPost: ((event: unknown) => void) | null = null;
+let handshakeComplete = false;
 
 let drag: { x: number; y: number } | null = null;
 
@@ -161,13 +160,15 @@ export function startGalleryFrame(registry: RendererRegistry): void {
   window.addEventListener(
     "message",
     (event: MessageEvent) => {
+      if (handshakeComplete || event.source !== window.parent) return;
       const data = event.data as HandshakeData | null;
-      if (data === null || data.facetHandshake !== "ports" || data.nonce !== nonce) return;
+      if (data === null || data.facetHandshake !== "ports" || data.nonce !== handshakeNonce) return;
       const ports = event.ports;
       if (ports.length !== 2) return;
       const ingress = ports[0];
       const control = ports[1];
       if (ingress === undefined || control === undefined) return;
+      handshakeComplete = true;
       controlPost = control.postMessage.bind(control);
       // Control RECEIVE path (shell → frame). MessagePort.onmessage
       // setter form: the pinned chrome-headless-shell silently drops

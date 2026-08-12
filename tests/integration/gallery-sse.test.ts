@@ -282,17 +282,19 @@ describe("gallery frame program (bootstrap source)", () => {
   const bootstrapPath = new URL("../../src/gallery-web/frame/bootstrap.ts", import.meta.url)
     .pathname;
 
-  test("verifies the handshake nonce against its own frame-document url", async () => {
+  test("verifies the handshake secret against its own frame-document url", async () => {
     const source = await Bun.file(bootstrapPath).text();
     expect(source).toContain("facetHandshake");
     expect(source).toContain("ports");
-    // The nonce is read from the frame document's URL, NOT the script tag:
+    // The handshake secret is read from the frame document's URL, NOT the script tag:
     // `document.currentScript` is always null in a module script, so the
     // tag read silently yielded "" and no handshake ever matched.
-    expect(source).toContain('URLSearchParams(location.search).get("nonce")');
+    expect(source).toContain('frameParams.get("handshake")');
     expect(source).not.toContain('getAttribute("nonce")');
-    // The handshake still gates on an exact nonce match.
-    expect(source).toContain("data.nonce !== nonce");
+    // The handshake still gates on an exact secret match.
+    expect(source).toContain("data.nonce !== handshakeNonce");
+    expect(source).toContain("event.source !== window.parent");
+    expect(source).toContain("handshakeComplete");
   });
 
   test("signals boot-ready and render-complete via the control port", async () => {
@@ -805,9 +807,14 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     // Fresh nonce + fresh loopback URL per frame — an old bootstrap cannot
     // survive into a new CSP window, and no source bytes ride the document.
     expect(first.nonce).not.toBe(second.nonce);
+    expect(first.handshakeNonce).not.toBe(first.nonce);
+    expect(second.handshakeNonce).not.toBe(second.nonce);
+    expect(first.handshakeNonce).not.toBe(second.handshakeNonce);
     expect(first.attrs.src).not.toBe(second.attrs.src);
     expect(first.attrs.src).toContain(encodeURIComponent(first.nonce));
     expect(second.attrs.src).toContain(encodeURIComponent(second.nonce));
+    expect(first.attrs.src).toContain(encodeURIComponent(first.handshakeNonce));
+    expect(second.attrs.src).toContain(encodeURIComponent(second.handshakeNonce));
     expect(first.attrs.src).not.toContain(ARTIFACT_SENTINEL);
     expect(second.attrs.src).not.toContain(ARTIFACT_SENTINEL);
 

@@ -244,7 +244,10 @@ export interface FrameElementHandle {
 
 export interface CreatedArtifactFrame {
   readonly frameId: string;
+  /** CSP nonce carried by the frame document and its nested TSX srcdoc. */
   readonly nonce: string;
+  /** Separate secret that authenticates the shell → frame port transfer. */
+  readonly handshakeNonce: string;
   readonly attrs: FrameAttributes;
   /** Caller transfers these into the iframe via postMessage. */
   readonly frameIngressPort: MessagePort;
@@ -293,7 +296,7 @@ export interface FrameHost {
  * nonce, open two MessageChannels, hold port1 of each. The returned
  * `frameIngressPort` + `frameControlPort` MUST be transferred into the
  * frame via `frame.contentWindow.postMessage({facetHandshake: "ports",
- * nonce}, targetOrigin, ports)` AFTER the iframe's `load` event fires.
+ * handshakeNonce}, targetOrigin, ports)` AFTER the iframe's `load` event fires.
  */
 export function createArtifactFrame(options: CreateArtifactFrameOptions): CreatedArtifactFrame {
   const dom = options.dom;
@@ -301,8 +304,10 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   // capability code runs.
   assertLoopbackHostname(dom.hostname);
   const nonce = options.nonce ?? newFrameNonce();
+  const handshakeNonce = newFrameNonce();
   const frameUrl = new URL(options.frameUrl ?? "/gallery/frame", `http://${dom.hostname}`);
   frameUrl.searchParams.set("nonce", nonce);
+  frameUrl.searchParams.set("handshake", handshakeNonce);
   frameUrl.searchParams.set("type", options.artifactType);
   frameUrl.searchParams.set("renderer", options.renderer ?? "svg");
   const attrs = buildFrameAttributes(frameUrl.toString());
@@ -331,6 +336,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   return {
     frameId,
     nonce,
+    handshakeNonce,
     attrs,
     frameIngressPort: channels.frameIngressPort,
     frameControlPort: channels.frameControlPort,
@@ -719,10 +725,11 @@ function armFrameLoad(
     element.addEventListener(
       "load",
       () => {
-        element.contentWindow?.postMessage({ facetHandshake: "ports", nonce: frame.nonce }, "*", [
-          frame.frameIngressPort,
-          frame.frameControlPort,
-        ]);
+        element.contentWindow?.postMessage(
+          { facetHandshake: "ports", nonce: frame.handshakeNonce },
+          "*",
+          [frame.frameIngressPort, frame.frameControlPort],
+        );
         void frame.awaitControlEvent("boot-ready", DEFAULT_READY_TIMEOUT_MS).then(resolve);
       },
       { once: true },

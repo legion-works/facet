@@ -55,6 +55,7 @@ const container: HTMLElement = containerElement;
 const nonce = container.getAttribute("data-facet-nonce") ?? "";
 
 let controlPost: ((event: ControlEvent) => void) | null = null;
+let handshakeComplete = false;
 
 function adversarialMonkeypatch(): void {
   // Replace querySelectorAll so the page-shim's count diverges from
@@ -192,16 +193,18 @@ export function startTier1Harness(registry: RendererRegistry): void {
   window.addEventListener(
     "message",
     (event) => {
+      if (handshakeComplete || event.source !== window.parent) return;
       const data = (event as MessageEvent).data as {
         facetHandshake?: string;
         nonce?: string;
       } | null;
-      if (data === null || data.facetHandshake !== "ports") return;
+      if (data === null || data.facetHandshake !== "ports" || data.nonce !== nonce) return;
       const ports = (event as MessageEvent).ports;
       if (!Array.isArray(ports) || ports.length !== 2) return;
       const ingress = ports[0];
       const control = ports[1];
       if (ingress === undefined || control === undefined) return;
+      handshakeComplete = true;
       controlPost = control.postMessage.bind(control) as (event: ControlEvent) => void;
       // MessagePort.onmessage is required over addEventListener("message"):
       // per spec a MessagePort queues messages until start() is called, and

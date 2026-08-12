@@ -21,18 +21,13 @@
 import { build } from "bun";
 
 import { ARTIFACT_TYPES, type ArtifactType } from "../../gallery-web/frame/renderers/registry";
+import { freshFrameNonce } from "../../gallery-web/frame/channels";
 import { frameBundlePlugins } from "../../shared/build/frame-bundle-plugins";
 import { FROZEN_CSP_TEMPLATE as HARNESS_CSP } from "../../shared/security/frozen-csp";
 
 export { FROZEN_CSP_TEMPLATE as HARNESS_CSP } from "../../shared/security/frozen-csp";
 
 const HARNESS_ENTRY_DIR = `${import.meta.dir}/entries`;
-
-function freshNonce(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 /**
  * Build one type-specific harness browser bundle, inlined as ESM.
@@ -127,7 +122,7 @@ export async function buildHarnessSrcdoc(artifactType: string): Promise<{
   readonly bundleBytes: number;
 }> {
   const rendererType = parseArtifactType(artifactType);
-  const nonce = freshNonce();
+  const nonce = freshFrameNonce();
   const { code, styles, bytes } = await buildBootstrapBundle(rendererType);
   const escaped = code.replace(/<\/script/gi, "<\\/script");
   const csp = HARNESS_CSP.replace("<BOOTSTRAP_NONCE>", nonce);
@@ -165,7 +160,7 @@ export async function buildHostPage(
   renderer = "svg",
   execution: "static" | "interactive" = "static",
 ): Promise<HostPageInputs> {
-  const { srcdoc, bundleBytes: harnessBytes } = await buildHarnessSrcdoc(artifactType);
+  const { srcdoc, nonce, bundleBytes: harnessBytes } = await buildHarnessSrcdoc(artifactType);
   const harnessPath = `${hostDir}/harness.html`;
   await Bun.write(harnessPath, srcdoc);
   const b64 = Buffer.from(artifactBytes).toString("base64");
@@ -195,6 +190,9 @@ export async function buildHostPage(
     "var harnessPath=" +
     JSON.stringify(harnessPath) +
     ";" +
+    "var harnessNonce=" +
+    JSON.stringify(nonce) +
+    ";" +
     "var ingress=new MessageChannel();" +
     "var control=new MessageChannel();" +
     "window.__facetShimEvents=[];" +
@@ -204,7 +202,7 @@ export async function buildHostPage(
     "frame.referrerPolicy='no-referrer';" +
     "frame.src=harnessPath;" +
     "frame.addEventListener('load',function(){" +
-    "frame.contentWindow.postMessage({facetHandshake:'ports',nonce:''},'*',[ingress.port2,control.port2]);" +
+    "frame.contentWindow.postMessage({facetHandshake:'ports',nonce:harnessNonce},'*',[ingress.port2,control.port2]);" +
     "});" +
     "document.getElementById('host-root').appendChild(frame);" +
     "window.__facetHostArtifact={bytes:artifactB64,mode:artifactMode,artifactType:artifactType,renderer:renderer,execution:execution,ingress:ingress.port1,control:control.port1};" +

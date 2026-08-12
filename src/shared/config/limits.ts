@@ -6,7 +6,11 @@
  */
 export const SOURCE_CAP_BYTES = 5 * 1024 * 1024;
 
-/** Pinned Chrome for Testing build used by the Tier 1 verifier. */
+/**
+ * Pinned Chrome for Testing build used by the Tier 1 verifier. Browser-pin
+ * changes must re-check opaque-origin storage isolation, sandbox navigation
+ * limits, `connect-src 'none'`, and nonce-only script execution.
+ */
 export const TIER1_PINNED_VERSION = "151.0.7922.77";
 
 /**
