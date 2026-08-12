@@ -19,6 +19,7 @@ import { RevisionCommittedEventSchema } from "../../src/shared/contracts/events"
 import {
   LexicalCountersSchema,
   ProtocolObservationSchema,
+  RenderStatusSchema,
   Tier0ResultSchema,
   Tier1ResultSchema,
   VerdictSchema,
@@ -446,6 +447,115 @@ describe("HTML validation observables", () => {
     const json = JSON.stringify(baselineRevision);
     expect(json).not.toContain('"execution"');
     expect(json).not.toContain('"compiledPath"');
+  });
+
+  test("tsx verdict accepts execution marker; non-tsx verdict omits it on the wire", () => {
+    // D10: the execution marker is a top-level marker on the verdict.
+    // It is emitted for TSX static and interactive verdicts and
+    // ABSENT — not null — for every other artifact type. The byte
+    // baseline already pins the non-TSX wire form, so this test
+    // asserts the +presence side: the schema accepts the marker,
+    // the runtime parses it into the field, and the JSON shape
+    // lands `execution` between `insecure` and the closing brace
+    // (top-level marker slot, distinct from the observed counters).
+    const SHA = "a".repeat(64);
+    const tsxStaticVerdict = VerdictSchema.parse({
+      status: "ok",
+      tier: 1,
+      artifactId: "art-tsx",
+      revisionSha: SHA,
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        externalImageCount: 0,
+        errorCount: 0,
+      },
+      execution: "static",
+    });
+    expect(tsxStaticVerdict.execution).toBe("static");
+    expect(tsxStaticVerdict.observed.discriminativeErrors).toBeUndefined();
+
+    const tsxInteractiveVerdict = VerdictSchema.parse({
+      status: "partial:unstable",
+      tier: 1,
+      artifactId: "art-tsx",
+      revisionSha: SHA,
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        externalImageCount: 0,
+        errorCount: 0,
+      },
+      execution: "interactive",
+    });
+    expect(tsxInteractiveVerdict.execution).toBe("interactive");
+    expect(tsxInteractiveVerdict.observed).toEqual({
+      rendererRootSvgCount: 1,
+      graphCount: 1,
+      mermaidNodeCount: 2,
+      visibleSvgCount: 1,
+      opaqueRegionCount: 0,
+      externalImageCount: 0,
+      errorCount: 0,
+    });
+
+    // The non-TSX wire form is byte-identical to the pre-arc shape.
+    // The byte baseline already pins this; the assertion below
+    // shows the execution marker is NOT injected on a non-TSX
+    // verdict when the schema parses it back without that field.
+    const markdownVerdict = VerdictSchema.parse({
+      status: "ok",
+      tier: 1,
+      artifactId: "art-markdown",
+      revisionSha: SHA,
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        externalImageCount: 0,
+        errorCount: 0,
+      },
+    });
+    const mdJson = JSON.stringify(markdownVerdict);
+    const mdParsed = JSON.parse(mdJson) as Record<string, unknown>;
+    expect(mdParsed).not.toHaveProperty("execution");
+    expect(mdJson).not.toContain('"execution"');
+  });
+
+  test("VerdictSchema rejects unknown execution values", () => {
+    const SHA = "a".repeat(64);
+    const verdict = {
+      status: "ok",
+      tier: 1,
+      artifactId: "art-tsx",
+      revisionSha: SHA,
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        externalImageCount: 0,
+        errorCount: 0,
+      },
+      execution: "strem", // typo
+    };
+    expect(VerdictSchema.safeParse(verdict).success).toBe(false);
+  });
+
+  test("RenderStatusSchema accepts partial:unstable as a closed-enum member", () => {
+    expect(RenderStatusSchema.options).toContain("partial:unstable");
+    expect(RenderStatusSchema.safeParse("partial:unstable").success).toBe(true);
+    // Closed enum: unknown statuses are rejected.
+    expect(RenderStatusSchema.safeParse("partial:who-knows").success).toBe(false);
   });
 
   test("byte-equality baseline for non-tsx wire surfaces (frozen literal snapshot)", () => {

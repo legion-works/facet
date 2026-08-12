@@ -397,4 +397,45 @@ describe("buildExportSidecar", () => {
     expect(sidecar.verdict.status).toBe("partial:external_resources");
     expect(sidecar.verdict.observed.html?.externalImageCount).toBe(2);
   });
+
+  test("preserves the TSX execution marker; non-tsx verdicts omit it on the wire", () => {
+    // D10: the execution marker is emitted for TSX static and
+    // interactive verdicts and ABSENT — not null — for every
+    // other artifact type. The ExportSidecarSchema parses the
+    // verdict through VerdictSchema, so this test confirms the
+    // marker round-trips for TSX and is rejected for non-TSX.
+    const tsxVerdict: Verdict = {
+      status: "ok",
+      tier: 1,
+      artifactId: artifact.id,
+      revisionSha: revision.sha256,
+      observed,
+      execution: "static",
+    };
+    const tsxSidecar = buildExportSidecar({
+      artifact,
+      revision: { ...revision, artifactType: "tsx" },
+      verdict: tsxVerdict,
+      format: "source",
+      exportedAt,
+    });
+    expect(tsxSidecar.verdict.execution).toBe("static");
+
+    const nonTsxVerdict: Verdict = {
+      status: "ok",
+      tier: 1,
+      artifactId: artifact.id,
+      revisionSha: revision.sha256,
+      observed,
+    };
+    const nonTsxSidecar = buildExportSidecar({
+      artifact,
+      revision: { ...revision, artifactType: "markdown" },
+      verdict: nonTsxVerdict,
+      format: "source",
+      exportedAt,
+    });
+    expect(nonTsxSidecar.verdict).not.toHaveProperty("execution");
+    expect(JSON.stringify(nonTsxSidecar)).not.toContain('"execution"');
+  });
 });

@@ -103,6 +103,31 @@ describe("CLI presenter envelopes", () => {
     );
   });
 
+  test("unstable partial output keeps the partial glyph and explicit status label", () => {
+    // D11: TSX interactive verdict whose structure changed between
+    // the render barrier and the stability window. The semantic
+    // shape matches the other partials (◐ glyph + amber tone);
+    // the discriminator is the second `unstable` segment after the
+    // colon.
+    const readBack = validReadBackResult();
+    const publish = {
+      ...validPublishResult(),
+      tier1Verdict: {
+        ...readBack.verdict,
+        status: "partial:unstable" as const,
+        observed: {
+          ...readBack.verdict.observed,
+        },
+        screenshotPath: "/tmp/tsx.png",
+        consolePath: null,
+      },
+    };
+
+    expect(presentEnvelope(okEnvelope("request-1", publish), plain)).toContain(
+      `◐ partial · unstable · tier 1 · art-1 @ ${"a".repeat(8)}`,
+    );
+  });
+
   test("insecure status renders through the verdict map", () => {
     const readBack = validReadBackResult();
     const publish = {

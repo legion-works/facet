@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ArtifactTypeSchema, RendererSchema } from "./artifact";
+import { TSX_EXECUTION_MODES } from "../tsx/execution";
 
 /**
  * Validation tier. Tier 0 is the always-on parser worker (no browser);
@@ -16,6 +17,15 @@ export const ValidationTierSchema = z.union([z.literal(0), z.literal(1)]);
  * but could not finalize the layout pass (e.g., due to viewport
  * unavailability); `tampered` is reserved for hostile pages that
  * attempted to forge the verdict.
+ *
+ * `partial:unstable` (D11) is the TSX interactive mode verdict for a
+ * structure that legitimately changed between the render barrier and
+ * the stability window. It is deliberately NOT `tampered` — a
+ * legitimately animated or async-loading component also changes
+ * structure between observations, and branding it a forgery would
+ * manufacture the exact false-verdict class this project has spent
+ * three arcs eliminating. `tampered` stays reserved for channel
+ * divergence — the page contradicting protocol authority.
  */
 export const RenderStatusSchema = z.enum([
   "ok",
@@ -23,6 +33,7 @@ export const RenderStatusSchema = z.enum([
   "partial:layout_unverified",
   "partial:opaque_content",
   "partial:external_resources",
+  "partial:unstable",
   "tampered",
   "timeout",
   "shim_only",
@@ -30,6 +41,16 @@ export const RenderStatusSchema = z.enum([
   "insecure:unvalidated",
 ]);
 export type RenderStatus = z.infer<typeof RenderStatusSchema>;
+
+/**
+ * TSX execution mode marker (D2 / D10). Carried on TSX static and
+ * interactive verdicts; ABSENT for every other artifact type. The
+ * shape mirrors the existing top-level marker precedents
+ * (`insecure`, `screenshotError`) — a discriminated literal, not a
+ * nullable object.
+ */
+export const TsxExecutionModeSchema = z.enum(TSX_EXECUTION_MODES);
+export type TsxExecutionMode = z.infer<typeof TsxExecutionModeSchema>;
 
 /** Discriminative errors the verifier chooses to surface beyond the count. */
 export const DiscriminativeErrorSchema = z.object({
@@ -129,6 +150,13 @@ export type VerdictObserved = z.infer<typeof VerdictObservedSchema>;
  * and the acceptance-gate verdict are all structurally compatible with
  * this shape. Tier results extend it (with `expected` for the
  * expected-vs-observed comparison); read-back uses it directly.
+ *
+ * `execution` (D10) is the top-level marker for TSX static and
+ * interactive verdicts. It is ABSENT — not null — for every other
+ * artifact type, so the wire form for non-TSX stays byte-identical
+ * to the pre-arc shape. The runtime read-back reconstructs this field
+ * from the revision's stored execution mode rather than carrying it
+ * on the observed counters.
  */
 export const VerdictSchema = z.object({
   status: RenderStatusSchema,
@@ -138,6 +166,7 @@ export const VerdictSchema = z.object({
   observed: VerdictObservedSchema,
   screenshotError: ScreenshotErrorSchema.optional(),
   insecure: InsecureMarkerSchema.optional(),
+  execution: TsxExecutionModeSchema.optional(),
 });
 export type Verdict = z.infer<typeof VerdictSchema>;
 

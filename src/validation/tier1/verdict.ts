@@ -66,10 +66,19 @@ export interface ChannelSummary {
  * emitted "boot-ready" on its control port). `renderComplete` is
  * the renderer's "render-complete" barrier — without it, the verdict
  * cannot trust the renderer finished settling.
+ *
+ * `structureChanged` (D11) is the result of the second observation
+ * Tier 1 takes for interactive TSX runs: the structure observed at
+ * the render barrier compared against the structure observed after
+ * a bounded stability window. `true` means a structure mismatch was
+ * detected, which earns `partial:unstable`. Non-interactive TSX runs
+ * and every other artifact type omit the field; the verdict treats
+ * undefined as `false` so the legacy code path is unchanged.
  */
 export interface LifecycleSummary {
   readonly bootReady: boolean;
   readonly renderComplete: boolean;
+  readonly structureChanged?: boolean;
 }
 
 /**
@@ -98,6 +107,19 @@ export interface LifecycleSummary {
  *
  * Tampered wins over partial: a forge attempt that hides layout
  * observability (no viewBoxes) is still a forge attempt.
+ *
+ * D11 addition: `partial:unstable` slots between step 6 and step 7,
+ * i.e. AFTER the catastrophic statuses (timeout, tampered, channel
+ * availability) and the count-mismatch error, but BEFORE the
+ * single-snapshot partials (opaque_content, external_resources,
+ * layout_unverified). The reasoning: when structure is changing
+ * between the two observation snapshots, the verifier cannot
+ * honestly claim "this artifact has structure X" — every
+ * single-snapshot claim is moot. Unstable is a meta-claim about the
+ * page's runtime behavior that dominates the structural claims.
+ * Tampered stays above it because channel divergence (the page
+ * contradicting protocol authority) is the more catastrophic
+ * reading of the page's behavior.
  */
 export function deriveVerdict(
   expected: LexicalCounters,
@@ -126,6 +148,11 @@ export function deriveVerdict(
 
   if (protocolObservation.discriminativeErrors.length > 0) return "error";
   if (!matchesExpected(expected, protocolObservation)) return "error";
+  // D11: structure changed between the barrier and the stability
+  // window. This is the only path that does not also depend on a
+  // single observation — it depends on TWO observations, so it
+  // dominates the single-snapshot partial statuses below.
+  if (lifecycle.structureChanged === true) return "partial:unstable";
   if (expected.opaqueRegionCount > 0 && protocolObservation.opaqueRegionCount === 0) {
     return "error";
   }

@@ -533,3 +533,110 @@ describe("deriveVerdict — html trust and structural ordering", () => {
     );
   });
 });
+
+describe("deriveVerdict — unstable (D11)", () => {
+  // D11: a TSX interactive artifact that rendered once at the barrier
+  // and rendered a different structure at the stability window earns
+  // `partial:unstable`. NOT `tampered` — a legitimately animated or
+  // async-loading component also changes structure between
+  // observations, and branding it a forgery would manufacture the
+  // exact false-verdict class this project has spent three arcs
+  // eliminating. `tampered` stays reserved for channel divergence.
+  const stable = lifecycle({ structureChanged: false });
+  const unstable = lifecycle({ structureChanged: true });
+
+  test("clean counts with changed structure between snapshots → partial:unstable", () => {
+    expect(deriveVerdict(lex(), protocol(), protocol(), shim(), unstable)).toBe("partial:unstable");
+  });
+
+  test("unstable outranks opaque content when both could apply", () => {
+    // Pin the precedence: the verifier cannot honestly claim "this
+    // artifact has structure X" when structure is changing between
+    // observations. Single-snapshot partial claims (opaque, external,
+    // layout) are moot when the structure is unstable.
+    expect(
+      deriveVerdict(
+        lex({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 1, visibleSvgCount: 0, viewBoxes: [] }),
+        protocol({ opaqueRegionCount: 1, visibleSvgCount: 0, viewBoxes: [] }),
+        shim({ opaqueRegionCount: 1, visibleSvgCount: 0 }),
+        unstable,
+      ),
+    ).toBe("partial:unstable");
+  });
+
+  test("unstable outranks external resources when both could apply", () => {
+    expect(
+      deriveVerdict(
+        lex({ externalImageCount: 1 }),
+        protocol({ externalImageCount: 1 }),
+        protocol({ externalImageCount: 1 }),
+        shim({ externalImageCount: 1 }),
+        unstable,
+      ),
+    ).toBe("partial:unstable");
+  });
+
+  test("unstable outranks layout-unverified when both could apply", () => {
+    expect(
+      deriveVerdict(
+        lex(),
+        protocol({ viewBoxes: ["0 0 0 0"], visibleSvgCount: 0 }),
+        protocol({ viewBoxes: ["0 0 0 0"], visibleSvgCount: 0 }),
+        shim({ visibleSvgCount: 0 }),
+        unstable,
+      ),
+    ).toBe("partial:unstable");
+  });
+
+  test("channel divergence + structure change → tampered (channel wins)", () => {
+    // Tampered is reserved for channel divergence — the page
+    // contradicting protocol authority. Structure change is a
+    // different claim class. Channel divergence is the more
+    // catastrophic reading of the page's behavior and wins.
+    expect(
+      deriveVerdict(
+        lex(),
+        protocol({ rendererRootSvgCount: 0, errorCount: 1 }),
+        protocol({ rendererRootSvgCount: 2, errorCount: 0 }),
+        shim({ rendererRootSvgCount: 2, errorCount: 0 }),
+        unstable,
+      ),
+    ).toBe("tampered");
+  });
+
+  test("lifecycle renderComplete=false still wins with structure change", () => {
+    expect(
+      deriveVerdict(
+        lex(),
+        protocol({ rendererRootSvgCount: 0, graphCount: 0, errorCount: 0 }),
+        protocol({ rendererRootSvgCount: 0, graphCount: 0, errorCount: 0 }),
+        null,
+        lifecycle({ renderComplete: false, structureChanged: true }),
+      ),
+    ).toBe("timeout");
+  });
+
+  test("structureChanged defaults to false (back-compat for non-interactive runs)", () => {
+    // The lifecycle helper omits `structureChanged` for non-TSX
+    // runs. The verdict must report the same status as before:
+    // `ok` for clean counts.
+    expect(deriveVerdict(lex(), protocol(), protocol(), shim(), lifecycle())).toBe("ok");
+  });
+
+  test("structureChanged=false with opaque observed → partial:opaque_content (no change)", () => {
+    // Negative space: the new field exists but the value is false.
+    // The opaque path must still run, so ad-hoc callers that
+    // explicitly opt out of the stability window keep the legacy
+    // semantics.
+    expect(
+      deriveVerdict(
+        lex({ opaqueRegionCount: 1 }),
+        protocol({ opaqueRegionCount: 1, visibleSvgCount: 0, viewBoxes: [] }),
+        protocol({ opaqueRegionCount: 1, visibleSvgCount: 0, viewBoxes: [] }),
+        shim({ opaqueRegionCount: 1, visibleSvgCount: 0 }),
+        stable,
+      ),
+    ).toBe("partial:opaque_content");
+  });
+});

@@ -30,7 +30,7 @@ import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { runMigrations } from "../../src/service/store/migrations";
 import { V7_SCHEMA_FRAGMENT } from "../../src/service/store/schema";
 import { CommandResultSchema, type CommandResult } from "../../src/shared/contracts/commands";
-import { FACET_SCHEMA_VERSION } from "../../src/shared/contracts/envelope";
+import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 
 const scratchRoot = mkdtempSync(join(tmpdir(), "facet-prearc-stored-"));
 
@@ -211,6 +211,48 @@ describe("pre-arc stored verdicts survive read-back / export / gallery-source", 
     }
   });
 
+  test("read-back of a non-tsx pre-arc row does NOT emit an execution field", async () => {
+    // D10 trap: the trap that shipped twice (opaqueRegionCount
+    // v1.2.0, externalImageCount HTML arc) is shape-extension
+    // breaking read-back. The execution marker is OPTIONAL and
+    // conditional-spread on artifactType === "tsx", so a pre-arc
+    // markdown row (planted without an execution column) must read
+    // back WITHOUT the field on the wire — exactly byte-identical
+    // to the pre-arc shape. The wire must not contain the string
+    // "execution" anywhere in the response body.
+    const { service } = await startPreArcEnv();
+    try {
+      const res = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${service.installToken}`,
+          "content-type": "application/json",
+          host: new URL(service.url).host,
+        },
+        body: JSON.stringify({
+          schemaVersion: FACET_SCHEMA_VERSION,
+          requestId: `req-${crypto.randomUUID()}`,
+          ok: true,
+          data: {
+            requestId: `req-${crypto.randomUUID()}`,
+            command: "readBack",
+            artifactId: "00000000-0000-0000-0000-000000000001",
+            revisionSha: "a".repeat(64),
+            tier: 0,
+          },
+        }),
+      });
+      const wire = await res.text();
+      const envelope = FacetEnvelopeSchema.parse(JSON.parse(wire));
+      if (!envelope.ok) throw new Error(`read-back failed: ${JSON.stringify(envelope)}`);
+      const verdict = (envelope.data as { verdict: Record<string, unknown> }).verdict;
+      expect(verdict).not.toHaveProperty("execution");
+      expect(wire).not.toContain('"execution"');
+    } finally {
+      await service.stop();
+    }
+  });
+
   test("export of the stored source succeeds", async () => {
     const { service } = await startPreArcEnv();
     try {
@@ -223,6 +265,45 @@ describe("pre-arc stored verdicts survive read-back / export / gallery-source", 
       if (result.command !== "export") throw new Error("expected export");
       expect(result.sidecar.revisionSha).toBe("a".repeat(64));
       expect(result.bytes.length).toBeGreaterThan(0);
+    } finally {
+      await service.stop();
+    }
+  });
+
+  test("export of a non-tsx pre-arc row does NOT emit an execution field", async () => {
+    // Same wire-form contract on the export sidecar: non-TSX
+    // verdicts must NOT carry the execution marker, so the
+    // pre-arc shape stays byte-identical. The export sidecar
+    // includes the verdict on the wire; assert the field is
+    // absent there too, not just on read-back.
+    const { service } = await startPreArcEnv();
+    try {
+      const res = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${service.installToken}`,
+          "content-type": "application/json",
+          host: new URL(service.url).host,
+        },
+        body: JSON.stringify({
+          schemaVersion: FACET_SCHEMA_VERSION,
+          requestId: `req-${crypto.randomUUID()}`,
+          ok: true,
+          data: {
+            requestId: `req-${crypto.randomUUID()}`,
+            command: "export",
+            artifactId: "00000000-0000-0000-0000-000000000001",
+            revisionSha: "a".repeat(64),
+            format: "source",
+          },
+        }),
+      });
+      const wire = await res.text();
+      const envelope = FacetEnvelopeSchema.parse(JSON.parse(wire));
+      if (!envelope.ok) throw new Error(`export failed: ${JSON.stringify(envelope)}`);
+      const sidecar = (envelope.data as { sidecar: { verdict: Record<string, unknown> } }).sidecar;
+      expect(sidecar.verdict).not.toHaveProperty("execution");
+      expect(wire).not.toContain('"execution"');
     } finally {
       await service.stop();
     }

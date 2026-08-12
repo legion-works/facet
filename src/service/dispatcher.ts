@@ -37,6 +37,7 @@ import {
   type Tier1Runner,
   type InsecureLevel,
   type InsecureMarker,
+  type TsxExecutionMode,
   type Verdict,
 } from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
@@ -114,6 +115,13 @@ function buildVerdict(input: {
   observed: unknown;
   insecure?: InsecureMarker;
   screenshotError?: unknown;
+  /**
+   * D10 execution marker. Passed only when the artifact is a TSX
+   * revision (static or interactive). Non-TSX verdicts carry NO
+   * execution field — the field is absent, not null, so the wire
+   * form for non-TSX stays byte-identical to the pre-arc shape.
+   */
+  execution?: TsxExecutionMode;
 }): Verdict {
   const observed = VerdictObservedSchema.parse(input.observed);
   return VerdictSchema.parse({
@@ -124,6 +132,7 @@ function buildVerdict(input: {
     observed,
     ...(input.insecure !== undefined ? { insecure: input.insecure } : {}),
     ...(input.screenshotError !== undefined ? { screenshotError: input.screenshotError } : {}),
+    ...(input.execution !== undefined ? { execution: input.execution } : {}),
   });
 }
 
@@ -292,6 +301,12 @@ export async function dispatch(
         lexical: legacyCounters,
       });
       const insecure = insecureMarker(deps.insecureLevel, deps.insecureReason);
+      // D10: only TSX verdicts carry the execution marker. Every
+      // other type stays BYTE-IDENTICAL to the pre-arc wire shape;
+      // the field is absent, not null. The marker is the declared
+      // mode on the revision (default 'static' for TSX).
+      const verdictExecution: TsxExecutionMode | undefined =
+        artifactType === "tsx" ? executionMode : undefined;
       if (deps.insecureLevel === 3) {
         const verdict = enrichVerdict(
           buildVerdict({
@@ -308,10 +323,12 @@ export async function dispatch(
               externalImageCount: 0,
               errorCount: 0,
             },
+            ...(verdictExecution !== undefined ? { execution: verdictExecution } : {}),
           }),
           command.artifactId,
           revision.sha256,
           insecure,
+          verdictExecution,
         );
         deps.repository.recordRenderRun({
           revisionId: revision.id,
@@ -344,7 +361,7 @@ export async function dispatch(
       // 3. Bind the verdict to (artifactId, revisionSha) via the
       // canonical render_run row so read-back returns it later.
       const enriched = Tier0ResultSchema.parse(
-        enrichVerdict(tier0Result, command.artifactId, revision.sha256, insecure),
+        enrichVerdict(tier0Result, command.artifactId, revision.sha256, insecure, verdictExecution),
       );
       deps.repository.recordRenderRun({
         revisionId: revision.id,
@@ -373,7 +390,13 @@ export async function dispatch(
         const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input, command.artifactId);
         traceTier1Transport(`publish:tier1-return status=${tier1Result.status}`);
         const enrichedTier1 = Tier1ResultSchema.parse(
-          enrichVerdict(tier1Result, command.artifactId, revision.sha256, insecure),
+          enrichVerdict(
+            tier1Result,
+            command.artifactId,
+            revision.sha256,
+            insecure,
+            verdictExecution,
+          ),
         );
         traceTier1Transport("publish:tier1-record:start");
         deps.repository.recordRenderRun({

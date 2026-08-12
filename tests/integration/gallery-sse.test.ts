@@ -181,6 +181,31 @@ describe("gallery shell — verdict status styling", () => {
     expect(glyphStart).toBeGreaterThanOrEqual(0);
     expect(glyphRule).toContain('content: "◐"');
   });
+
+  test("unstable keeps the explicit amber partial treatment (D11)", async () => {
+    // D11: `partial:unstable` is the TSX interactive verdict for a
+    // structure that legitimately changed between the barrier and
+    // the stability window. The gallery selector must visibly
+    // distinguish it from the other partials (the data-status value
+    // carries the discriminator) and match the same visual language
+    // (amber partial, ◐ glyph). Pin the selector and the glyph so
+    // a future CSS edit that drops the rule fails closed.
+    const cssPath = new URL("../../src/gallery-web/styles/verdict.css", import.meta.url).pathname;
+    const css = await Bun.file(cssPath).text();
+    const selector = '.facet-verdict[data-status="partial:unstable"]';
+    const ruleStart = css.indexOf(selector);
+    const rule = css.slice(ruleStart, css.indexOf("}", ruleStart) + 1);
+    const glyphSelector = `${selector}::before`;
+    const glyphStart = css.indexOf(glyphSelector);
+    const glyphRule = css.slice(glyphStart, css.indexOf("}", glyphStart) + 1);
+
+    expect(ruleStart).toBeGreaterThanOrEqual(0);
+    expect(rule).toContain("var(--facet-partial-border)");
+    expect(rule).toContain("var(--facet-partial-fill)");
+    expect(rule).toContain("var(--facet-partial)");
+    expect(glyphStart).toBeGreaterThanOrEqual(0);
+    expect(glyphRule).toContain('content: "◐"');
+  });
 });
 
 describe("gallery shell — frame document generation", () => {
