@@ -26,6 +26,8 @@ fallback. Coverage lives in `tests/integration/insecure-auto.test.ts`,
 `tests/integration/insecure-level-threading.test.ts`, and
 `tests/integration/insecure-mode.test.ts`.
 
+Recent Markdown container & database v7 additions: `src/service/store/schema.ts` exports `V7_SCHEMA_FRAGMENT` which updates `observed_json` to backfill missing `opaqueRegionCount` and `externalImageCount` to 0. `src/service/stored-verdict.ts` exports `withTolerantObserved` to handle missing fields when reading stored verdicts. `src/validation/tier0/markdown.ts` recursively checks all Marked containers (`items[]`, `header[]`, `rows[][]`) for external images and forbidden tags/handlers.
+
 Recent HTML artifact additions: `src/shared/html/policy.ts` exports
 `HTML_DENIED_ELEMENTS`, `HTML_STRUCTURAL_GROUPS`, `HTML_URL_BEARING_ATTRIBUTES`,
 `HTML_ALLOWED_ANCHOR_SCHEMES`, `HTML_ALLOWED_IMAGE_SCHEMES`, and the
