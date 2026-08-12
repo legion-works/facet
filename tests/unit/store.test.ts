@@ -636,4 +636,65 @@ describe("artifact store", () => {
     runMigrations(db);
     expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
   });
+
+  test("FK gate: rebuild steps actually toggle FKs OFF mid-migration (observation seam)", () => {
+    // The reviewer-flagged gap: the prior gate tests only asserted the
+    // FK state AFTER the migration completed, by which time the finally
+    // block had restored FKs to ON. The pragma's mid-migration value
+    // was never observed, so a regression that drops
+    // `requiresForeignKeyDisable` from v8 would still pass those tests
+    // even though every v8 rebuild would now fail with FKs ON. Use the
+    // `beforeRecordVersion` hook (the published seam) to sample the
+    // pragma state DURING the v8 step's apply and AFTER it returns.
+    const db = openDatabase({ databasePath: ":memory:" });
+    databases.push(db);
+    db.exec(
+      `${v5InitialSchema()}${V2_SCHEMA_FRAGMENT}${V3_SCHEMA_FRAGMENT}${V4_SCHEMA_FRAGMENT}${V5_SCHEMA_FRAGMENT}${V6_SCHEMA_FRAGMENT}${V7_SCHEMA_FRAGMENT}`,
+    );
+    db.exec(
+      "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)",
+    );
+    for (const version of [1, 2, 3, 4, 5, 6, 7]) {
+      db.query("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(
+        version,
+        "2026-08-10T00:00:00.000Z",
+      );
+    }
+    // Plant a parent-self-FK row that would block a v8 rebuild with
+    // FKs ON — the v8 step must run with FKs OFF, otherwise the
+    // DROP+ALTER RENAME fails.
+    const projectId = crypto.randomUUID();
+    db.query("INSERT INTO projects(id, project_root, created_at) VALUES (?, ?, ?)").run(
+      projectId,
+      `/tmp/facet-fkgate-obs-${crypto.randomUUID()}`,
+      "2026-08-10T00:00:00.000Z",
+    );
+    const artifactId = crypto.randomUUID();
+    db.query(
+      "INSERT INTO artifacts(id, project_id, slug, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      artifactId,
+      projectId,
+      "fk-gate-obs",
+      "FK gate (observation)",
+      "2026-08-10T00:00:00.000Z",
+      "2026-08-10T00:00:00.000Z",
+    );
+    // FKs ON at start (openDatabase default).
+    expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
+    const observed = new Map<number, number>();
+    runMigrations(db, {
+      beforeRecordVersion: (version) => {
+        // The hook fires AFTER the step's apply and BEFORE the
+        // schema_migrations INSERT, inside the transaction whose
+        // outer gate has toggled FKs OFF for v8.
+        const pragma = db.query("PRAGMA foreign_keys").get() as { foreign_keys: number };
+        observed.set(version, pragma.foreign_keys);
+      },
+    });
+    // v8 (the rebuild) must have observed FKs OFF.
+    expect(observed.get(8)).toBe(0);
+    // After the migration, FKs are restored to ON.
+    expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
+  });
 });

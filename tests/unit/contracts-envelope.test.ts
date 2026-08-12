@@ -448,15 +448,38 @@ describe("HTML validation observables", () => {
     expect(json).not.toContain('"compiledPath"');
   });
 
-  test("byte-equality baseline for non-tsx wire surfaces (canonical snapshot)", () => {
-    // Frozen canonical JSON for a non-tsx publish result, a Tier 0
-    // verdict, a Tier 1 verdict, a read-back result, and an export
-    // sidecar. Assert exact byte equality against the snapshot. Any
-    // change to the wire contract (key order, addition of a field,
-    // renumbering) must surface here as a hard fail.
+  test("byte-equality baseline for non-tsx wire surfaces (frozen literal snapshot)", () => {
+    // FROZEN LITERAL JSONS captured from the pre-arc wire form. These
+    // strings are NOT computed from the schemas under test — they are
+    // the byte-exact output recorded before the tsx arc added its
+    // optional `execution` and `compiledPath` markers. A schema change
+    // that adds a field to any of these wire surfaces MUST surface
+    // here as a hard fail (the snapshot will not match the new
+    // schema-emitted bytes). The previous version of this test
+    // re-derived the snapshot from the schemas and was therefore
+    // tautological — the reviewer demonstrated this by adding a
+    // field to a schema and watching the test pass. Do not let that
+    // pattern back in.
+    const FROZEN_PUBLISH_RESULT =
+      '{"requestId":"req-1","command":"publish","revision":{"id":"rev-1","artifactId":"art-1","revisionNumber":1,"parentRevisionId":null,"artifactType":"markdown","renderer":"svg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","note":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"},"tier1Verdict":null}';
+    const FROZEN_TIER0 =
+      '{"status":"ok","tier":0,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0},"expected":{"rendererRootSvgCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0}}';
+    const FROZEN_TIER1 =
+      '{"status":"ok","tier":1,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0},"expected":{"rendererRootSvgCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0},"screenshotPath":null,"consolePath":null}';
+    const FROZEN_READ_BACK =
+      '{"requestId":"req-1","command":"readBack","renderer":"svg","verdict":{"status":"ok","tier":1,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}}}';
+    const FROZEN_EXPORT_SIDECAR =
+      '{"artifactId":"art-1","slug":"markdown-artifact","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifactType":"markdown","renderer":"svg","verdict":{"status":"ok","tier":1,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}},"format":"source","exportedAt":"2026-08-12T00:00:00.000Z"}';
+    const FROZEN_REVISION_COMMITTED =
+      '{"type":"revision:committed","artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","revisionNumber":1,"artifactType":"markdown","at":"2026-08-12T00:00:00.000Z"}';
+
     const SHA = "a".repeat(64);
     const NOW = "2026-08-12T00:00:00.000Z";
 
+    // Live round-trip surface: the test rebuilds the schemas'
+    // current emission for the same inputs and asserts byte-equality
+    // against the FROZEN snapshot. Any drift in the wire form (key
+    // additions, renumbering, type changes) hard-fails here.
     const verdictBaseline = {
       status: "ok",
       tier: 1,
@@ -472,7 +495,6 @@ describe("HTML validation observables", () => {
         errorCount: 0,
       },
     };
-
     const tier0Baseline = {
       ...verdictBaseline,
       tier: 0,
@@ -484,14 +506,12 @@ describe("HTML validation observables", () => {
         externalImageCount: 0,
       },
     };
-
     const tier1Baseline = {
       ...tier0Baseline,
       tier: 1,
       screenshotPath: null,
       consolePath: null,
     };
-
     const publishResultBaseline = {
       command: "publish" as const,
       requestId: "req-1",
@@ -509,14 +529,12 @@ describe("HTML validation observables", () => {
       },
       tier1Verdict: null,
     };
-
     const readBackBaseline = {
       command: "readBack" as const,
       requestId: "req-1",
       renderer: "svg" as const,
       verdict: verdictBaseline,
     };
-
     const exportSidecarBaseline = {
       artifactId: "art-1",
       slug: "markdown-artifact",
@@ -527,7 +545,6 @@ describe("HTML validation observables", () => {
       format: "source" as const,
       exportedAt: NOW,
     };
-
     const eventBaseline = {
       type: "revision:committed" as const,
       artifactId: "art-1",
@@ -537,49 +554,46 @@ describe("HTML validation observables", () => {
       at: NOW,
     };
 
-    const canonical = {
-      // The canonical byte-string is the schema-round-tripped form,
-      // NOT the source-object declaration order. A discriminated
-      // union (PublishResultSchema, CommandResultSchema) reorders
-      // its keys through zod's strict parsing, so the contract
-      // surface is whatever the schema emits, not whatever the test
-      // author typed. Lock the snapshot from the schema output.
-      publishResult: JSON.stringify(PublishResultSchema.parse(publishResultBaseline)),
-      tier0: JSON.stringify(Tier0ResultSchema.parse(tier0Baseline)),
-      tier1: JSON.stringify(Tier1ResultSchema.parse(tier1Baseline)),
-      readBack: JSON.stringify(ReadBackResultSchema.parse(readBackBaseline)),
-      exportSidecar: JSON.stringify(ExportSidecarSchema.parse(exportSidecarBaseline)),
-      revisionCommitted: JSON.stringify(RevisionCommittedEventSchema.parse(eventBaseline)),
-    };
+    expect(JSON.stringify(PublishResultSchema.parse(publishResultBaseline))).toBe(
+      FROZEN_PUBLISH_RESULT,
+    );
+    expect(JSON.stringify(Tier0ResultSchema.parse(tier0Baseline))).toBe(FROZEN_TIER0);
+    expect(JSON.stringify(Tier1ResultSchema.parse(tier1Baseline))).toBe(FROZEN_TIER1);
+    expect(JSON.stringify(ReadBackResultSchema.parse(readBackBaseline))).toBe(FROZEN_READ_BACK);
+    expect(JSON.stringify(ExportSidecarSchema.parse(exportSidecarBaseline))).toBe(
+      FROZEN_EXPORT_SIDECAR,
+    );
+    expect(JSON.stringify(RevisionCommittedEventSchema.parse(eventBaseline))).toBe(
+      FROZEN_REVISION_COMMITTED,
+    );
 
-    // Round-trip every canonical surface through its schema and
-    // assert the resulting wire JSON is BYTE-equal to the snapshot.
-    expect(JSON.stringify(PublishResultSchema.parse(JSON.parse(canonical.publishResult)))).toBe(
-      canonical.publishResult,
+    // Double-side stability: shape the schema emits now, when
+    // reparsed and re-stringified, must continue to match the
+    // snapshot. Catches the case where a schema coerces an input
+    // into a different shape that happens to byte-equal on the first
+    // render but diverges on the second round-trip.
+    expect(JSON.stringify(PublishResultSchema.parse(JSON.parse(FROZEN_PUBLISH_RESULT)))).toBe(
+      FROZEN_PUBLISH_RESULT,
     );
-    expect(JSON.stringify(Tier0ResultSchema.parse(JSON.parse(canonical.tier0)))).toBe(
-      canonical.tier0,
+    expect(JSON.stringify(Tier0ResultSchema.parse(JSON.parse(FROZEN_TIER0)))).toBe(FROZEN_TIER0);
+    expect(JSON.stringify(Tier1ResultSchema.parse(JSON.parse(FROZEN_TIER1)))).toBe(FROZEN_TIER1);
+    expect(JSON.stringify(ReadBackResultSchema.parse(JSON.parse(FROZEN_READ_BACK)))).toBe(
+      FROZEN_READ_BACK,
     );
-    expect(JSON.stringify(Tier1ResultSchema.parse(JSON.parse(canonical.tier1)))).toBe(
-      canonical.tier1,
-    );
-    expect(JSON.stringify(ReadBackResultSchema.parse(JSON.parse(canonical.readBack)))).toBe(
-      canonical.readBack,
-    );
-    expect(JSON.stringify(ExportSidecarSchema.parse(JSON.parse(canonical.exportSidecar)))).toBe(
-      canonical.exportSidecar,
+    expect(JSON.stringify(ExportSidecarSchema.parse(JSON.parse(FROZEN_EXPORT_SIDECAR)))).toBe(
+      FROZEN_EXPORT_SIDECAR,
     );
     expect(
-      JSON.stringify(RevisionCommittedEventSchema.parse(JSON.parse(canonical.revisionCommitted))),
-    ).toBe(canonical.revisionCommitted);
+      JSON.stringify(RevisionCommittedEventSchema.parse(JSON.parse(FROZEN_REVISION_COMMITTED))),
+    ).toBe(FROZEN_REVISION_COMMITTED);
 
     // Cross-check the non-tsx wire form omits the new fields: a
     // future contributor who adds an `execution` key to the
     // RevisionEnvelope (or a `compiledPath` key to the read-back
     // verdict) must surface here as a hard fail too.
-    expect(canonical.publishResult).not.toContain('"execution"');
-    expect(canonical.publishResult).not.toContain('"compiledPath"');
-    expect(canonical.exportSidecar).not.toContain('"execution"');
-    expect(canonical.revisionCommitted).not.toContain('"execution"');
+    expect(FROZEN_PUBLISH_RESULT).not.toContain('"execution"');
+    expect(FROZEN_PUBLISH_RESULT).not.toContain('"compiledPath"');
+    expect(FROZEN_EXPORT_SIDECAR).not.toContain('"execution"');
+    expect(FROZEN_REVISION_COMMITTED).not.toContain('"execution"');
   });
 });
