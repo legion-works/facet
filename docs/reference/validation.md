@@ -31,6 +31,23 @@ that upgrades the verdict. When capture fails transiently, the typed
 `screenshotError` marker records that honest degraded path. A `partial:`
 without a screenshot or marker is rejected at the schema parse boundary.
 
+### `partial:unstable` precedence slot
+
+`partial:unstable` slots between the count-mismatch error path and the
+single-snapshot partials. The full ordering, top to bottom:
+
+1. `timeout` — lifecycle failed at the render barrier (`renderComplete === false`).
+2. `tampered` — channel divergence; the page contradicts protocol authority.
+3. `probe_only` / `shim_only` — channel availability (meta-claim about the channels, not the page).
+4. `error` — counts disagree with the lexical expectation, or discriminative errors are non-empty.
+5. **`partial:unstable`** — TSX interactive mode; structure changed between the render barrier and the stability window.
+6. `partial:opaque_content` — single-snapshot claim: structure has opaque regions.
+7. `partial:external_resources` — single-snapshot claim: structure has external HTTP references.
+8. `partial:layout_unverified` — single-snapshot claim: visible SVG with zeroed viewBoxes.
+9. `ok`.
+
+The reasoning: when structure is changing between two observation snapshots, the verifier cannot honestly claim "this artifact has structure X" — every single-snapshot claim (opaque, external, layout) is moot. `partial:unstable` is a meta-claim about the page's runtime behavior that dominates the single-snapshot structural claims. `tampered` stays above it because channel divergence (the page contradicting protocol authority) is the more catastrophic reading of the page's behavior. The decision is pinned by `tests/unit/verdict.test.ts` (unstable outranks opaque, external, layout-unverified; unstable loses to tampered, timeout, and channel-availability).
+
 ## Evidence captured per tier
 
 | tier | evidence retained                                                                                                                                                                                                                                                                                                                  |
