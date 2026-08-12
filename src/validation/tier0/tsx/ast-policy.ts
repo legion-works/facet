@@ -2,40 +2,78 @@
  * TypeScript AST policy for TSX artifacts.
  *
  * D13 of the TSX design: capability rejections (`fetch`, `eval`,
- * `new Function`, dynamic `import()`, worker construction, non-allowlisted
- * imports, and `require()`) MUST be decided from the TypeScript AST — never
- * regex, never `indexOf`, never substring scanning. This project has shipped
- * three separate defects from deciding structure by string scan (URL-scheme
- * checks broken by `java\nscript:`, CSS sanitizers broken by comment
- * obfuscation, and a `<select>` guard that examined only the first
- * occurrence and shipped a live false-`tampered` verdict). A string scan also
- * cannot distinguish `fetch` in a comment, in a string literal, or as a
- * local identifier from a real global call.
+ * `new Function`, dynamic `import()`, worker construction, `require()`,
+ * direct aliasing of denied globals, and non-allowlisted imports) MUST be
+ * decided from the TypeScript AST — never regex, never `indexOf`, never
+ * substring scanning. This project has shipped three separate defects from
+ * deciding structure by string scan (URL-scheme checks broken by
+ * `java\nscript:`, CSS sanitizers broken by comment obfuscation, and a
+ * `<select>` guard that examined only the first occurrence and shipped a
+ * live false-`tampered` verdict). A string scan also cannot distinguish
+ * `fetch` in a comment, in a string literal, or as a local identifier from
+ * a real global call.
  *
- * The walker inspects `ImportDeclaration`, `ExportDeclaration`, call /
- * new / property-access / element-access nodes, and binding declarations
- * (for alias rejection). It surfaces structural decisions as typed
- * `DiscriminativeError` values so the verdict ladder can consume them
- * without an additional parsing pass.
+ * D13a (added 2026-08-12 after three review rounds) restates the role of
+ * this walker: it is EARLY FEEDBACK, not the security boundary. The
+ * enforcement boundary is the runtime:
  *
- * ## Limits we accept (and document honestly)
+ *   - `connect-src 'none'` blocks `fetch` / `XMLHttpRequest` / `WebSocket` /
+ *     `EventSource` / `sendBeacon` no matter how the reference was obtained.
+ *   - `worker-src 'none'` blocks `Worker` / `SharedWorker`.
+ *   - `script-src 'nonce-…'` without `unsafe-eval` blocks `eval` and
+ *     `new Function` from executing a string.
+ *   - The nested opaque-origin frame (D8) makes `globalThis` /
+ *     `window` / `self` unreachable as alias targets in the first place.
  *
- * Scope tracking walks the AST scope-by-scope; a `function fetch() {}`
- * declared inside `outer()` does NOT shadow a top-level `fetch` reference.
- * Class declarations and `let`/`const` declarations are subject to TDZ
- * rules at runtime, but the AST walker treats any in-scope binding as a
- * shadow because a positive false (rejecting valid code that throws
- * ReferenceError at runtime) is worse than a negative false (accepting
- * code that the user meant to shadow).
+ * So this module covers the direct and obvious forms ONLY — a real call
+ * site, a member access on a known global, `require`, dynamic `import`,
+ * the literal alias pattern `const X = globalThis` (and `Worker`,
+ * `Function`, `SharedWorker`, `window`, `self`), and the property-access
+ * equivalents (`const X = globalThis.Worker`). It does NOT track indirect
+ * aliasing through reassignment, object/array wrap, function return,
+ * parameter passing, or rename-on-destructure. Those forms reach the same
+ * blocked call at runtime; the verdict cannot see them and the runtime
+ * enforces the policy.
  *
- * Alias analysis is shallow: we reject the literal pattern
- * `const X = globalThis`, `const X = Worker`, `const X = Function`,
- * `const X = SharedWorker`, and the property-access equivalents
- * (`const X = globalThis.Worker`, etc.). Anything more indirect
- * (`const g = [globalThis][0]`, `function getG(){return globalThis}`,
- * dynamic computation) is OUT OF SCOPE — the resolver at compile time
- * must also enforce the module allowlist so an alias cannot reach a
- * forbidden module through the bundler.
+ * The import allowlist is the exception and stays strict, because the
+ * resolver (`allowlist-resolver.ts`) enforces it at compile time: a
+ * non-allowlisted module cannot enter the bundle regardless of how the
+ * import is written.
+ *
+ * ## Documented limits — what this walker knowingly does NOT catch
+ *
+ * Each unchecked form below reaches the SAME blocked call at runtime
+ * that the direct form would, so a missing rejection here is not a
+ * missed guard — the runtime is the guard.
+ *
+ *   1. Reassignment:
+ *      `let g; g = globalThis; g.fetch(...)` — not caught.
+ *      Runtime control: `connect-src 'none'`.
+ *   2. Object / array wrap:
+ *      `const wrap = { g: globalThis }; wrap.g.fetch(...)` — not caught.
+ *      Runtime control: `connect-src 'none'`.
+ *   3. Function return:
+ *      `function getG() { return globalThis; } getG().fetch(...)` — not caught.
+ *      Runtime control: `connect-src 'none'`.
+ *   4. Parameter passing:
+ *      `function f(g) { return g.fetch(...); } f(globalThis)` — not caught.
+ *      Runtime control: `connect-src 'none'`.
+ *   5. Rename-on-destructure:
+ *      `const { fetch: net } = globalThis; net("/x")` — not caught.
+ *      Runtime control: `connect-src 'none'`.
+ *   6. Through `Function`/`Worker` indirection:
+ *      `const W = [Worker][0]; new W("./w.js")` — not caught.
+ *      Runtime control: `worker-src 'none'`.
+ *
+ * ## False-rejection discipline (the worse failure)
+ *
+ * A missed alias costs nothing — the runtime blocks it. A false
+ * rejection refuses a valid artifact. When a binding form is too obscure
+ * to track reliably, the walker prefers accepting. This is why the
+ * per-scope walker handles function parameters, arrow parameters,
+ * catch clauses, destructured parameters, default parameters, and
+ * for-loop bindings — each is a legal place for a user to declare a
+ * name and each gets a permanent ACCEPT test.
  *
  * Computed access on a denied target with unresolvable fragments
  * (`globalThis[unknownKey]`) is surfaced as `unsupportedComputedGlobal`
@@ -150,10 +188,18 @@ function isDeniedGlobalEval(name: string): boolean {
 }
 
 /**
- * Names that, when assigned to a binding, alias a denied global / constructor.
- * Rejecting the assignment at the binding site closes the simple alias
- * patterns (`const g = globalThis`, `const W = Worker`, `const F = Function`,
- * `const W = globalThis.Worker`, `const F = globalThis.Function`).
+ * Names that, when assigned to a binding, alias a denied global or
+ * constructor. The check covers the DIRECT and OBVIOUS pattern only:
+ *
+ *   `const X = globalThis`           — or `window` / `self` / `global`
+ *   `const X = Worker`               — or `SharedWorker` / `Function`
+ *   `const X = globalThis.Worker`    — property-access equivalents
+ *   `const X = window.Function`      — same shape through window
+ *
+ * Anything more indirect is OUT OF SCOPE per the documented limits list
+ * at the top of this file. The runtime blocks what this walker misses;
+ * chasing the remaining forms produces a guard that still leaks while
+ * accreting false rejections.
  */
 const ALIAS_DENIED_NAMES = new Set([
   "globalThis",
@@ -173,12 +219,12 @@ function identifierText(node: ts.Expression): string | null {
 }
 
 /**
- * Per-scope binding lookup. The flat-scope shortcut (collect every local name
- * in the file) leaks: a binding declared inside an inner function shadows the
- * top-level reference to the same name even though the inner binding is
- * unreachable from the top level. The correct answer is scope-by-scope: a
- * name is shadowed only when an enclosing scope that is an ANCESTOR of the
- * use declares the name (function/block/source-file).
+ * Per-scope binding lookup. Walks the AST scope chain; a name is shadowed
+ * only when an enclosing scope that is an ANCESTOR of the use declares the
+ * name. This is the place that fixes the parameter / catch / for-loop
+ * false rejections: every form a user can use to bind a local name is
+ * checked at its scope so a `fetch` parameter, catch variable, or for-let
+ * shadow correctly suppresses the global fetch rejection.
  */
 function isShadowedByLocalBinding(node: ts.Identifier): boolean {
   let current: ts.Node = node;
@@ -186,9 +232,9 @@ function isShadowedByLocalBinding(node: ts.Identifier): boolean {
     const parent = current.parent;
     if (parent === undefined) return false;
 
-    // The use IS the binding site (e.g., `function f() {}` — `f` here is
-    // both the declaration and the AST node we're inspecting). Treat as
-    // shadowed only when the parent has a different role.
+    // The use IS the binding site itself (e.g. `function f() {}` — `f`
+    // here is both the declaration and the AST node being inspected). Treat
+    // as shadowed only when the parent's role matches a binding site.
     if (
       (ts.isVariableDeclaration(parent) && parent.name === current) ||
       (ts.isFunctionDeclaration(parent) && parent.name === current) ||
@@ -198,49 +244,93 @@ function isShadowedByLocalBinding(node: ts.Identifier): boolean {
       return true;
     }
 
-    if (isScopeBoundary(parent)) {
-      if (scopeDeclaresName(parent, node.text, node)) return true;
-    }
+    if (scopeDeclaresName(parent, node.text, node)) return true;
 
     current = parent;
   }
 }
 
-function isScopeBoundary(node: ts.Node): boolean {
-  return (
-    ts.isSourceFile(node) ||
-    ts.isBlock(node) ||
-    ts.isModuleBlock(node) ||
-    ts.isFunctionDeclaration(node) ||
-    ts.isFunctionExpression(node) ||
-    ts.isArrowFunction(node) ||
-    ts.isMethodDeclaration(node) ||
-    ts.isConstructorDeclaration(node) ||
-    ts.isGetAccessorDeclaration(node) ||
-    ts.isSetAccessorDeclaration(node)
-  );
-}
-
 /**
- * Walk `scope` and report whether it declares `name` in a position that is
- * visible at `beforeNode`. Function declarations are hoisted (anywhere in
- * the scope counts); let / const / class are TDZ-restricted (must precede
- * `beforeNode` in source order); parameters bind for the entire function.
+ * Decide whether the given scope declares `name` in a position visible at
+ * `beforeNode`. Handles every legal JavaScript / TypeScript binding site:
  *
- * Nested scopes are NOT descended into — the caller's
- * `isShadowedByLocalBinding` walks up the scope chain and asks each
- * ancestor in turn.
+ *   - function parameters (FunctionDeclaration / FunctionExpression /
+ *     ArrowFunction / MethodDeclaration / ConstructorDeclaration / get /
+ *     set accessor) — bind for the entire function.
+ *   - catch clause variable — binds inside the catch block.
+ *   - `for (let X ...)`, `for (const X ...)`, `for-in`, `for-of` —
+ *     the let/const binding binds in the loop.
+ *   - Block / SourceFile / ModuleBlock — checks direct statements.
+ *
+ * Nested scopes inside `scope` are NOT descended into from here; the
+ * caller walks up the chain and asks each ancestor in turn. Descending
+ * would let `function outer(){ function fetch(){} }` shadow a top-level
+ * `fetch` reference, which is exactly the false-rejection class this
+ * walker is built to avoid.
  */
 function scopeDeclaresName(scope: ts.Node, name: string, beforeNode: ts.Node): boolean {
-  const statements: readonly ts.Statement[] | undefined =
-    ts.isSourceFile(scope) || ts.isBlock(scope) || ts.isModuleBlock(scope)
-      ? scope.statements
-      : undefined;
+  // 1. Function-like scopes: parameters bind for the entire scope.
+  if (
+    ts.isFunctionDeclaration(scope) ||
+    ts.isFunctionExpression(scope) ||
+    ts.isArrowFunction(scope) ||
+    ts.isMethodDeclaration(scope) ||
+    ts.isConstructorDeclaration(scope) ||
+    ts.isGetAccessorDeclaration(scope) ||
+    ts.isSetAccessorDeclaration(scope)
+  ) {
+    for (const param of scope.parameters) {
+      if (parameterDeclaresName(param, name)) return true;
+    }
+    return false;
+  }
+
+  // 2. Catch clause: the catch variable binds in the body block.
+  if (ts.isCatchClause(scope)) {
+    const decl = scope.variableDeclaration;
+    if (decl !== undefined && bindingNameMatches(decl.name, name)) return true;
+    return false;
+  }
+
+  // 3. For-statement: the `for (let X = …)` binding binds in the loop.
+  if (ts.isForStatement(scope)) {
+    const init = scope.initializer;
+    if (init !== undefined && ts.isVariableDeclarationList(init)) {
+      for (const decl of init.declarations) {
+        if (bindingNameMatches(decl.name, name) && decl.getStart() < beforeNode.getStart()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // 4. For-in / for-of: the `for (let X of …)` binding binds in the loop.
+  if (ts.isForInStatement(scope) || ts.isForOfStatement(scope)) {
+    const init = scope.initializer;
+    if (init !== undefined && ts.isVariableDeclarationList(init)) {
+      for (const decl of init.declarations) {
+        if (bindingNameMatches(decl.name, name)) return true;
+      }
+    }
+    return false;
+  }
+
+  // 5. Block / SourceFile / ModuleBlock: walk direct statements.
+  let statements: readonly ts.Statement[] | undefined;
+  if (ts.isSourceFile(scope)) statements = scope.statements;
+  else if (ts.isBlock(scope)) statements = scope.statements;
+  else if (ts.isModuleBlock(scope)) statements = scope.statements;
   if (statements === undefined) return false;
   for (const stmt of statements) {
     if (statementDeclaresName(stmt, name, beforeNode)) return true;
   }
   return false;
+}
+
+function parameterDeclaresName(param: ts.ParameterDeclaration, name: string): boolean {
+  if (param.name === undefined) return false;
+  return bindingNameMatches(param.name, name);
 }
 
 function statementDeclaresName(stmt: ts.Statement, name: string, beforeNode: ts.Node): boolean {
@@ -466,22 +556,13 @@ function checkNewExpression(
 
 /**
  * Reject variable bindings whose initializer aliases a denied global or
- * constructor. The patterns are:
+ * constructor. Direct and obvious pattern only — see `ALIAS_DENIED_NAMES`.
+ * Anything more indirect is out of scope and falls to the runtime; see the
+ * documented-limits list at the top of this file.
  *
- *   `const g = globalThis` (or window / self / global)
- *   `const W = Worker` (or SharedWorker / Function)
- *   `const W = globalThis.Worker` (property-access equivalents)
- *   `const W = window.Worker` / `self.Worker` / `global.Worker`
- *
- * Anything more indirect (`const g = [globalThis][0]`,
- * `function getG(){return globalThis}`, computed) is OUT OF SCOPE — the
- * resolver at compile time enforces the module allowlist so an alias cannot
- * reach a forbidden module through the bundler.
- *
- * Only top-level `const X = …` and `let X = …` patterns are checked. A
- * destructure pattern (`const { Worker } = globalThis`) is NOT covered by
- * this rule and falls through to the scope shadowing logic: the destructured
- * binding shadows the global at the use site.
+ * A destructure pattern (`const { Worker } = globalThis`) is NOT covered
+ * by this rule and falls through to the scope shadowing logic: the
+ * destructured binding shadows the global at the use site.
  */
 function checkVariableStatement(
   node: ts.VariableStatement,

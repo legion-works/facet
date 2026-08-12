@@ -409,6 +409,114 @@ describe("tsx ast policy — capability ACCEPT directions (GREEN)", () => {
     const errors = validateTsxAst(source);
     expect(errors).toEqual([]);
   });
+
+  // False-rejection fixes — D13a: a user's own binding named after a
+  // denied global is VALID CODE. Each form has an adjacent REJECT in the
+  // group above so the accept cannot be a widened blocklist.
+  //
+  // Every form here is a permanent test. The reviewer found that the
+  // prior walker false-rejected `function f(fetch: (u: string) => string) { return fetch("/x") }`
+  // — a parameter binding. The fix threads scope through every legal
+  // JavaScript / TypeScript binding site.
+
+  test("accepts a parameter named `fetch`", () => {
+    const source = `
+      function f(fetch: (u: string) => string) { return fetch("/x"); }
+      export default function App(){return f((u) => u);}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts an arrow-function parameter named `eval`", () => {
+    const source = `
+      const f = (eval: (s: string) => string) => eval("ok");
+      export default function App(){return f((s) => s);}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a destructured parameter named `Worker`", () => {
+    const source = `
+      function f({ Worker }: { Worker: (s: string) => string }) { return Worker("ok"); }
+      export default function App(){return f({ Worker: (s) => s });}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a default-value parameter named `Function`", () => {
+    const source = `
+      function f(Function: (s: string) => string = (s) => s) { return Function("ok"); }
+      export default function App(){return f();}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a `catch (eval)` binding", () => {
+    // The catch variable binds in the catch block; calling it as `eval(...)`
+    // is a real call site that would otherwise trip the eval rejection if
+    // the walker were blind to the catch binding.
+    const source = `
+      try { throw "x" } catch (eval) { return eval("ok") }
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a method parameter named `fetch`", () => {
+    const source = `
+      class C { method(fetch: (u: string) => string) { return fetch("/x"); } }
+      export default function App(){return new C().method((u) => u);}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a `for (let fetch = ...; ...)` loop binding used at a call site", () => {
+    const source = `
+      for (let fetch = 0; fetch < 10; fetch++) { fetch("/x"); }
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a `for-of` loop binding named `Worker` used as a constructor", () => {
+    const source = `
+      const items = ["a"];
+      for (const Worker of items) { new Worker("x"); }
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a `for-in` loop binding named `Function` used at a call site", () => {
+    const source = `
+      const obj = { x: 1 };
+      for (const Function in obj) { Function("ok"); }
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a class field named `fetch`", () => {
+    // Class FIELDS are not in the user's binding scope — accessing them
+    // requires `this.fetch`. A bare `fetch` reference is still global.
+    // This test pins that the field declaration itself does not cause a
+    // false rejection.
+    const source = `
+      class C { fetch = (u: string) => u; }
+      export default function App(){return new C().fetch("/x");}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
 });
 
 describe("tsx ast policy — import policy REJECT directions (RED)", () => {

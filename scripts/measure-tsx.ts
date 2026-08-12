@@ -16,7 +16,16 @@
  *
  * Determinism is the load-bearing premise: same source MUST compile to the
  * same bytes across runs within a process AND across fresh process lifetimes,
- * or revision hashing and every downstream comparison break.
+ * or revision hashing and every downstream comparison break. The full
+ * invariant (per the resolve tests at `tests/unit/tsx-allowlist-resolver.test.ts`)
+ * is "same source + same absolute entrypoint + same cwd + same env".
+ *
+ * Latency figures recorded here are PROVISIONAL-PENDING-NETNS: this script
+ * runs in a plain Bun process, not inside the pooled Tier 0 netns worker
+ * under `unshare --map-current-user --net` with `ulimit -v` where production
+ * will compile. The numbers seed the budget; the threshold is set from
+ * data when Task 5 builds the compiler entry and the probe can be run
+ * through the real worker path.
  *
  * Usage:
  *   bun scripts/measure-tsx.ts                # one-shot, single process

@@ -364,6 +364,13 @@ export async function measureTier0Spawn(): Promise<{
  * interactive fixtures used in the Task 1 measurement, plus the SHA-256 of
  * the first output to surface a determinism drift immediately.
  *
+ * Latency figures are PROVISIONAL-PENDING-NETNS — this probe runs in a
+ * plain Bun process, NOT inside the pooled Tier 0 netns worker under
+ * `unshare --map-current-user --net` with `ulimit -v` where production
+ * will compile. The numbers seed the budget; the threshold is set from
+ * data when Task 5 builds the compiler entry and the probe can be run
+ * through the real worker path.
+ *
  * This is RECORD-only for the first commit; the plan calls for a separate
  * measurement commit so the latency threshold is set from data, not from a
  * single hosted-runner sample.
