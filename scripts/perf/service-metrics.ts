@@ -1,5 +1,6 @@
 import { rmSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { join } from "node:path";
 
 import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { collectFacetStatus } from "../../src/cli/commands/status";
@@ -356,4 +357,102 @@ export async function measureTier0Spawn(): Promise<{
   } finally {
     runner.close?.();
   }
+}
+
+/**
+ * TSX compile probe — records Bun.build's compile cost for the static and
+ * interactive fixtures used in the Task 1 measurement, plus the SHA-256 of
+ * the first output to surface a determinism drift immediately.
+ *
+ * This is RECORD-only for the first commit; the plan calls for a separate
+ * measurement commit so the latency threshold is set from data, not from a
+ * single hosted-runner sample.
+ */
+export interface TsxCompileMeasurement {
+  readonly staticColdMs: number;
+  readonly staticWarmSamplesMs: readonly number[];
+  readonly staticWarmP50Ms: number;
+  readonly staticWarmP95Ms: number;
+  readonly staticOutputBytes: number;
+  readonly staticSha256: string;
+  readonly interactiveColdMs: number;
+  readonly interactiveWarmSamplesMs: readonly number[];
+  readonly interactiveWarmP50Ms: number;
+  readonly interactiveWarmP95Ms: number;
+  readonly interactiveOutputBytes: number;
+  readonly interactiveSha256: string;
+  readonly warmSampleCount: number;
+}
+
+const TSX_FIXTURES_DIR = join(import.meta.dir, "..", "..", "tests", "fixtures", "tsx");
+const STATIC_FIXTURE = join(TSX_FIXTURES_DIR, "static-source.tsx");
+const INTERACTIVE_FIXTURE = join(TSX_FIXTURES_DIR, "interactive-source.tsx");
+
+async function compileFixture(entry: string): Promise<Uint8Array> {
+  const result = await Bun.build({
+    entrypoints: [entry],
+    target: "browser",
+    format: "esm",
+    minify: false,
+    splitting: false,
+    metafile: false,
+    naming: "[dir]/[name].[ext]",
+    sourcemap: "none",
+    external: [],
+    throw: false,
+  });
+  if (!result.success || result.outputs.length === 0) {
+    throw new Error(
+      `Bun.build failed for ${entry}: ${result.logs.map((log) => log.message).join("; ")}`,
+    );
+  }
+  const firstOutput = result.outputs[0];
+  if (firstOutput === undefined) {
+    throw new Error(`Bun.build produced no outputs for ${entry}`);
+  }
+  return new Uint8Array(await firstOutput.arrayBuffer());
+}
+
+function percentileOf(samples: readonly number[], fraction: number): number {
+  if (samples.length === 0) return 0;
+  const sorted = [...samples].toSorted((a, b) => a - b);
+  const rank = Math.max(1, Math.ceil(sorted.length * fraction));
+  return sorted[Math.min(sorted.length, rank) - 1] ?? 0;
+}
+
+export async function measureTsxCompile(warmCount = 20): Promise<TsxCompileMeasurement> {
+  const staticColdStart = performance.now();
+  const staticFirst = await compileFixture(STATIC_FIXTURE);
+  const staticColdMs = performance.now() - staticColdStart;
+
+  const interactiveColdStart = performance.now();
+  const interactiveFirst = await compileFixture(INTERACTIVE_FIXTURE);
+  const interactiveColdMs = performance.now() - interactiveColdStart;
+
+  const staticWarm: number[] = [];
+  const interactiveWarm: number[] = [];
+  for (let i = 0; i < warmCount; i += 1) {
+    const startStatic = performance.now();
+    await compileFixture(STATIC_FIXTURE);
+    staticWarm.push(performance.now() - startStatic);
+    const startInteractive = performance.now();
+    await compileFixture(INTERACTIVE_FIXTURE);
+    interactiveWarm.push(performance.now() - startInteractive);
+  }
+
+  return {
+    staticColdMs,
+    staticWarmSamplesMs: staticWarm,
+    staticWarmP50Ms: percentileOf(staticWarm, 0.5),
+    staticWarmP95Ms: percentileOf(staticWarm, 0.95),
+    staticOutputBytes: staticFirst.byteLength,
+    staticSha256: createHash("sha256").update(staticFirst).digest("hex"),
+    interactiveColdMs,
+    interactiveWarmSamplesMs: interactiveWarm,
+    interactiveWarmP50Ms: percentileOf(interactiveWarm, 0.5),
+    interactiveWarmP95Ms: percentileOf(interactiveWarm, 0.95),
+    interactiveOutputBytes: interactiveFirst.byteLength,
+    interactiveSha256: createHash("sha256").update(interactiveFirst).digest("hex"),
+    warmSampleCount: warmCount,
+  };
 }

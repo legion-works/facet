@@ -19,7 +19,12 @@ import {
   type PerfPolicy,
 } from "./perf/budgets";
 import { snapshotTier1Leaks, waitForTier1Cleanup } from "./perf/process";
-import { measureMemoryAndCpu, measureTier0Spawn, measureWarmSse } from "./perf/service-metrics";
+import {
+  measureMemoryAndCpu,
+  measureTier0Spawn,
+  measureTsxCompile,
+  measureWarmSse,
+} from "./perf/service-metrics";
 import {
   inspectDormancy,
   listServiceChildPids,
@@ -225,6 +230,17 @@ async function main(): Promise<void> {
     status: "info",
     enforced: false,
     method: "not gated because validation cost would hide a stream-delivery regression",
+  });
+
+  console.error("perf phase: tsx-compile");
+  const tsx = await measureTsxCompile();
+  measurements.tsxCompile = tsx;
+  metrics.push({
+    name: "tsx compile warm p95 (record-only)",
+    observed: `static=${fixed(tsx.staticWarmP95Ms)}ms interactive=${fixed(tsx.interactiveWarmP95Ms)}ms · cold static=${fixed(tsx.staticColdMs)}ms interactive=${fixed(tsx.interactiveColdMs)}ms · staticSha256=${tsx.staticSha256.slice(0, 12)}... interactiveSha256=${tsx.interactiveSha256.slice(0, 12)}... · static=${tsx.staticOutputBytes}B interactive=${tsx.interactiveOutputBytes}B`,
+    status: "info",
+    enforced: false,
+    method: `${tsx.warmSampleCount} warm Bun.build calls per fixture after one cold each; SHA-256 of the first output seeds a determinism drift probe in future runs. Threshold intentionally record-only \u2014 the Task 1 commit decides from data, not from one hosted-runner sample.`,
   });
 
   // A required PR-path job must not be able to go red for a reason the author
