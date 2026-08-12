@@ -147,7 +147,7 @@ test(`the pinned browser ${TIER1_PINNED_VERSION} exempts srcdoc from frame-src (
   let target: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>> | undefined;
   try {
     target = await browser.launch();
-    const http = await runProbe(`http://127.0.0.1:${server.port}/`, target.session);
+    const http = await runProbe(new URL("/", server.url).href, target.session);
     const filePath = join(directory, "harness.html");
     await writeFile(filePath, probeDocument(csp, true));
     const file = await runProbe(`file://${filePath}`, target.session);

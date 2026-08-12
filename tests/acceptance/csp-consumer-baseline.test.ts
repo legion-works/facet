@@ -10,11 +10,35 @@ import { publishFixture, readBackFixture } from "../helpers/facet-testkit";
 const fixture = (name: string): string => `${import.meta.dir}/../fixtures/${name}`;
 
 const CONSUMERS = [
-  { artifactType: "markdown" as const, fixture: "markdown-heading-link.md", slug: "csp-md" },
-  { artifactType: "mermaid" as const, fixture: "mermaid-flowchart.md", slug: "csp-mermaid" },
-  { artifactType: "svg" as const, fixture: "svg-clean.svg", slug: "csp-svg" },
-  { artifactType: "chart" as const, fixture: "chart-barline.vl.json", slug: "csp-chart" },
-  { artifactType: "html" as const, fixture: "html-clean.html", slug: "csp-html" },
+  // Markdown headings and links do not move the observed renderer counters;
+  // this row is dominated by its Mermaid fence. Independent markdown proof
+  // would require a markdown-specific observable beyond the current shape.
+  {
+    key: "markdown",
+    artifactType: "markdown" as const,
+    fixture: "markdown-heading-link.md",
+    slug: "csp-md",
+  },
+  {
+    key: "mermaid",
+    artifactType: "mermaid" as const,
+    fixture: "mermaid-flowchart.md",
+    slug: "csp-mermaid",
+  },
+  { key: "svg", artifactType: "svg" as const, fixture: "svg-clean.svg", slug: "csp-svg" },
+  {
+    key: "chart",
+    artifactType: "chart" as const,
+    fixture: "chart-barline.vl.json",
+    slug: "csp-chart",
+  },
+  { key: "html", artifactType: "html" as const, fixture: "html-clean.html", slug: "csp-html" },
+  {
+    key: "html-external",
+    artifactType: "html" as const,
+    fixture: "html-csp-external-image.html",
+    slug: "csp-html-external",
+  },
 ] as const;
 
 function projectConsumer(verdict: Awaited<ReturnType<typeof readBackFixture>>) {
@@ -119,6 +143,29 @@ const CONSUMER_BASELINE: Record<string, ReturnType<typeof projectConsumer>> = {
       discriminativeErrors: [],
     },
   },
+  "html-external": {
+    status: "partial:external_resources",
+    execution: undefined,
+    observed: {
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+      externalImageCount: 1,
+      html: {
+        rendererRootCount: 1,
+        headingCount: 1,
+        tableCount: 1,
+        listCount: 0,
+        imageCount: 1,
+        canvasCount: 0,
+        externalImageCount: 1,
+      },
+      viewBoxes: [],
+      discriminativeErrors: [],
+    },
+  },
 };
 
 test("existing artifact consumers keep their projected payload under the unchanged frozen CSP", async () => {
@@ -136,7 +183,7 @@ test("existing artifact consumers keep their projected payload under the unchang
       tier: 1,
       productionTier0: true,
     });
-    rows[consumer.artifactType] = projectConsumer(verdict);
+    rows[consumer.key] = projectConsumer(verdict);
   }
   for (const [type, row] of Object.entries(rows)) {
     expect(row.execution, type).toBeUndefined();
