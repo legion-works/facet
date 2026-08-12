@@ -17,6 +17,7 @@ test("Tier 1 harness CSP allows HTTPS images and blocks cleartext HTTP images", 
   try {
     const harness = await buildHarnessSrcdoc("html");
     expect(harness.srcdoc).toContain("img-src data: https:");
+    expect(harness.srcdoc).toContain("frame-src 'none'");
     const harnessPath = join(directory, "harness.html");
     await writeFile(harnessPath, harness.srcdoc);
 

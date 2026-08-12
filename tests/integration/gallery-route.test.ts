@@ -9,6 +9,7 @@ import { CommandResultSchema } from "../../src/shared/contracts/commands";
 import { generateRequestId } from "../../src/shared/util/time";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { FROZEN_CSP_TEMPLATE } from "../../src/gallery-web/frame-html";
+import { FROZEN_CSP_LITERAL } from "../helpers/frozen-csp-literal";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
@@ -138,9 +139,10 @@ describe("GET /gallery", () => {
     const frame = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=markdown`);
     const document = await frame.text();
     expect(frame.status).toBe(200);
-    expect(frame.headers.get("content-security-policy")).toBe(
-      FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce),
-    );
+    const frameCsp = frame.headers.get("content-security-policy");
+    expect(frameCsp).toBe(FROZEN_CSP_LITERAL.replace("<BOOTSTRAP_NONCE>", nonce));
+    expect(frameCsp).toContain("frame-src 'none'");
+    expect(FROZEN_CSP_TEMPLATE).toBe(FROZEN_CSP_LITERAL);
     expect(document).toContain(
       `<script type="module" nonce="${nonce}" src="/gallery/frame/bootstrap/markdown.js">`,
     );

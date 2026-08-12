@@ -42,6 +42,7 @@ import { createChannelPair, type ChannelPair } from "../../src/gallery-web/frame
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { HARNESS_CSP, buildHarnessSrcdoc } from "../../src/validation/tier1/harness";
+import { FROZEN_CSP_LITERAL, parseCspDirectives } from "../helpers/frozen-csp-literal";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const NONCE = "facet-nonce-abcd1234";
@@ -54,18 +55,8 @@ const CSP_BEFORE_EXTERNAL_IMAGES =
   "img-src data:; font-src data:; worker-src 'none'; connect-src 'none'; object-src 'none'; " +
   "base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'";
 
-const CSP_WITH_EXTERNAL_IMAGES =
-  "default-src 'none'; script-src 'nonce-<BOOTSTRAP_NONCE>'; style-src 'unsafe-inline'; " +
-  "img-src data: https:; font-src data:; worker-src 'none'; connect-src 'none'; object-src 'none'; " +
-  "base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'";
-
 function cspDirectives(csp: string): ReadonlyMap<string, string> {
-  return new Map(
-    csp.split("; ").map((directive) => {
-      const [name, ...sources] = directive.split(" ");
-      return [name!, sources.join(" ")];
-    }),
-  );
+  return new Map(parseCspDirectives(csp));
 }
 
 function buildFreshNonce(): string {
@@ -104,7 +95,7 @@ describe("gallery shell — FROZEN CSP", () => {
     const previous = cspDirectives(CSP_BEFORE_EXTERNAL_IMAGES);
     const next = cspDirectives(FROZEN_CSP_TEMPLATE);
 
-    expect(FROZEN_CSP_TEMPLATE).toBe(CSP_WITH_EXTERNAL_IMAGES);
+    expect(FROZEN_CSP_TEMPLATE).toBe(FROZEN_CSP_LITERAL);
     expect(next.get("img-src")).toBe("data: https:");
     expect(next.get("script-src")).toBe("'nonce-<BOOTSTRAP_NONCE>'");
     expect(next.get("script-src")).not.toContain("'unsafe-inline'");
@@ -122,14 +113,36 @@ describe("gallery shell — FROZEN CSP", () => {
     );
   });
 
-  test("frozen CSP gallery and Tier 1 harness emit the identical policy", async () => {
+  test("frozen CSP is byte-identical to the pinned literal, including frame-src", () => {
+    expect(FROZEN_CSP_TEMPLATE).toBe(FROZEN_CSP_LITERAL);
+    expect(parseCspDirectives(FROZEN_CSP_TEMPLATE)).toEqual(parseCspDirectives(FROZEN_CSP_LITERAL));
+    expect(parseCspDirectives(FROZEN_CSP_LITERAL).map(([name]) => name)).toEqual([
+      "default-src",
+      "script-src",
+      "style-src",
+      "img-src",
+      "font-src",
+      "worker-src",
+      "connect-src",
+      "object-src",
+      "base-uri",
+      "form-action",
+      "frame-src",
+      "media-src",
+    ]);
+    expect(cspDirectives(FROZEN_CSP_LITERAL).get("frame-src")).toBe("'none'");
+  });
+
+  test("frozen CSP gallery and Tier 1 harness emit the pinned literal", async () => {
     const harness = await buildHarnessSrcdoc("html");
     const harnessCsp = harness.srcdoc.match(
       /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/,
     )?.[1];
+    const renderedLiteral = FROZEN_CSP_LITERAL.replace("<BOOTSTRAP_NONCE>", harness.nonce);
 
-    expect(HARNESS_CSP).toBe(FROZEN_CSP_TEMPLATE);
-    expect(harnessCsp).toBe(FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", harness.nonce));
+    expect(HARNESS_CSP).toBe(FROZEN_CSP_LITERAL);
+    expect(harnessCsp).toBe(renderedLiteral);
+    expect(parseCspDirectives(harnessCsp ?? "")).toEqual(parseCspDirectives(renderedLiteral));
   });
 
   test("template includes script-src nonce, no 'unsafe-inline'", () => {
