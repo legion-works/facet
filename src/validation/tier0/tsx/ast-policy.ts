@@ -64,6 +64,11 @@
  *   6. Through `Function`/`Worker` indirection:
  *      `const W = [Worker][0]; new W("./w.js")` — not caught.
  *      Runtime control: `worker-src 'none'`.
+ *   7. Through `Function`/`eval` VALUE indirection (the script-source
+ *      counterpart of #6):
+ *      `const F = [Function][0]; new F("return 1")` and
+ *      `const E = [eval][0]; E("alert(1)")` — not caught.
+ *      Runtime control: `script-src 'nonce-<...>'` without `unsafe-eval`.
  *
  * ## False-rejection discipline (the worse failure)
  *

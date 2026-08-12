@@ -439,16 +439,20 @@ describe("tsx ast policy — capability ACCEPT directions (GREEN)", () => {
 
   test("accepts a destructured parameter named `Worker`", () => {
     const source = `
-      function f({ Worker }: { Worker: (s: string) => string }) { return Worker("ok"); }
-      export default function App(){return f({ Worker: (s) => s });}
+      function f({ Worker }: { Worker: new (s: string) => string }) { return new Worker("ok"); }
+      export default function App(){return f({ Worker: class { constructor(_: string) { return ""; } } });}
     `;
     const errors = validateTsxAst(source);
     expect(errors).toEqual([]);
   });
 
   test("accepts a default-value parameter named `Function`", () => {
+    // Use `new Function(...)` so the walker has a real rejection to
+    // suppress — a bare call `Function("ok")` does not match any
+    // walker check, so the test would pass vacuously without the
+    // scope branch.
     const source = `
-      function f(Function: (s: string) => string = (s) => s) { return Function("ok"); }
+      function f(Function: new (s: string) => string = class { constructor(_: string) { return ""; } }) { return new Function("ok"); }
       export default function App(){return f();}
     `;
     const errors = validateTsxAst(source);
@@ -496,9 +500,13 @@ describe("tsx ast policy — capability ACCEPT directions (GREEN)", () => {
   });
 
   test("accepts a `for-in` loop binding named `Function` used at a call site", () => {
+    // Use `new Function(...)` so the walker has a real rejection to
+    // suppress — a bare call `Function("ok")` does not match any
+    // walker check, so the test would pass vacuously without the
+    // scope branch.
     const source = `
       const obj = { x: 1 };
-      for (const Function in obj) { Function("ok"); }
+      for (const Function in obj) { new Function("ok"); }
       export default function App(){return null;}
     `;
     const errors = validateTsxAst(source);
