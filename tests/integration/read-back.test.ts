@@ -33,6 +33,7 @@ import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/cont
 import { CommandResultSchema, type CommandResult } from "../../src/shared/contracts/commands";
 import {
   Tier1ResultSchema,
+  VerdictObservedSchema,
   type Tier1Input,
   type Tier1Result,
   type Tier1Runner,
@@ -381,9 +382,87 @@ describe("read-back revision binding", () => {
       revisionSha,
       tier: 0,
     });
-    expect(result.observed.discriminativeErrors).toEqual([
+    expect(result.verdict.observed.discriminativeErrors).toEqual([
       { code: "bad_markdown", message: "bad markdown" },
     ]);
+  });
+
+  test("CLI read-back does not silently drop observed fields (Must 2 guard)", async () => {
+    // Must 2: the client was reconstructing the verdict field by
+    // field, so every field added since the helper was written
+    // was silently dropped. `externalImageCount` (HTML arc),
+    // `viewBoxes`, and `execution` all traveled this path. The
+    // guard derived from the canonical schema makes the
+    // class un-repeatable: assert the client's output carries
+    // every key `VerdictObservedSchema.shape` declares, and
+    // assert the top-level markers (`execution`, `insecure`,
+    // `screenshotError`) are not dropped.
+    const revisionSha = "a".repeat(64);
+    const client = new FacetClient({
+      baseUrl: "http://127.0.0.1:1234",
+      installToken: "test-token",
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            schemaVersion: FACET_SCHEMA_VERSION,
+            requestId: "response-request",
+            ok: true,
+            data: {
+              command: "readBack",
+              requestId: "response-request",
+              renderer: "svg",
+              verdict: {
+                status: "partial:external_resources",
+                tier: 1,
+                artifactId: "artifact-1",
+                revisionSha,
+                // a value for every observed field, including
+                // externalImageCount and viewBoxes, so the
+                // schema valid, the schema-derived guard fires
+                // against the OUTPUT keys, and the
+                // field-by-field omission is caught.
+                observed: {
+                  rendererRootSvgCount: 1,
+                  graphCount: 1,
+                  mermaidNodeCount: 1,
+                  visibleSvgCount: 1,
+                  opaqueRegionCount: 0,
+                  externalImageCount: 3,
+                  viewBoxes: ["0 0 100 100"],
+                  errorCount: 0,
+                  html: {
+                    rendererRootCount: 1,
+                    headingCount: 0,
+                    tableCount: 0,
+                    listCount: 0,
+                    imageCount: 0,
+                    canvasCount: 0,
+                    externalImageCount: 0,
+                  },
+                  discriminativeErrors: [],
+                },
+                execution: "static",
+              },
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        )) as unknown as typeof fetch,
+    });
+
+    const result = await readBack(client, {
+      artifactId: "artifact-1",
+      revisionSha,
+      tier: 0,
+    });
+    // Schema-derived key set: every observed key declared on
+    // the canonical schema is present on the client's output.
+    const expectedObservedKeys = Object.keys(VerdictObservedSchema.shape).toSorted();
+    const actualObservedKeys = Object.keys(result.verdict.observed).toSorted();
+    expect(actualObservedKeys).toEqual(expectedObservedKeys);
+    // The top-level markers are not dropped.
+    expect(result.verdict.execution).toBe("static");
+    expect(result.verdict.observed.externalImageCount).toBe(3);
+    expect(result.verdict.observed.viewBoxes).toEqual(["0 0 100 100"]);
   });
 
   test("two rapid revisions to the same artifact — each read-back returns only its own verdict", async () => {

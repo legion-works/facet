@@ -264,24 +264,24 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
     revisionSha: opts.revisionSha,
     tier: opts.tier,
   });
-  traceTier1Transport(`test:readback:complete status=${result.status}`);
+  traceTier1Transport(`test:readback:complete status=${result.verdict.status}`);
+  // Spread the canonical parsed verdict — same anti-field-drop
+  // principle as the client. `insecure` and `screenshotError` are
+  // optional markers; the verdict already schema-validated them.
+  const verdict = result.verdict;
   return {
-    status: result.status,
-    tier: result.tier === "visual" ? 1 : result.tier,
+    status: verdict.status,
+    tier: verdict.tier === 0 ? 0 : 1,
     renderer: result.renderer,
-    artifactId: result.artifactId,
-    revisionSha: result.revisionSha,
-    ...(result.insecure !== undefined ? { insecure: result.insecure } : {}),
-    ...(result.screenshotError !== undefined ? { screenshotError: result.screenshotError } : {}),
+    artifactId: verdict.artifactId,
+    revisionSha: verdict.revisionSha,
+    ...(verdict.insecure !== undefined ? { insecure: verdict.insecure } : {}),
+    ...(verdict.screenshotError !== undefined ? { screenshotError: verdict.screenshotError } : {}),
     observed: {
-      rendererRootSvgCount: result.observed.rendererRootSvgCount,
-      graphCount: result.observed.graphCount,
-      opaqueRegionCount: result.observed.opaqueRegionCount,
-      errorCount: result.observed.errorCount,
-      ...(result.observed.html === undefined ? {} : { html: result.observed.html }),
-      ...(result.observed.discriminativeErrors !== undefined
-        ? { discriminativeErrors: result.observed.discriminativeErrors }
-        : {}),
+      rendererRootSvgCount: verdict.observed.rendererRootSvgCount,
+      graphCount: verdict.observed.graphCount,
+      opaqueRegionCount: verdict.observed.opaqueRegionCount,
+      errorCount: verdict.observed.errorCount,
     },
   };
 }

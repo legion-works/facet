@@ -33,9 +33,8 @@ import { FacetError } from "../shared/errors/facet-error";
 import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
 import type { ArtifactType } from "../shared/contracts/artifact-types";
-import type { HtmlStructureCounts } from "../shared/contracts/validation";
 import type { Renderer } from "../shared/contracts/renderers";
-import type { InsecureMarker, ScreenshotError } from "../shared/contracts/validation";
+import type { ScreenshotError } from "../shared/contracts/validation";
 
 export interface FacetClientOptions {
   readonly baseUrl: string;
@@ -264,29 +263,19 @@ export interface ReadBackOptions {
 /**
  * Run `readBack` against an existing FacetClient and return the
  * typed verdict. The service normalizes "visual" → 1 internally.
+ *
+ * The return shape is the canonical Verdict surface (plus the
+ * request-level `renderer`): the typed envelope is schema-validated
+ * by `CommandResultSchema.parse`, so the verdict that crosses the
+ * wire is already the canonical shape. Field-by-field copying here
+ * is the field-drop class (Must 2) — every field added since the
+ * helper was written was silently dropped. Pass the parsed verdict
+ * through so a new field on the schema is included by default.
  */
 export async function readBack(
   client: FacetClient,
   options: ReadBackOptions,
-): Promise<{
-  readonly status: string;
-  readonly tier: 0 | 1 | "visual";
-  readonly renderer: Renderer;
-  readonly artifactId: string;
-  readonly revisionSha: string;
-  readonly insecure?: InsecureMarker;
-  readonly screenshotError?: ScreenshotError;
-  readonly observed: {
-    readonly rendererRootSvgCount: number;
-    readonly graphCount: number;
-    readonly mermaidNodeCount: number;
-    readonly visibleSvgCount: number;
-    readonly opaqueRegionCount: number;
-    readonly errorCount: number;
-    readonly html?: HtmlStructureCounts;
-    readonly discriminativeErrors?: readonly { readonly code: string; readonly message: string }[];
-  };
-}> {
+): Promise<ReadBackResult> {
   const res = await client.sendCommand({
     command: "readBack",
     requestId: generateRequestId(),
@@ -302,26 +291,18 @@ export async function readBack(
     throw new FacetError("invalid_envelope", `expected readBack result, got ${parsed.command}`);
   }
   return {
-    status: parsed.verdict.status,
-    tier: parsed.verdict.tier,
     renderer: parsed.renderer,
-    artifactId: parsed.verdict.artifactId,
-    revisionSha: parsed.verdict.revisionSha,
-    ...(parsed.verdict.insecure !== undefined ? { insecure: parsed.verdict.insecure } : {}),
-    ...(parsed.verdict.screenshotError !== undefined
-      ? { screenshotError: parsed.verdict.screenshotError }
-      : {}),
-    observed: {
-      rendererRootSvgCount: parsed.verdict.observed.rendererRootSvgCount,
-      graphCount: parsed.verdict.observed.graphCount,
-      mermaidNodeCount: parsed.verdict.observed.mermaidNodeCount,
-      visibleSvgCount: parsed.verdict.observed.visibleSvgCount,
-      opaqueRegionCount: parsed.verdict.observed.opaqueRegionCount,
-      errorCount: parsed.verdict.observed.errorCount,
-      ...(parsed.verdict.observed.html === undefined ? {} : { html: parsed.verdict.observed.html }),
-      ...(parsed.verdict.observed.discriminativeErrors !== undefined
-        ? { discriminativeErrors: parsed.verdict.observed.discriminativeErrors }
-        : {}),
-    },
+    verdict: parsed.verdict,
   };
 }
+
+/**
+ * The canonical read-back result the client returns. The `verdict`
+ * is the canonical Verdict shape (already schema-validated by the
+ * envelope parse), and `renderer` is the request-level binding
+ * that accompanies it. Anything else lives on the verdict.
+ */
+export type ReadBackResult = {
+  readonly renderer: Renderer;
+  readonly verdict: import("../shared/contracts/validation").Verdict;
+};
