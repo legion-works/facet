@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FacetClient, publishArtifact, readBack } from "../../src/cli/client";
+import { FacetClient, publishArtifact, readBack, type ReadBackResult } from "../../src/cli/client";
 import {
   runEgressPenetration as runEgressPenetrationHarness,
   type EgressPenetrationOptions,
@@ -28,10 +28,10 @@ import { stubTier0Runner } from "./stub-tier0-runner";
 import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
 import type { Renderer } from "../../src/shared/contracts/renderers";
 import type {
-  HtmlStructureCounts,
   InsecureLevel,
   InsecureMarker,
   ScreenshotError,
+  VerdictObserved,
 } from "../../src/shared/contracts/validation";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
@@ -45,17 +45,20 @@ export type Tier = 0 | 1;
 export type Launcher = "production";
 export type ScreenshotMode = "live" | "deterministic" | "fail";
 
-// Acceptance-level verdict contract. This is the surface the acceptance gates
-// assert against; the full product schema supersedes it once the shared
-// contracts land.
-export interface AcceptanceVerdictObserved {
-  readonly rendererRootSvgCount: number;
-  readonly graphCount: number;
-  readonly errorCount: number;
-  readonly opaqueRegionCount: number;
-  readonly html?: HtmlStructureCounts;
-  readonly discriminativeErrors?: readonly { readonly code: string; readonly message: string }[];
-}
+// Acceptance-level verdict contract. The canonical observed shape
+// (the same `VerdictObservedSchema` every read-back response derives
+// from) is the surface the acceptance gates assert against. The
+// previous hand-picked subset (`rendererRootSvgCount`, `graphCount`,
+// `errorCount`, `opaqueRegionCount`, optional `html`, optional
+// `discriminativeErrors`) silently dropped `externalImageCount`,
+// `viewBoxes`, `mermaidNodeCount`, and `visibleSvgCount` for every
+// release since the HTML arc — `externalImageCount` is the
+// disclosure channel, so an acceptance test could not check it
+// end-to-end. The interface now carries the canonical shape; the
+// projection (`projectToAcceptanceVerdict`) passes the parsed
+// verdict through unchanged. A new field on the schema is
+// surfaced by default.
+export type AcceptanceVerdictObserved = VerdictObserved;
 
 export interface AcceptanceVerdict {
   readonly status: string;
@@ -66,6 +69,14 @@ export interface AcceptanceVerdict {
   readonly observed: AcceptanceVerdictObserved;
   readonly insecure?: InsecureMarker;
   readonly screenshotError?: ScreenshotError;
+  /**
+   * TSX execution marker (D10). Tasks 6-9 will need this; the
+   * previous interface dropped it entirely so no acceptance test
+   * could assert on the TSX marker. Conditional spread on the
+   * verdict-only — same byte-identity rule as the production
+   * envelope.
+   */
+  readonly execution?: import("../../src/shared/contracts/validation").TsxExecutionMode;
 }
 
 // Re-export the canonical egress types from `scripts/egress-penetration.ts`
@@ -253,6 +264,18 @@ export async function publishFixture(opts: PublishFixtureOptions): Promise<Publi
 }
 
 export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<AcceptanceVerdict> {
+  const result = await readBackFixtureRaw(opts);
+  return projectToAcceptanceVerdict(result);
+}
+
+/**
+ * Low-level read-back that returns the canonical `ReadBackResult`
+ * (renderer + canonical parsed verdict). The acceptance harness
+ * `readBackFixture` is a thin projection over this. The split
+ * exists so the projection can be tested at unit resolution
+ * without spinning up a service.
+ */
+export async function readBackFixtureRaw(opts: ReadBackFixtureOptions): Promise<ReadBackResult> {
   traceTier1Transport("test:readback:start");
   const { client } = await ensureEnv(
     undefined,
@@ -265,9 +288,24 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
     tier: opts.tier,
   });
   traceTier1Transport(`test:readback:complete status=${result.verdict.status}`);
-  // Spread the canonical parsed verdict — same anti-field-drop
-  // principle as the client. `insecure` and `screenshotError` are
-  // optional markers; the verdict already schema-validated them.
+  return result;
+}
+
+/**
+ * Project the canonical parsed verdict onto the acceptance
+ * surface. Pass-through by design: the canonical `VerdictObserved`
+ * shape is the surface, so a new field on the schema is surfaced
+ * by default. `insecure` and `screenshotError` are conditional
+ * spreads so the wire form for verdicts without them stays
+ * byte-identical to the pre-arc shape.
+ *
+ * Extracted from `readBackFixture` so the schema-derived key-set
+ * guard (`tests/unit/facet-testkit-projection.test.ts`) can pin
+ * the projection at unit resolution — see the test file's
+ * standing-preamble preamble for why dropping fields here is
+ * the same class the production client fix eliminated.
+ */
+export function projectToAcceptanceVerdict(result: ReadBackResult): AcceptanceVerdict {
   const verdict = result.verdict;
   return {
     status: verdict.status,
@@ -275,14 +313,10 @@ export async function readBackFixture(opts: ReadBackFixtureOptions): Promise<Acc
     renderer: result.renderer,
     artifactId: verdict.artifactId,
     revisionSha: verdict.revisionSha,
+    observed: verdict.observed,
     ...(verdict.insecure !== undefined ? { insecure: verdict.insecure } : {}),
     ...(verdict.screenshotError !== undefined ? { screenshotError: verdict.screenshotError } : {}),
-    observed: {
-      rendererRootSvgCount: verdict.observed.rendererRootSvgCount,
-      graphCount: verdict.observed.graphCount,
-      opaqueRegionCount: verdict.observed.opaqueRegionCount,
-      errorCount: verdict.observed.errorCount,
-    },
+    ...(verdict.execution !== undefined ? { execution: verdict.execution } : {}),
   };
 }
 
