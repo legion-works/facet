@@ -11,14 +11,16 @@
 /** Wall-clock budget for one Tier 0 worker invocation. */
 export const TIER0_TIMEOUT_MS = 5_000;
 
+/** TSX includes a cold Bun.build and static SSR, so it owns a separate budget. */
+export const TIER0_TSX_TIMEOUT_MS = 1_000;
+
 /**
  * Maximum number of bytes the worker may write to STDOUT before the
  * parent truncates the stream and records a typed protocol error.
- * 64 KiB is well above the bounded `Tier0Result` JSON size (a few
- * hundred bytes for the four supported artifact types) so the cap
- * only fires for a misbehaving worker.
+ * The cap accommodates bounded compiled TSX evidence while still
+ * catching an unbounded or misbehaving worker.
  */
-export const TIER0_OUTPUT_CAP_BYTES = 64 * 1024;
+export const TIER0_OUTPUT_CAP_BYTES = 4 * 1024 * 1024;
 
 /** Maximum NDJSON request line accepted by the long-lived Tier 0 worker. */
 export const TIER0_INPUT_CAP_BYTES = 8 * 1024 * 1024;

@@ -177,6 +177,7 @@ export const Tier0InputSchema = z.object({
   renderer: RendererSchema,
   source: z.instanceof(Uint8Array<ArrayBuffer>),
   lexical: LexicalCountersSchema,
+  execution: TsxExecutionModeSchema.optional(),
 });
 export type Tier0Input = z.infer<typeof Tier0InputSchema>;
 
@@ -208,8 +209,17 @@ export const Tier0ResultSchema = VerdictSchema.extend({
 });
 export type Tier0Result = z.infer<typeof Tier0ResultSchema>;
 
+export const CompiledArtifactSchema = z.object({
+  mediaType: z.enum(["text/html", "text/javascript"]),
+  bytesBase64: z.string(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type CompiledArtifact = z.infer<typeof CompiledArtifactSchema>;
+
 /** Identity-blind worker stdout; the parent adds artifactId before persistence. */
-export const Tier0WorkerResultSchema = Tier0ResultSchema.omit({ artifactId: true });
+export const Tier0WorkerResultSchema = Tier0ResultSchema.omit({ artifactId: true }).extend({
+  compiled: CompiledArtifactSchema.optional(),
+});
 export type Tier0WorkerResult = z.infer<typeof Tier0WorkerResultSchema>;
 
 /** Tier 1 input: headless-shell-backed verifier on top of Tier 0. */

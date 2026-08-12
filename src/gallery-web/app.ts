@@ -568,6 +568,8 @@ interface GallerySourceResponse {
   readonly artifactType: string;
   readonly renderer?: string;
   readonly source: string;
+  readonly renderBytesBase64?: string;
+  readonly execution?: "static" | "interactive";
   readonly verdict: Verdict | null;
 }
 
@@ -592,7 +594,10 @@ async function fetchGallerySource(
   return {
     artifactType: payload.artifactType,
     renderer: payload.renderer ?? "svg",
-    bytes: new TextEncoder().encode(payload.source),
+    bytes:
+      payload.renderBytesBase64 === undefined
+        ? new TextEncoder().encode(payload.source)
+        : Uint8Array.from(atob(payload.renderBytesBase64), (char) => char.charCodeAt(0)),
     verdict: payload.verdict ?? null,
   };
 }

@@ -50,6 +50,8 @@ import { verdictFromStoredRun } from "./stored-verdict";
 import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
 import type { ArtifactRepository } from "./store/repository";
+import { ensureRunEvidenceDirectory } from "./store/evidence-retention";
+import { join } from "node:path";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 
@@ -166,8 +168,38 @@ async function runTier0Safe(runner: Tier0Runner, input: Tier0Input): Promise<Tie
         errorCount: 1,
         discriminativeErrors: [{ code: facet.code, message: facet.message }],
       },
+      ...(input.execution === undefined ? {} : { execution: input.execution }),
     });
   }
+}
+
+async function retainCompiledEvidence(
+  repository: ArtifactRepository,
+  artifactId: string,
+  revisionSha: string,
+  compiled: Tier0WorkerResult["compiled"],
+): Promise<string | null> {
+  if (compiled === undefined) return null;
+  const bytes = Uint8Array.from(Buffer.from(compiled.bytesBase64, "base64"));
+  const actualSha = new Bun.CryptoHasher("sha256");
+  actualSha.update(bytes);
+  const actualSha256 = actualSha.digest("hex");
+  if (actualSha256 !== compiled.sha256) {
+    throw new FacetError("tier0_protocol_error", "Compiled TSX bytes failed SHA-256 validation", {
+      retryable: false,
+      details: { expectedSha256: compiled.sha256, actualSha256 },
+    });
+  }
+  const evidenceRoot = repository.getEvidenceRoot();
+  if (evidenceRoot === undefined) return null;
+  const runId = crypto.randomUUID();
+  const evidence = ensureRunEvidenceDirectory({ evidenceRoot, artifactId, revisionSha, runId });
+  const path = join(
+    evidence.directory,
+    compiled.mediaType === "text/html" ? "compiled.html" : "compiled.js",
+  );
+  await Bun.write(path, bytes);
+  return path;
 }
 
 /**
@@ -299,6 +331,7 @@ export async function dispatch(
         renderer: command.renderer,
         source: bytes,
         lexical: legacyCounters,
+        ...(artifactType === "tsx" ? { execution: executionMode } : {}),
       });
       const insecure = insecureMarker(deps.insecureLevel, deps.insecureReason);
       // D10: only TSX verdicts carry the execution marker. Every
@@ -358,6 +391,15 @@ export async function dispatch(
         };
       }
       const tier0Result = await runTier0Safe(deps.tier0Runner, tier0Input);
+      const compiledPath =
+        artifactType === "tsx"
+          ? await retainCompiledEvidence(
+              deps.repository,
+              command.artifactId,
+              revision.sha256,
+              tier0Result.compiled,
+            )
+          : null;
       // 3. Bind the verdict to (artifactId, revisionSha) via the
       // canonical render_run row so read-back returns it later.
       const enriched = Tier0ResultSchema.parse(
@@ -370,6 +412,7 @@ export async function dispatch(
         expected: enriched.expected,
         observed: enriched.observed,
         insecure: enriched.insecure ?? null,
+        ...(compiledPath === null ? {} : { compiledPath }),
       });
       // 4. Tier 1 (optional). When configured, run the headless-shell
       // verifier over the SAME bytes and record a separate render_run.
@@ -379,7 +422,8 @@ export async function dispatch(
       let tier1Verdict: Tier1Result | null = null;
       if (
         deps.tier1Runner !== undefined &&
-        !(artifactType === "html" && enriched.status === "error")
+        !(artifactType === "html" && enriched.status === "error") &&
+        artifactType !== "tsx"
       ) {
         const tier1Input: Tier1Input = Tier1InputSchema.parse({
           ...tier0Input,

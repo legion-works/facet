@@ -23,6 +23,7 @@
 import { ARTIFACT_TYPES, type ArtifactType } from "../../shared/contracts/artifact-types";
 import type { Renderer } from "../../shared/contracts/artifact";
 import type { LexicalCounters, Tier0WorkerResult } from "../../shared/contracts/validation";
+import type { TsxExecutionMode } from "../../shared/contracts/validation";
 import { TIER0_INPUT_CAP_BYTES } from "../sandbox/limits";
 
 import { parseMermaid } from "./mermaid";
@@ -30,6 +31,7 @@ import { parseMarkdown } from "./markdown";
 import { parseSvg } from "./svg";
 import { parseChart } from "./chart";
 import { parseHtml } from "./html";
+import { compileTsx } from "./tsx/compiler";
 
 /**
  * Worker wire shape — the exact JSON object the parent writes to the
@@ -40,13 +42,14 @@ import { parseHtml } from "./html";
  * reject mismatched workers.
  */
 export interface WorkerInput {
-  readonly schemaVersion: "facet.tier0.v1";
+  readonly schemaVersion: "facet.tier0.v2";
   readonly requestId: string;
   readonly revisionSha: string;
   readonly artifactType: ArtifactType;
   readonly renderer: Renderer;
   readonly source: Uint8Array;
   readonly lexical: LexicalCounters;
+  readonly execution?: TsxExecutionMode;
 }
 
 /**
@@ -63,11 +66,12 @@ interface WorkerInputJson {
   readonly renderer?: unknown;
   readonly sourceBase64?: unknown;
   readonly lexical?: unknown;
+  readonly execution?: unknown;
 }
 
 function parseWorkerInput(text: string): WorkerInput {
   const raw = JSON.parse(text) as WorkerInputJson;
-  if (raw.schemaVersion !== "facet.tier0.v1") {
+  if (raw.schemaVersion !== "facet.tier0.v2") {
     throw new Error(`unknown schemaVersion: ${String(raw.schemaVersion)}`);
   }
   if (typeof raw.requestId !== "string" || raw.requestId.length === 0) {
@@ -98,14 +102,23 @@ function parseWorkerInput(text: string): WorkerInput {
     throw new Error("invalid lexical counters");
   }
   const source = Uint8Array.from(Buffer.from(raw.sourceBase64, "base64"));
+  const execution =
+    raw.execution === "static" || raw.execution === "interactive" ? raw.execution : undefined;
+  if (raw.artifactType === "tsx" && execution !== "static" && execution !== "interactive") {
+    throw new Error("TSX input requires execution mode");
+  }
+  if (raw.artifactType !== "tsx" && raw.execution !== undefined) {
+    throw new Error("execution is only valid for TSX input");
+  }
   return {
-    schemaVersion: "facet.tier0.v1",
+    schemaVersion: "facet.tier0.v2",
     requestId: raw.requestId,
     revisionSha: raw.revisionSha,
     artifactType: raw.artifactType as ArtifactType,
     renderer: raw.renderer,
     source,
     lexical,
+    ...(execution === undefined ? {} : { execution }),
   };
 }
 
@@ -206,31 +219,91 @@ async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
       };
     }
     case "tsx": {
-      // TSX compilation lives in Tasks 5-7. Until then, the parser
-      // surfaces a typed verdict so a publish lands an `error` run
-      // instead of a silent `ok`. The wire result stays byte-shaped
-      // so downstream consumers see the same surface as every other
-      // parser rejection.
-      return {
-        ...base,
-        status: "error",
-        observed: {
-          rendererRootSvgCount: 0,
-          graphCount: 0,
-          mermaidNodeCount: 0,
-          visibleSvgCount: 0,
-          opaqueRegionCount: 0,
-          externalImageCount: 0,
-          errorCount: 1,
-          discriminativeErrors: [
-            {
-              code: "tsx_parser_unavailable",
-              message:
-                "TSX source parsing is not implemented in this build; Tasks 5-7 land before the gallery can execute tsx artifacts",
+      if (input.execution === undefined) throw new Error("TSX execution mode missing");
+      try {
+        const compiled = await compileTsx({
+          source: new TextDecoder("utf-8", { fatal: true }).decode(input.source),
+          execution: input.execution,
+        });
+        const encoded = Buffer.from(compiled.bytes).toString("base64");
+        const common = {
+          ...base,
+          status: "ok" as const,
+          execution: input.execution,
+          compiled: {
+            mediaType: compiled.mediaType,
+            bytesBase64: encoded,
+            sha256: compiled.sha256,
+          },
+        };
+        if (input.execution === "interactive") {
+          return {
+            ...common,
+            expected: { ...base.expected },
+            observed: {
+              rendererRootSvgCount: 0,
+              graphCount: 0,
+              mermaidNodeCount: 0,
+              visibleSvgCount: 0,
+              opaqueRegionCount: 0,
+              externalImageCount: 0,
+              errorCount: 0,
             },
-          ],
-        },
-      };
+          };
+        }
+        if (compiled.html === undefined) throw new Error("static TSX compiler omitted HTML");
+        const parsed = parseHtml(new TextEncoder().encode(compiled.html));
+        return {
+          ...common,
+          status: parsed.status,
+          expected: {
+            ...base.expected,
+            html: parsed.html,
+            externalImageCount: parsed.html.externalImageCount,
+          },
+          observed: {
+            rendererRootSvgCount: 0,
+            graphCount: 0,
+            mermaidNodeCount: 0,
+            visibleSvgCount: 0,
+            opaqueRegionCount: parsed.html.canvasCount,
+            externalImageCount: parsed.html.externalImageCount,
+            html: parsed.html,
+            errorCount: parsed.status === "error" ? parsed.errors.length : 0,
+            ...(parsed.status === "error" ? { discriminativeErrors: [...parsed.errors] } : {}),
+          },
+        };
+      } catch (error) {
+        const facet = error instanceof Error && "code" in error ? error : null;
+        const code =
+          facet !== null && typeof facet.code === "string" ? facet.code : "tsx_compile_error";
+        if (code === "tsx_ast_denied") {
+          const details =
+            facet !== null && "options" in facet
+              ? (facet.options as { details?: { errorsJson?: string } }).details
+              : undefined;
+          const errors =
+            details?.errorsJson === undefined
+              ? []
+              : (JSON.parse(details.errorsJson) as Array<{ code: string; message: string }>);
+          return {
+            ...base,
+            status: "error",
+            execution: input.execution,
+            observed: {
+              rendererRootSvgCount: 0,
+              graphCount: 0,
+              mermaidNodeCount: 0,
+              visibleSvgCount: 0,
+              opaqueRegionCount: 0,
+              externalImageCount: 0,
+              errorCount: errors.length,
+              discriminativeErrors: errors,
+            },
+          };
+        }
+        throw error;
+      }
     }
     default: {
       const exhaustive: never = input.artifactType;

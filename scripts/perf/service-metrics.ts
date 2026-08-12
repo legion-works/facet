@@ -364,16 +364,8 @@ export async function measureTier0Spawn(): Promise<{
  * interactive fixtures used in the Task 1 measurement, plus the SHA-256 of
  * the first output to surface a determinism drift immediately.
  *
- * Latency figures are PROVISIONAL-PENDING-NETNS — this probe runs in a
- * plain Bun process, NOT inside the pooled Tier 0 netns worker under
- * `unshare --map-current-user --net` with `ulimit -v` where production
- * will compile. The numbers seed the budget; the threshold is set from
- * data when Task 5 builds the compiler entry and the probe can be run
- * through the real worker path.
- *
- * This is RECORD-only for the first commit; the plan calls for a separate
- * measurement commit so the latency threshold is set from data, not from a
- * single hosted-runner sample.
+ * The probe runs through the pooled Tier 0 netns worker under the same
+ * `unshare --map-current-user --net` and memory-limit path as publishing.
  */
 export interface TsxCompileMeasurement {
   readonly staticColdMs: number;
@@ -395,29 +387,30 @@ const TSX_FIXTURES_DIR = join(import.meta.dir, "..", "..", "tests", "fixtures", 
 const STATIC_FIXTURE = join(TSX_FIXTURES_DIR, "static-source.tsx");
 const INTERACTIVE_FIXTURE = join(TSX_FIXTURES_DIR, "interactive-source.tsx");
 
-async function compileFixture(entry: string): Promise<Uint8Array> {
-  const result = await Bun.build({
-    entrypoints: [entry],
-    target: "browser",
-    format: "esm",
-    minify: false,
-    splitting: false,
-    metafile: false,
-    naming: "[dir]/[name].[ext]",
-    sourcemap: "none",
-    external: [],
-    throw: false,
+async function compileFixture(
+  runner: ReturnType<typeof createTier0Runner>,
+  entry: string,
+  execution: "static" | "interactive",
+): Promise<Uint8Array> {
+  const source = new Uint8Array(await Bun.file(entry).arrayBuffer());
+  const result = await runner({
+    revisionSha: createHash("sha256").update(source).digest("hex"),
+    artifactType: "tsx",
+    renderer: "svg",
+    source,
+    execution,
+    lexical: {
+      rendererRootSvgCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+      externalImageCount: 0,
+    },
   });
-  if (!result.success || result.outputs.length === 0) {
-    throw new Error(
-      `Bun.build failed for ${entry}: ${result.logs.map((log) => log.message).join("; ")}`,
-    );
+  if (result.status !== "ok" || result.compiled === undefined) {
+    throw new Error(`Tier 0 TSX compile failed for ${entry}: ${result.status}`);
   }
-  const firstOutput = result.outputs[0];
-  if (firstOutput === undefined) {
-    throw new Error(`Bun.build produced no outputs for ${entry}`);
-  }
-  return new Uint8Array(await firstOutput.arrayBuffer());
+  return Uint8Array.from(Buffer.from(result.compiled.bytesBase64, "base64"));
 }
 
 function percentileOf(samples: readonly number[], fraction: number): number {
@@ -428,38 +421,40 @@ function percentileOf(samples: readonly number[], fraction: number): number {
 }
 
 export async function measureTsxCompile(warmCount = 20): Promise<TsxCompileMeasurement> {
-  const staticColdStart = performance.now();
-  const staticFirst = await compileFixture(STATIC_FIXTURE);
-  const staticColdMs = performance.now() - staticColdStart;
-
-  const interactiveColdStart = performance.now();
-  const interactiveFirst = await compileFixture(INTERACTIVE_FIXTURE);
-  const interactiveColdMs = performance.now() - interactiveColdStart;
-
-  const staticWarm: number[] = [];
-  const interactiveWarm: number[] = [];
-  for (let i = 0; i < warmCount; i += 1) {
-    const startStatic = performance.now();
-    await compileFixture(STATIC_FIXTURE);
-    staticWarm.push(performance.now() - startStatic);
-    const startInteractive = performance.now();
-    await compileFixture(INTERACTIVE_FIXTURE);
-    interactiveWarm.push(performance.now() - startInteractive);
+  const runner = createTier0Runner(0);
+  try {
+    const staticColdStart = performance.now();
+    const staticFirst = await compileFixture(runner, STATIC_FIXTURE, "static");
+    const staticColdMs = performance.now() - staticColdStart;
+    const interactiveColdStart = performance.now();
+    const interactiveFirst = await compileFixture(runner, INTERACTIVE_FIXTURE, "interactive");
+    const interactiveColdMs = performance.now() - interactiveColdStart;
+    const staticWarm: number[] = [];
+    const interactiveWarm: number[] = [];
+    for (let i = 0; i < warmCount; i += 1) {
+      const startStatic = performance.now();
+      await compileFixture(runner, STATIC_FIXTURE, "static");
+      staticWarm.push(performance.now() - startStatic);
+      const startInteractive = performance.now();
+      await compileFixture(runner, INTERACTIVE_FIXTURE, "interactive");
+      interactiveWarm.push(performance.now() - startInteractive);
+    }
+    return {
+      staticColdMs,
+      staticWarmSamplesMs: staticWarm,
+      staticWarmP50Ms: percentileOf(staticWarm, 0.5),
+      staticWarmP95Ms: percentileOf(staticWarm, 0.95),
+      staticOutputBytes: staticFirst.byteLength,
+      staticSha256: createHash("sha256").update(staticFirst).digest("hex"),
+      interactiveColdMs,
+      interactiveWarmSamplesMs: interactiveWarm,
+      interactiveWarmP50Ms: percentileOf(interactiveWarm, 0.5),
+      interactiveWarmP95Ms: percentileOf(interactiveWarm, 0.95),
+      interactiveOutputBytes: interactiveFirst.byteLength,
+      interactiveSha256: createHash("sha256").update(interactiveFirst).digest("hex"),
+      warmSampleCount: warmCount,
+    };
+  } finally {
+    runner.close?.();
   }
-
-  return {
-    staticColdMs,
-    staticWarmSamplesMs: staticWarm,
-    staticWarmP50Ms: percentileOf(staticWarm, 0.5),
-    staticWarmP95Ms: percentileOf(staticWarm, 0.95),
-    staticOutputBytes: staticFirst.byteLength,
-    staticSha256: createHash("sha256").update(staticFirst).digest("hex"),
-    interactiveColdMs,
-    interactiveWarmSamplesMs: interactiveWarm,
-    interactiveWarmP50Ms: percentileOf(interactiveWarm, 0.5),
-    interactiveWarmP95Ms: percentileOf(interactiveWarm, 0.95),
-    interactiveOutputBytes: interactiveFirst.byteLength,
-    interactiveSha256: createHash("sha256").update(interactiveFirst).digest("hex"),
-    warmSampleCount: warmCount,
-  };
 }

@@ -34,7 +34,7 @@ import { generateRequestId } from "../shared/util/time";
 import { isMutationMethod } from "../service/security/http-guards";
 import type { ArtifactType } from "../shared/contracts/artifact-types";
 import type { Renderer } from "../shared/contracts/renderers";
-import type { ScreenshotError } from "../shared/contracts/validation";
+import type { ScreenshotError, TsxExecutionMode } from "../shared/contracts/validation";
 
 export interface FacetClientOptions {
   readonly baseUrl: string;
@@ -194,6 +194,7 @@ export interface PublishArtifactOptions {
   readonly bytes: ArrayBuffer;
   readonly slug?: string;
   readonly note?: string;
+  readonly execution?: TsxExecutionMode;
 }
 
 /**
@@ -231,6 +232,7 @@ export async function publishArtifact(
     renderer: options.renderer ?? "svg",
     bytes: base64,
     ...(options.note !== undefined ? { note: options.note } : {}),
+    ...(options.execution === undefined ? {} : { execution: options.execution }),
   });
   if (!publishRes.ok) {
     throw FacetError.from(publishRes.error);

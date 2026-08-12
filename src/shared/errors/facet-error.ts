@@ -39,6 +39,9 @@ export const FacetErrorCodes = {
   tier0_worker_died: true,
   tier0_output_cap: true,
   tier0_unavailable: true,
+  tsx_ast_denied: true,
+  tsx_compile_error: true,
+  tsx_compile_output_cap: true,
   // Tier 1 verifier-level failures. Mirrors the Tier 0 worker set:
   // the parent cannot obtain a Tier1Result at all (the netns wrapper
   // is missing, the pinned shell binary is missing, the CDP pipe

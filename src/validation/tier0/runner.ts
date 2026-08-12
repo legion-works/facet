@@ -52,7 +52,7 @@ export function probeTier0Isolation() {
   return probeNetnsSupport();
 }
 
-import { TIER0_OUTPUT_CAP_BYTES, TIER0_TIMEOUT_MS } from "../sandbox/limits";
+import { TIER0_OUTPUT_CAP_BYTES, TIER0_TIMEOUT_MS, TIER0_TSX_TIMEOUT_MS } from "../sandbox/limits";
 
 const TIER0_WORKER_ENTRY = resolvePath(import.meta.dir, "worker-entry.ts");
 
@@ -62,13 +62,14 @@ const TIER0_WORKER_ENTRY = resolvePath(import.meta.dir, "worker-entry.ts");
  * decodes them back into a Uint8Array before invoking the parser.
  */
 interface WorkerInputEnvelope {
-  readonly schemaVersion: "facet.tier0.v1";
+  readonly schemaVersion: "facet.tier0.v2";
   readonly requestId: string;
   readonly revisionSha: string;
   readonly artifactType: ArtifactType;
   readonly renderer: Tier0Input["renderer"];
   readonly sourceBase64: string;
   readonly lexical: LexicalCounters;
+  readonly execution?: Tier0Input["execution"];
 }
 
 export interface Tier0RunnerTestHooks {
@@ -89,13 +90,14 @@ function buildInputEnvelope(input: Tier0Input, requestId: string): WorkerInputEn
   const sourceBytes =
     input.source instanceof Uint8Array ? input.source : new Uint8Array(input.source);
   return {
-    schemaVersion: "facet.tier0.v1",
+    schemaVersion: "facet.tier0.v2",
     requestId,
     revisionSha: input.revisionSha,
     artifactType: input.artifactType,
     renderer: input.renderer,
     sourceBase64: Buffer.from(sourceBytes).toString("base64"),
     lexical: LexicalCountersSchema.parse(input.lexical),
+    ...(input.execution === undefined ? {} : { execution: input.execution }),
   };
 }
 
@@ -156,6 +158,7 @@ interface PendingRequest {
 interface RunnerOptions {
   readonly workerEntry: string;
   readonly timeoutMs: number;
+  readonly tsxTimeoutMs: number;
   readonly outputCap: number;
   readonly onWorkerSpawn?: (pid: number) => void;
 }
@@ -389,6 +392,7 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
     const requestId = String(++requestSequence);
     const envelopeJson = `${JSON.stringify(buildInputEnvelope(input, requestId))}\n`;
     return new Promise<Tier0WorkerResult>((resolve, reject) => {
+      const timeoutMs = input.artifactType === "tsx" ? options.tsxTimeoutMs : options.timeoutMs;
       const target: PendingRequest = {
         requestId,
         worker,
@@ -397,17 +401,13 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
         timer: setTimeout(() => {
           failWorker(
             worker,
-            new FacetError(
-              "tier0_timeout",
-              `Tier 0 worker timed out after ${options.timeoutMs}ms`,
-              {
-                retryable: false,
-                details: { timeoutMs: options.timeoutMs },
-              },
-            ),
+            new FacetError("tier0_timeout", `Tier 0 worker timed out after ${timeoutMs}ms`, {
+              retryable: false,
+              details: { timeoutMs },
+            }),
             true,
           );
-        }, options.timeoutMs),
+        }, timeoutMs),
       };
       pending = target;
       try {
@@ -469,6 +469,7 @@ export function createTier0Runner(level: InsecureLevel): Tier0Runner {
   return createRunner(level, {
     workerEntry: TIER0_WORKER_ENTRY,
     timeoutMs: TIER0_TIMEOUT_MS,
+    tsxTimeoutMs: TIER0_TSX_TIMEOUT_MS,
     outputCap: TIER0_OUTPUT_CAP_BYTES,
   });
 }
@@ -480,6 +481,7 @@ export function createTier0RunnerForTests(
   return createRunner(level, {
     workerEntry: hooks.workerEntry ?? TIER0_WORKER_ENTRY,
     timeoutMs: hooks.timeoutMs ?? TIER0_TIMEOUT_MS,
+    tsxTimeoutMs: hooks.timeoutMs ?? TIER0_TSX_TIMEOUT_MS,
     outputCap: hooks.outputCap ?? TIER0_OUTPUT_CAP_BYTES,
     ...(hooks.onWorkerSpawn === undefined ? {} : { onWorkerSpawn: hooks.onWorkerSpawn }),
   });

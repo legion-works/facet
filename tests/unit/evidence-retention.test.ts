@@ -35,16 +35,30 @@ describe("evidence retention", () => {
     mkdirSync(oldDir, { recursive: true });
     const screenshot = join(oldDir, "screenshot.png");
     const consolePath = join(oldDir, "console.txt");
+    const compiledPath = join(oldDir, "compiled.html");
     writeFileSync(screenshot, "pixels");
     writeFileSync(consolePath, "logs");
+    writeFileSync(compiledPath, "<p>derived</p>");
     const deleted: string[] = [];
     const db = {
       query(sql: string) {
         if (sql.startsWith("SELECT")) {
           return {
             all: () => [
-              { id: "new", screenshot_path: null, console_path: null, retained: 0 },
-              { id: "old", screenshot_path: screenshot, console_path: consolePath, retained: 0 },
+              {
+                id: "new",
+                screenshot_path: null,
+                console_path: null,
+                compiled_path: null,
+                retained: 0,
+              },
+              {
+                id: "old",
+                screenshot_path: screenshot,
+                console_path: consolePath,
+                compiled_path: compiledPath,
+                retained: 0,
+              },
             ],
           };
         }
@@ -60,6 +74,7 @@ describe("evidence retention", () => {
     expect(deleted).toEqual(["old"]);
     expect(existsSync(screenshot)).toBe(false);
     expect(existsSync(consolePath)).toBe(false);
+    expect(existsSync(compiledPath)).toBe(false);
   });
 
   test("does not evict retained rows or runs within the limit", () => {

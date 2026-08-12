@@ -25,6 +25,8 @@ import {
 } from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
 import { join, normalize, relative } from "node:path";
+import { resolve as resolvePath } from "node:path";
+import { readFileSync } from "node:fs";
 
 import { requireAnyBearer, checkMutationSecurityHeaders } from "./security/auth";
 import {
@@ -590,6 +592,29 @@ export function buildRouter(deps: RouterDeps): {
             renderer: revision.renderer,
             source: new TextDecoder().decode(revision.source),
             verdict: latestStoredVerdict(deps.repository, revision),
+            ...(revision.artifactType === "tsx"
+              ? (() => {
+                  const run = deps.repository.listRenderRuns({
+                    revisionId: revision.id,
+                    tier: 0,
+                  })[0];
+                  const compiledPath = run?.compiledPath ?? null;
+                  const root = deps.repository.getEvidenceRoot();
+                  if (compiledPath === null || root === undefined) return {};
+                  const candidate = resolvePath(compiledPath);
+                  const evidenceRoot = resolvePath(root);
+                  const rootRelative = relative(evidenceRoot, candidate);
+                  if (rootRelative.startsWith("..") || rootRelative.includes("/..")) return {};
+                  try {
+                    return {
+                      renderBytesBase64: Buffer.from(readFileSync(candidate)).toString("base64"),
+                      execution: revision.execution ?? "static",
+                    };
+                  } catch {
+                    return {};
+                  }
+                })()
+              : {}),
           }),
           {
             status: 200,

@@ -8,11 +8,16 @@ import { PassThrough } from "node:stream";
 import * as tier0Runner from "../../src/validation/tier0/runner";
 import * as sandbox from "../../src/validation/sandbox/netns";
 import type { Tier0Input } from "../../src/shared/contracts/validation";
+import { TIER0_TIMEOUT_MS, TIER0_TSX_TIMEOUT_MS } from "../../src/validation/sandbox/limits";
 
-function input(revisionSha: string, source = "fast"): Tier0Input {
+function input(
+  revisionSha: string,
+  source = "fast",
+  artifactType: Tier0Input["artifactType"] = "markdown",
+): Tier0Input {
   return {
     revisionSha,
-    artifactType: "markdown",
+    artifactType,
     renderer: "svg",
     source: new TextEncoder().encode(source) as Uint8Array<ArrayBuffer>,
     lexical: {
@@ -22,6 +27,7 @@ function input(revisionSha: string, source = "fast"): Tier0Input {
       opaqueRegionCount: 0,
       externalImageCount: 0,
     },
+    ...(artifactType === "tsx" ? { execution: "interactive" as const } : {}),
   };
 }
 
@@ -155,6 +161,32 @@ describe("Tier 0 insecure isolation selection", () => {
 });
 
 describe("Tier 0 worker pool", () => {
+  test("keeps the TSX timeout ordered below the legacy Tier 0 budget", () => {
+    expect(TIER0_TSX_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(TIER0_TSX_TIMEOUT_MS).toBeLessThan(TIER0_TIMEOUT_MS);
+  });
+
+  test("a TSX timeout resets the pool before markdown is served", async () => {
+    await withFakeWorker(async (workerEntry) => {
+      const pids: number[] = [];
+      const runner = tier0Runner.createTier0RunnerForTests(2, {
+        workerEntry,
+        timeoutMs: 50,
+        onWorkerSpawn: (pid) => pids.push(pid),
+      });
+      try {
+        await expect(runner(input("7".repeat(64), "slow", "tsx"))).rejects.toMatchObject({
+          code: "tier0_timeout",
+        });
+        await expect(runner(input("8".repeat(64)))).resolves.toMatchObject({ status: "ok" });
+      } finally {
+        runner.close?.();
+      }
+      expect(pids).toHaveLength(2);
+      expect(pids[1]).not.toBe(pids[0]);
+    });
+  });
+
   test("one worker serializes concurrent requests and preserves each revision identity", async () => {
     await withFakeWorker(async (workerEntry) => {
       const pids: number[] = [];

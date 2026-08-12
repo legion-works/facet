@@ -53,6 +53,7 @@ interface RenderRunRow {
   readonly id: string;
   readonly screenshot_path: string | null;
   readonly console_path: string | null;
+  readonly compiled_path: string | null;
   readonly retained: number;
 }
 
@@ -69,9 +70,22 @@ export function enforceEvidenceRetention(options: EnforceRetentionOptions): void
   const limit = options.limit ?? EVIDENCE_LAST_N_PER_ARTIFACT;
   try {
     ensureEvidenceRoot(options.evidenceRoot);
+    let hasCompiledPath = false;
+    try {
+      const pragma = options.db.query("PRAGMA table_info(render_runs)");
+      if (typeof pragma.all === "function") {
+        hasCompiledPath = (pragma.all() as Array<{ name: string }>).some(
+          (column) => column.name === "compiled_path",
+        );
+      }
+    } catch {
+      hasCompiledPath = false;
+    }
     const candidates = options.db
       .query(
-        "SELECT id, screenshot_path, console_path, retained " +
+        (hasCompiledPath
+          ? "SELECT id, screenshot_path, console_path, compiled_path, retained "
+          : "SELECT id, screenshot_path, console_path, retained ") +
           "FROM render_runs " +
           "WHERE revision_id IN (SELECT id FROM revisions WHERE artifact_id = ?) " +
           "AND retained = 0 " +
@@ -80,7 +94,7 @@ export function enforceEvidenceRetention(options: EnforceRetentionOptions): void
       .all(options.artifactId) as RenderRunRow[];
     const evictable = candidates.slice(limit);
     for (const row of evictable) {
-      unlinkEvidenceFiles(row.screenshot_path, row.console_path);
+      unlinkEvidenceFiles(row.screenshot_path, row.console_path, row.compiled_path);
       options.db.query("DELETE FROM render_runs WHERE id = ?").run(row.id);
     }
   } catch (error) {
@@ -139,8 +153,12 @@ export function ensureEvidenceRoot(directory: string): void {
   ensureOwnerOnlyDirectory(directory);
 }
 
-function unlinkEvidenceFiles(screenshotPath: string | null, consolePath: string | null): void {
-  for (const path of [screenshotPath, consolePath]) {
+function unlinkEvidenceFiles(
+  screenshotPath: string | null,
+  consolePath: string | null,
+  compiledPath: string | null = null,
+): void {
+  for (const path of [screenshotPath, consolePath, compiledPath]) {
     if (path === null) continue;
     unlinkIfExists(path);
     // Walk up parent directories that became empty after the unlink.
