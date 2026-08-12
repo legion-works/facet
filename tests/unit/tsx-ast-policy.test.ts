@@ -13,7 +13,9 @@
  *             REJECTED by a naive string scan).
  *   2. GREEN — assert a deliberately-good input is ACCEPTED.
  *
- * Every case below names the production change that would make it fail.
+ * Each REJECT case has an adjacent ACCEPT case so the rejection cannot be a
+ * naive blocklist that also breaks valid code. Reviewers have independently
+ * verified the five bypasses below, and the table is the acceptance target.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -109,6 +111,97 @@ describe("tsx ast policy — capability REJECT directions (RED)", () => {
     const errors = validateTsxAst(source);
     expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.sharedWorker);
   });
+
+  test("rejects require(...) — ESM allowlist is the only legal entry", () => {
+    // Defense-in-depth: even if the bundler would otherwise turn this into a
+    // static require, the AST walker must reject it so the typed verdict
+    // names the bypass.
+    const source = `const m = require("marked"); export default function App(){return null;}`;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.requireCall);
+  });
+
+  test("rejects a NESTED-scope shadow that would otherwise suppress top-level global fetch", () => {
+    // Before the per-scope fix, `function outer(){ function fetch(){} }` made
+    // the top-level `fetch("/x")` look like it was locally bound, which
+    // suppressed the global fetch rejection. Per-scope tracking closes it.
+    const source = `
+      function outer(){ function fetch(u:string){return u} }
+      export const a = fetch("/x")
+    `;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.fetch);
+  });
+
+  test("rejects `const g = globalThis; g.fetch(...)` — direct globalThis alias", () => {
+    const source = `
+      const g = globalThis;
+      g.fetch("/x");
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.aliasOfDeniedGlobal);
+  });
+
+  test("rejects `const W = Worker; new W(...)` — constructor alias", () => {
+    const source = `
+      const W = Worker;
+      new W("./w.js");
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.aliasOfDeniedGlobal);
+  });
+
+  test("rejects `const F = Function; new F(...)` — Function constructor alias", () => {
+    const source = `
+      const F = Function;
+      new F("return 1");
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.aliasOfDeniedGlobal);
+  });
+
+  test("rejects `const W = globalThis.Worker` — property-access alias", () => {
+    const source = `
+      const W = globalThis.Worker;
+      new W("./w.js");
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.aliasOfDeniedGlobal);
+  });
+
+  test("rejects `const F = window.Function` — window-aliased Function", () => {
+    const source = `
+      const F = window.Function;
+      new F("return 1");
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.aliasOfDeniedGlobal);
+  });
+
+  test("rejects `const SW = SharedWorker` — SharedWorker alias", () => {
+    const source = `
+      const SW = SharedWorker;
+      new SW("./w.js");
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.aliasOfDeniedGlobal);
+  });
+
+  test("rejects `const self_ = self; self_.fetch(...)` — alias via local binding", () => {
+    const source = `
+      const self_ = self;
+      self_.fetch("/x");
+      export default function App(){return null;}
+    `;
+    const errors = validateTsxAst(source);
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.aliasOfDeniedGlobal);
+  });
 });
 
 describe("tsx ast policy — capability ACCEPT directions (GREEN)", () => {
@@ -147,8 +240,8 @@ describe("tsx ast policy — capability ACCEPT directions (GREEN)", () => {
 
   test("accepts a local identifier named fetch", () => {
     // The user defined `fetch` as a local function — calling it is fine,
-    // it shadows the global. The AST walker must NOT report a violation
-    // just because the identifier's text is "fetch".
+    // it shadows the global at the SAME scope. The AST walker must NOT
+    // report a violation just because the identifier's text is "fetch".
     const source = `
       function fetch(url: string){return url;}
       export default function App(){return fetch("/x");}
@@ -215,6 +308,103 @@ describe("tsx ast policy — capability ACCEPT directions (GREEN)", () => {
       export default function Status({label}: {readonly label: string}) {
         return <p className="text-sm">{label}</p>;
       }
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a destructure from globalThis (per-scope shadow only)", () => {
+    // `const { fetch } = globalThis` rebinds `fetch` to a local — the local
+    // shadows the global at the use site. The AST walker treats the local
+    // as the binding, NOT the alias-of-globalThis pattern.
+    const source = `
+      const { fetch } = globalThis;
+      export default function App(){return fetch("/x");}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts optional-chained access on a global target", () => {
+    // `globalThis?.fetch?.()` is the same access path as
+    // `globalThis.fetch()` — we already reject it elsewhere. The point of
+    // this test is that the optional chain does NOT confuse the AST
+    // walker; it must keep rejecting.
+    const source = `
+      export default function App(){
+        const g: any = globalThis;
+        g?.fetch?.("/x");
+        return null;
+      }
+    `;
+    const errors = validateTsxAst(source);
+    // The walker surfaces the alias because `g = globalThis` is denied.
+    expect(codes(errors)).toContain(TSX_CAPABILITY_CODES.aliasOfDeniedGlobal);
+  });
+
+  test("accepts `import { useState as fetch }` — user re-binds the name", () => {
+    // The import brings `useState` into scope as `fetch`. Subsequent calls
+    // resolve the local binding, not the global. A naive blocklist would
+    // reject this; per-scope tracking accepts it.
+    const source = `
+      import React, { useState as fetch } from "react";
+      export default function App(){
+        const [n, setN] = fetch(0);
+        return null;
+      }
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a user-defined `class Worker` and `new Worker(...)` in its scope", () => {
+    const source = `
+      class Worker { constructor(_: string){} }
+      export default function App(){return new Worker("local");}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a user-defined `class Function` and `new Function(...)` in its scope", () => {
+    const source = `
+      class Function { constructor(_: string){} }
+      export default function App(){return new Function("local");}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts a user-defined `function Worker` and `new Worker(...)` in its scope", () => {
+    const source = `
+      function Worker(this: unknown, _: string){}
+      export default function App(){return new Worker("local");}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts `require` shadowed by a local function declaration", () => {
+    // The user has a local function named `require` — calling it is fine.
+    // The AST walker must not report a violation just because the
+    // identifier's text is "require".
+    const source = `
+      function require(name: string){return name;}
+      export default function App(){return require("ok");}
+    `;
+    const errors = validateTsxAst(source);
+    expect(errors).toEqual([]);
+  });
+
+  test("accepts aliasing a NON-denied value (regression — must not widen the blocklist)", () => {
+    // The alias check is for `globalThis` / `Worker` / `Function` etc.
+    // A user binding to a benign value must not be reported.
+    const source = `
+      const x = 1;
+      const y = "ok";
+      const z = { a: 1 };
+      const w = (n: number) => n + 1;
+      export default function App(){return w(x);}
     `;
     const errors = validateTsxAst(source);
     expect(errors).toEqual([]);

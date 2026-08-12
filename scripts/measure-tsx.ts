@@ -27,7 +27,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 
 import {
   STATIC_SOURCE_PATH,
@@ -132,10 +131,10 @@ interface BunBuildOutput {
  * filesystem paths, so we surface the basename of each plus the substring
  * after `/node_modules/` to show what actually came from the vendored set.
  */
-async function compileViaBun(source: string, entry: string): Promise<BunBuildOutput> {
-  // Bun.build over an inline source path works because Bun treats the literal
-  // as a virtual file. `entrypoints` accepts the inline name and Bun resolves
-  // imports against the current working directory and node_modules.
+async function compileViaBun(entry: string): Promise<BunBuildOutput> {
+  // The source bytes are read from `entry` on disk; the harness compares the
+  // resulting bundle against the same source compiled a second time, so we
+  // do not need the text here.
   const result = await Bun.build({
     entrypoints: [entry],
     target: "browser",
@@ -168,12 +167,11 @@ interface EsbuildOutput {
   readonly diagnostics: readonly string[];
 }
 
-async function compileViaEsbuild(source: string, entry: string): Promise<EsbuildOutput> {
+async function compileViaEsbuild(entry: string): Promise<EsbuildOutput> {
   // esbuild needs build() to expose a metafile AND resolve real modules
   // against node_modules. transform() is byte-only — no resolution graph.
   // We pass the fixture path as the entrypoint so the import resolution
   // path is the same one a real TSX compilation would take.
-  void source;
   const esbuildModuleName = "esbuild";
   const esbuildMod = (await import(esbuildModuleName)) as unknown as EsbuildLike;
   const result = await esbuildMod.build({
@@ -204,7 +202,6 @@ async function compileViaEsbuild(source: string, entry: string): Promise<Esbuild
 async function runPhase(
   candidate: "bun" | "esbuild",
   sourceKey: "static" | "interactive" | "empty",
-  sourceText: string,
   entryName: string,
 ): Promise<PhaseResult | null> {
   if (candidate === "esbuild" && !ESBUILD_ENABLED) {
@@ -217,9 +214,7 @@ async function runPhase(
     const isCold = index === 0;
     const start = performance.now();
     const output =
-      candidate === "bun"
-        ? await compileViaBun(sourceText, entryName)
-        : await compileViaEsbuild(sourceText, entryName);
+      candidate === "bun" ? await compileViaBun(entryName) : await compileViaEsbuild(entryName);
     const durationMs = performance.now() - start;
     const bytes = new TextEncoder().encode(output.contents);
     const sha = hash(bytes);
@@ -277,17 +272,18 @@ interface ProcessReport {
 }
 
 async function runOneProcess(phaseLabel: string): Promise<ProcessReport> {
-  const staticSource = readFileSync(STATIC_SOURCE_PATH, "utf8");
-  const interactiveSource = readFileSync(INTERACTIVE_SOURCE_PATH, "utf8");
-  const emptySource = readFileSync(EMPTY_SOURCE_PATH, "utf8");
+  // Source bytes are read from disk by `Bun.build` / `esbuild.build` from
+  // the absolute entrypoint path. We do not need the text here — the
+  // measurement compares the bytes of the produced bundle against itself
+  // across runs.
   const results: PhaseResult[] = [];
   for (const candidate of ["bun", "esbuild"] as const) {
     for (const target of [
-      { key: "static", text: staticSource, entry: STATIC_SOURCE_PATH },
-      { key: "interactive", text: interactiveSource, entry: INTERACTIVE_SOURCE_PATH },
-      { key: "empty", text: emptySource, entry: EMPTY_SOURCE_PATH },
+      { key: "static", entry: STATIC_SOURCE_PATH },
+      { key: "interactive", entry: INTERACTIVE_SOURCE_PATH },
+      { key: "empty", entry: EMPTY_SOURCE_PATH },
     ] as const) {
-      const result = await runPhase(candidate, target.key, target.text, target.entry);
+      const result = await runPhase(candidate, target.key, target.entry);
       if (result !== null) results.push(result);
     }
   }

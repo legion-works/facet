@@ -236,11 +236,11 @@ async function main(): Promise<void> {
   const tsx = await measureTsxCompile();
   measurements.tsxCompile = tsx;
   metrics.push({
-    name: "tsx compile warm p95 (record-only)",
-    observed: `static=${fixed(tsx.staticWarmP95Ms)}ms interactive=${fixed(tsx.interactiveWarmP95Ms)}ms · cold static=${fixed(tsx.staticColdMs)}ms interactive=${fixed(tsx.interactiveColdMs)}ms · staticSha256=${tsx.staticSha256.slice(0, 12)}... interactiveSha256=${tsx.interactiveSha256.slice(0, 12)}... · static=${tsx.staticOutputBytes}B interactive=${tsx.interactiveOutputBytes}B`,
+    name: "tsx compile warm p95 (record-only, PROVISIONAL-PENDING-NETNS)",
+    observed: `static=${fixed(tsx.staticWarmP95Ms)}ms interactive=${fixed(tsx.interactiveWarmP95Ms)}ms \u00b7 cold static=${fixed(tsx.staticColdMs)}ms interactive=${fixed(tsx.interactiveColdMs)}ms \u00b7 staticSha256=${tsx.staticSha256.slice(0, 12)}... interactiveSha256=${tsx.interactiveSha256.slice(0, 12)}... \u00b7 static=${tsx.staticOutputBytes}B interactive=${tsx.interactiveOutputBytes}B`,
     status: "info",
     enforced: false,
-    method: `${tsx.warmSampleCount} warm Bun.build calls per fixture after one cold each; SHA-256 of the first output seeds a determinism drift probe in future runs. Threshold intentionally record-only \u2014 the Task 1 commit decides from data, not from one hosted-runner sample.`,
+    method: `${tsx.warmSampleCount} warm Bun.build calls per fixture after one cold each; SHA-256 of the first output seeds a determinism drift probe in future runs. Latency figures are PROVISIONAL-PENDING-NETNS \u2014 this probe runs in a plain Bun process, NOT inside the pooled Tier 0 netns worker under unshare + ulimit where production will compile. The numbers seed the budget; the threshold will be re-measured once Task 5 builds the compiler entry. Threshold intentionally record-only.`,
   });
 
   // A required PR-path job must not be able to go red for a reason the author

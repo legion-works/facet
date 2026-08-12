@@ -1,21 +1,45 @@
 /**
  * TypeScript AST policy for TSX artifacts.
  *
- * D13 of the TSX design: capability rejections (`fetch`, `eval`, `new Function`,
- * dynamic `import()`, worker construction, non-allowlisted imports) MUST be
- * decided from the TypeScript AST — never regex, never `indexOf`, never
- * substring scanning. This project has shipped three separate defects from
- * deciding structure by string scan (URL-scheme checks broken by
- * `java\nscript:`, CSS sanitizers broken by comment obfuscation, and a
- * `<select>` guard that examined only the first occurrence and shipped a live
- * false-`tampered` verdict). A string scan also cannot distinguish `fetch`
- * in a comment, in a string literal, or as a local identifier from a real
- * global call.
+ * D13 of the TSX design: capability rejections (`fetch`, `eval`,
+ * `new Function`, dynamic `import()`, worker construction, non-allowlisted
+ * imports, and `require()`) MUST be decided from the TypeScript AST — never
+ * regex, never `indexOf`, never substring scanning. This project has shipped
+ * three separate defects from deciding structure by string scan (URL-scheme
+ * checks broken by `java\nscript:`, CSS sanitizers broken by comment
+ * obfuscation, and a `<select>` guard that examined only the first
+ * occurrence and shipped a live false-`tampered` verdict). A string scan also
+ * cannot distinguish `fetch` in a comment, in a string literal, or as a
+ * local identifier from a real global call.
  *
- * The walker inspects `ImportDeclaration`, `ExportDeclaration`, and call /
- * new / property-access / element-access nodes. It surfaces structural
- * decisions as typed `DiscriminativeError` values so the verdict ladder can
- * consume them without an additional parsing pass.
+ * The walker inspects `ImportDeclaration`, `ExportDeclaration`, call /
+ * new / property-access / element-access nodes, and binding declarations
+ * (for alias rejection). It surfaces structural decisions as typed
+ * `DiscriminativeError` values so the verdict ladder can consume them
+ * without an additional parsing pass.
+ *
+ * ## Limits we accept (and document honestly)
+ *
+ * Scope tracking walks the AST scope-by-scope; a `function fetch() {}`
+ * declared inside `outer()` does NOT shadow a top-level `fetch` reference.
+ * Class declarations and `let`/`const` declarations are subject to TDZ
+ * rules at runtime, but the AST walker treats any in-scope binding as a
+ * shadow because a positive false (rejecting valid code that throws
+ * ReferenceError at runtime) is worse than a negative false (accepting
+ * code that the user meant to shadow).
+ *
+ * Alias analysis is shallow: we reject the literal pattern
+ * `const X = globalThis`, `const X = Worker`, `const X = Function`,
+ * `const X = SharedWorker`, and the property-access equivalents
+ * (`const X = globalThis.Worker`, etc.). Anything more indirect
+ * (`const g = [globalThis][0]`, `function getG(){return globalThis}`,
+ * dynamic computation) is OUT OF SCOPE — the resolver at compile time
+ * must also enforce the module allowlist so an alias cannot reach a
+ * forbidden module through the bundler.
+ *
+ * Computed access on a denied target with unresolvable fragments
+ * (`globalThis[unknownKey]`) is surfaced as `unsupportedComputedGlobal`
+ * so the verdict reports the pattern rather than silently passing.
  */
 
 import { type DiscriminativeError } from "../../../shared/contracts/validation";
@@ -36,18 +60,13 @@ export const TSX_CAPABILITY_CODES = {
   worker: "tsx_capability_worker",
   sharedWorker: "tsx_capability_shared_worker",
   unsupportedComputedGlobal: "tsx_capability_computed_global",
+  requireCall: "tsx_capability_require",
+  aliasOfDeniedGlobal: "tsx_capability_global_alias",
 } as const;
 
 /**
  * Run the full AST policy over one TSX source. Returns the typed errors
  * discovered. An empty array means the source survived every check.
- *
- * Note: capability checks are deliberately tight. They reject global calls,
- * indirect eval, dynamic `import()`, and worker construction. Obfuscated
- * access via computed property names is either rejected (when the literal
- * fragments concatenate to a denied name) or surfaced as
- * `unsupportedComputedGlobal` so the verdict reports the pattern rather
- * than guessing at intent.
  */
 export function validateTsxAst(sourceText: string): readonly DiscriminativeError[] {
   const sourceFile = ts.createSourceFile(
@@ -65,17 +84,17 @@ export function validateTsxAst(sourceText: string): readonly DiscriminativeError
     collectExportErrors(statement, errors);
   }
 
-  const localNames = collectLocalNames(sourceFile);
-
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
-      checkCallExpression(node, errors, localNames);
+      checkCallExpression(node, errors, sourceFile);
     } else if (ts.isNewExpression(node)) {
-      checkNewExpression(node, errors);
+      checkNewExpression(node, errors, sourceFile);
+    } else if (ts.isVariableStatement(node)) {
+      checkVariableStatement(node, errors, sourceFile);
     } else if (ts.isPropertyAccessExpression(node)) {
-      checkPropertyAccess(node, errors);
+      checkPropertyAccess(node, errors, sourceFile);
     } else if (ts.isElementAccessExpression(node)) {
-      checkElementAccess(node, errors);
+      checkElementAccess(node, errors, sourceFile);
     }
     ts.forEachChild(node, visit);
   };
@@ -112,46 +131,6 @@ function locationFor(node: ts.Node, sourceFile: ts.SourceFile): string {
   return `${line + 1}:${character + 1}`;
 }
 
-/**
- * Collect every locally-bound name in the file. A name that shadows a
- * denied global (`fetch`, `eval`) is NOT a global call site when it appears
- * in the source — the user has shadowed it deliberately, and the AST walker
- * must not report a violation for a local identifier that happens to be
- * spelled "fetch".
- *
- * Scope is flattened: we collect function declarations, variable
- * declarations, and parameter names at any depth. This is correct for the
- * artifact surface (single-file TSX, no cross-file rebinding) and avoids a
- * full scope analysis. A local that shadows a global is still locally
- * shadowed when it appears inside a nested function.
- */
-function collectLocalNames(sourceFile: ts.SourceFile): Set<string> {
-  const names = new Set<string>();
-  const visit = (node: ts.Node): void => {
-    if (ts.isFunctionDeclaration(node) && node.name !== undefined) {
-      names.add(node.name.text);
-    }
-    if (ts.isFunctionExpression(node) && node.name !== undefined) {
-      names.add(node.name.text);
-    }
-    if (
-      ts.isArrowFunction(node) ||
-      ts.isFunctionExpression(node) ||
-      ts.isFunctionDeclaration(node)
-    ) {
-      for (const parameter of node.parameters) {
-        if (ts.isIdentifier(parameter.name)) names.add(parameter.name.text);
-      }
-    }
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
-      names.add(node.name.text);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return names;
-}
-
 function push(
   errors: DiscriminativeError[],
   code: string,
@@ -170,9 +149,146 @@ function isDeniedGlobalEval(name: string): boolean {
   return name === "eval";
 }
 
+/**
+ * Names that, when assigned to a binding, alias a denied global / constructor.
+ * Rejecting the assignment at the binding site closes the simple alias
+ * patterns (`const g = globalThis`, `const W = Worker`, `const F = Function`,
+ * `const W = globalThis.Worker`, `const F = globalThis.Function`).
+ */
+const ALIAS_DENIED_NAMES = new Set([
+  "globalThis",
+  "window",
+  "self",
+  "global",
+  "Worker",
+  "SharedWorker",
+  "Function",
+  "fetch",
+  "eval",
+]);
+
 function identifierText(node: ts.Expression): string | null {
   if (ts.isIdentifier(node)) return node.text;
   return null;
+}
+
+/**
+ * Per-scope binding lookup. The flat-scope shortcut (collect every local name
+ * in the file) leaks: a binding declared inside an inner function shadows the
+ * top-level reference to the same name even though the inner binding is
+ * unreachable from the top level. The correct answer is scope-by-scope: a
+ * name is shadowed only when an enclosing scope that is an ANCESTOR of the
+ * use declares the name (function/block/source-file).
+ */
+function isShadowedByLocalBinding(node: ts.Identifier): boolean {
+  let current: ts.Node = node;
+  while (true) {
+    const parent = current.parent;
+    if (parent === undefined) return false;
+
+    // The use IS the binding site (e.g., `function f() {}` — `f` here is
+    // both the declaration and the AST node we're inspecting). Treat as
+    // shadowed only when the parent has a different role.
+    if (
+      (ts.isVariableDeclaration(parent) && parent.name === current) ||
+      (ts.isFunctionDeclaration(parent) && parent.name === current) ||
+      (ts.isParameter(parent) && parent.name === current) ||
+      (ts.isBindingElement(parent) && parent.name === current)
+    ) {
+      return true;
+    }
+
+    if (isScopeBoundary(parent)) {
+      if (scopeDeclaresName(parent, node.text, node)) return true;
+    }
+
+    current = parent;
+  }
+}
+
+function isScopeBoundary(node: ts.Node): boolean {
+  return (
+    ts.isSourceFile(node) ||
+    ts.isBlock(node) ||
+    ts.isModuleBlock(node) ||
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isConstructorDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node)
+  );
+}
+
+/**
+ * Walk `scope` and report whether it declares `name` in a position that is
+ * visible at `beforeNode`. Function declarations are hoisted (anywhere in
+ * the scope counts); let / const / class are TDZ-restricted (must precede
+ * `beforeNode` in source order); parameters bind for the entire function.
+ *
+ * Nested scopes are NOT descended into — the caller's
+ * `isShadowedByLocalBinding` walks up the scope chain and asks each
+ * ancestor in turn.
+ */
+function scopeDeclaresName(scope: ts.Node, name: string, beforeNode: ts.Node): boolean {
+  const statements: readonly ts.Statement[] | undefined =
+    ts.isSourceFile(scope) || ts.isBlock(scope) || ts.isModuleBlock(scope)
+      ? scope.statements
+      : undefined;
+  if (statements === undefined) return false;
+  for (const stmt of statements) {
+    if (statementDeclaresName(stmt, name, beforeNode)) return true;
+  }
+  return false;
+}
+
+function statementDeclaresName(stmt: ts.Statement, name: string, beforeNode: ts.Node): boolean {
+  if (ts.isVariableStatement(stmt)) {
+    for (const decl of stmt.declarationList.declarations) {
+      if (bindingNameMatches(decl.name, name) && decl.getStart() < beforeNode.getStart()) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === name) {
+    return true;
+  }
+  if (
+    ts.isClassDeclaration(stmt) &&
+    stmt.name?.text === name &&
+    stmt.getStart() < beforeNode.getStart()
+  ) {
+    return true;
+  }
+  if (ts.isImportDeclaration(stmt)) {
+    const clause = stmt.importClause;
+    if (clause === undefined) return false;
+    if (clause.name?.text === name) return true;
+    const bindings = clause.namedBindings;
+    if (bindings !== undefined && ts.isNamedImports(bindings)) {
+      for (const spec of bindings.elements) {
+        // The LOCAL name is what binds. `import { useState as fetch }` binds
+        // `fetch` even though the imported name is `useState`.
+        if (ts.isIdentifier(spec.name) && spec.name.text === name) return true;
+      }
+    }
+    return false;
+  }
+  return false;
+}
+
+function bindingNameMatches(pattern: ts.BindingName, name: string): boolean {
+  if (ts.isIdentifier(pattern)) return pattern.text === name;
+  if (ts.isObjectBindingPattern(pattern) || ts.isArrayBindingPattern(pattern)) {
+    for (const element of pattern.elements) {
+      // `[a, , b]` produces an OmittedExpression which has no `name`; skip it.
+      if (ts.isOmittedExpression(element)) continue;
+      if (bindingNameMatches(element.name, name)) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -181,14 +297,13 @@ function identifierText(node: ts.Expression): string | null {
  *   - `fetch(...)`                  → `tsx_capability_fetch`
  *   - `eval(...)`, `(0, eval)(...)` → `tsx_capability_eval`
  *   - `import("...")`               → `tsx_capability_dynamic_import`
+ *   - `require("...")`              → `tsx_capability_require`
  */
 function checkCallExpression(
   node: ts.CallExpression,
   errors: DiscriminativeError[],
-  localNames: ReadonlySet<string>,
+  sourceFile: ts.SourceFile,
 ): void {
-  const sourceFile = node.getSourceFile();
-
   // Dynamic import: import("...") — the callee carries the `import` keyword.
   if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
     push(
@@ -201,13 +316,33 @@ function checkCallExpression(
     return;
   }
 
+  // `require("...")` — CommonJS entrypoint. Nothing in the vendored
+  // allowlist uses CommonJS, and `require` is the explicit bypass of the
+  // AST-level import check that the resolver layer cannot see (the bundler
+  // turns it into a static require at build time, but it is still a
+  // side-channel for forbidden packages). Reject outright.
+  if (
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === "require" &&
+    !isShadowedByLocalBinding(node.expression)
+  ) {
+    push(
+      errors,
+      TSX_CAPABILITY_CODES.requireCall,
+      "TSX require(...) is not allowed; the vendored allowlist is ESM-only",
+      node,
+      sourceFile,
+    );
+    return;
+  }
+
   const expression = node.expression;
 
   // `fetch(...)` as a global.
   if (
     ts.isIdentifier(expression) &&
     isDeniedGlobalName(expression.text) &&
-    !localNames.has(expression.text)
+    !isShadowedByLocalBinding(expression)
   ) {
     push(
       errors,
@@ -228,7 +363,7 @@ function checkCallExpression(
       ts.isNumericLiteral(inner.left) &&
       ts.isIdentifier(inner.right) &&
       isDeniedGlobalEval(inner.right.text) &&
-      !localNames.has(inner.right.text)
+      !isShadowedByLocalBinding(inner.right)
     ) {
       push(
         errors,
@@ -245,7 +380,7 @@ function checkCallExpression(
   if (
     ts.isIdentifier(expression) &&
     isDeniedGlobalEval(expression.text) &&
-    !localNames.has(expression.text)
+    !isShadowedByLocalBinding(expression)
   ) {
     push(
       errors,
@@ -283,11 +418,19 @@ function checkCallExpression(
 
 /**
  * `new Function(...)`, `new Worker(...)`, `new SharedWorker(...)`.
+ *
+ * The constructor name is checked against the local-scope shadow chain so a
+ * user-defined `class Worker` / `function Worker` does not produce a
+ * violation.
  */
-function checkNewExpression(node: ts.NewExpression, errors: DiscriminativeError[]): void {
-  const sourceFile = node.getSourceFile();
+function checkNewExpression(
+  node: ts.NewExpression,
+  errors: DiscriminativeError[],
+  sourceFile: ts.SourceFile,
+): void {
   const expression = node.expression;
   if (!ts.isIdentifier(expression)) return;
+  if (isShadowedByLocalBinding(expression)) return;
   const name = expression.text;
   if (name === "Function") {
     push(
@@ -322,14 +465,63 @@ function checkNewExpression(node: ts.NewExpression, errors: DiscriminativeError[
 }
 
 /**
+ * Reject variable bindings whose initializer aliases a denied global or
+ * constructor. The patterns are:
+ *
+ *   `const g = globalThis` (or window / self / global)
+ *   `const W = Worker` (or SharedWorker / Function)
+ *   `const W = globalThis.Worker` (property-access equivalents)
+ *   `const W = window.Worker` / `self.Worker` / `global.Worker`
+ *
+ * Anything more indirect (`const g = [globalThis][0]`,
+ * `function getG(){return globalThis}`, computed) is OUT OF SCOPE — the
+ * resolver at compile time enforces the module allowlist so an alias cannot
+ * reach a forbidden module through the bundler.
+ *
+ * Only top-level `const X = …` and `let X = …` patterns are checked. A
+ * destructure pattern (`const { Worker } = globalThis`) is NOT covered by
+ * this rule and falls through to the scope shadowing logic: the destructured
+ * binding shadows the global at the use site.
+ */
+function checkVariableStatement(
+  node: ts.VariableStatement,
+  errors: DiscriminativeError[],
+  sourceFile: ts.SourceFile,
+): void {
+  for (const declaration of node.declarationList.declarations) {
+    if (!ts.isIdentifier(declaration.name)) continue;
+    if (declaration.initializer === undefined) continue;
+    if (!isDeniedAliasInitializer(declaration.initializer)) continue;
+    push(
+      errors,
+      TSX_CAPABILITY_CODES.aliasOfDeniedGlobal,
+      `TSX binding "${declaration.name.text}" aliases a denied global or constructor; this is not allowed`,
+      node,
+      sourceFile,
+    );
+  }
+}
+
+function isDeniedAliasInitializer(init: ts.Expression): boolean {
+  if (ts.isIdentifier(init)) return ALIAS_DENIED_NAMES.has(init.text);
+  if (ts.isPropertyAccessExpression(init)) {
+    const target = identifierText(init.expression);
+    if (target === null) return false;
+    if (!ALIAS_DENIED_NAMES.has(target)) return false;
+    return ALIAS_DENIED_NAMES.has(init.name.text);
+  }
+  return false;
+}
+
+/**
  * Property access — `globalThis.fetch` (when used as a value, not called).
  * Reject the same names as call checks to keep the surface tight.
  */
 function checkPropertyAccess(
   node: ts.PropertyAccessExpression,
   errors: DiscriminativeError[],
+  sourceFile: ts.SourceFile,
 ): void {
-  const sourceFile = node.getSourceFile();
   const target = identifierText(node.expression);
   if (target === null) return;
   if (target !== "globalThis" && target !== "window" && target !== "self" && target !== "global")
@@ -353,8 +545,11 @@ function checkPropertyAccess(
  * `unsupportedComputedGlobal` so the verdict reports the pattern rather
  * than guessing.
  */
-function checkElementAccess(node: ts.ElementAccessExpression, errors: DiscriminativeError[]): void {
-  const sourceFile = node.getSourceFile();
+function checkElementAccess(
+  node: ts.ElementAccessExpression,
+  errors: DiscriminativeError[],
+  sourceFile: ts.SourceFile,
+): void {
   const target = identifierText(node.expression);
   if (target !== "globalThis" && target !== "window" && target !== "self" && target !== "global")
     return;

@@ -11,3 +11,8 @@ coverage/
 # `git add -A` cannot sweep one into history, where the blob would persist
 # after any later removal.
 *.zip
+
+# Resolver test fixtures. Probe TSX files are written under this dir and
+# cleaned by the test's afterEach hook; keeping the dir itself untracked
+# stops a stray file from being swept into history on a follow-up commit.
+tests/fixtures/tsx/_resolver-probes/
