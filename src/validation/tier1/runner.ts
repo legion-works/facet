@@ -228,6 +228,7 @@ async function runTier1Attempt(
       hostDir,
       input.artifactType,
       input.renderer,
+      input.execution ?? "static",
     );
     traceTier1("host-page:complete", startedAt);
     writeFileSync(hostHtmlPath, html, "utf8");
@@ -259,7 +260,7 @@ async function runTier1Attempt(
         "(function(){" +
         "var host=window.__facetHostArtifact;" +
         "if(!host){return 'no-host-artifact';}" +
-        "host.ingress.postMessage({bytes:host.bytes,mode:host.mode,artifactType:host.artifactType,renderer:host.renderer});" +
+        "host.ingress.postMessage({bytes:host.bytes,mode:host.mode,artifactType:host.artifactType,renderer:host.renderer,execution:host.execution});" +
         "return 'delivered';" +
         "})()",
       returnByValue: true,

@@ -32,6 +32,7 @@ import {
   type RendererRegistry,
 } from "../../gallery-web/frame/renderers/registry";
 import type { Renderer } from "../../shared/contracts/renderers";
+import { isTsxExecutionMode, type TsxExecutionMode } from "../../shared/tsx/execution";
 import { validateRenderer } from "../../gallery-web/frame/renderer-validation";
 
 type ArtifactMode = "raw" | "render";
@@ -51,6 +52,7 @@ if (containerElement === null) {
   throw new Error("harness: #artifact container missing");
 }
 const container: HTMLElement = containerElement;
+const nonce = container.getAttribute("data-facet-nonce") ?? "";
 
 let controlPost: ((event: ControlEvent) => void) | null = null;
 
@@ -152,6 +154,7 @@ async function renderArtifact(
   mode: ArtifactMode,
   artifactType: string,
   renderer: Renderer,
+  execution: TsxExecutionMode | undefined,
 ): Promise<void> {
   if (mode === "raw") {
     const text = new TextDecoder("utf-8", { fatal: false }).decode(artifactBytes);
@@ -172,7 +175,16 @@ async function renderArtifact(
   } catch {
     // not JSON — fall through to the typed renderer dispatch
   }
-  await dispatchRender(registry, { container }, { artifactType, renderer, bytes: artifactBytes });
+  await dispatchRender(
+    registry,
+    { container, nonce },
+    {
+      artifactType,
+      renderer,
+      bytes: artifactBytes,
+      ...(execution === undefined ? {} : { execution }),
+    },
+  );
 }
 
 export function startTier1Harness(registry: RendererRegistry): void {
@@ -199,19 +211,29 @@ export function startTier1Harness(registry: RendererRegistry): void {
       // oxlint-disable-next-line unicorn/prefer-add-event-listener
       ingress.onmessage = async (sourceEvent: MessageEvent) => {
         const payload = sourceEvent.data as
-          | { bytes: string; mode: ArtifactMode; artifactType?: string; renderer?: string }
+          | {
+              bytes: string;
+              mode: ArtifactMode;
+              artifactType?: string;
+              renderer?: string;
+              execution?: TsxExecutionMode;
+            }
           | undefined;
         if (payload === undefined) return;
         ingress.close();
         const bytes = Uint8Array.from(atob(payload.bytes), (char) => char.charCodeAt(0));
         try {
           const renderer = validateRenderer(payload.renderer);
+          if (payload.execution !== undefined && !isTsxExecutionMode(payload.execution)) {
+            throw new Error("artifact payload has invalid execution");
+          }
           await renderArtifact(
             registry,
             bytes,
             payload.mode,
             payload.artifactType ?? "markdown",
             renderer,
+            payload.execution,
           );
         } catch (error) {
           appendRenderError(container, error instanceof Error ? error.message : String(error));

@@ -1,6 +1,7 @@
 import type { ArtifactType } from "../../../shared/contracts/artifact-types";
 import { isRenderer, type Renderer as RendererKind } from "../../../shared/contracts/renderers";
 import { HTML_STRUCTURAL_GROUPS } from "../../../shared/html/policy";
+import { isTsxExecutionMode, type TsxExecutionMode } from "../../../shared/tsx/execution";
 
 export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/artifact-types";
 
@@ -18,12 +19,14 @@ export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/art
 
 export interface RenderContext {
   readonly container: HTMLElement;
+  readonly nonce?: string;
 }
 
 export type Renderer = (
   ctx: RenderContext,
   bytes: Uint8Array,
   renderer: RendererKind,
+  execution?: TsxExecutionMode,
 ) => Promise<void>;
 
 /**
@@ -212,6 +215,7 @@ export async function dispatchRender(
     readonly artifactType: string;
     readonly renderer: RendererKind;
     readonly bytes: Uint8Array;
+    readonly execution?: TsxExecutionMode;
   },
 ): Promise<void> {
   if (!isRenderer(payload.renderer)) {
@@ -227,5 +231,14 @@ export async function dispatchRender(
       "unsupported_reserved_type",
     );
   }
-  await renderer(ctx, payload.bytes, payload.renderer);
+  if (payload.artifactType === "tsx" && !isTsxExecutionMode(payload.execution)) {
+    throw new FacetRenderError("TSX artifact payload is missing execution", "invalid_request");
+  }
+  if (payload.artifactType !== "tsx" && payload.execution === "interactive") {
+    throw new FacetRenderError(
+      "Interactive execution is only supported for TSX artifacts",
+      "invalid_request",
+    );
+  }
+  await renderer(ctx, payload.bytes, payload.renderer, payload.execution);
 }

@@ -51,6 +51,7 @@ import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
 import type { ArtifactRepository } from "./store/repository";
 import { ensureRunEvidenceDirectory } from "./store/evidence-retention";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
@@ -423,11 +424,14 @@ export async function dispatch(
       if (
         deps.tier1Runner !== undefined &&
         !(artifactType === "html" && enriched.status === "error") &&
-        artifactType !== "tsx"
+        (artifactType !== "tsx" || executionMode === "static")
       ) {
         const tier1Input: Tier1Input = Tier1InputSchema.parse({
           ...tier0Input,
           lexical: enriched.expected,
+          ...(artifactType === "tsx" && compiledPath !== null
+            ? { source: new Uint8Array(readFileSync(compiledPath)) }
+            : {}),
           launcherVersion: TIER1_PINNED_VERSION,
           networkNamespace: "facet-tier1-egress-isolated",
         });

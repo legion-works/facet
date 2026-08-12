@@ -42,7 +42,7 @@ import {
   type ViewMode,
   type ViewState,
 } from "./view-state";
-import type { Verdict } from "../shared/contracts/validation";
+import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
@@ -489,6 +489,7 @@ export interface RevisionFetchResult {
   readonly artifactType: string;
   readonly renderer: string;
   readonly bytes: Uint8Array;
+  readonly execution?: TsxExecutionMode;
   readonly verdict?: Verdict | null;
 }
 
@@ -551,6 +552,7 @@ export async function swapToRevision(
       artifactType: revision.artifactType,
       renderer: revision.renderer,
       bytes: revision.bytes,
+      ...(revision.execution === undefined ? {} : { execution: revision.execution }),
     },
     ...(deps.onProgress === undefined ? {} : { onProgress: deps.onProgress }),
     ...(deps.readyTimeoutMs !== undefined ? { readyTimeoutMs: deps.readyTimeoutMs } : {}),
@@ -569,7 +571,7 @@ interface GallerySourceResponse {
   readonly renderer?: string;
   readonly source: string;
   readonly renderBytesBase64?: string;
-  readonly execution?: "static" | "interactive";
+  readonly execution?: TsxExecutionMode;
   readonly verdict: Verdict | null;
 }
 
@@ -598,6 +600,7 @@ async function fetchGallerySource(
       payload.renderBytesBase64 === undefined
         ? new TextEncoder().encode(payload.source)
         : Uint8Array.from(atob(payload.renderBytesBase64), (char) => char.charCodeAt(0)),
+    ...(payload.execution === undefined ? {} : { execution: payload.execution }),
     verdict: payload.verdict ?? null,
   };
 }

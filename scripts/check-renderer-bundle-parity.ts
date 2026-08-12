@@ -13,7 +13,7 @@ const EXPECTED_RENDERERS: Readonly<Record<ArtifactType, readonly string[]>> = {
   svg: ["svg.ts"],
   chart: ["chart.ts", "svg.ts"],
   html: ["html.ts"],
-  tsx: ["tsx.ts"],
+  tsx: ["html.ts", "tsx.ts"],
 };
 const EXPECTED_INITIAL_RENDERERS: Readonly<Record<ArtifactType, readonly string[]>> = {
   markdown: ["markdown.ts"],
@@ -21,7 +21,7 @@ const EXPECTED_INITIAL_RENDERERS: Readonly<Record<ArtifactType, readonly string[
   svg: ["svg.ts"],
   chart: ["chart.ts", "svg.ts"],
   html: ["html.ts"],
-  tsx: ["tsx.ts"],
+  tsx: ["html.ts", "tsx.ts"],
 };
 
 interface BuildMetafileOutput {

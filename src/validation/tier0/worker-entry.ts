@@ -258,6 +258,9 @@ async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
           status: parsed.status,
           expected: {
             ...base.expected,
+            rendererRootSvgCount: 0,
+            mermaidNodeCount: 0,
+            opaqueRegionCount: parsed.html.canvasCount,
             html: parsed.html,
             externalImageCount: parsed.html.externalImageCount,
           },

@@ -33,6 +33,7 @@ import {
 } from "./renderers/registry";
 import { validateRenderer } from "./renderer-validation";
 import { applySvgViewBox, type SvgViewBox } from "./view-box";
+import { isTsxExecutionMode, type TsxExecutionMode } from "../../shared/tsx/execution";
 
 declare global {
   interface Window {
@@ -49,6 +50,7 @@ interface ArtifactPayload {
   readonly artifactType?: string;
   readonly renderer?: string;
   readonly bytes?: Uint8Array | string;
+  readonly execution?: TsxExecutionMode;
 }
 
 const containerElement = document.getElementById("artifact");
@@ -223,13 +225,17 @@ export function startGalleryFrame(registry: RendererRegistry): void {
           if (bytes === undefined) {
             throw new FacetRenderError("artifact payload is missing bytes", "invalid_request");
           }
+          if (payload.execution !== undefined && !isTsxExecutionMode(payload.execution)) {
+            throw new FacetRenderError("artifact payload has invalid execution", "invalid_request");
+          }
           await dispatchRender(
             registry,
-            { container },
+            { container, nonce },
             {
               artifactType: payload.artifactType,
               renderer,
               bytes: decodePayloadBytes(bytes),
+              ...(payload.execution === undefined ? {} : { execution: payload.execution }),
             },
           );
         } catch (error) {

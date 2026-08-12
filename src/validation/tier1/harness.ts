@@ -138,7 +138,7 @@ export async function buildHarnessSrcdoc(artifactType: string): Promise<{
     `<style>html,body,#artifact{margin:0;min-height:100%;background:transparent}</style>` +
     (styles.length === 0 ? "" : `<style>${styles.replace(/<\/style/gi, "<\\/style")}</style>`) +
     "</head><body>" +
-    `<main id="artifact"></main>` +
+    `<main id="artifact" data-facet-nonce="${nonce}"></main>` +
     `<script type="module" nonce="${nonce}">${escaped}</script>` +
     "</body></html>";
   return { srcdoc, nonce, bundleBytes: bytes };
@@ -163,6 +163,7 @@ export async function buildHostPage(
   hostDir: string,
   artifactType: string,
   renderer = "svg",
+  execution: "static" | "interactive" = "static",
 ): Promise<HostPageInputs> {
   const { srcdoc, bundleBytes: harnessBytes } = await buildHarnessSrcdoc(artifactType);
   const harnessPath = `${hostDir}/harness.html`;
@@ -188,6 +189,9 @@ export async function buildHostPage(
     "var renderer=" +
     JSON.stringify(renderer) +
     ";" +
+    "var execution=" +
+    JSON.stringify(execution) +
+    ";" +
     "var harnessPath=" +
     JSON.stringify(harnessPath) +
     ";" +
@@ -203,7 +207,7 @@ export async function buildHostPage(
     "frame.contentWindow.postMessage({facetHandshake:'ports',nonce:''},'*',[ingress.port2,control.port2]);" +
     "});" +
     "document.getElementById('host-root').appendChild(frame);" +
-    "window.__facetHostArtifact={bytes:artifactB64,mode:artifactMode,artifactType:artifactType,renderer:renderer,ingress:ingress.port1,control:control.port1};" +
+    "window.__facetHostArtifact={bytes:artifactB64,mode:artifactMode,artifactType:artifactType,renderer:renderer,execution:execution,ingress:ingress.port1,control:control.port1};" +
     "})();" +
     "</script>" +
     "</body></html>";
