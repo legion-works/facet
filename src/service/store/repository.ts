@@ -1,5 +1,4 @@
 import type { Database } from "bun:sqlite";
-
 import {
   ArtifactSchema,
   ArtifactTypeSchema,
@@ -15,7 +14,11 @@ import {
   type Revision,
   type Template,
 } from "../../shared/contracts/artifact";
-import type { InsecureMarker, ScreenshotError } from "../../shared/contracts/validation";
+import type {
+  InsecureMarker,
+  ScreenshotError,
+  TsxExecutionMode,
+} from "../../shared/contracts/validation";
 import { DEFAULT_LIST_LIMIT } from "../../shared/config/limits";
 import { now } from "../../shared/util/time";
 import { asStoreError, FacetStoreError, hardenDatabaseFiles } from "./database";
@@ -49,9 +52,10 @@ interface PublishInput {
    * every artifact type on disk so non-TSX rows carry the canonical
    * value and the wire form simply omits it. Required to be `'static'`
    * when `artifactType !== 'tsx'`; the dispatcher guard ensures this
-   * before the row is written.
+   * before the row is written. Derived from `TsxExecutionMode` so a
+   * new mode lands in one place.
    */
-  readonly execution?: "static" | "interactive";
+  readonly execution?: TsxExecutionMode;
 }
 
 interface RenderRunInput {
@@ -126,7 +130,7 @@ type SqlRevision = Omit<
   note: string | null;
   pinned: number;
   created_at: string;
-  execution: "static" | "interactive";
+  execution: TsxExecutionMode;
 };
 
 function sha256(source: Uint8Array): string {

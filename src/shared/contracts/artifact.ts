@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { TSX_EXECUTION_MODES } from "../tsx/execution";
 import { ARTIFACT_TYPES } from "./artifact-types";
 import { RENDERERS } from "./renderers";
 
@@ -46,9 +47,11 @@ export const RevisionSchema = z.object({
    * TSX execution mode (D2). Only present for `artifactType === "tsx"`
    * — every other type stores `'static'` on disk but the field is
    * absent from the wire form (the dispatch is explicit: `execution`
-   * must be absent, not null, for non-TSX artifacts).
+   * must be absent, not null, for non-TSX artifacts). Derived from
+   * the canonical `TSX_EXECUTION_MODES` array so a new mode lands in
+   * one place.
    */
-  execution: z.enum(["static", "interactive"]).optional(),
+  execution: z.enum(TSX_EXECUTION_MODES).optional(),
 });
 export type Revision = z.infer<typeof RevisionSchema>;
 

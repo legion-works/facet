@@ -19,6 +19,7 @@ import { FacetError } from "../../shared/errors/facet-error";
 import { ARTIFACT_TYPES } from "../../shared/contracts/artifact-types";
 import { isRenderer } from "../../shared/contracts/renderers";
 import { isTsxExecutionMode } from "../../shared/tsx/execution";
+import { checkExecutionSupported } from "../../shared/contracts/commands/guards";
 import { generateRequestId } from "../../shared/util/time";
 import type { PublishRequest } from "../../shared/contracts/commands/requests";
 import type { ArtifactType } from "../../shared/contracts/artifact";
@@ -94,15 +95,12 @@ export function buildPublishRequest(
   // Mirror the dispatcher's `checkExecutionSupported` guard: an
   // explicit `interactive` execution on a non-tsx type is rejected at
   // the CLI boundary so the typed `invalid_request` surfaces before
-  // any service round-trip. `static` is the canonical default and is
-  // silently accepted on every type (just like `renderer: "svg"`).
-  if (executionValue === "interactive" && type !== "tsx") {
-    throw new FacetError(
-      "invalid_request",
-      `--execution interactive is only allowed with --type tsx (got '${String(type)}')`,
-      { retryable: false, details: { reason: "execution_requires_tsx" } },
-    );
-  }
+  // any service round-trip. The predicate lives in
+  // `src/shared/contracts/commands/guards.ts` — import it and
+  // rethrow the typed error so the CLI and the dispatcher share one
+  // source of truth.
+  const executionError = checkExecutionSupported(type, executionValue);
+  if (executionError !== null) throw executionError;
   // D2: TSX execution defaults to `static` at the CLI boundary so a
   // downstream consumer that reads the wire request never sees
   // `execution: undefined` for a tsx artifact.

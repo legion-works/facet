@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { TSX_EXECUTION_MODES } from "../../tsx/execution";
 import { ArtifactTypeSchema, RendererSchema, TemplateSchema } from "../artifact";
 
 /**
@@ -32,9 +33,10 @@ export const RevisionEnvelopeSchema = z.object({
    * TSX execution mode (D2). Omitted from the wire for every non-TSX
    * artifact type so existing wire fixtures stay byte-identical after
    * the TSX arc lands. The service emits this key only when the
-   * revision's `artifactType` is `"tsx"`.
+   * revision's `artifactType` is `"tsx"`. Derived from the canonical
+   * `TSX_EXECUTION_MODES` array so a new mode lands in one place.
    */
-  execution: z.enum(["static", "interactive"]).optional(),
+  execution: z.enum(TSX_EXECUTION_MODES).optional(),
 });
 export type RevisionEnvelope = z.infer<typeof RevisionEnvelopeSchema>;
 
