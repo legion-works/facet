@@ -21,6 +21,17 @@ interface MigrationStep {
   readonly version: number;
   /** Idempotent body — safe to re-run against an already-migrated DB. */
   readonly apply: (db: Database) => void;
+  /**
+   * `true` on steps that use the create-copy-drop-rename pattern on
+   * a self-FK-bearing table. SQLite refuses the DROP + ALTER TABLE
+   * RENAME sequence inside a transaction with FKs ON, because the
+   * inherited FK would dangle across the DROP. Steps that only add
+   * columns inherit nothing — a future rebuild opts in explicitly at
+   * its definition site. The flag gates the per-run
+   * `PRAGMA foreign_keys = OFF` toggle so a no-op re-run on an
+   * already-current database does not needlessly disable FKs.
+   */
+  readonly requiresForeignKeyDisable?: boolean;
 }
 
 const MIGRATION_STEPS: readonly MigrationStep[] = [
@@ -62,6 +73,7 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
     apply: (db) => {
       db.exec(V6_SCHEMA_FRAGMENT);
     },
+    requiresForeignKeyDisable: true,
   },
   {
     version: 7,
@@ -89,6 +101,7 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
       // traceable from the SQL alone.
       db.exec(V8_SCHEMA_FRAGMENT);
     },
+    requiresForeignKeyDisable: true,
   },
 ];
 
@@ -102,19 +115,21 @@ export function runMigrations(db: Database, options: MigrationOptions = {}): voi
       .all() as Array<{ version: number }>;
     const appliedSet = new Set(applied.map((row) => row.version));
     const foreignKeys = db.query("PRAGMA foreign_keys").get() as { foreign_keys: number };
-    // The v6 and v8 fragments use the create-copy-drop-rename
-    // pattern to widen a CHECK column (SQLite cannot ALTER a CHECK
-    // in place). The new table references the OLD table via its
-    // self-FK on `parent_revision_id`; SQLite refuses that sequence
-    // inside a transaction with FK enforcement on, because the
-    // inherited FK would be left dangling across the DROP + ALTER
-    // RENAME. Temporarily disabling FKs is the established pattern
-    // and re-enables them after the migration transaction commits;
-    // the row-level FK constraints the data depended on are
-    // re-validated by `PRAGMA foreign_key_check` from every read
-    // path. This is broader than the prior v6-only gate because v8
-    // rebuilds the same table.
-    const disableForeignKeys = foreignKeys.foreign_keys === 1;
+    // Gate the FK pragma toggle to steps that opt in via
+    // `requiresForeignKeyDisable`. v6 and v8 carry the flag (both
+    // rebuild a self-FK-bearing table via create-copy-drop-rename);
+    // a v9 that only adds columns inherits nothing. The restore
+    // below is unconditional on the FK state, regardless of the
+    // entry-point state — a connection that comes in with FKs OFF
+    // would otherwise be silently left OFF after migration, breaking
+    // the invariant every read path relies on. The row-level
+    // constraints the data depended on are re-validated by
+    // `PRAGMA foreign_key_check` from every read path.
+    const disableForeignKeys =
+      foreignKeys.foreign_keys === 1 &&
+      MIGRATION_STEPS.some(
+        (step) => !appliedSet.has(step.version) && step.requiresForeignKeyDisable === true,
+      );
     if (disableForeignKeys) db.exec("PRAGMA foreign_keys = OFF");
     const migrate = db.transaction(() => {
       for (const step of MIGRATION_STEPS) {
@@ -130,7 +145,11 @@ export function runMigrations(db: Database, options: MigrationOptions = {}): voi
     try {
       migrate();
     } finally {
-      if (disableForeignKeys) db.exec("PRAGMA foreign_keys = ON");
+      // Always restore FKs to ON, regardless of the initial state.
+      // The restore is unconditional so a connection that arrived
+      // with FKs OFF (or a probe that disabled them mid-run) ends
+      // up with FKs ON, matching the openDatabase invariant.
+      db.exec("PRAGMA foreign_keys = ON");
     }
   } catch (error) {
     const mapped = asStoreError(error);

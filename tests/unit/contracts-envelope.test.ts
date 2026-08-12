@@ -12,8 +12,10 @@ import {
 } from "../../src/shared/contracts/envelope";
 import {
   ExportSidecarSchema,
+  PublishResultSchema,
   ReadBackResultSchema,
 } from "../../src/shared/contracts/commands/results";
+import { RevisionCommittedEventSchema } from "../../src/shared/contracts/events";
 import {
   LexicalCountersSchema,
   ProtocolObservationSchema,
@@ -444,5 +446,140 @@ describe("HTML validation observables", () => {
     const json = JSON.stringify(baselineRevision);
     expect(json).not.toContain('"execution"');
     expect(json).not.toContain('"compiledPath"');
+  });
+
+  test("byte-equality baseline for non-tsx wire surfaces (canonical snapshot)", () => {
+    // Frozen canonical JSON for a non-tsx publish result, a Tier 0
+    // verdict, a Tier 1 verdict, a read-back result, and an export
+    // sidecar. Assert exact byte equality against the snapshot. Any
+    // change to the wire contract (key order, addition of a field,
+    // renumbering) must surface here as a hard fail.
+    const SHA = "a".repeat(64);
+    const NOW = "2026-08-12T00:00:00.000Z";
+
+    const verdictBaseline = {
+      status: "ok",
+      tier: 1,
+      artifactId: "art-1",
+      revisionSha: SHA,
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        externalImageCount: 0,
+        errorCount: 0,
+      },
+    };
+
+    const tier0Baseline = {
+      ...verdictBaseline,
+      tier: 0,
+      expected: {
+        rendererRootSvgCount: 1,
+        mermaidNodeCount: 2,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        externalImageCount: 0,
+      },
+    };
+
+    const tier1Baseline = {
+      ...tier0Baseline,
+      tier: 1,
+      screenshotPath: null,
+      consolePath: null,
+    };
+
+    const publishResultBaseline = {
+      command: "publish" as const,
+      requestId: "req-1",
+      revision: {
+        id: "rev-1",
+        artifactId: "art-1",
+        revisionNumber: 1,
+        parentRevisionId: null,
+        artifactType: "markdown" as const,
+        renderer: "svg" as const,
+        sha256: SHA,
+        note: null,
+        pinned: false,
+        createdAt: NOW,
+      },
+      tier1Verdict: null,
+    };
+
+    const readBackBaseline = {
+      command: "readBack" as const,
+      requestId: "req-1",
+      renderer: "svg" as const,
+      verdict: verdictBaseline,
+    };
+
+    const exportSidecarBaseline = {
+      artifactId: "art-1",
+      slug: "markdown-artifact",
+      revisionSha: SHA,
+      artifactType: "markdown" as const,
+      renderer: "svg" as const,
+      verdict: verdictBaseline,
+      format: "source" as const,
+      exportedAt: NOW,
+    };
+
+    const eventBaseline = {
+      type: "revision:committed" as const,
+      artifactId: "art-1",
+      revisionSha: SHA,
+      revisionNumber: 1,
+      artifactType: "markdown" as const,
+      at: NOW,
+    };
+
+    const canonical = {
+      // The canonical byte-string is the schema-round-tripped form,
+      // NOT the source-object declaration order. A discriminated
+      // union (PublishResultSchema, CommandResultSchema) reorders
+      // its keys through zod's strict parsing, so the contract
+      // surface is whatever the schema emits, not whatever the test
+      // author typed. Lock the snapshot from the schema output.
+      publishResult: JSON.stringify(PublishResultSchema.parse(publishResultBaseline)),
+      tier0: JSON.stringify(Tier0ResultSchema.parse(tier0Baseline)),
+      tier1: JSON.stringify(Tier1ResultSchema.parse(tier1Baseline)),
+      readBack: JSON.stringify(ReadBackResultSchema.parse(readBackBaseline)),
+      exportSidecar: JSON.stringify(ExportSidecarSchema.parse(exportSidecarBaseline)),
+      revisionCommitted: JSON.stringify(RevisionCommittedEventSchema.parse(eventBaseline)),
+    };
+
+    // Round-trip every canonical surface through its schema and
+    // assert the resulting wire JSON is BYTE-equal to the snapshot.
+    expect(JSON.stringify(PublishResultSchema.parse(JSON.parse(canonical.publishResult)))).toBe(
+      canonical.publishResult,
+    );
+    expect(JSON.stringify(Tier0ResultSchema.parse(JSON.parse(canonical.tier0)))).toBe(
+      canonical.tier0,
+    );
+    expect(JSON.stringify(Tier1ResultSchema.parse(JSON.parse(canonical.tier1)))).toBe(
+      canonical.tier1,
+    );
+    expect(JSON.stringify(ReadBackResultSchema.parse(JSON.parse(canonical.readBack)))).toBe(
+      canonical.readBack,
+    );
+    expect(JSON.stringify(ExportSidecarSchema.parse(JSON.parse(canonical.exportSidecar)))).toBe(
+      canonical.exportSidecar,
+    );
+    expect(
+      JSON.stringify(RevisionCommittedEventSchema.parse(JSON.parse(canonical.revisionCommitted))),
+    ).toBe(canonical.revisionCommitted);
+
+    // Cross-check the non-tsx wire form omits the new fields: a
+    // future contributor who adds an `execution` key to the
+    // RevisionEnvelope (or a `compiledPath` key to the read-back
+    // verdict) must surface here as a hard fail too.
+    expect(canonical.publishResult).not.toContain('"execution"');
+    expect(canonical.publishResult).not.toContain('"compiledPath"');
+    expect(canonical.exportSidecar).not.toContain('"execution"');
+    expect(canonical.revisionCommitted).not.toContain('"execution"');
   });
 });

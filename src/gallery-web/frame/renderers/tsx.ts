@@ -4,44 +4,29 @@
  * Until Tasks 5-7 land, TSX is contract-valid and persistable but
  * CANNOT execute in the gallery or Tier 1. This stub ships the build
  * and the parity gate without introducing a script exemption or an
- * alias around the CSP \u2014 a stub that quietly executes something is a
+ * alias around the CSP — a stub that quietly executes something is a
  * security hole shipped early.
  *
- * `renderTsxUnavailable` is the typed failure the registry turns into
- * a `<facet-error>` marker. It MUST throw before parsing bytes: any
- * execution path that reads `bytes` is a regression. It MUST NOT
- * import React, React DOM, the bundler, or any module that would
- * cause the build to grow the renderer footprint beyond a typed
- * rejection.
+ * `renderTsx` MUST throw before any read of the artifact bytes:
+ * any execution path that touches `_bytes` is a regression, even
+ * for the byte length or to populate a typed-error marker. The
+ * dispatch contract has the harness own the marker (see
+ * `bootstrap.ts` and `harness-entry.ts`, both wrap renderer throws
+ * with `appendRenderError`); this renderer is a typed refusal and
+ * nothing more. The stub MUST NOT import React, React DOM, the
+ * bundler, or any module that would cause the build to grow the
+ * renderer footprint beyond a typed rejection.
  */
-import {
-  FacetRenderError,
-  appendRenderError,
-  decodeArtifactBytes,
-  type RenderContext,
-} from "./registry";
+import { FacetRenderError, type RenderContext } from "./registry";
 
-export function createTsxRendererRoot(ownerDocument: Document): HTMLElement {
-  const root = ownerDocument.createElement("div");
-  root.setAttribute("data-facet-renderer-root", "true");
-  root.className = "facet-tsx-root";
-  return root;
-}
-
-export async function renderTsx(ctx: RenderContext, _bytes: Uint8Array): Promise<void> {
-  // Touch `decodeArtifactBytes` ONLY in the rejection message so a
-  // caller cannot point at a future \"we decoded then threw\" branch
-  // as evidence the stub executes anything. The decode call does
-  // not touch artifact semantics; it exists to surface the byte
-  // length in the typed error so the verdict can name it.
-  const decoded = decodeArtifactBytes(_bytes);
-  const ownerDocument = ctx.container.ownerDocument;
-  const root = createTsxRendererRoot(ownerDocument);
-  ctx.container.replaceChildren(root);
-  appendRenderError(
-    root,
-    `TSX rendering is unavailable in this build (received ${decoded.length} source bytes)`,
-  );
+export async function renderTsx(_ctx: RenderContext, _bytes: Uint8Array): Promise<void> {
+  // Intentionally ignores `_ctx` and `_bytes`. Touching either is a
+  // regression: the dispatch contract is "throw a typed refusal" and
+  // the harness owns the error marker. Do not rationalize reading
+  // `_bytes.byteLength` or any other metadata — the rejection is
+  // unconditional until Tasks 5-7 land the real renderer.
+  void _ctx;
+  void _bytes;
   throw new FacetRenderError(
     "TSX rendering is unavailable in this build; Tasks 5-7 must land before the gallery can execute tsx artifacts",
     "tsx_unavailable",

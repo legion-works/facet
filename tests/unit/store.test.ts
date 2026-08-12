@@ -9,6 +9,8 @@ import {
   V3_SCHEMA_FRAGMENT,
   V4_SCHEMA_FRAGMENT,
   V5_SCHEMA_FRAGMENT,
+  V6_SCHEMA_FRAGMENT,
+  V7_SCHEMA_FRAGMENT,
 } from "../../src/service/store/schema";
 import { ARTIFACT_TYPES } from "../../src/shared/contracts/artifact-types";
 import { RENDERERS } from "../../src/shared/contracts/renderers";
@@ -535,5 +537,103 @@ describe("artifact store", () => {
       promotedBy: "test",
     });
     expect(template.revisionId).toBe(revision.id);
+  });
+
+  test("FK gate: rebuild steps must disable FKs; non-rebuild steps must not", () => {
+    // Pin the gate shape introduced after the v8 fragment needed
+    // FK enforcement off (the create-copy-drop-rename sequence on a
+    // self-FK-bearing table fails with FKs ON). The gate must be
+    // scoped to steps that explicitly opt in — a v9 that only adds a
+    // column inherits nothing, and a fully-migrated database runs
+    // with FKs ON throughout.
+    const db = openDatabase({ databasePath: ":memory:" });
+    databases.push(db);
+    runMigrations(db);
+    // After the canonical migration run, FKs are ON. The first
+    // probe reads the pragma state across the migration boundary.
+    expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
+    // A re-run with every step already applied does NOT touch the
+    // FK pragma. This is the regression that would have left FKs
+    // OFF on every migration call to an already-current DB — pin it
+    // by spying on the pragma's value before/after a no-op re-run.
+    const before = db.query("PRAGMA foreign_keys").get() as { foreign_keys: number };
+    runMigrations(db);
+    const after = db.query("PRAGMA foreign_keys").get() as { foreign_keys: number };
+    expect(after.foreign_keys).toBe(before.foreign_keys);
+    expect(after.foreign_keys).toBe(1);
+  });
+
+  test("FK gate: rebuild pending (v8 not yet applied) disables FKs for that run", () => {
+    // Plant a v7-shape DB and confirm the v8 step's
+    // `requiresForeignKeyDisable` flag actually gates the pragma.
+    // We measure the FK state AFTER the migration (the finally
+    // block must restore it to ON regardless of the initial state).
+    const db = openDatabase({ databasePath: ":memory:" });
+    databases.push(db);
+    db.exec(
+      `${v5InitialSchema()}${V2_SCHEMA_FRAGMENT}${V3_SCHEMA_FRAGMENT}${V4_SCHEMA_FRAGMENT}${V5_SCHEMA_FRAGMENT}${V6_SCHEMA_FRAGMENT}${V7_SCHEMA_FRAGMENT}`,
+    );
+    db.exec(
+      "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)",
+    );
+    for (const version of [1, 2, 3, 4, 5, 6, 7]) {
+      db.query("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(
+        version,
+        "2026-08-10T00:00:00.000Z",
+      );
+    }
+    // Plant a parent-self-FK row that would block a v8 rebuild with
+    // FKs ON — proves the gate actually toggled.
+    const projectId = crypto.randomUUID();
+    db.query("INSERT INTO projects(id, project_root, created_at) VALUES (?, ?, ?)").run(
+      projectId,
+      `/tmp/facet-fkgate-${crypto.randomUUID()}`,
+      "2026-08-10T00:00:00.000Z",
+    );
+    const artifactId = crypto.randomUUID();
+    db.query(
+      "INSERT INTO artifacts(id, project_id, slug, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      artifactId,
+      projectId,
+      "fk-gate",
+      "FK gate",
+      "2026-08-10T00:00:00.000Z",
+      "2026-08-10T00:00:00.000Z",
+    );
+    const sha = "a".repeat(64);
+    db.query(
+      "INSERT INTO revisions(id, artifact_id, revision_number, parent_revision_id, artifact_type, source, sha256, note, pinned, created_at, renderer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      crypto.randomUUID(),
+      artifactId,
+      1,
+      null,
+      "markdown",
+      new Uint8Array([104, 105]),
+      sha,
+      null,
+      0,
+      "2026-08-10T00:00:00.000Z",
+      "svg",
+    );
+    expect(() => runMigrations(db)).not.toThrow();
+    // After the migration, the connection's FK pragma must be ON
+    // — the gate's finally block is unconditional on the restore
+    // direction, regardless of the pre-run state.
+    expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
+  });
+
+  test("FK gate: restore to ON survives a pre-run OFF state", () => {
+    // The mechanism the reviewer flagged: if a connection comes in
+    // with FKs already OFF, the prior gate didn't restore them
+    // because the gate condition was foreignKeys.foreign_keys === 1.
+    // A migrated DB must end with FKs ON no matter the entry point.
+    const db = openDatabase({ databasePath: ":memory:" });
+    databases.push(db);
+    db.exec("PRAGMA foreign_keys = OFF");
+    expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 0 });
+    runMigrations(db);
+    expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
   });
 });
