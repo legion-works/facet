@@ -178,6 +178,27 @@ async function publishMarkdown(
   };
 }
 
+async function publishTsx(
+  env: TestEnv,
+  artifactId: string,
+  execution: "static" | "interactive",
+  body: string,
+): Promise<{ revisionSha: string; revisionId: string; revisionNumber: number }> {
+  const result = await envelopeOk(env, {
+    command: "publish",
+    artifactId,
+    artifactType: "tsx",
+    execution,
+    bytes: Buffer.from(body, "utf8").toString("base64"),
+  });
+  if (result.command !== "publish") throw new Error("expected publish");
+  return {
+    revisionSha: result.revision.sha256,
+    revisionId: result.revision.id,
+    revisionNumber: result.revision.revisionNumber,
+  };
+}
+
 const SENTINEL_CONSOLE = "facet-sentinel-evidence-9b1c";
 
 /**
@@ -488,6 +509,53 @@ describe("read-back revision binding", () => {
       });
       if (readback.command !== "readBack") throw new Error("expected readBack");
       expect(readback.renderer).toBe("canvas");
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  test("tsx read-back carries the execution marker end-to-end (DRIFT 4.1)", async () => {
+    // DRIFT 4.1: the read-back seam (Must 1) was inlining the verdict
+    // rebuild instead of calling verdictFromStoredRun, so the
+    // execution marker survived publish but disappeared on read-back.
+    // The export-sidecar route uses the canvas-stored verdict and
+    // thus re-emits the marker; the read-back route does not. This
+    // test asserts the POSITIVE direction (a TSX interactive
+    // revision reads back WITH execution: 'interactive') — the
+    // pre-arc integration tests already pin the negative direction
+    // (a non-TSX pre-arc row reads back without the field).
+    const env = await startEnv();
+    try {
+      const artifactId = await createArtifact(env, "tsx-readback");
+      const staticTsx = await publishTsx(env, artifactId, "static", "const A=()=>null;");
+      const interactiveTsx = await publishTsx(env, artifactId, "interactive", "const B=()=>1;");
+
+      const staticReadback = await envelopeOk(env, {
+        command: "readBack",
+        artifactId,
+        revisionSha: staticTsx.revisionSha,
+        tier: 0,
+      });
+      if (staticReadback.command !== "readBack") throw new Error("expected readBack");
+      expect(staticReadback.verdict.execution).toBe("static");
+
+      const interactiveReadback = await envelopeOk(env, {
+        command: "readBack",
+        artifactId,
+        revisionSha: interactiveTsx.revisionSha,
+        tier: 0,
+      });
+      if (interactiveReadback.command !== "readBack") throw new Error("expected readBack");
+      expect(interactiveReadback.verdict.execution).toBe("interactive");
+      // Raw wire form must carry the execution marker on the wire.
+      const rawRes = await envelopeRequest(env, {
+        command: "readBack",
+        artifactId,
+        revisionSha: interactiveTsx.revisionSha,
+        tier: 0,
+      });
+      const rawWire = await rawRes.text();
+      expect(rawWire).toContain('"execution":"interactive"');
     } finally {
       await env.cleanup();
     }

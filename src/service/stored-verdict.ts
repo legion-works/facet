@@ -71,9 +71,15 @@ export function verdictFromStoredRun(revision: Revision, run: RenderRun): Verdic
     // run-level one), and the marker is only emitted for TSX
     // revisions — every other artifact type reads back with the
     // field absent, so the wire form for non-TSX stays byte-identical.
-    ...(revision.artifactType === "tsx" && revision.execution !== undefined
-      ? { execution: revision.execution }
-      : {}),
+    //
+    // Execution-null policy (deliberate): when a TSX row's column
+    // is undefined on disk (purely defensive — the schema CHECK
+    // prevents NULL inserts and the v8 migration backfills pre-arc
+    // rows to 'static'), default to 'static' on the wire. 'static'
+    // is the canonical D2 default; emitting nothing was the prior
+    // silent behavior and an unpinned accident. Operators reading
+    // the wire form always see a marker on TSX rows.
+    ...(revision.artifactType === "tsx" ? { execution: revision.execution ?? "static" } : {}),
   });
 }
 

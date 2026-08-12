@@ -96,17 +96,20 @@ describe("verdictFromStoredRun — D10 execution marker reconstruction", () => {
     }
   });
 
-  test("tsx revision with no execution field on the schema still parses (no execution emitted)", () => {
-    // Defensive: a TSX revision without an execution column (e.g.
-    // a future runtime that forgets to backfill) still parses; the
-    // marker is absent rather than a default. The path is exercised
-    // by the v8 backfill, which sets `execution: 'static'` for
-    // every pre-arc row, so this branch is only reachable under a
-    // schema drift.
+  test("tsx revision with no execution field defaults to 'static' (deliberate policy)", () => {
+    // The execution-null policy (standing preamble #4): when a TSX
+    // revision's execution column is undefined on disk (defensive
+    // case — the schema CHECK constraint prevents NULL inserts, but
+    // a pre-v8 row could surface this), default to 'static' on the
+    // read-back wire. Rationale: 'static' is the canonical D2
+    // default; the v8 migration backfills any pre-arc NULL to
+    // 'static'; emitting nothing was the old default and an
+    // unpinned accident. The marker is informational; defaulting to
+    // the canonical value is safer than absence.
     const verdict = verdictFromStoredRun(
       makeRevision({ artifactType: "tsx", execution: undefined }),
       makeRun(),
     );
-    expect(verdict).not.toHaveProperty("execution");
+    expect(verdict.execution).toBe("static");
   });
 });

@@ -45,7 +45,7 @@ import { SOURCE_CAP_BYTES, TIER1_PINNED_VERSION } from "../shared/config/limits"
 import { computeLexicalExpectations } from "./lexical/expectations";
 import { enrichVerdict, insecureMarker } from "./verdict-enrichment";
 import { exportStoredRender, exportStoredSource } from "./export";
-import { withTolerantObserved } from "./stored-verdict";
+import { verdictFromStoredRun } from "./stored-verdict";
 
 import type { GalleryLeaseManager } from "./security/leases";
 import type { IdleController } from "./lifecycle/idle-controller";
@@ -471,26 +471,14 @@ export async function dispatch(
           details: { revisionId: revision.id, tier },
         });
       }
-      // Tolerate counters the pre-arc schema did not include (see
-      // stored-verict.ts `withTolerantObserved` for the WHY).
-      const observedJson = JSON.parse(runs[0]!.observedJson);
-      const verdict = enrichVerdict(
-        buildVerdict({
-          artifactId: command.artifactId,
-          revisionSha: command.revisionSha,
-          tier,
-          status: runs[0]!.status,
-          observed: withTolerantObserved(observedJson),
-          ...(runs[0]!.insecureJson !== null
-            ? { insecure: JSON.parse(runs[0]!.insecureJson) }
-            : {}),
-          ...(runs[0]!.screenshotErrorJson !== null
-            ? { screenshotError: JSON.parse(runs[0]!.screenshotErrorJson) }
-            : {}),
-        }),
-        command.artifactId,
-        command.revisionSha,
-      );
+      // Single source of truth for cross-boundary verdict reconstruction:
+      // `verdictFromStoredRun` handles the tolerant observed read,
+      // the execution marker for TSX revisions, and the
+      // insecure/screenshotError conditional-spreads. Re-deriving
+      // any of these inline drifts; the export sidecar and the
+      // gallery router use this helper, and the read-back route must
+      // use it too.
+      const verdict = verdictFromStoredRun(revision, runs[0]!);
       traceTier1Transport(`readback:build-complete status=${verdict.status}`);
       return { command: "readBack", requestId, renderer: revision.renderer, verdict };
     }
