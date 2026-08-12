@@ -44,7 +44,7 @@ export function buildExportRequest(
 export function extensionForExport(
   format: ExportFormat,
   artifactType: ArtifactType,
-): ".md" | ".svg" | ".json" | ".html" | ".png" {
+): ".md" | ".svg" | ".json" | ".html" | ".tsx" | ".png" {
   if (format === "render") return ".png";
   switch (artifactType) {
     case "markdown":
@@ -56,6 +56,8 @@ export function extensionForExport(
       return ".json";
     case "html":
       return ".html";
+    case "tsx":
+      return ".tsx";
   }
 }
 

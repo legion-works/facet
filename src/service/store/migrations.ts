@@ -10,6 +10,7 @@ import {
   V5_SCHEMA_FRAGMENT,
   V6_SCHEMA_FRAGMENT,
   V7_SCHEMA_FRAGMENT,
+  V8_SCHEMA_FRAGMENT,
 } from "./schema";
 
 export interface MigrationOptions {
@@ -76,6 +77,19 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
       db.exec(V7_SCHEMA_FRAGMENT);
     },
   },
+  {
+    version: 8,
+    apply: (db) => {
+      // Widens `revisions.artifact_type` to include `tsx`, adds
+      // `revisions.execution` (D2, backfilled to 'static'), and adds
+      // `render_runs.compiled_path` (D7, nullable for non-tsx runs
+      // and pre-arc rows). The v6 FK-safe rebuild pattern is reused
+      // because SQLite cannot alter a CHECK in place. Every prior
+      // column is copied explicitly so the schema shape stays
+      // traceable from the SQL alone.
+      db.exec(V8_SCHEMA_FRAGMENT);
+    },
+  },
 ];
 
 export function runMigrations(db: Database, options: MigrationOptions = {}): void {
@@ -88,7 +102,19 @@ export function runMigrations(db: Database, options: MigrationOptions = {}): voi
       .all() as Array<{ version: number }>;
     const appliedSet = new Set(applied.map((row) => row.version));
     const foreignKeys = db.query("PRAGMA foreign_keys").get() as { foreign_keys: number };
-    const disableForeignKeys = !appliedSet.has(6) && foreignKeys.foreign_keys === 1;
+    // The v6 and v8 fragments use the create-copy-drop-rename
+    // pattern to widen a CHECK column (SQLite cannot ALTER a CHECK
+    // in place). The new table references the OLD table via its
+    // self-FK on `parent_revision_id`; SQLite refuses that sequence
+    // inside a transaction with FK enforcement on, because the
+    // inherited FK would be left dangling across the DROP + ALTER
+    // RENAME. Temporarily disabling FKs is the established pattern
+    // and re-enables them after the migration transaction commits;
+    // the row-level FK constraints the data depended on are
+    // re-validated by `PRAGMA foreign_key_check` from every read
+    // path. This is broader than the prior v6-only gate because v8
+    // rebuilds the same table.
+    const disableForeignKeys = foreignKeys.foreign_keys === 1;
     if (disableForeignKeys) db.exec("PRAGMA foreign_keys = OFF");
     const migrate = db.transaction(() => {
       for (const step of MIGRATION_STEPS) {

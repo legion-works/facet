@@ -28,6 +28,13 @@ export const RevisionEnvelopeSchema = z.object({
   note: z.string().nullable(),
   pinned: z.boolean(),
   createdAt: z.string().datetime({ offset: true }),
+  /**
+   * TSX execution mode (D2). Omitted from the wire for every non-TSX
+   * artifact type so existing wire fixtures stay byte-identical after
+   * the TSX arc lands. The service emits this key only when the
+   * revision's `artifactType` is `"tsx"`.
+   */
+  execution: z.enum(["static", "interactive"]).optional(),
 });
 export type RevisionEnvelope = z.infer<typeof RevisionEnvelopeSchema>;
 

@@ -19,6 +19,7 @@ import {
   type CommandName,
 } from "../shared/contracts/commands/names";
 import { RENDERERS } from "../shared/contracts/renderers";
+import { TSX_EXECUTION_MODES } from "../shared/tsx/execution";
 
 /**
  * Parsed CLI invocation. `verb === null` for the meta-commands
@@ -57,6 +58,7 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
     { flag: "--artifact-id", takesValue: true },
     { flag: "--type", takesValue: true },
     { flag: "--renderer", takesValue: true, values: [...RENDERERS] },
+    { flag: "--execution", takesValue: true, values: [...TSX_EXECUTION_MODES] },
     { flag: "--file", takesValue: true },
     { flag: "--note", takesValue: true },
     { flag: "--parent-revision-id", takesValue: true },

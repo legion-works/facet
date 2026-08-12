@@ -59,6 +59,28 @@ export function checkRendererSupported(
   return null;
 }
 
+/**
+ * Returns `invalid_request` when an `interactive` execution is set on a
+ * non-TSX artifact. `static` is the default and is silently accepted on
+ * every type (mirroring how `renderer: "svg"` is accepted on every
+ * artifact type — it is the canonical default). Callers see a typed
+ * error before any service round-trip or storage write; the publish
+ * dispatcher calls this before passing the request into the store.
+ */
+export function checkExecutionSupported(
+  artifactType: string,
+  execution: string | undefined,
+): FacetError | null {
+  if (execution === "interactive" && artifactType !== "tsx") {
+    return new FacetError(
+      "invalid_request",
+      `Execution mode 'interactive' is only supported for artifact type 'tsx' (got '${artifactType}')`,
+      { retryable: false, details: { artifactType, execution } },
+    );
+  }
+  return null;
+}
+
 // Re-export zod here so the barrel's `import { z } from "zod"` callers
 // keep working without re-importing.
 export { z };

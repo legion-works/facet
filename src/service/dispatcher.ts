@@ -12,6 +12,7 @@
 
 import {
   checkArtifactTypeSupported,
+  checkExecutionSupported,
   checkRendererSupported,
   normalizeReadBackTier,
   type ArtifactEnvelope,
@@ -225,6 +226,8 @@ export async function dispatch(
       if (unsupported !== null) throw unsupported;
       const rendererError = checkRendererSupported(command.artifactType, command.renderer);
       if (rendererError !== null) throw rendererError;
+      const executionError = checkExecutionSupported(command.artifactType, command.execution);
+      if (executionError !== null) throw executionError;
       // The reserved-type gate above rejected `html`; re-parse so the
       // rest of the publish path holds the narrowed supported type.
       const artifactType: ArtifactType = ArtifactTypeSchema.parse(command.artifactType);
@@ -239,9 +242,11 @@ export async function dispatch(
           details: { sizeBytes: bytes.byteLength, capBytes: SOURCE_CAP_BYTES },
         });
       }
-      // 1. Persist the IMMUTABLE revision first. The bytes-on-disk +
-      // sha256 + revision row are the source of truth; Tier 0 is an
-      // observation over those bytes, not a gate.
+      // D2: TSX execution mode is declared on the request and stored
+      // on the revision row. Non-TSX artifacts carry 'static' on disk
+      // (the canonical default) and the wire form simply omits the
+      // field; TSX artifacts carry the declared value end-to-end.
+      const executionMode = artifactType === "tsx" ? (command.execution ?? "static") : "static";
       const revision = deps.repository.publishRevision({
         artifactId: command.artifactId,
         artifactType,
@@ -251,6 +256,7 @@ export async function dispatch(
         ...(command.parentRevisionId !== undefined
           ? { parentRevisionId: command.parentRevisionId }
           : {}),
+        execution: executionMode,
       });
       // 2. Run Tier 0 over the SAME immutable bytes — never re-decode
       // from the wire or substitute. The runner lives in

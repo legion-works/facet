@@ -4,6 +4,12 @@
  * verbatim. Subsequent migrations extend this table set via additive
  * ALTER TABLE statements (never a destructive rewrite — the schema
  * migrations ledger records each version).
+ *
+ * Fresh v8 databases apply this block first (v1), then the v2-v8
+ * fragments in order. The v8 fragment widens the CHECK to include
+ * `tsx`, adds `revisions.execution`, and adds `render_runs.compiled_path`.
+ * Migrations are tracked, so a re-run on an already-migrated DB skips
+ * already-applied versions.
  */
 export const INITIAL_SCHEMA = `
 CREATE TABLE projects(
@@ -150,4 +156,56 @@ SET observed_json = json_set(
 WHERE
   json_type(observed_json, '$.opaqueRegionCount') IS NULL
   OR json_type(observed_json, '$.externalImageCount') IS NULL
+`;
+
+/**
+ * The v8 rebuild widens `revisions.artifact_type` to include `tsx`,
+ * adds `revisions.execution` (D2 of the TSX design — declared mode,
+ * default `static`, backfilled for every prior row), and adds
+ * `render_runs.compiled_path` (D7 — derived bundle stored alongside
+ * the run, NULLABLE so non-TSX runs and pre-arc rows stay NULL).
+ *
+ * SQLite cannot alter a CHECK in place, so the create-copy-drop-rename
+ * pattern from v6 is reused here. Every column is copied explicitly,
+ * and `execution` is set to `'static'` for every v7 row so the
+ * NOT NULL DEFAULT on the new column is satisfied without a separate
+ * UPDATE.
+ *
+ * Trap that shipped twice in this project (opaque-content v6 and
+ * HTML v7): adding a REQUIRED column to a stored shape breaks
+ * read-back of every row written by earlier releases. The fix is
+ * BOTH halves: a tolerant read in `src/service/stored-verdict.ts`
+ * for the runtime boundary AND a backfill migration on disk. The
+ * v8 backfill below is the schema-side half; the existing
+ * `withTolerantObserved` defends the runtime half for `observed_json`
+ * while this fragment backfills `execution` and widens the CHECK.
+ */
+export const V8_SCHEMA_FRAGMENT = `
+CREATE TABLE revisions_v8(
+  id TEXT PRIMARY KEY,
+  artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+  revision_number INTEGER NOT NULL,
+  parent_revision_id TEXT REFERENCES revisions(id),
+  artifact_type TEXT NOT NULL CHECK(artifact_type IN ('markdown','mermaid','svg','chart','html','tsx')),
+  source BLOB NOT NULL,
+  sha256 TEXT NOT NULL,
+  note TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  renderer TEXT NOT NULL DEFAULT 'svg' CHECK(renderer IN ('svg','canvas')),
+  execution TEXT NOT NULL DEFAULT 'static' CHECK(execution IN ('static','interactive')),
+  UNIQUE(artifact_id, revision_number),
+  UNIQUE(artifact_id, sha256)
+);
+INSERT INTO revisions_v8(
+  id, artifact_id, revision_number, parent_revision_id, artifact_type, source, sha256,
+  note, pinned, created_at, renderer, execution
+)
+SELECT
+  id, artifact_id, revision_number, parent_revision_id, artifact_type, source, sha256,
+  note, pinned, created_at, renderer, 'static'
+FROM revisions;
+DROP TABLE revisions;
+ALTER TABLE revisions_v8 RENAME TO revisions;
+ALTER TABLE render_runs ADD COLUMN compiled_path TEXT;
 `;

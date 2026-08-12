@@ -47,6 +47,7 @@ describe("gallery and Tier 1 renderer bundle parity", () => {
       markdown: ["markdown.ts", "mermaid.ts", "svg.ts"],
       mermaid: ["mermaid.ts", "svg.ts"],
       svg: ["svg.ts"],
+      tsx: ["tsx.ts"],
     });
   });
 

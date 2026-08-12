@@ -380,6 +380,70 @@ describe("cli contract — surface", () => {
     expect(request.artifactType).toBe("html");
   });
 
+  test("publish accepts --type tsx and defaults execution to static", () => {
+    const request = buildPublishRequest(
+      { "artifact-id": "artifact-1", type: "tsx" },
+      new TextEncoder().encode("export default function App(){return null;}"),
+    );
+    expect(request.artifactType).toBe("tsx");
+    expect(request.execution).toBe("static");
+  });
+
+  test("publish parses --execution interactive for tsx and reaches the request", () => {
+    const parsed = parseArgs([
+      "publish",
+      "--artifact-id",
+      "artifact-1",
+      "--type",
+      "tsx",
+      "--execution",
+      "interactive",
+    ]);
+    expect(parsed).toMatchObject({
+      kind: "verb",
+      verb: "publish",
+      args: { type: "tsx", execution: "interactive" },
+    });
+    if (parsed.kind !== "verb") throw new Error("publish parser rejected --execution");
+    const request = buildPublishRequest(
+      parsed.args,
+      new TextEncoder().encode("export default function App(){return null;}"),
+    );
+    expect(request.execution).toBe("interactive");
+  });
+
+  test("publish rejects --execution interactive on non-tsx artifact types", () => {
+    for (const type of ["markdown", "html"] as const) {
+      expect(() =>
+        buildPublishRequest(
+          { "artifact-id": "artifact-1", type, execution: "interactive" },
+          new TextEncoder().encode("hello"),
+        ),
+      ).toThrow(FacetError);
+      try {
+        buildPublishRequest(
+          { "artifact-id": "artifact-1", type, execution: "interactive" },
+          new TextEncoder().encode("hello"),
+        );
+      } catch (error) {
+        expect((error as FacetError).code).toBe("invalid_request");
+      }
+    }
+  });
+
+  test("publish silently drops --execution static on non-tsx artifact types", () => {
+    // `static` is the canonical default; carrying it on the wire for a
+    // non-tsx type would force a byte-different contract for an
+    // artifact type that does not honor the field. Drop it at the CLI
+    // boundary so the wire request stays byte-identical to the
+    // pre-tsx-arc shape.
+    const request = buildPublishRequest(
+      { "artifact-id": "artifact-1", type: "markdown", execution: "static" },
+      new TextEncoder().encode("hello"),
+    );
+    expect(request.execution).toBeUndefined();
+  });
+
   test("publish rejects an invalid renderer with typed invalid_request", () => {
     expect(() =>
       buildPublishRequest(
@@ -402,6 +466,40 @@ describe("cli contract — surface", () => {
     const io = makeIo('{"mark":"bar"}');
     const exit = await runCli(
       ["publish", "--artifact-id", "artifact-1", "--type", "chart", "--renderer", "webgl"],
+      { ...io, env },
+    );
+    expect(exit.code).toBe(64);
+    const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+    expect(envelope.ok).toBe(false);
+    if (!envelope.ok) expect(envelope.error.code).toBe("invalid_request");
+  });
+
+  test("publish rejects --execution on a non-tsx type at the CLI surface", async () => {
+    const { env } = makeEnv("execution-non-tsx");
+    const io = makeIo("hello");
+    const exit = await runCli(
+      [
+        "publish",
+        "--artifact-id",
+        "artifact-1",
+        "--type",
+        "markdown",
+        "--execution",
+        "interactive",
+      ],
+      { ...io, env },
+    );
+    expect(exit.code).toBe(0); // typed invalid_request is a well-formed envelope (exit 0)
+    const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+    if (envelope.ok) throw new Error("envelope unexpectedly ok");
+    expect(envelope.error.code).toBe("invalid_request");
+  });
+
+  test("publish rejects an unknown --execution value as a usage error before service startup", async () => {
+    const { env } = makeEnv("execution-unknown");
+    const io = makeIo("hello");
+    const exit = await runCli(
+      ["publish", "--artifact-id", "artifact-1", "--type", "tsx", "--execution", "side-channel"],
       { ...io, env },
     );
     expect(exit.code).toBe(64);

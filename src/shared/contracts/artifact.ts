@@ -42,6 +42,13 @@ export const RevisionSchema = z.object({
   note: z.string().nullable(),
   pinned: z.boolean(),
   createdAt: IsoTimestampSchema,
+  /**
+   * TSX execution mode (D2). Only present for `artifactType === "tsx"`
+   * — every other type stores `'static'` on disk but the field is
+   * absent from the wire form (the dispatch is explicit: `execution`
+   * must be absent, not null, for non-TSX artifacts).
+   */
+  execution: z.enum(["static", "interactive"]).optional(),
 });
 export type Revision = z.infer<typeof RevisionSchema>;
 
@@ -54,6 +61,13 @@ export const RenderRunSchema = z.object({
   observedJson: z.string(),
   screenshotPath: z.string().nullable(),
   consolePath: z.string().nullable(),
+  /**
+   * TSX compiled-bundle evidence (D7). The compiled bundle is derived
+   * output stored alongside the run, not a wire form — `null` for
+   * non-TSX runs and for TSX runs whose compilation did not produce
+   * a retained file.
+   */
+  compiledPath: z.string().nullable().optional(),
   screenshotErrorJson: z.string().nullable(),
   insecureJson: z.string().nullable(),
   /**

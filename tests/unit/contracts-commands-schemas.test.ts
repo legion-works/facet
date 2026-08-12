@@ -77,6 +77,57 @@ describe("command round-trips", () => {
     ).toBe("html");
   });
 
+  test("artifact and publish schemas accept the implemented tsx type", () => {
+    expect(ArtifactTypeSchema.parse("tsx")).toBe("tsx");
+    const tsxRequest = PublishRequestSchema.parse({
+      ...validPublishRequest(),
+      artifactType: "tsx",
+    });
+    expect(tsxRequest.artifactType).toBe("tsx");
+    // The schema field is optional: the dispatcher is responsible for
+    // defaulting it to "static" when artifactType === "tsx" and the
+    // request omits it. The byte-identical wire requirement for
+    // non-tsx is satisfied by NOT setting a Zod default here.
+    expect(tsxRequest.execution).toBeUndefined();
+  });
+
+  test("publish request accepts an explicit tsx execution value", () => {
+    for (const value of ["static", "interactive"] as const) {
+      const tsxRequest = PublishRequestSchema.parse({
+        ...validPublishRequest(),
+        artifactType: "tsx",
+        execution: value,
+      });
+      expect(tsxRequest.execution).toBe(value);
+    }
+  });
+
+  test("publish request rejects execution on non-tsx artifact types", () => {
+    for (const artifactType of ["markdown", "mermaid", "svg", "chart", "html"] as const) {
+      // `interactive` is rejected at the dispatcher guard; the schema
+      // itself only rejects shape errors (unknown values). The
+      // dispatcher guard (`checkExecutionSupported`) is covered by the
+      // CLI and service-level tests.
+      expect(
+        PublishRequestSchema.safeParse({
+          ...validPublishRequest(),
+          artifactType,
+          execution: "static",
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  test("publish request rejects an unknown execution value", () => {
+    expect(
+      PublishRequestSchema.safeParse({
+        ...validPublishRequest(),
+        artifactType: "tsx",
+        execution: "side-channel",
+      }).success,
+    ).toBe(false);
+  });
+
   test("list request and result round-trip", () => {
     expect(ListRequestSchema.parse(validListRequest())).toEqual(validListRequest());
     expect(ListResultSchema.parse(validListResult())).toEqual(validListResult());

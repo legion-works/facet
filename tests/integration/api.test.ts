@@ -140,6 +140,11 @@ describe("service API integration", () => {
         expect(publishBody.data.revision.artifactType).toBe("markdown");
         expect(publishBody.data.revision.renderer).toBe("svg");
         expect(publishBody.data.revision.sha256).toMatch(/^[a-f0-9]{64}$/);
+        // The revision envelope for non-tsx MUST omit the execution
+        // and compiledPath fields (byte-identical with the pre-tsx wire).
+        const json = JSON.stringify(publishBody.data.revision);
+        expect(json).not.toContain('"execution"');
+        expect(json).not.toContain('"compiledPath"');
       }
     } finally {
       await env.cleanup();
@@ -222,6 +227,120 @@ describe("service API integration", () => {
         error: { code: string };
       };
       expect(body.ok).toBe(false);
+      expect(body.error.code).toBe("invalid_request");
+      const statusRes = await envelopeRequest(env, {
+        command: "status",
+        artifactId: createBody.data.artifact.id,
+      });
+      const statusBody = parseEnvelopeStrict(await statusRes.text()) as {
+        ok: true;
+        data: { revisionCount: number };
+      };
+      expect(statusBody.data.revisionCount).toBe(0);
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  test("publish accepts tsx with a default static execution marker", async () => {
+    const env = await startService();
+    try {
+      const createRes = await envelopeRequest(env, {
+        command: "create",
+        projectId: "project-1",
+        slug: "tsx-default",
+        title: "TSX default",
+      });
+      const createBody = parseEnvelopeStrict(await createRes.text()) as {
+        ok: true;
+        data: { artifact: { id: string } };
+      };
+      const publishRes = await envelopeRequest(env, {
+        command: "publish",
+        artifactId: createBody.data.artifact.id,
+        artifactType: "tsx",
+        bytes: Buffer.from("export default function App(){return null;}", "utf8").toString(
+          "base64",
+        ),
+      });
+      const publishBody = parseEnvelopeStrict(await publishRes.text()) as {
+        ok: true;
+        data: CommandResult;
+      };
+      expect(publishBody.ok).toBe(true);
+      if (publishBody.data.command === "publish") {
+        expect(publishBody.data.revision.artifactType).toBe("tsx");
+        // The wire envelope for a TSX revision carries the execution
+        // marker; non-tsx revisions do not.
+        const revision = publishBody.data.revision as unknown as Record<string, unknown>;
+        expect(revision.execution).toBe("static");
+      }
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  test("publish accepts tsx with an explicit interactive execution marker", async () => {
+    const env = await startService();
+    try {
+      const createRes = await envelopeRequest(env, {
+        command: "create",
+        projectId: "project-1",
+        slug: "tsx-interactive",
+        title: "TSX interactive",
+      });
+      const createBody = parseEnvelopeStrict(await createRes.text()) as {
+        ok: true;
+        data: { artifact: { id: string } };
+      };
+      const publishRes = await envelopeRequest(env, {
+        command: "publish",
+        artifactId: createBody.data.artifact.id,
+        artifactType: "tsx",
+        execution: "interactive",
+        bytes: Buffer.from("export default function App(){return null;}", "utf8").toString(
+          "base64",
+        ),
+      });
+      const publishBody = parseEnvelopeStrict(await publishRes.text()) as {
+        ok: true;
+        data: CommandResult;
+      };
+      expect(publishBody.ok).toBe(true);
+      if (publishBody.data.command === "publish") {
+        const revision = publishBody.data.revision as unknown as Record<string, unknown>;
+        expect(revision.execution).toBe("interactive");
+      }
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  test("publish rejects execution on a non-tsx artifact type", async () => {
+    const env = await startService();
+    try {
+      const createRes = await envelopeRequest(env, {
+        command: "create",
+        projectId: "project-1",
+        slug: "markdown-with-execution",
+        title: "Markdown with execution",
+      });
+      const createBody = parseEnvelopeStrict(await createRes.text()) as {
+        ok: true;
+        data: { artifact: { id: string } };
+      };
+      const res = await envelopeRequest(env, {
+        command: "publish",
+        artifactId: createBody.data.artifact.id,
+        artifactType: "markdown",
+        execution: "interactive",
+        bytes: Buffer.from("hello", "utf8").toString("base64"),
+      });
+      expect(res.status).toBe(400);
+      const body = parseEnvelopeStrict(await res.text()) as {
+        ok: false;
+        error: { code: string };
+      };
       expect(body.error.code).toBe("invalid_request");
       const statusRes = await envelopeRequest(env, {
         command: "status",

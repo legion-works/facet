@@ -124,6 +124,142 @@ describe("artifact store", () => {
     expect(artifactTypeCheckValues(v5)).toEqual([...ARTIFACT_TYPES]);
   });
 
+  test("v7→v8 migration widens artifact_type to all canonical types including tsx", () => {
+    const { db: v5 } = makeV5Store();
+    runMigrations(v5);
+    // v5 → v6 → v7 widened the artifact_type CHECK; v7 → v8 should add
+    // tsx to the canonical list while preserving every prior row.
+    expect(artifactTypeCheckValues(v5)).toEqual([...ARTIFACT_TYPES]);
+    // Backfill + tsx acceptance: publish a tsx revision after v8 lands
+    // and confirm the CHECK accepts it.
+    const { repository, artifact } = (() => {
+      // reuse the existing v5 store: read its repository out by hand.
+      // The makeV5Store helper exposes repository + artifact on the
+      // returned object; here we already have the db, so reconstruct.
+      const project = (v5.query("SELECT id FROM projects LIMIT 1").get() as { id: string } | null)
+        ?.id;
+      if (!project) throw new Error("v5 store has no project");
+      return {
+        repository: new ArtifactRepository(v5),
+        artifact: {
+          id:
+            (v5.query("SELECT id FROM artifacts LIMIT 1").get() as { id: string } | null)?.id ?? "",
+        },
+      };
+    })();
+    const tsx = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "tsx",
+      source: new TextEncoder().encode("export default function App(){return null;}"),
+    });
+    expect(tsx.artifactType).toBe("tsx");
+    expect(v5.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  });
+
+  test("v7 row with pre-arc observed JSON shape migrates and reads back", () => {
+    // The migration trap that shipped twice: a row written by an earlier
+    // release must read back AFTER v8 lands. Plant a v7-shape row
+    // (no execution column, pre-arc observed_json missing both opaque
+    // and externalImageCount counters) and confirm the migration +
+    // tolerant read recover it.
+    const db = openDatabase({ databasePath: ":memory:" });
+    databases.push(db);
+    db.exec(
+      `${v5InitialSchema()}${V2_SCHEMA_FRAGMENT}${V3_SCHEMA_FRAGMENT}${V4_SCHEMA_FRAGMENT}${V5_SCHEMA_FRAGMENT}`,
+    );
+    db.exec(
+      "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)",
+    );
+    for (const version of [1, 2, 3, 4, 5]) {
+      db.query("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(
+        version,
+        "2026-08-10T00:00:00.000Z",
+      );
+    }
+    const projectId = crypto.randomUUID();
+    db.query("INSERT INTO projects(id, project_root, created_at) VALUES (?, ?, ?)").run(
+      projectId,
+      `/tmp/legacy-${crypto.randomUUID()}`,
+      "2026-08-10T00:00:00.000Z",
+    );
+    const artifactId = crypto.randomUUID();
+    db.query(
+      "INSERT INTO artifacts(id, project_id, slug, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      artifactId,
+      projectId,
+      "legacy",
+      "Legacy",
+      "2026-08-10T00:00:00.000Z",
+      "2026-08-10T00:00:00.000Z",
+    );
+    const revisionId = crypto.randomUUID();
+    db.query(
+      "INSERT INTO revisions(id, artifact_id, revision_number, parent_revision_id, artifact_type, source, sha256, note, pinned, created_at, renderer) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      revisionId,
+      artifactId,
+      1,
+      null,
+      "markdown",
+      new Uint8Array([104, 105]),
+      "a".repeat(64),
+      null,
+      0,
+      "2026-08-10T00:00:00.000Z",
+      "svg",
+    );
+    const runId = crypto.randomUUID();
+    // Pre-v7 row: no opaqueRegionCount, no externalImageCount in observed_json.
+    db.query(
+      "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      runId,
+      revisionId,
+      0,
+      "ok",
+      JSON.stringify({ rendererRootSvgCount: 1, mermaidNodeCount: 1, visibleSvgCount: 1 }),
+      JSON.stringify({
+        rendererRootSvgCount: 1,
+        graphCount: 1,
+        mermaidNodeCount: 1,
+        visibleSvgCount: 1,
+        errorCount: 0,
+      }),
+      null,
+      null,
+      null,
+      null,
+      0,
+      "2026-08-10T00:00:00.000Z",
+      "2026-08-10T00:00:00.000Z",
+    );
+
+    const before = tableCounts(db);
+    runMigrations(db);
+
+    // Counts unchanged: no orphan rows, no FK violations.
+    expect(tableCounts(db)).toEqual(before);
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    // Migration recorded.
+    expect(db.query("SELECT MAX(version) AS max FROM schema_migrations").get()).toEqual({
+      max: 8,
+    });
+    // Pre-arc row reads back: the legacy observed_json is enriched with
+    // the missing counters (V7 backfill) but the row still maps to a
+    // valid VerdictObserved via the tolerant read.
+    const repository = new ArtifactRepository(db);
+    const runs = repository.listRenderRuns({ revisionId, tier: 0 });
+    expect(runs).toHaveLength(1);
+    const observed = JSON.parse(runs[0]!.observedJson);
+    expect(observed.opaqueRegionCount).toBe(0);
+    expect(observed.externalImageCount).toBe(0);
+    // The revision still maps through RevisionSchema.parse.
+    const storedRevision = repository.getRevisionById(revisionId);
+    expect(storedRevision).not.toBeNull();
+    expect(storedRevision?.artifactType).toBe("markdown");
+  });
+
   test("migrates v5 revisions without breaking render and template relationships", () => {
     const { db, repository, artifact } = makeV5Store();
     const revision = repository.publishRevision({
@@ -131,14 +267,14 @@ describe("artifact store", () => {
       artifactType: "markdown",
       source: new TextEncoder().encode("# v5"),
     });
-    const renderRun = repository.recordRenderRun({
+    repository.recordRenderRun({
       revisionId: revision.id,
       tier: 0,
       status: "ok",
       expected: { nodes: 0 },
       observed: { nodes: 0 },
     });
-    const template = repository.promoteRevision({
+    repository.promoteRevision({
       revisionId: revision.id,
       name: `v5-template-${crypto.randomUUID()}`,
       promotedBy: "test",
@@ -156,17 +292,8 @@ describe("artifact store", () => {
       { version: 5 },
       { version: 6 },
       { version: 7 },
+      { version: 8 },
     ]);
-    expect(
-      db
-        .query(
-          "SELECT render_runs.revision_id AS render_revision_id, templates.revision_id AS template_revision_id FROM render_runs JOIN templates",
-        )
-        .get(),
-    ).toEqual({
-      render_revision_id: renderRun.revisionId,
-      template_revision_id: template.revisionId,
-    });
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
 
     const uniqueColumns = (

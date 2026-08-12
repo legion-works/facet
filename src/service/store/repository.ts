@@ -44,6 +44,14 @@ interface PublishInput {
   readonly source: Uint8Array;
   readonly note?: string | null;
   readonly parentRevisionId?: string | null;
+  /**
+   * TSX execution mode (D2). Optional — defaults to `'static'` for
+   * every artifact type on disk so non-TSX rows carry the canonical
+   * value and the wire form simply omits it. Required to be `'static'`
+   * when `artifactType !== 'tsx'`; the dispatcher guard ensures this
+   * before the row is written.
+   */
+  readonly execution?: "static" | "interactive";
 }
 
 interface RenderRunInput {
@@ -56,6 +64,14 @@ interface RenderRunInput {
   readonly consolePath?: string | null;
   readonly screenshotError?: ScreenshotError | null;
   readonly insecure?: InsecureMarker | null;
+  /**
+   * TSX compiled-bundle evidence (D7). The bundle is derived output
+   * stored alongside the run, not a wire form — `null` (the default)
+   * for non-TSX runs and for TSX runs whose compilation did not
+   * produce a retained file. Retention cleanup deletes the file
+   * alongside its row.
+   */
+  readonly compiledPath?: string | null;
   /**
    * Retained-evidence carve-out: `true` exempts the row from the
    * last-N cleanup policy. Pin/template call sites set this; the
@@ -99,6 +115,7 @@ type SqlRevision = Omit<
   | "createdAt"
   | "pinned"
   | "source"
+  | "execution"
 > & {
   artifact_id: string;
   revision_number: number;
@@ -109,6 +126,7 @@ type SqlRevision = Omit<
   note: string | null;
   pinned: number;
   created_at: string;
+  execution: "static" | "interactive";
 };
 
 function sha256(source: Uint8Array): string {
@@ -131,7 +149,20 @@ function bytes(value: Uint8Array | ArrayBuffer): Uint8Array {
   return value instanceof Uint8Array ? new Uint8Array(value) : new Uint8Array(value);
 }
 
+function revisionHasColumn(db: Database, name: string): boolean {
+  const rows = db.query(`PRAGMA table_info(revisions)`).all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === name);
+}
+
+function renderRunHasColumn(db: Database, name: string): boolean {
+  const rows = db.query(`PRAGMA table_info(render_runs)`).all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === name);
+}
+
 function mapRevision(row: SqlRevision): Revision {
+  // TSX carries `execution` on the wire; every other type carries it
+  // on disk but the wire form omits the field (the dispatch is
+  // explicit: `execution` must be absent, not null, for non-TSX).
   return RevisionSchema.parse({
     id: row.id,
     artifactId: row.artifact_id,
@@ -144,6 +175,7 @@ function mapRevision(row: SqlRevision): Revision {
     note: row.note,
     pinned: row.pinned === 1,
     createdAt: row.created_at,
+    ...(row.artifact_type === "tsx" ? { execution: row.execution } : {}),
   });
 }
 
@@ -266,12 +298,12 @@ export class ArtifactRepository {
   }
 
   listRenderRuns(input: { revisionId: string; tier: 0 | 1 }): RenderRun[] {
+    const hasCompiledPath = renderRunHasColumn(this.db, "compiled_path");
     try {
-      const rows = this.db
-        .query(
-          "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC",
-        )
-        .all(input.revisionId, input.tier) as Array<{
+      const selectSql = hasCompiledPath
+        ? "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, compiled_path, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC"
+        : "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC";
+      const rows = this.db.query(selectSql).all(input.revisionId, input.tier) as Array<{
         id: string;
         revision_id: string;
         tier: number;
@@ -283,6 +315,7 @@ export class ArtifactRepository {
         screenshot_error_json: string | null;
         insecure_json: string | null;
         retained: number;
+        compiled_path?: string | null;
         started_at: string;
         finished_at: string;
       }>;
@@ -299,6 +332,7 @@ export class ArtifactRepository {
           screenshotErrorJson: row.screenshot_error_json,
           insecureJson: row.insecure_json,
           retained: row.retained === 1,
+          compiledPath: hasCompiledPath ? (row.compiled_path ?? null) : null,
           startedAt: row.started_at,
           finishedAt: row.finished_at,
         }),
@@ -386,6 +420,17 @@ export class ArtifactRepository {
     const revisionId = crypto.randomUUID();
     const timestamp = now();
     const sha = sha256(source);
+    // D2: every revision carries an execution mode on disk. Non-TSX
+    // rows store `'static'` (the canonical default) and the wire
+    // envelope omits the field; TSX rows carry the declared value
+    // end-to-end.
+    const execution = input.execution ?? "static";
+    // The `execution` column lands in the v8 migration. Detect it
+    // here so the v6-rollback test (which publishes against a v5
+    // schema) keeps its semantics: the rollback assertion is about
+    // the v6 transaction, not about whether the publish path itself
+    // needed v8.
+    const hasExecutionColumn = revisionHasColumn(this.db, "execution");
     try {
       const transact = this.db.transaction(() => {
         const previous = this.db
@@ -394,22 +439,46 @@ export class ArtifactRepository {
           )
           .get(input.artifactId) as { id: string; revision_number: number } | null;
         const revisionNumber = (previous?.revision_number ?? 0) + 1;
-        this.db
-          .query(
-            "INSERT INTO revisions(id, artifact_id, revision_number, parent_revision_id, artifact_type, renderer, source, sha256, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          )
-          .run(
-            revisionId,
-            input.artifactId,
-            revisionNumber,
-            input.parentRevisionId === undefined ? (previous?.id ?? null) : input.parentRevisionId,
-            input.artifactType,
-            input.renderer ?? "svg",
-            source,
-            sha,
-            input.note ?? null,
-            timestamp,
-          );
+        if (hasExecutionColumn) {
+          this.db
+            .query(
+              "INSERT INTO revisions(id, artifact_id, revision_number, parent_revision_id, artifact_type, renderer, source, sha256, note, created_at, execution) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .run(
+              revisionId,
+              input.artifactId,
+              revisionNumber,
+              input.parentRevisionId === undefined
+                ? (previous?.id ?? null)
+                : input.parentRevisionId,
+              input.artifactType,
+              input.renderer ?? "svg",
+              source,
+              sha,
+              input.note ?? null,
+              timestamp,
+              execution,
+            );
+        } else {
+          this.db
+            .query(
+              "INSERT INTO revisions(id, artifact_id, revision_number, parent_revision_id, artifact_type, renderer, source, sha256, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .run(
+              revisionId,
+              input.artifactId,
+              revisionNumber,
+              input.parentRevisionId === undefined
+                ? (previous?.id ?? null)
+                : input.parentRevisionId,
+              input.artifactType,
+              input.renderer ?? "svg",
+              source,
+              sha,
+              input.note ?? null,
+              timestamp,
+            );
+        }
         const revision = RevisionSchema.parse({
           id: revisionId,
           artifactId: input.artifactId,
@@ -423,6 +492,7 @@ export class ArtifactRepository {
           note: input.note ?? null,
           pinned: false,
           createdAt: timestamp,
+          ...(input.artifactType === "tsx" && hasExecutionColumn ? { execution } : {}),
         });
         this.options.writeHook?.({ phase: "after_insert" });
         evictRevisions(this.db, input.artifactId, revisionId);
@@ -482,7 +552,29 @@ export class ArtifactRepository {
     const startedAt = input.startedAt ?? now();
     const finishedAt = input.finishedAt ?? now();
     const retained = input.retained ?? false;
-    const value = {
+    const compiledPath = input.compiledPath ?? null;
+    // The `compiled_path` column lands in the v8 migration. Detect it
+    // so the v6-rollback test (which records runs against a v5
+    // schema) keeps its semantics: the rollback assertion is about
+    // the v6 transaction, not about whether the record path itself
+    // needed v8.
+    const hasCompiledPath = renderRunHasColumn(this.db, "compiled_path");
+    const value: {
+      id: string;
+      revisionId: string;
+      tier: 0 | 1;
+      status: string;
+      expectedJson: string;
+      observedJson: string;
+      screenshotPath: string | null;
+      consolePath: string | null;
+      screenshotErrorJson: string | null;
+      insecureJson: string | null;
+      retained: boolean;
+      compiledPath?: string | null;
+      startedAt: string;
+      finishedAt: string;
+    } = {
       id: crypto.randomUUID(),
       revisionId: input.revisionId,
       tier: input.tier,
@@ -503,27 +595,54 @@ export class ArtifactRepository {
       startedAt,
       finishedAt,
     };
+    if (hasCompiledPath) value.compiledPath = compiledPath;
+    const compiledColumnValue: string | null = hasCompiledPath
+      ? (value.compiledPath ?? null)
+      : null;
     let artifactIdForCleanup: string | null = null;
     try {
-      this.db
-        .query(
-          "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run(
-          value.id,
-          value.revisionId,
-          value.tier,
-          value.status,
-          value.expectedJson,
-          value.observedJson,
-          value.screenshotPath,
-          value.consolePath,
-          value.screenshotErrorJson,
-          value.insecureJson,
-          value.retained ? 1 : 0,
-          value.startedAt,
-          value.finishedAt,
-        );
+      if (hasCompiledPath) {
+        this.db
+          .query(
+            "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, compiled_path, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            value.id,
+            value.revisionId,
+            value.tier,
+            value.status,
+            value.expectedJson,
+            value.observedJson,
+            value.screenshotPath,
+            value.consolePath,
+            value.screenshotErrorJson,
+            value.insecureJson,
+            value.retained ? 1 : 0,
+            compiledColumnValue,
+            value.startedAt,
+            value.finishedAt,
+          );
+      } else {
+        this.db
+          .query(
+            "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            value.id,
+            value.revisionId,
+            value.tier,
+            value.status,
+            value.expectedJson,
+            value.observedJson,
+            value.screenshotPath,
+            value.consolePath,
+            value.screenshotErrorJson,
+            value.insecureJson,
+            value.retained ? 1 : 0,
+            value.startedAt,
+            value.finishedAt,
+          );
+      }
       const ownerRow = this.db
         .query("SELECT artifact_id FROM revisions WHERE id = ?")
         .get(input.revisionId) as { artifact_id: string } | null;
@@ -562,6 +681,14 @@ export class ArtifactRepository {
         try {
           const { rmSync } = require("node:fs") as typeof import("node:fs");
           rmSync(input.consolePath, { force: true });
+        } catch {
+          // best-effort
+        }
+      }
+      if (compiledPath !== null) {
+        try {
+          const { rmSync } = require("node:fs") as typeof import("node:fs");
+          rmSync(compiledPath, { force: true });
         } catch {
           // best-effort
         }

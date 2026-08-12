@@ -205,6 +205,38 @@ async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
         },
       };
     }
+    case "tsx": {
+      // TSX compilation lives in Tasks 5-7. Until then, the parser
+      // surfaces a typed verdict so a publish lands an `error` run
+      // instead of a silent `ok`. The wire result stays byte-shaped
+      // so downstream consumers see the same surface as every other
+      // parser rejection.
+      return {
+        ...base,
+        status: "error",
+        observed: {
+          rendererRootSvgCount: 0,
+          graphCount: 0,
+          mermaidNodeCount: 0,
+          visibleSvgCount: 0,
+          opaqueRegionCount: 0,
+          externalImageCount: 0,
+          errorCount: 1,
+          discriminativeErrors: [
+            {
+              code: "tsx_parser_unavailable",
+              message:
+                "TSX source parsing is not implemented in this build; Tasks 5-7 land before the gallery can execute tsx artifacts",
+            },
+          ],
+        },
+      };
+    }
+    default: {
+      const exhaustive: never = input.artifactType;
+      void exhaustive;
+      throw new Error(`Unsupported artifact type for tier 0: ${String(input.artifactType)}`);
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ArtifactTypeSchema, RendererSchema } from "../artifact";
+import { TSX_EXECUTION_MODES } from "../../tsx/execution";
 import { MAX_LIST_LIMIT } from "../../config/limits";
 
 import { BaseRequestSchema, ReadBackTierSchema } from "./_shared";
@@ -34,6 +35,15 @@ export const PublishBytesSchema = z.string().superRefine((value, ctx) => {
 /** Publish accepts every implemented artifact type from the canonical contract. */
 export const PublishArtifactTypeSchema = ArtifactTypeSchema;
 
+/**
+ * TSX execution mode. Derived from the canonical `TSX_EXECUTION_MODES`
+ * array so a typo or a new mode lands in one place. The publish
+ * request schema refines this with `artifactType` so a non-TSX request
+ * carrying `execution` is rejected with a typed `invalid_request`
+ * rather than silently coerced.
+ */
+export const TsxExecutionSchema = z.enum(TSX_EXECUTION_MODES);
+
 export const CreateRequestSchema = BaseRequestSchema.extend({
   command: z.literal("create"),
   projectId: z.string().min(1),
@@ -50,6 +60,17 @@ export const PublishRequestSchema = BaseRequestSchema.extend({
   bytes: PublishBytesSchema,
   note: z.string().nullable().optional(),
   parentRevisionId: z.string().min(1).nullable().optional(),
+  /**
+   * TSX execution mode (D2). Optional on the wire; defaults to
+   * `static` at the service layer when `artifactType === "tsx"`. A
+   * non-TSX artifact type carrying `execution` is rejected by the
+   * `checkExecutionSupported` guard called before storage — the same
+   * pattern `checkRendererSupported` uses for `renderer: "canvas"`
+   * on non-chart types. SuperRefine is intentionally NOT used here:
+   * Zod's discriminated `command` union requires direct ZodObject
+   * options, so cross-field validation belongs in a guard.
+   */
+  execution: TsxExecutionSchema.optional(),
 });
 export type PublishRequest = z.infer<typeof PublishRequestSchema>;
 

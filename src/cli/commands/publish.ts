@@ -18,6 +18,7 @@ import { readFileSync } from "node:fs";
 import { FacetError } from "../../shared/errors/facet-error";
 import { ARTIFACT_TYPES } from "../../shared/contracts/artifact-types";
 import { isRenderer } from "../../shared/contracts/renderers";
+import { isTsxExecutionMode } from "../../shared/tsx/execution";
 import { generateRequestId } from "../../shared/util/time";
 import type { PublishRequest } from "../../shared/contracts/commands/requests";
 import type { ArtifactType } from "../../shared/contracts/artifact";
@@ -79,6 +80,34 @@ export function buildPublishRequest(
       { retryable: false, details: { reason: "invalid_renderer" } },
     );
   }
+  const executionValue = args["execution"];
+  if (
+    executionValue !== undefined &&
+    (typeof executionValue !== "string" || !isTsxExecutionMode(executionValue))
+  ) {
+    throw new FacetError(
+      "invalid_request",
+      `--execution must be one of: static, interactive (got '${String(executionValue)}')`,
+      { retryable: false, details: { reason: "invalid_execution" } },
+    );
+  }
+  // Mirror the dispatcher's `checkExecutionSupported` guard: an
+  // explicit `interactive` execution on a non-tsx type is rejected at
+  // the CLI boundary so the typed `invalid_request` surfaces before
+  // any service round-trip. `static` is the canonical default and is
+  // silently accepted on every type (just like `renderer: "svg"`).
+  if (executionValue === "interactive" && type !== "tsx") {
+    throw new FacetError(
+      "invalid_request",
+      `--execution interactive is only allowed with --type tsx (got '${String(type)}')`,
+      { retryable: false, details: { reason: "execution_requires_tsx" } },
+    );
+  }
+  // D2: TSX execution defaults to `static` at the CLI boundary so a
+  // downstream consumer that reads the wire request never sees
+  // `execution: undefined` for a tsx artifact.
+  const resolvedExecution =
+    executionValue === "interactive" ? "interactive" : type === "tsx" ? "static" : undefined;
   return {
     command: "publish",
     requestId: generateRequestId(),
@@ -88,5 +117,8 @@ export function buildPublishRequest(
     bytes: Buffer.from(sourceBytes).toString("base64"),
     ...(typeof noteValue === "string" ? { note: noteValue } : {}),
     ...(typeof parentValue === "string" ? { parentRevisionId: parentValue } : {}),
+    ...(resolvedExecution !== undefined
+      ? { execution: resolvedExecution as PublishRequest["execution"] }
+      : {}),
   };
 }

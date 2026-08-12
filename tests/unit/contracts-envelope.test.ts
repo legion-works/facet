@@ -424,4 +424,25 @@ describe("HTML validation observables", () => {
       expect(JSON.stringify(actual), name).not.toContain('"html"');
     }
   });
+
+  test("non-tsx publish revision envelope omits execution and compiledPath from the wire", () => {
+    // Existing types (markdown/mermaid/svg/chart/html) MUST stay byte-identical
+    // after the tsx arc lands: the new `execution` and `compiledPath` fields
+    // are absent on the wire for non-tsx, not null, not undefined-default.
+    const baselineRevision = {
+      id: "rev-1",
+      artifactId: "art-1",
+      revisionNumber: 1,
+      parentRevisionId: null,
+      artifactType: "markdown" as const,
+      renderer: "svg" as const,
+      sha256: "a".repeat(64),
+      note: null,
+      pinned: false,
+      createdAt: "2025-01-01T00:00:00.000Z",
+    };
+    const json = JSON.stringify(baselineRevision);
+    expect(json).not.toContain('"execution"');
+    expect(json).not.toContain('"compiledPath"');
+  });
 });

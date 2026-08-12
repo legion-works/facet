@@ -81,6 +81,7 @@ import {
 import {
   checkArtifactTypeSupported,
   checkCommandImplemented,
+  checkExecutionSupported,
   checkRendererSupported,
 } from "./guards";
 
@@ -163,6 +164,7 @@ export {
   // guards
   checkCommandImplemented,
   checkArtifactTypeSupported,
+  checkExecutionSupported,
   checkRendererSupported,
 };
 
