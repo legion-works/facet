@@ -212,4 +212,40 @@ describe("promotion", () => {
     const request = buildInstantiateRequest({ name: "stable", "new-slug": "copy" });
     expect(request).not.toHaveProperty("promotedBy");
   });
+
+  test("DRIFT 1.2: instantiate propagates the source execution mode (TSX interactive stays interactive)", () => {
+    // The instantiate command must copy the source revision's
+    // execution mode end-to-end. A TSX interactive template must
+    // produce an interactive revision, not silently fall back to
+    // the canvas default. The fix: pass source.execution into the
+    // publishRevision call.
+    const { repository, artifact } = makeStore();
+    const source = new Uint8Array([1, 2, 3]);
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "tsx",
+      source,
+      execution: "interactive",
+    });
+    const template = repository.promoteRevision({
+      revisionId: revision.id,
+      name: "interactive-tsx",
+      promotedBy: "operator",
+    });
+    return (async () => {
+      const result = (await dispatch(
+        { repository } as never,
+        {
+          command: "instantiate",
+          requestId: "req",
+          name: template.name,
+          newSlug: "copy",
+        },
+        "req",
+      )) as { artifact: { id: string } };
+      const copiedRevision = repository.getRevisionBySha(result.artifact.id, revision.sha256);
+      expect(copiedRevision?.artifactType).toBe("tsx");
+      expect(copiedRevision?.execution).toBe("interactive");
+    })();
+  });
 });

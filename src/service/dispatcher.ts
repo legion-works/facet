@@ -561,6 +561,12 @@ export async function dispatch(
         renderer: source.renderer,
         source: new Uint8Array(source.source),
         note: `Instantiated from template ${template.name}`,
+        // DRIFT 1.2: propagate the source revision's execution mode
+        // so a TSX interactive template instantiates as interactive,
+        // not the canvas default. The pre-TSX row omits this field
+        // entirely; the publish path's `?? 'static'` fallback already
+        // handles the non-TSX case.
+        ...(source.execution !== undefined ? { execution: source.execution } : {}),
       });
       return {
         command: "instantiate",
