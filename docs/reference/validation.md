@@ -33,18 +33,25 @@ without a screenshot or marker is rejected at the schema parse boundary.
 
 ### `partial:unstable` precedence slot
 
-`partial:unstable` slots between the count-mismatch error path and the
-single-snapshot partials. The full ordering, top to bottom:
+`partial:unstable` splits the error paths in two, because `error` is not a
+single tier. The discriminating question is whether a status rests on ONE
+observation or on something a structure change cannot invalidate. The full
+ordering, top to bottom:
 
 1. `timeout` — lifecycle failed at the render barrier (`renderComplete === false`).
 2. `tampered` — channel divergence; the page contradicts protocol authority.
 3. `probe_only` / `shim_only` — channel availability (meta-claim about the channels, not the page).
-4. `error` — counts disagree with the lexical expectation, or discriminative errors are non-empty.
+4. `error` — discriminative errors are non-empty, or observed counts disagree with the lexical expectation. Both survive a structure change: a parse error is a parse error whenever it was observed, and a count that never matched the source's expectation never matches.
 5. **`partial:unstable`** — TSX interactive mode; structure changed between the render barrier and the stability window.
-6. `partial:opaque_content` — single-snapshot claim: structure has opaque regions.
-7. `partial:external_resources` — single-snapshot claim: structure has external HTTP references.
-8. `partial:layout_unverified` — single-snapshot claim: visible SVG with zeroed viewBoxes.
-9. `ok`.
+6. `error` (declared-opaque, observed-zero) — the artifact declared opaque regions and none were seen. This sits BELOW `partial:unstable` deliberately: it compares the expectation against a SINGLE observation, so a structure change makes it unsafe to assert. A canvas that painted after the barrier would otherwise be reported as an artifact that never painted at all — a false accusation, which is the failure class the whole partial taxonomy exists to avoid.
+7. `partial:opaque_content` — single-snapshot claim: structure has opaque regions.
+8. `partial:external_resources` — single-snapshot claim: structure has external HTTP references.
+9. `partial:layout_unverified` — single-snapshot claim: visible SVG with zeroed viewBoxes.
+10. `ok`.
+
+The rule generalizing rows 4 and 6: a claim that depends on ONE observation
+loses to `partial:unstable`; a claim that holds regardless of when it was
+observed outranks it.
 
 The reasoning: when structure is changing between two observation snapshots, the verifier cannot honestly claim "this artifact has structure X" — every single-snapshot claim (opaque, external, layout) is moot. `partial:unstable` is a meta-claim about the page's runtime behavior that dominates the single-snapshot structural claims. `tampered` stays above it because channel divergence (the page contradicting protocol authority) is the more catastrophic reading of the page's behavior. The decision is pinned by `tests/unit/verdict.test.ts` (unstable outranks opaque, external, layout-unverified; unstable loses to tampered, timeout, and channel-availability).
 
