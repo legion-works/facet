@@ -277,15 +277,16 @@ async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
         const facet = error instanceof Error && "code" in error ? error : null;
         const code =
           facet !== null && typeof facet.code === "string" ? facet.code : "tsx_compile_error";
-        if (code === "tsx_ast_denied") {
+        if (
+          code === "tsx_ast_denied" ||
+          code === "tsx_compile_error" ||
+          code === "tsx_compile_output_cap"
+        ) {
           const details =
             facet !== null && "options" in facet
-              ? (facet.options as { details?: { errorsJson?: string } }).details
+              ? (facet.options as { details?: Record<string, unknown> }).details
               : undefined;
-          const errors =
-            details?.errorsJson === undefined
-              ? []
-              : (JSON.parse(details.errorsJson) as Array<{ code: string; message: string }>);
+          const errors = tsxDiscriminativeErrors(code, error, details);
           return {
             ...base,
             status: "error",
@@ -311,6 +312,37 @@ async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> {
       throw new Error(`Unsupported artifact type for tier 0: ${String(input.artifactType)}`);
     }
   }
+}
+
+function tsxDiscriminativeErrors(
+  code: string,
+  error: unknown,
+  details: Record<string, unknown> | undefined,
+): Array<{ code: string; message: string; location?: string }> {
+  if (code === "tsx_ast_denied" && typeof details?.errorsJson === "string") {
+    return JSON.parse(details.errorsJson) as Array<{ code: string; message: string }>;
+  }
+  if (typeof details?.diagnostics === "string") {
+    const diagnostics = JSON.parse(details.diagnostics) as Array<{
+      message?: string;
+      position?: { line?: number; column?: number };
+    }>;
+    return diagnostics.map((diagnostic) => ({
+      code,
+      message: diagnostic.message ?? String(error),
+      ...(diagnostic.position?.line === undefined
+        ? {}
+        : {
+            location: `line ${diagnostic.position.line + 1}:${(diagnostic.position.column ?? 0) + 1}`,
+          }),
+    }));
+  }
+  return [
+    {
+      code,
+      message: error instanceof Error ? error.message : String(error),
+    },
+  ];
 }
 
 async function main(): Promise<number> {

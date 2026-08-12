@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, writeFileSync } from "node:fs";
 
 import { openDatabase } from "../../src/service/store/database";
 import { ArtifactRepository } from "../../src/service/store/repository";
@@ -537,6 +538,23 @@ describe("artifact store", () => {
       promotedBy: "test",
     });
     expect(template.revisionId).toBe(revision.id);
+  });
+
+  test("removes compiled evidence when render-run insert fails", () => {
+    const { repository } = makeStore();
+    const compiledPath = `/tmp/facet-compiled-failed-${crypto.randomUUID()}.js`;
+    writeFileSync(compiledPath, "derived");
+    expect(() =>
+      repository.recordRenderRun({
+        revisionId: "missing-revision",
+        tier: 0,
+        status: "ok",
+        expected: {},
+        observed: {},
+        compiledPath,
+      }),
+    ).toThrow();
+    expect(existsSync(compiledPath)).toBe(false);
   });
 
   test("FK gate: rebuild steps must disable FKs; non-rebuild steps must not", () => {

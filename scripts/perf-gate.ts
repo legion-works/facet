@@ -20,6 +20,11 @@ import {
 } from "./perf/budgets";
 import { snapshotTier1Leaks, waitForTier1Cleanup } from "./perf/process";
 import {
+  TIER0_TSX_COLD_P95_BASELINE_MS,
+  TIER0_TSX_CONTENTION_FACTOR,
+  TIER0_TSX_TIMEOUT_MS,
+} from "../src/validation/sandbox/limits";
+import {
   measureMemoryAndCpu,
   measureTier0Spawn,
   measureTsxCompile,
@@ -240,7 +245,7 @@ async function main(): Promise<void> {
     observed: `static=${fixed(tsx.staticWarmP95Ms)}ms interactive=${fixed(tsx.interactiveWarmP95Ms)}ms \u00b7 cold static=${fixed(tsx.staticColdMs)}ms interactive=${fixed(tsx.interactiveColdMs)}ms \u00b7 staticSha256=${tsx.staticSha256.slice(0, 12)}... interactiveSha256=${tsx.interactiveSha256.slice(0, 12)}... \u00b7 static=${tsx.staticOutputBytes}B interactive=${tsx.interactiveOutputBytes}B`,
     status: "info",
     enforced: false,
-    method: `${tsx.warmSampleCount} warm pooled netns worker calls per fixture after one cold each; SHA-256 of the first output detects determinism drift.`,
+    method: `${tsx.warmSampleCount} warm pooled netns worker calls per fixture after one cold each; SHA-256 of the first output detects determinism drift; timeout headroom baseline=${TIER0_TSX_COLD_P95_BASELINE_MS}ms × contention=${TIER0_TSX_CONTENTION_FACTOR} = ${TIER0_TSX_COLD_P95_BASELINE_MS * TIER0_TSX_CONTENTION_FACTOR}ms < ${TIER0_TSX_TIMEOUT_MS}ms.`,
   });
 
   // A required PR-path job must not be able to go red for a reason the author

@@ -59,7 +59,7 @@ export async function compileTsx(input: CompileTsxInput): Promise<CompileTsxResu
   });
   if (!result.success || result.outputs.length === 0) {
     throw typedCompileError("TSX compiler failed", {
-      diagnostics: JSON.stringify(result.logs.map((entry) => entry.message)),
+      diagnostics: JSON.stringify(result.logs),
       outputCount: result.outputs.length,
     });
   }
@@ -97,6 +97,7 @@ export async function compileTsx(input: CompileTsxInput): Promise<CompileTsxResu
       html,
     };
   } catch (error) {
+    if (error instanceof FacetError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     throw typedCompileError("TSX static rendering failed", { message });
   }

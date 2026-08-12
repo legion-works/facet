@@ -8,7 +8,12 @@ import { PassThrough } from "node:stream";
 import * as tier0Runner from "../../src/validation/tier0/runner";
 import * as sandbox from "../../src/validation/sandbox/netns";
 import type { Tier0Input } from "../../src/shared/contracts/validation";
-import { TIER0_TIMEOUT_MS, TIER0_TSX_TIMEOUT_MS } from "../../src/validation/sandbox/limits";
+import {
+  TIER0_TIMEOUT_MS,
+  TIER0_TSX_COLD_P95_BASELINE_MS,
+  TIER0_TSX_CONTENTION_FACTOR,
+  TIER0_TSX_TIMEOUT_MS,
+} from "../../src/validation/sandbox/limits";
 
 function input(
   revisionSha: string,
@@ -78,7 +83,10 @@ for (;;) {
     end = buffer.indexOf("\\n");
     const request = JSON.parse(line);
     const source = Buffer.from(request.sourceBase64, "base64").toString("utf8");
-    if (source === "crash") process.exit(9);
+    if (source === "crash") {
+      process.stderr.write("parser process crashed");
+      process.exit(9);
+    }
     if (source === "oversized") {
       process.stdout.write("x".repeat(256) + "\\n");
       continue;
@@ -166,16 +174,44 @@ describe("Tier 0 worker pool", () => {
     expect(TIER0_TSX_TIMEOUT_MS).toBeLessThan(TIER0_TIMEOUT_MS);
   });
 
+  test("keeps measured cold TSX compile within the stated contention headroom", () => {
+    expect(TIER0_TSX_TIMEOUT_MS).toBeGreaterThan(
+      TIER0_TSX_COLD_P95_BASELINE_MS * TIER0_TSX_CONTENTION_FACTOR,
+    );
+  });
+
+  test("a malformed TSX verdict does not kill the pooled worker", async () => {
+    const pids: number[] = [];
+    const runner = tier0Runner.createTier0RunnerForTests(2, {
+      onWorkerSpawn: (pid) => pids.push(pid),
+    });
+    try {
+      const malformed = await runner({
+        ...input("7".repeat(64), "export default function App(){ return <div>; }", "tsx"),
+        execution: "static",
+      });
+      expect(malformed.status).toBe("error");
+      expect(malformed.observed.discriminativeErrors?.[0]?.code).toBe("tsx_compile_error");
+      expect(malformed.observed.discriminativeErrors?.[0]?.message).toContain("Syntax Error");
+      const markdown = await runner(input("8".repeat(64), "# markdown"));
+      expect(markdown.status).toBe("ok");
+      expect(pids).toHaveLength(1);
+    } finally {
+      runner.close?.();
+    }
+  });
+
   test("a TSX timeout resets the pool before markdown is served", async () => {
     await withFakeWorker(async (workerEntry) => {
       const pids: number[] = [];
       const runner = tier0Runner.createTier0RunnerForTests(2, {
         workerEntry,
         timeoutMs: 50,
+        tsxTimeoutMs: 10,
         onWorkerSpawn: (pid) => pids.push(pid),
       });
       try {
-        await expect(runner(input("7".repeat(64), "slow", "tsx"))).rejects.toMatchObject({
+        await expect(runner(input("7".repeat(64), "fast", "tsx"))).rejects.toMatchObject({
           code: "tier0_timeout",
         });
         await expect(runner(input("8".repeat(64)))).resolves.toMatchObject({ status: "ok" });
@@ -251,6 +287,7 @@ describe("Tier 0 worker pool", () => {
       try {
         await expect(runner(input("5".repeat(64), "crash"))).rejects.toMatchObject({
           code: "tier0_worker_died",
+          details: { exitCode: 9, stderr: "parser process crashed" },
         });
         await expect(runner(input("6".repeat(64)))).resolves.toMatchObject({ status: "ok" });
       } finally {

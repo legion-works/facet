@@ -11,6 +11,7 @@ coverage/
 # `git add -A` cannot sweep one into history, where the blob would persist
 # after any later removal.
 *.zip
+.facet-tsx-worker/
 
 # Resolver test fixtures. Probe TSX files are written under this dir and
 # cleaned by the test's afterEach hook; keeping the dir itself untracked

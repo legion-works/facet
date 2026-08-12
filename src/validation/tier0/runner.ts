@@ -75,6 +75,7 @@ interface WorkerInputEnvelope {
 export interface Tier0RunnerTestHooks {
   readonly workerEntry?: string;
   readonly timeoutMs?: number;
+  readonly tsxTimeoutMs?: number;
   readonly outputCap?: number;
   readonly onWorkerSpawn?: (pid: number) => void;
 }
@@ -163,21 +164,27 @@ interface RunnerOptions {
   readonly onWorkerSpawn?: (pid: number) => void;
 }
 
-function workerDiedError(code: number | null, signal: NodeJS.Signals | null): FacetError {
+function workerDiedError(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  stderr: Buffer,
+): FacetError {
+  const stderrText = stderr.toString("utf8").trim() || null;
   if (signal !== null) {
     return new FacetError("tier0_worker_died", `Worker terminated by signal ${signal}`, {
       retryable: false,
-      details: { signal },
+      details: { signal, stderr: stderrText },
     });
   }
   if (code === null) {
     return new FacetError("tier0_worker_died", "Worker exited without code or signal", {
       retryable: false,
+      details: { stderr: stderrText },
     });
   }
   return new FacetError("tier0_worker_died", `Worker exited with non-zero code ${code}`, {
     retryable: false,
-    details: { exitCode: code },
+    details: { exitCode: code, stderr: stderrText },
   });
 }
 
@@ -375,7 +382,7 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
       failWorker(started, workerStartError(error, stderrBuffer), false);
     });
     started.once("exit", (code, signal) => {
-      failWorker(started, workerDiedError(code, signal), false);
+      failWorker(started, workerDiedError(code, signal, stderrBuffer), false);
     });
     return started;
   }
@@ -481,7 +488,7 @@ export function createTier0RunnerForTests(
   return createRunner(level, {
     workerEntry: hooks.workerEntry ?? TIER0_WORKER_ENTRY,
     timeoutMs: hooks.timeoutMs ?? TIER0_TIMEOUT_MS,
-    tsxTimeoutMs: hooks.timeoutMs ?? TIER0_TSX_TIMEOUT_MS,
+    tsxTimeoutMs: hooks.tsxTimeoutMs ?? TIER0_TSX_TIMEOUT_MS,
     outputCap: hooks.outputCap ?? TIER0_OUTPUT_CAP_BYTES,
     ...(hooks.onWorkerSpawn === undefined ? {} : { onWorkerSpawn: hooks.onWorkerSpawn }),
   });
