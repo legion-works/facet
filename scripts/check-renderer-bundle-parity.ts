@@ -57,7 +57,7 @@ async function rendererSources(
   entry: string,
   splitting: boolean,
   followDynamicImports: boolean,
-): Promise<{ readonly all: string[]; readonly initial: string[] }> {
+): Promise<{ readonly all: string[]; readonly initial: string[]; readonly sourcePaths: string[] }> {
   const result = await Bun.build({
     entrypoints: [entry],
     target: "browser",
@@ -72,8 +72,9 @@ async function rendererSources(
     throw new Error(result.logs.map((log) => log.message).join("\n"));
   }
   const metafile = result.metafile;
-  const all = rendererNames(Object.keys(metafile?.inputs ?? {}));
-  if (!splitting || metafile === undefined) return { all, initial: all };
+  const sourcePaths = Object.keys(metafile?.inputs ?? {});
+  const all = rendererNames(sourcePaths);
+  if (!splitting || metafile === undefined) return { all, initial: all, sourcePaths };
 
   const outputs = metafile.outputs as Readonly<Record<string, BuildMetafileOutput>>;
   const entryOutput = Object.entries(outputs).find(([, output]) => output.entryPoint !== undefined);
@@ -93,7 +94,26 @@ async function rendererSources(
       if (imported.kind === "import-statement" || followDynamicImports) pending.push(imported.path);
     }
   }
-  return { all, initial: rendererNames([...initialInputs]) };
+  return { all, initial: rendererNames([...initialInputs]), sourcePaths };
+}
+
+function assertLegacyBundleIsolation(
+  artifactType: ArtifactType,
+  gallery: Awaited<ReturnType<typeof rendererSources>>,
+  verifier: Awaited<ReturnType<typeof rendererSources>>,
+): void {
+  if (artifactType === "tsx") return;
+  const forbidden = [...gallery.sourcePaths, ...verifier.sourcePaths].filter(
+    (sourcePath) =>
+      sourcePath.includes("/gallery-web/frame/renderers/tsx.ts") ||
+      sourcePath.includes("/node_modules/react/") ||
+      sourcePath.includes("/node_modules/react-dom/"),
+  );
+  if (forbidden.length > 0) {
+    throw new Error(
+      `legacy renderer bundle isolation failure for ${artifactType}: ${JSON.stringify(forbidden)}`,
+    );
+  }
 }
 
 function assertEqualSets(
@@ -137,6 +157,7 @@ for (const artifactType of ARTIFACT_TYPES) {
   );
   const expected = [...EXPECTED_RENDERERS[artifactType]].toSorted();
   assertEqualSets(artifactType, expected, gallery.all, verifier.all);
+  assertLegacyBundleIsolation(artifactType, gallery, verifier);
   const expectedInitial = [...EXPECTED_INITIAL_RENDERERS[artifactType]].toSorted();
   if (JSON.stringify(gallery.initial) !== JSON.stringify(expectedInitial)) {
     throw new Error(

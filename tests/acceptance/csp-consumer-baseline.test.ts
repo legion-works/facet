@@ -5,7 +5,11 @@
  */
 import { expect, test } from "bun:test";
 
-import { publishFixture, readBackFixture } from "../helpers/facet-testkit";
+import {
+  publishFixture,
+  projectToAcceptanceVerdict,
+  readBackFixtureRaw,
+} from "../helpers/facet-testkit";
 
 const fixture = (name: string): string => `${import.meta.dir}/../fixtures/${name}`;
 
@@ -41,7 +45,7 @@ const CONSUMERS = [
   },
 ] as const;
 
-function projectConsumer(verdict: Awaited<ReturnType<typeof readBackFixture>>) {
+function projectConsumer(verdict: ReturnType<typeof projectToAcceptanceVerdict>) {
   return {
     status: verdict.status,
     execution: verdict.execution,
@@ -177,13 +181,14 @@ test("existing artifact consumers keep their projected payload under the unchang
       slug: consumer.slug,
       productionTier0: true,
     });
-    const verdict = await readBackFixture({
+    const raw = await readBackFixtureRaw({
       artifactId: published.artifactId,
       revisionSha: published.revisionSha,
       tier: 1,
       productionTier0: true,
     });
-    rows[consumer.key] = projectConsumer(verdict);
+    expect("compiled" in raw.verdict, `${consumer.key} read-back compiled payload`).toBe(false);
+    rows[consumer.key] = projectConsumer(projectToAcceptanceVerdict(raw));
   }
   for (const [type, row] of Object.entries(rows)) {
     expect(row.execution, type).toBeUndefined();

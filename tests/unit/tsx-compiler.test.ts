@@ -16,11 +16,12 @@ const INTERACTIVE_SOURCE = readFileSync(
 );
 const NODE_MODULES = resolve(import.meta.dir, "../../node_modules");
 
-function portabilityRoot(name: string): string {
-  const root = join(mkdtempSync(join(tmpdir(), `facet-tsx-portability-${name}-`)), "nested", name);
+function portabilityRoot(name: string): { readonly root: string; readonly temporaryRoot: string } {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), `facet-tsx-portability-${name}-`));
+  const root = join(temporaryRoot, "nested", name);
   mkdirSync(root, { recursive: true });
   symlinkSync(NODE_MODULES, join(root, "node_modules"), "dir");
-  return root;
+  return { root, temporaryRoot };
 }
 
 describe("TSX compiler", () => {
@@ -75,27 +76,28 @@ export default function Artifact(){ return <h1>${label}</h1>; }`,
   });
 
   test("normalizes interactive bundle bytes across checkout-like roots without host paths", async () => {
-    const shallowRoot = portabilityRoot("shallow");
-    const deepRoot = join(portabilityRoot("deep"), "one", "more", "checkout");
+    const shallow = portabilityRoot("shallow");
+    const deep = portabilityRoot("deep");
+    const deepRoot = join(deep.root, "one", "more", "checkout");
     mkdirSync(deepRoot, { recursive: true });
     symlinkSync(NODE_MODULES, join(deepRoot, "node_modules"), "dir");
     try {
-      const shallow = await compileTsxAtWorkRootForTests(
+      const shallowResult = await compileTsxAtWorkRootForTests(
         { source: INTERACTIVE_SOURCE, execution: "interactive" },
-        shallowRoot,
+        shallow.root,
       );
-      const deep = await compileTsxAtWorkRootForTests(
+      const deepResult = await compileTsxAtWorkRootForTests(
         { source: INTERACTIVE_SOURCE, execution: "interactive" },
         deepRoot,
       );
 
-      expect(shallow.sha256).toBe(deep.sha256);
-      expect(shallow.bytes.byteLength).toBe(deep.bytes.byteLength);
-      expect(new TextDecoder().decode(shallow.bytes)).not.toContain("/home/");
-      expect(new TextDecoder().decode(deep.bytes)).not.toContain("/home/");
+      expect(shallowResult.sha256).toBe(deepResult.sha256);
+      expect(shallowResult.bytes.byteLength).toBe(deepResult.bytes.byteLength);
+      expect(new TextDecoder().decode(shallowResult.bytes)).not.toContain("/home/");
+      expect(new TextDecoder().decode(deepResult.bytes)).not.toContain("/home/");
     } finally {
-      rmSync(shallowRoot, { recursive: true, force: true });
-      rmSync(resolve(deepRoot, "../../.."), { recursive: true, force: true });
+      rmSync(shallow.temporaryRoot, { recursive: true, force: true });
+      rmSync(deep.temporaryRoot, { recursive: true, force: true });
     }
   });
 });
