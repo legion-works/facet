@@ -10,6 +10,8 @@ coverageDir = "coverage"
 # plus adversarial-render and forgery acceptance gates cover their behavior.
 coveragePathIgnorePatterns = [
   "dist/",
+  # compileTsx workspaces are gitignored transient bundles that vendor React.
+  ".facet-tsx-worker/compile-*/out/artifact.js",
   "**/main.ts",
   "src/validation/sandbox/netns.ts",
   "src/validation/tier0/runner.ts",
