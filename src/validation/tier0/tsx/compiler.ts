@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { FacetError } from "../../../shared/errors/facet-error";
@@ -73,46 +73,49 @@ async function compileTsxAtWorkRoot(
     });
   }
 
-  const artifactEntry = join(workRoot, "artifact.tsx");
-  const interactiveEntry = join(workRoot, "interactive-entry.tsx");
-  const outDir = join(workRoot, "out");
-  const output = join(outDir, "artifact.js");
-  mkdirSync(outDir, { recursive: true, mode: 0o700 });
-  await Bun.write(artifactEntry, input.source);
-  if (input.execution === "interactive") await Bun.write(interactiveEntry, INTERACTIVE_MOUNT_ENTRY);
-  rmSync(output, { force: true });
-  const result = await Bun.build({
-    entrypoints: [resolve(input.execution === "interactive" ? interactiveEntry : artifactEntry)],
-    outdir: resolve(outDir),
-    target: "browser",
-    format: "esm",
-    minify: false,
-    splitting: false,
-    sourcemap: "none",
-    naming: "artifact.js",
-    plugins: [tsxAllowlistResolverPlugin()],
-    throw: false,
-  });
-  if (!result.success || result.outputs.length === 0) {
-    throw typedCompileError("TSX compiler failed", {
-      diagnostics: JSON.stringify(result.logs),
-      outputCount: result.outputs.length,
-    });
-  }
-  const bytes = canonicalizeBundleBytes(new Uint8Array(await result.outputs[0]!.arrayBuffer()));
-  await Bun.write(output, bytes);
-  if (bytes.byteLength > TSX_COMPILED_OUTPUT_CAP_BYTES) {
-    throw new FacetError("tsx_compile_output_cap", "TSX compiler output exceeded the byte cap", {
-      retryable: false,
-      details: { capBytes: TSX_COMPILED_OUTPUT_CAP_BYTES, sizeBytes: bytes.byteLength },
-    });
-  }
-  const bundleSha256 = createHash("sha256").update(bytes).digest("hex");
-  if (input.execution === "interactive") {
-    return { bytes, sha256: bundleSha256, mediaType: "text/javascript" };
-  }
-
+  mkdirSync(workRoot, { recursive: true, mode: 0o700 });
+  const compileRoot = mkdtempSync(join(workRoot, "compile-"));
   try {
+    chmodSync(compileRoot, 0o700);
+    const artifactEntry = join(compileRoot, "artifact.tsx");
+    const interactiveEntry = join(compileRoot, "interactive-entry.tsx");
+    const outDir = join(compileRoot, "out");
+    const output = join(outDir, "artifact.js");
+    mkdirSync(outDir, { recursive: true, mode: 0o700 });
+    await Bun.write(artifactEntry, input.source);
+    if (input.execution === "interactive")
+      await Bun.write(interactiveEntry, INTERACTIVE_MOUNT_ENTRY);
+    const result = await Bun.build({
+      entrypoints: [resolve(input.execution === "interactive" ? interactiveEntry : artifactEntry)],
+      outdir: resolve(outDir),
+      target: "browser",
+      format: "esm",
+      minify: false,
+      splitting: false,
+      sourcemap: "none",
+      naming: "artifact.js",
+      plugins: [tsxAllowlistResolverPlugin()],
+      throw: false,
+    });
+    if (!result.success || result.outputs.length === 0) {
+      throw typedCompileError("TSX compiler failed", {
+        diagnostics: JSON.stringify(result.logs),
+        outputCount: result.outputs.length,
+      });
+    }
+    const bytes = canonicalizeBundleBytes(new Uint8Array(await result.outputs[0]!.arrayBuffer()));
+    await Bun.write(output, bytes);
+    if (bytes.byteLength > TSX_COMPILED_OUTPUT_CAP_BYTES) {
+      throw new FacetError("tsx_compile_output_cap", "TSX compiler output exceeded the byte cap", {
+        retryable: false,
+        details: { capBytes: TSX_COMPILED_OUTPUT_CAP_BYTES, sizeBytes: bytes.byteLength },
+      });
+    }
+    const bundleSha256 = createHash("sha256").update(bytes).digest("hex");
+    if (input.execution === "interactive") {
+      return { bytes, sha256: bundleSha256, mediaType: "text/javascript" };
+    }
+
     const moduleUrl = `${Bun.pathToFileURL(output).href}?sha=${bundleSha256}`;
     const module = (await import(moduleUrl)) as { default?: unknown };
     const renderToStaticMarkup = (await import("react-dom/server")).renderToStaticMarkup;
@@ -137,5 +140,7 @@ async function compileTsxAtWorkRoot(
     if (error instanceof FacetError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     throw typedCompileError("TSX static rendering failed", { message });
+  } finally {
+    rmSync(compileRoot, { recursive: true, force: true });
   }
 }

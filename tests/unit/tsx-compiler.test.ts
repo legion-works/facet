@@ -57,6 +57,23 @@ describe("TSX compiler", () => {
     expect(result.html).toBeUndefined();
   });
 
+  test("concurrent static compiles keep each artifact's own rendered content", async () => {
+    const labels = ["artifact-alpha", "artifact-bravo", "artifact-charlie"] as const;
+    const results = await Promise.all(
+      labels.map((label) =>
+        compileTsx({
+          source: `import React from "react";
+export default function Artifact(){ return <h1>${label}</h1>; }`,
+          execution: "static",
+        }),
+      ),
+    );
+
+    for (const [index, result] of results.entries()) {
+      expect(result.html, labels[index]).toBe(`<h1>${labels[index]}</h1>`);
+    }
+  });
+
   test("normalizes interactive bundle bytes across checkout-like roots without host paths", async () => {
     const shallowRoot = portabilityRoot("shallow");
     const deepRoot = join(portabilityRoot("deep"), "one", "more", "checkout");
