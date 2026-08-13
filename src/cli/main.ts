@@ -42,6 +42,7 @@ import { buildReadBackRequest } from "./commands/read-back";
 import { buildStatusRequest } from "./commands/status";
 import { collectFacetStatus } from "./commands/status";
 import { computeFacetPaths } from "../shared/config/paths";
+import { readInstallToken, readLiveMetadata } from "./service-metadata";
 import { generateRequestId } from "../shared/util/time";
 import { buildPublishRequest, resolveSourceBytes } from "./commands/publish";
 import { buildExportRequest, resolveExportPaths, writeExportFiles } from "./commands/export";
@@ -255,9 +256,24 @@ export async function runCli(
     );
     try {
       let spawnedPid: number | null = null;
+      let resolved: { baseUrl: string; installToken: string } | null = null;
       if (parsed.args.start === true) {
         const started = await ensureService({ env: io.env }, testHooks as ServiceHooks);
         spawnedPid = started.metadata.pid;
+        resolved = { baseUrl: started.baseUrl, installToken: started.installToken };
+      } else {
+        const metadata = readLiveMetadata(paths);
+        if (metadata !== null) {
+          resolved = {
+            baseUrl: `http://127.0.0.1:${metadata.port}`,
+            installToken: readInstallToken(paths),
+          };
+        }
+      }
+      if (resolved !== null) {
+        const response = await new FacetClient(resolved).sendCommand(buildStatusRequest({}));
+        writeEnvelope(io, parsed, response);
+        return { code: EXIT_CODES.OK, spawnedPid };
       }
       const data = { command: "status" as const, ...collectFacetStatus(paths) };
       writeEnvelope(io, parsed, okEnvelope(generateRequestId(), data));

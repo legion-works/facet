@@ -547,14 +547,23 @@ export async function dispatch(
       return { command: "readBack", requestId, renderer: revision.renderer, verdict };
     }
     case "status": {
-      const counts = deps.repository.statusForArtifact({ artifactId: command.artifactId });
+      const counts =
+        command.artifactId === undefined
+          ? undefined
+          : deps.repository.statusForArtifact({ artifactId: command.artifactId });
       return {
         command: "status",
         requestId,
-        artifactId: command.artifactId,
-        revisionCount: counts.revisionCount,
-        pinnedCount: counts.pinnedCount,
-        templateCount: counts.templateCount,
+        state: "active",
+        ...(command.artifactId === undefined ? {} : { artifactId: command.artifactId }),
+        ...(counts === undefined
+          ? {}
+          : {
+              revisionCount: counts.revisionCount,
+              pinnedCount: counts.pinnedCount,
+              templateCount: counts.templateCount,
+            }),
+        activeLeases: deps.leases.list().length,
       };
     }
     case "open": {

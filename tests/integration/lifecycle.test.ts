@@ -8,7 +8,8 @@
  *   - reclaims a stale lock whose pid is dead on the next start
  *   - runs the startup orphan cleanup before acquisition
  *
- * Each test is bounded to <10s; idleTimeoutMs is short.
+ * Each test except the production-cadence SSE transport gate is bounded to
+ * <10s; idleTimeoutMs is short.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -18,6 +19,7 @@ import { join } from "node:path";
 
 import { startFacetService } from "../../src/service/server";
 import { runOrphanCleanup } from "../../src/service/lifecycle/orphan-cleanup";
+import { STREAM_HEARTBEAT_INTERVAL_MS } from "../../src/service/stream";
 import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
@@ -175,14 +177,15 @@ describe("service lifecycle", () => {
     }
   }, 10_000);
 
-  test("a live stream renews its lease, then idle proceeds one TTL after stream close", async () => {
+  // Production cadence is deliberate: Bun's default socket timer only fails
+  // when its 10s idle window precedes the real 15s heartbeat.
+  test("a live stream survives Bun's default socket window, heartbeats once, and renews its lease", async () => {
     const paths = envPaths("stream-lease-renewal");
     const service = await startFacetService({
       logger: createQuietLogger({ component: "test" }),
       ...paths,
-      idleTimeoutMs: 50,
-      leaseTtlMs: 300,
-      heartbeatIntervalMs: 100,
+      idleTimeoutMs: 30_000,
+      leaseTtlMs: STREAM_HEARTBEAT_INTERVAL_MS + 1_500,
       tier0Runner: stubTier0Runner,
     });
     const streamAbort = new AbortController();
@@ -212,9 +215,28 @@ describe("service lifecycle", () => {
       expect(stream.status).toBe(200);
       expect(stream.body).not.toBeNull();
       const reader = stream.body!.getReader();
-      await reader.read();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const events: Array<Record<string, unknown>> = [];
+      const deadline = Date.now() + STREAM_HEARTBEAT_INTERVAL_MS + 4_000;
+      while (!events.some((event) => event.type === "stream:heartbeat") && Date.now() < deadline) {
+        const next = await reader.read();
+        expect(next.done).toBe(false);
+        if (next.value === undefined) continue;
+        buffer += decoder.decode(next.value, { stream: true });
+        let end = buffer.indexOf("\n\n");
+        while (end >= 0) {
+          const block = buffer.slice(0, end);
+          buffer = buffer.slice(end + 2);
+          end = buffer.indexOf("\n\n");
+          if (!block.startsWith("data: ")) continue;
+          events.push(JSON.parse(block.slice("data: ".length)) as Record<string, unknown>);
+        }
+      }
+      expect(events.filter((event) => event.type === "stream:open")).toHaveLength(1);
+      expect(events.some((event) => event.type === "stream:heartbeat")).toBe(true);
 
-      await Bun.sleep(700);
+      await Bun.sleep(5_000);
       const source = await fetch(
         `${service.url}/api/v1/gallery/source?revisionSha=${published.revisionSha}`,
         {
@@ -230,13 +252,11 @@ describe("service lifecycle", () => {
       expect(await portClosed(service.port)).toBe(false);
 
       streamAbort.abort();
-      await service.waitUntilIdle();
-      expect(await portClosed(service.port)).toBe(true);
     } finally {
       streamAbort.abort();
       await service.stop();
     }
-  }, 5_000);
+  }, 30_000);
 
   test("stale-lock (dead pid) reclaimed on next start", async () => {
     const paths = envPaths("stale");

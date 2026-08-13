@@ -7,6 +7,10 @@ import { collectFacetStatus } from "../../src/cli/commands/status";
 import { runOrphanCleanup } from "../../src/service/lifecycle/orphan-cleanup";
 import { readPidStartTimeTicks } from "../../src/shared/util/process";
 import { runCli, type CliIo } from "../../src/cli/main";
+import { startFacetService } from "../../src/service/server";
+import { FacetClient, publishArtifact } from "../../src/cli/client";
+import { createQuietLogger } from "../../src/shared/logging/logger";
+import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
 const root = join(tmpdir(), `facet-status-${crypto.randomUUID()}`);
 
@@ -68,6 +72,47 @@ describe("facet status", () => {
     expect(body.data.command).toBe("status");
     expect(body.data.state).toBe("dormant");
     expect(existsSync(join(home, "run", "facet.lock"))).toBe(false);
+  });
+
+  test("CLI active status reads the service lease manager", async () => {
+    const home = join(root, "cli-active");
+    const runtime = paths("cli-active");
+    const service = await startFacetService({
+      dbPath: runtime.database,
+      installTokenPath: runtime.token.replace(/promote\.token$/, "install.token"),
+      promoteTokenPath: runtime.token,
+      lockPath: runtime.lock,
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "status-test" }),
+      tier0Runner: stubTier0Runner,
+    });
+    try {
+      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+      const published = await publishArtifact(client, {
+        artifactType: "markdown",
+        bytes: new TextEncoder().encode("# status lease\n").buffer as ArrayBuffer,
+      });
+      const opened = await client.sendCommand({
+        command: "open",
+        requestId: crypto.randomUUID(),
+        artifactId: published.artifactId,
+        revisionSha: published.revisionSha,
+      });
+      expect(opened.ok).toBe(true);
+
+      const { io, output } = cliIo({ ...process.env, FACET_HOME: home });
+      const exit = await runCli(["status"], io);
+      const body = JSON.parse(output.value) as {
+        data: { activeLeases: number; state: string };
+        ok: boolean;
+      };
+      expect(exit.code).toBe(0);
+      expect(body.ok).toBe(true);
+      expect(body.data.state).toBe("active");
+      expect(body.data.activeLeases).toBe(1);
+    } finally {
+      await service.stop();
+    }
   });
 
   test("dormant status does not spawn or create state", () => {

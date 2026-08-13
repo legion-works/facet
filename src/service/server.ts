@@ -56,6 +56,7 @@ import { ensureOwnerOnlyDirectory } from "../shared/util/dir-permissions";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 const LEASE_TTL_MS = 5 * 60_000;
+export const BUN_SOCKET_IDLE_TIMEOUT_S = 45;
 
 export interface StartServiceOptions {
   readonly insecureLevel?: InsecureLevel;
@@ -273,6 +274,7 @@ export async function startFacetService(
       server = Bun.serve({
         hostname: host,
         port: 0,
+        idleTimeout: BUN_SOCKET_IDLE_TIMEOUT_S,
         fetch: (req) => router.fetch(req),
       });
     } catch (error) {

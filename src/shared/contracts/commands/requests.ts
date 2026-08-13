@@ -92,7 +92,7 @@ export type ReadBackRequest = z.infer<typeof ReadBackRequestSchema>;
 
 export const StatusRequestSchema = BaseRequestSchema.extend({
   command: z.literal("status"),
-  artifactId: z.string().min(1),
+  artifactId: z.string().min(1).optional(),
 });
 export type StatusRequest = z.infer<typeof StatusRequestSchema>;
 
