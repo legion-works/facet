@@ -267,6 +267,37 @@ jobs:
     # acceptance gate.
     needs: [static, build]
     runs-on: ubuntu-latest
+    # The Bun CDP-pipe fd-reuse trigger is pattern-sensitive, so a shared safe
+    # group would have to be re-derived whenever an acceptance file changes.
+    # One file per leg makes every failure attributable and contains a wedge.
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - _repro-browser-lifecycle.test.ts
+          - adversarial-render.test.ts
+          - canvas-chart-tier1.test.ts
+          - csp-consumer-baseline.test.ts
+          - egress.test.ts
+          - gallery-render.test.ts
+          - gate-forgery.test.ts
+          - harness-recovery.test.ts
+          - html-differential.test.ts
+          - html-render.test.ts
+          - html-tier1-status.test.ts
+          - insecure-sandbox.test.ts
+          - nested-frame-denials.test.ts
+          - runtime-exception-event.test.ts
+          - screenshot-evidence-failure.test.ts
+          - tsx-interactive-isolation.test.ts
+          - tsx-interactive-verdict.test.ts
+          - tsx-interactive.test.ts
+          - tsx-measurement.test.ts
+          - tsx-nested-frame-selection.test.ts
+          - tsx-runtime-egress.test.ts
+          - tsx-screenshot-evidence.test.ts
+          - tsx-static.test.ts
+    name: acceptance-tier1 (${{ matrix.test }})
     steps:
       # v4.2.2 — 11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -290,10 +321,10 @@ jobs:
           sysctl kernel.apparmor_restrict_unprivileged_userns
           unshare --map-current-user --user --net -- /bin/true
       - id: tests
-        name: Tier 1 acceptance tests
+        name: Tier 1 acceptance test
         run: |
           mkdir -p test-results
-          bun test tests/acceptance/ --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile=test-results/acceptance.xml
+          bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
       - name: summarize Tier 1 acceptance
         if: always()
         shell: bash
@@ -309,17 +340,17 @@ jobs:
             echo "- browser install: ${BROWSER_INSTALL:-not-run}"
             echo "- nested user namespaces: ${SANDBOX:-not-run}"
           } >> "$GITHUB_STEP_SUMMARY"
-          if [[ -f test-results/acceptance.xml ]]; then
-            bun scripts/summarize-junit.ts test-results/acceptance.xml acceptance-tier1
+          if [[ -f "test-results/acceptance-${{ matrix.test }}.xml" ]]; then
+            bun scripts/summarize-junit.ts "test-results/acceptance-${{ matrix.test }}.xml" "acceptance-tier1 (${{ matrix.test }})"
           else
-            printf '\n## acceptance-tier1 tests\n\n✗ Tests did not start; inspect browser setup.\n' >> "$GITHUB_STEP_SUMMARY"
+            printf '\n## acceptance-tier1 (%s) tests\n\n✗ Tests did not start; inspect browser setup.\n' "${{ matrix.test }}" >> "$GITHUB_STEP_SUMMARY"
           fi
       # v4.6.2 — ea165f8d65b6e75b540449e92b4886f43607fa02
       - name: publish acceptance coverage input
         if: steps.tests.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: coverage-acceptance
+          name: coverage-acceptance-${{ matrix.test }}
           path: coverage/lcov.info
           if-no-files-found: error
           retention-days: 1
@@ -328,9 +359,9 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: acceptance-failure-evidence
+          name: acceptance-failure-evidence-${{ matrix.test }}
           path: |
-            test-results/acceptance.xml
+            test-results/acceptance-${{ matrix.test }}.xml
             coverage/
           if-no-files-found: warn
           retention-days: 7
@@ -351,11 +382,14 @@ jobs:
           pattern: coverage-*
           path: coverage-input
       - name: enforce aggregate and per-file coverage
-        run: >-
-          bun scripts/check-coverage.ts
-          coverage-input/coverage-unit/lcov.info
-          coverage-input/coverage-integration/lcov.info
-          coverage-input/coverage-acceptance/lcov.info
+        shell: bash
+        run: |
+          coverage_inputs=(
+            coverage-input/coverage-unit/lcov.info
+            coverage-input/coverage-integration/lcov.info
+            coverage-input/coverage-acceptance-*/lcov.info
+          )
+          bun scripts/check-coverage.ts "${coverage_inputs[@]}"
       # v4.6.2 — ea165f8d65b6e75b540449e92b4886f43607fa02
       - name: upload coverage failure evidence
         if: failure()
