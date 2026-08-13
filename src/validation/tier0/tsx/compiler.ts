@@ -99,6 +99,7 @@ async function compileTsxAtWorkRoot(
       outdir: resolve(outDir),
       target: "browser",
       format: "esm",
+      define: { "process.env.NODE_ENV": '"production"' },
       minify: false,
       splitting: false,
       sourcemap: "none",

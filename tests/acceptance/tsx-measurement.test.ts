@@ -20,6 +20,7 @@ import {
   probeProtocolGetDocument,
   probeProtocolSnapshot,
 } from "../../src/validation/tier1/protocol-probe";
+import { TSX_COMPILED_OUTPUT_CAP_BYTES } from "../../src/validation/tier0/tsx/compiler";
 import { createTier0Runner } from "../../src/validation/tier0/runner";
 
 const REPO_ROOT = join(import.meta.dir, "../..");
@@ -441,6 +442,14 @@ function measurementTable(
   compiled: ReadonlyMap<string, CompileMeasurement>,
   observed: ReadonlyMap<string, InteractiveMeasurement>,
 ): string {
+  const representativeInteractive = compiled.get("interactive-stable.tsx")!;
+  const representativeKiB = (representativeInteractive.outputBytes / 1024).toFixed(1);
+  const retainedMiB = ((representativeInteractive.outputBytes * 10) / 1024 / 1024).toFixed(1);
+  const capPercent = (
+    (representativeInteractive.outputBytes / TSX_COMPILED_OUTPUT_CAP_BYTES) *
+    100
+  ).toFixed(1);
+  const headroomPercent = (100 - Number(capPercent)).toFixed(1);
   const rows = ACCEPTED.map((fixture) => {
     const compile = compiled.get(fixture.file)!;
     const channels = observed.get(fixture.file);
@@ -499,9 +508,9 @@ function measurementTable(
     "",
     "The decoy mutation is discriminating: choosing the first nested frame selects the non-empty decoy (two headings) rather than the artifact frame, then fails the fixture-marker check. The selector therefore rejects a wrong-but-nonzero authority target, not merely an empty candidate set.",
     "",
-    "Interactive bundles currently include React's development runtime: `react.development.js` appears in emitted bytes because the compiler does not define `NODE_ENV=production`. This is not a mount-entry StrictMode behavior — the mount entry calls `createRoot(...).render(createElement(Artifact))` without `<StrictMode>`, so the measured delayed mutation is not a spurious dev double-invocation. An artifact can opt into `<StrictMode>` itself; then development-only extra renders and Effect reruns can legitimately alter its observed structure within the stability window. Recommendation: make the runtime build selection explicit in a follow-up decision. Prefer production React for shipped artifacts while retaining `minify: false` for auditability; keep development React only if viewer-side diagnostic fidelity outweighs the roughly 975 KB per-run payload and environment-dependent StrictMode semantics.",
+    "Interactive bundles explicitly select React production with Bun's `process.env.NODE_ENV` define. `minify: false` remains deliberate: emitted bytes must stay readable enough for an operator to verify that no artifact bytes escaped the intended bundle boundary. The mount entry calls `createRoot(...).render(createElement(Artifact))` without `<StrictMode>`; an artifact can opt into `<StrictMode>` itself.",
     "",
-    "Retention observation: evidence keeps the last 10 render runs per artifact. At roughly 975 KB per interactive compiled payload, that is about 9.3 MiB of compiled bundles per artifact before screenshots and console evidence; React is shared runtime code re-stored for every run. With the current 2 MiB output cap, the measured bundles use about 46.5% of the cap and retain about 53.5% headroom.",
+    `Retention observation: evidence keeps the last 10 render runs per artifact. The representative interactive stable-state bundle is ${representativeInteractive.outputBytes} bytes (${representativeKiB} KiB) per run, or about ${retainedMiB} MiB of compiled bundles per artifact before screenshots and console evidence. With the current ${TSX_COMPILED_OUTPUT_CAP_BYTES} byte output cap, it uses about ${capPercent}% of the cap and retains about ${headroomPercent}% headroom.`,
     "",
   ].join("\n");
 }

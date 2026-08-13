@@ -58,6 +58,20 @@ describe("TSX compiler", () => {
     expect(result.html).toBeUndefined();
   });
 
+  test("emits a readable, production-sized React runtime for interactive artifacts", async () => {
+    const result = await compileTsx({
+      source: `export default function App(){ return <button>ok</button>; }`,
+      execution: "interactive",
+    });
+    const bundle = new TextDecoder().decode(result.bytes);
+
+    expect(result.bytes.byteLength).toBeGreaterThan(10_000);
+    expect(result.bytes.byteLength).toBeLessThan(600_000);
+    expect(bundle).toContain("interactive TSX mount is missing");
+    expect(bundle).not.toContain('A props object containing a "key" prop is being spread into JSX');
+    expect(bundle).toContain("\nfunction App() {\n  return");
+  });
+
   test("concurrent static compiles keep each artifact's own rendered content", async () => {
     const labels = ["artifact-alpha", "artifact-bravo", "artifact-charlie"] as const;
     const results = await Promise.all(

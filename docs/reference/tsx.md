@@ -77,10 +77,9 @@ durable errors, but outranks single-snapshot structural claims.
 
 Measured determinism, compiler bytes, and nested-channel observations are in
 [TSX measurements](../verification/tsx-measurements.md). Interactive bundles
-currently ship development React: about 975 KB per artifact, about 9.3 MiB per
-artifact across last-10 evidence retention, and about 46.5% of the 2 MiB output
-cap. Switch to a production React build in a follow-up before treating that
-payload as settled.
+explicitly select production React. They remain unminified so operators can
+audit emitted bundle bytes; the current measured bundle size, retention cost,
+and 2 MiB-cap headroom are derived in the evidence table.
 
 ## Starters
 
