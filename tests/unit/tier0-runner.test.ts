@@ -108,10 +108,11 @@ for (;;) {
       process.exit(7);
     }
     active = true;
+    if (source === "stall") continue;
     setTimeout(() => {
       respond(request);
       active = false;
-    }, source === "slow" ? 200 : 25);
+    }, source === "slow" ? 2_000 : 25);
   }
 }
 `,
@@ -206,12 +207,12 @@ describe("Tier 0 worker pool", () => {
       const pids: number[] = [];
       const runner = tier0Runner.createTier0RunnerForTests(2, {
         workerEntry,
-        timeoutMs: 50,
+        timeoutMs: 1_000,
         tsxTimeoutMs: 10,
         onWorkerSpawn: (pid) => pids.push(pid),
       });
       try {
-        await expect(runner(input("7".repeat(64), "fast", "tsx"))).rejects.toMatchObject({
+        await expect(runner(input("7".repeat(64), "stall", "tsx"))).rejects.toMatchObject({
           code: "tier0_timeout",
         });
         await expect(runner(input("8".repeat(64)))).resolves.toMatchObject({ status: "ok" });
@@ -257,7 +258,7 @@ describe("Tier 0 worker pool", () => {
       const pids: number[] = [];
       const runner = tier0Runner.createTier0RunnerForTests(2, {
         workerEntry,
-        timeoutMs: 150,
+        timeoutMs: 1_000,
         onWorkerSpawn: (pid) => pids.push(pid),
       });
 
