@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.6.0](https://github.com/legion-works/facet/compare/v1.5.0...v1.6.0) (2026-08-13)
+
+
+### Features
+
+* add tsx execution verdicts and unstable status ([9925901](https://github.com/legion-works/facet/commit/992590147095ef43728fdd1ba1f1b29478e30e87))
+* compile TSX in tier 0 ([265252b](https://github.com/legion-works/facet/commit/265252b0a1ca7789caeb2377dc18b549124c3295))
+* implement the tsx artifact type contract ([8088267](https://github.com/legion-works/facet/commit/80882679f3503cb09ead5ca1e626933d19cd8f80))
+* render tsx in isolated frames ([b23d39b](https://github.com/legion-works/facet/commit/b23d39b979e5d619477c09d7aa18755d60362990))
+* **tsx:** verify interactive nested frames ([b7f0d40](https://github.com/legion-works/facet/commit/b7f0d40a247936db6ea114bad7ee6f392ce1ca67))
+
+
+### Bug Fixes
+
+* derive the execution enum from one canonical source (DRIFT 2.1, 2.2, 2.3) ([10f2b62](https://github.com/legion-works/facet/commit/10f2b62b8bd5c36318ccb82fbec52165ad3dbe23))
+* **gallery:** accept canonical render counts ([8af3ac0](https://github.com/legion-works/facet/commit/8af3ac0784821ebab7624741d7d2a329f693f79a))
+* harden the tsx stub and the FK gate per review (Must 1 + 2 + Should 1 + 2) ([36393a1](https://github.com/legion-works/facet/commit/36393a1fa5741f2569c498a4a406198a785b9fd7))
+* isolate nested-frame egress acceptance spawn ([97a3f52](https://github.com/legion-works/facet/commit/97a3f52ccb9cf408a33a990ce8227188dd75ebef))
+* preserve TSX compile failures in tier 0 ([53b3719](https://github.com/legion-works/facet/commit/53b3719fcdb1e02377c14609255d5efd6082de15))
+* propagate execution mode when instantiating a template (DRIFT 1.2) ([4b5c733](https://github.com/legion-works/facet/commit/4b5c733b475f36fb4e0d1f3c222c4cf6250339b8))
+* route read-back through verdictFromStoredRun and pin the execution-null policy ([632db68](https://github.com/legion-works/facet/commit/632db688cbc556ce86d143cc1eae8fc84c2b5802))
+* stop the CLI client from silently dropping verdict fields (Must 2) ([0e3894d](https://github.com/legion-works/facet/commit/0e3894d238ad3982ac77e9610c6f425cbb1906eb))
+* surface every observed field and execution through the acceptance harness ([ce67729](https://github.com/legion-works/facet/commit/ce67729b0569fefa410fbcd6ab77e243ba79fdba))
+* **tsx:** authenticate nested frame handshakes ([5a83675](https://github.com/legion-works/facet/commit/5a8367590101b9c3f354ceffce41e002449e7c53))
+* **tsx:** block Tier 1 after compile errors ([48f1264](https://github.com/legion-works/facet/commit/48f126425a2d388f59b5f3b7d976047bc093ed3a))
+* **tsx:** isolate concurrent compiler workspaces ([819b4bb](https://github.com/legion-works/facet/commit/819b4bb6283fed6f79893f23464607f07329a2b4))
+* **tsx:** stabilize compiled bundle bytes ([6860f6b](https://github.com/legion-works/facet/commit/6860f6b622272cb3e9ee9822c52d7de31736c09c))
+* **tsx:** strip frame handshake secret ([84e633d](https://github.com/legion-works/facet/commit/84e633db73355d60f6c47ce0e570440abc6e71bb))
+* **tsx:** surface interactive runtime failures ([01e7b73](https://github.com/legion-works/facet/commit/01e7b733d5b84a040420d05631cca135c0e1a04d))
+
+
+### Performance Improvements
+
+* **tsx:** fix AST bypasses, add compile-time allowlist resolver, mark latency PROVISIONAL-PENDING-NETNS ([c18c517](https://github.com/legion-works/facet/commit/c18c517cb321dbfa7427efaf1aa759d1e7c955fe))
+* **tsx:** measure compiler cost and adopt Bun.build ([eefab5f](https://github.com/legion-works/facet/commit/eefab5f1689403a77abbdad4a03facf58dd84c15))
+* **tsx:** simplify AST policy per D13a and fix scope-walker false rejections ([9200179](https://github.com/legion-works/facet/commit/920017905e0402358ccaa01a2a802a4bf99e74bf))
+
 ## [1.5.0](https://github.com/legion-works/facet/compare/v1.4.0...v1.5.0) (2026-08-11)
 
 
