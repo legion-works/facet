@@ -22,10 +22,6 @@ export interface CompileTsxResult {
 }
 
 const WORK_ROOT = join(resolve(import.meta.dir, "../../../.."), ".facet-tsx-worker");
-const ARTIFACT_ENTRY = join(WORK_ROOT, "artifact.tsx");
-const INTERACTIVE_ENTRY = join(WORK_ROOT, "interactive-entry.tsx");
-const OUT_DIR = join(WORK_ROOT, "out");
-const OUTPUT = join(OUT_DIR, "artifact.js");
 
 const INTERACTIVE_MOUNT_ENTRY = [
   'import { createElement } from "react";',
@@ -36,6 +32,17 @@ const INTERACTIVE_MOUNT_ENTRY = [
   "createRoot(mount).render(createElement(Artifact));",
 ].join("\n");
 
+function canonicalizeBundleBytes(rawBytes: Uint8Array): Uint8Array {
+  const source = new TextDecoder().decode(rawBytes);
+  // Bun emits source labels for bundled modules; they reflect resolver paths,
+  // not artifact semantics, and must not become stored artifact data.
+  const canonical = source.replace(
+    /^\/\/ (?:(?:[A-Za-z]:)?[./~][^\r\n]*|[^\r\n]*node_modules\/[^\r\n]*)\.(?:[cm]?[jt]sx?|json)\r?\n/gm,
+    "",
+  );
+  return new TextEncoder().encode(canonical);
+}
+
 function typedCompileError(
   message: string,
   details: Record<string, string | number | boolean | null>,
@@ -44,6 +51,20 @@ function typedCompileError(
 }
 
 export async function compileTsx(input: CompileTsxInput): Promise<CompileTsxResult> {
+  return compileTsxAtWorkRoot(input, WORK_ROOT);
+}
+
+export async function compileTsxAtWorkRootForTests(
+  input: CompileTsxInput,
+  workRoot: string,
+): Promise<CompileTsxResult> {
+  return compileTsxAtWorkRoot(input, workRoot);
+}
+
+async function compileTsxAtWorkRoot(
+  input: CompileTsxInput,
+  workRoot: string,
+): Promise<CompileTsxResult> {
   const astErrors = validateTsxAst(input.source);
   if (astErrors.length > 0) {
     throw new FacetError("tsx_ast_denied", "TSX source violates the capability policy", {
@@ -52,14 +73,17 @@ export async function compileTsx(input: CompileTsxInput): Promise<CompileTsxResu
     });
   }
 
-  mkdirSync(OUT_DIR, { recursive: true, mode: 0o700 });
-  await Bun.write(ARTIFACT_ENTRY, input.source);
-  if (input.execution === "interactive")
-    await Bun.write(INTERACTIVE_ENTRY, INTERACTIVE_MOUNT_ENTRY);
-  rmSync(OUTPUT, { force: true });
+  const artifactEntry = join(workRoot, "artifact.tsx");
+  const interactiveEntry = join(workRoot, "interactive-entry.tsx");
+  const outDir = join(workRoot, "out");
+  const output = join(outDir, "artifact.js");
+  mkdirSync(outDir, { recursive: true, mode: 0o700 });
+  await Bun.write(artifactEntry, input.source);
+  if (input.execution === "interactive") await Bun.write(interactiveEntry, INTERACTIVE_MOUNT_ENTRY);
+  rmSync(output, { force: true });
   const result = await Bun.build({
-    entrypoints: [resolve(input.execution === "interactive" ? INTERACTIVE_ENTRY : ARTIFACT_ENTRY)],
-    outdir: resolve(OUT_DIR),
+    entrypoints: [resolve(input.execution === "interactive" ? interactiveEntry : artifactEntry)],
+    outdir: resolve(outDir),
     target: "browser",
     format: "esm",
     minify: false,
@@ -75,7 +99,8 @@ export async function compileTsx(input: CompileTsxInput): Promise<CompileTsxResu
       outputCount: result.outputs.length,
     });
   }
-  const bytes = new Uint8Array(await result.outputs[0]!.arrayBuffer());
+  const bytes = canonicalizeBundleBytes(new Uint8Array(await result.outputs[0]!.arrayBuffer()));
+  await Bun.write(output, bytes);
   if (bytes.byteLength > TSX_COMPILED_OUTPUT_CAP_BYTES) {
     throw new FacetError("tsx_compile_output_cap", "TSX compiler output exceeded the byte cap", {
       retryable: false,
@@ -88,7 +113,7 @@ export async function compileTsx(input: CompileTsxInput): Promise<CompileTsxResu
   }
 
   try {
-    const moduleUrl = `${Bun.pathToFileURL(OUTPUT).href}?sha=${bundleSha256}`;
+    const moduleUrl = `${Bun.pathToFileURL(output).href}?sha=${bundleSha256}`;
     const module = (await import(moduleUrl)) as { default?: unknown };
     const renderToStaticMarkup = (await import("react-dom/server")).renderToStaticMarkup;
     if (typeof module.default !== "function") {
