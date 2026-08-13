@@ -671,6 +671,7 @@ async function injectBytesAndAwaitRenderComplete(
   bytes: Uint8Array,
   artifactType: string,
   renderer: string,
+  nonce: string,
   timeoutMs: number,
 ): Promise<void> {
   const encoded = Buffer.from(bytes).toString("base64");
@@ -681,7 +682,7 @@ async function injectBytesAndAwaitRenderComplete(
       var control=new MessageChannel();
       window.__differentialEvents=[];
       control.port1.onmessage=function(ev){window.__differentialEvents.push(ev.data);};
-      window.postMessage({facetHandshake:'ports',nonce:''},'*',[ingress.port2,control.port2]);
+      window.postMessage({facetHandshake:'ports',nonce:${JSON.stringify(nonce)}},'*',[ingress.port2,control.port2]);
       window.__differentialIngress=ingress.port1;
     })()`,
   });
@@ -822,7 +823,7 @@ for (const row of CORPUS) {
     await target.session.send("Page.navigate", { url: `file://${harnessPath}` });
     await waitForHarnessReady(target);
     const frame = await resolveMainFrame(target);
-    await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", 30_000);
+    await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", harness.nonce, 30_000);
 
     // Production observation: the verdict layer's own probe function.
     // If a regression zeros a count in countSnapshotHtml, this is what
@@ -901,7 +902,7 @@ test("production probeProtocolSnapshot increments tableCount on <table> elements
   await target.session.send("Page.navigate", { url: `file://${harnessPath}` });
   await waitForHarnessReady(target);
   const frame = await resolveMainFrame(target);
-  await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", 30_000);
+  await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", harness.nonce, 30_000);
   const observation = await probeProtocolSnapshot(target.session, frame);
   expect(observation.html).toBeDefined();
   expect(observation.html?.tableCount).toBe(1);
@@ -921,7 +922,7 @@ test("production probeProtocolSnapshot increments externalImageCount on https <i
   await target.session.send("Page.navigate", { url: `file://${harnessPath}` });
   await waitForHarnessReady(target);
   const frame = await resolveMainFrame(target);
-  await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", 30_000);
+  await injectBytesAndAwaitRenderComplete(target, bytes, "html", "svg", harness.nonce, 30_000);
   const observation = await probeProtocolSnapshot(target.session, frame);
   expect(observation.html).toBeDefined();
   expect(observation.html?.imageCount).toBe(1);
