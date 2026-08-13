@@ -47,14 +47,17 @@ export function decodeArtifactBytes(bytes: Uint8Array): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
+export const RENDER_ERROR_ATTRIBUTE = "data-facet-error";
+export const RENDER_ERROR_ELEMENT = "facet-error";
+
 /**
  * Append the renderer-owned error marker. The element carries
  * `data-facet-error` so every observation channel (page shim,
  * protocol probes) counts it the same way.
  */
 export function appendRenderError(container: HTMLElement, message: string): void {
-  const el = document.createElement("facet-error");
-  el.setAttribute("data-facet-error", "true");
+  const el = document.createElement(RENDER_ERROR_ELEMENT);
+  el.setAttribute(RENDER_ERROR_ATTRIBUTE, "true");
   el.textContent = message;
   container.appendChild(el);
 }

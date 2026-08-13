@@ -36,6 +36,8 @@ const failureSession: VerifierCdpSession = {
     return { result: { exceptionDetails: { text: "evaluation failed" } } } as never;
   },
   async detach(): Promise<void> {},
+  on(): void {},
+  off(): void {},
 };
 
 describe("isolated probe failure", () => {
@@ -77,6 +79,8 @@ describe("isolated probe — html marker scoping", () => {
         return { result: { value } } as never;
       },
       async detach(): Promise<void> {},
+      on(): void {},
+      off(): void {},
     };
 
     const observed = await probeIsolatedCounts(session, 7);

@@ -83,6 +83,8 @@ function session(): VerifierCdpSession {
       throw new Error(`unexpected CDP method: ${method}`);
     },
     async detach(): Promise<void> {},
+    on(): void {},
+    off(): void {},
   };
 }
 
@@ -161,6 +163,8 @@ test("HTML marker nested under an SVG marker is not an outermost HTML root in ei
       throw new Error(`unexpected CDP method: ${method}`);
     },
     async detach(): Promise<void> {},
+    on(): void {},
+    off(): void {},
   };
 
   expect((await probeProtocolSnapshot(cdp, childFrame)).html).toBeUndefined();

@@ -22,9 +22,19 @@ export interface CompileTsxResult {
 }
 
 const WORK_ROOT = join(resolve(import.meta.dir, "../../../.."), ".facet-tsx-worker");
-const ENTRY = join(WORK_ROOT, "artifact.tsx");
+const ARTIFACT_ENTRY = join(WORK_ROOT, "artifact.tsx");
+const INTERACTIVE_ENTRY = join(WORK_ROOT, "interactive-entry.tsx");
 const OUT_DIR = join(WORK_ROOT, "out");
 const OUTPUT = join(OUT_DIR, "artifact.js");
+
+const INTERACTIVE_MOUNT_ENTRY = [
+  'import { createElement } from "react";',
+  'import { createRoot } from "react-dom/client";',
+  'import Artifact from "./artifact";',
+  'const mount = document.getElementById("facet-tsx-mount");',
+  'if (mount === null) throw new Error("interactive TSX mount is missing");',
+  "createRoot(mount).render(createElement(Artifact));",
+].join("\n");
 
 function typedCompileError(
   message: string,
@@ -43,10 +53,12 @@ export async function compileTsx(input: CompileTsxInput): Promise<CompileTsxResu
   }
 
   mkdirSync(OUT_DIR, { recursive: true, mode: 0o700 });
-  await Bun.write(ENTRY, input.source);
+  await Bun.write(ARTIFACT_ENTRY, input.source);
+  if (input.execution === "interactive")
+    await Bun.write(INTERACTIVE_ENTRY, INTERACTIVE_MOUNT_ENTRY);
   rmSync(OUTPUT, { force: true });
   const result = await Bun.build({
-    entrypoints: [resolve(ENTRY)],
+    entrypoints: [resolve(input.execution === "interactive" ? INTERACTIVE_ENTRY : ARTIFACT_ENTRY)],
     outdir: resolve(OUT_DIR),
     target: "browser",
     format: "esm",

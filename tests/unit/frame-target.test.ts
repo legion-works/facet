@@ -72,6 +72,8 @@ test("nested owner selection ignores host decoys and selects the renderer-owned 
       throw new Error(`unexpected CDP method: ${method}`);
     },
     async detach(): Promise<void> {},
+    on(): void {},
+    off(): void {},
   };
 
   await expect(resolveNestedArtifactFrame(session, outerFrame)).resolves.toEqual({

@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
 
 import type { ProtocolObservation } from "../../src/shared/contracts/validation";
-import { observationsDiverge, type ArtifactObservation } from "../../src/validation/tier1/runner";
+import type { VerifierCdpSession } from "../../src/validation/tier1/browser-process";
+import {
+  RuntimeExceptionCollector,
+  observationsDiverge,
+  type ArtifactObservation,
+} from "../../src/validation/tier1/runner";
 import { deriveVerdict } from "../../src/validation/tier1/verdict";
 
 const observation = (overrides: Partial<ProtocolObservation> = {}): ProtocolObservation => ({
@@ -58,3 +63,41 @@ test.each([
     ).toBe("tampered");
   },
 );
+
+test("runtime exceptions are scoped to the nested artifact frame", () => {
+  const listeners = new Map<string, (params: unknown) => void>();
+  const session: VerifierCdpSession = {
+    async send(): Promise<never> {
+      throw new Error("unused");
+    },
+    on(event, listener): void {
+      listeners.set(event, listener);
+    },
+    off(event): void {
+      listeners.delete(event);
+    },
+    async detach(): Promise<void> {},
+  };
+  const collector = new RuntimeExceptionCollector(session);
+  listeners.get("Runtime.executionContextCreated")?.({
+    context: { id: 1, auxData: { frameId: "outer" } },
+  });
+  listeners.get("Runtime.executionContextCreated")?.({
+    context: { id: 2, auxData: { frameId: "nested-artifact" } },
+  });
+  listeners.get("Runtime.exceptionThrown")?.({
+    exceptionDetails: { executionContextId: 1, text: "Uncaught Error: outer frame failure" },
+  });
+  listeners.get("Runtime.exceptionThrown")?.({
+    exceptionDetails: { executionContextId: 2, text: "Uncaught Error: nested failure" },
+  });
+
+  expect(collector.errorsForFrame("outer")).toEqual([
+    { code: "runtime_exception", message: "Uncaught Error: outer frame failure" },
+  ]);
+  expect(collector.errorsForFrame("nested-artifact")).toEqual([
+    { code: "runtime_exception", message: "Uncaught Error: nested failure" },
+  ]);
+  collector.close();
+  expect(listeners).toEqual(new Map());
+});

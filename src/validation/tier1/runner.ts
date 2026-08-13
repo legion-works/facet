@@ -75,6 +75,7 @@ import { readPidStartTimeTicks } from "../../shared/util/process";
  * boundary so a poison artifact cannot blow out the evidence dir.
  */
 const CONSOLE_SUMMARY_CUP_BYTES = 64 * 1024;
+const RUNTIME_EXCEPTION_CAP = 16;
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 
 /** Probe the pinned wrapper and browser before selecting Tier 1. */
@@ -196,6 +197,7 @@ async function runTier1Attempt(
     });
   const profileDir = mkdtempSync(join(tmpdir(), "facet-tier1-host-"));
   let target: VerifierTarget | undefined;
+  let runtimeExceptions: RuntimeExceptionCollector | undefined;
   let targetStartTime = 0;
   let hostHtmlPath: string | undefined;
   const hostDir = mkdtempSync(join(tmpdir(), "facet-tier1-hostdir-"));
@@ -221,6 +223,7 @@ async function runTier1Attempt(
     traceTier1("launch:start", startedAt);
     target = await browser.launch();
     traceTier1("launch:complete", startedAt, `pid=${target.pid}`);
+    runtimeExceptions = new RuntimeExceptionCollector(target.session);
     // Snapshot the OS start time NOW so the wedge teardown can confirm
     // the pid still belongs to this browser before signaling it (a
     // dead browser's pid can be reused by an unrelated process).
@@ -238,6 +241,7 @@ async function runTier1Attempt(
     traceTier1("host-page:complete", startedAt);
     writeFileSync(hostHtmlPath, html, "utf8");
     traceTier1("cdp:enable:start", startedAt);
+    await target.session.send("Runtime.enable");
     await target.session.send("Page.enable");
     traceTier1("cdp:enable:complete", startedAt);
     await configureTier1Viewport(target.session);
@@ -286,12 +290,14 @@ async function runTier1Attempt(
       target.session,
       artifactFrame,
       isolated.executionContextId,
+      interactiveTsx ? runtimeExceptions!.errorsForFrame(artifactFrame.frameId) : [],
     );
     const secondObservation = interactiveTsx
       ? await waitForStabilityObservation(
           target.session,
           artifactFrame,
           isolated.executionContextId,
+          () => runtimeExceptions!.errorsForFrame(artifactFrame.frameId),
         )
       : firstObservation;
     const protocolObservation = secondObservation.protocol;
@@ -378,6 +384,7 @@ async function runTier1Attempt(
     }
     throw new FacetError("tier1_protocol_error", message, { retryable: false, cause: error });
   } finally {
+    runtimeExceptions?.close();
     if (target !== undefined) {
       if (wedged && target.pid > 0 && readPidStartTimeTicks(target.pid) === targetStartTime) {
         // A wedged transport makes close() pend on the dead pipe;
@@ -513,8 +520,9 @@ async function waitForRenderComplete(
 function mergeProtocol(
   snapshot: ProtocolObservation,
   getDocument: ProtocolObservation,
+  runtimeErrors: readonly { readonly code: string; readonly message: string }[] = [],
 ): ProtocolObservation {
-  const errors = [...snapshot.discriminativeErrors];
+  const errors = [...snapshot.discriminativeErrors, ...runtimeErrors];
   const counts = [
     ["rendererRootSvg", snapshot.rendererRootSvgCount, getDocument.rendererRootSvgCount],
     ["graph", snapshot.graphCount, getDocument.graphCount],
@@ -580,6 +588,77 @@ export interface ArtifactObservation {
   readonly isolated: ProtocolObservation | null;
 }
 
+interface RuntimeExceptionDetails {
+  readonly executionContextId?: number;
+  readonly text?: string;
+  readonly exception?: {
+    readonly description?: string;
+    readonly value?: unknown;
+  };
+}
+
+interface RuntimeExecutionContextCreated {
+  readonly context?: {
+    readonly id?: number;
+    readonly auxData?: { readonly frameId?: string };
+  };
+}
+
+interface RuntimeExceptionThrown {
+  readonly exceptionDetails?: RuntimeExceptionDetails;
+}
+
+/**
+ * Runtime exceptions are protocol authority: the page cannot erase an event
+ * that CDP delivered before either DOM observation runs.
+ */
+export class RuntimeExceptionCollector {
+  private readonly frameByExecutionContext = new Map<number, string>();
+  private readonly exceptions: Array<{
+    readonly executionContextId: number;
+    readonly message: string;
+  }> = [];
+  private readonly onContextCreated = (params: unknown): void => {
+    const created = params as RuntimeExecutionContextCreated;
+    const id = created.context?.id;
+    const frameId = created.context?.auxData?.frameId;
+    if (typeof id === "number" && typeof frameId === "string") {
+      this.frameByExecutionContext.set(id, frameId);
+    }
+  };
+  private readonly onExceptionThrown = (params: unknown): void => {
+    if (this.exceptions.length >= RUNTIME_EXCEPTION_CAP) return;
+    const details = (params as RuntimeExceptionThrown).exceptionDetails;
+    const executionContextId = details?.executionContextId;
+    if (typeof executionContextId !== "number") return;
+    const message = runtimeExceptionMessage(details);
+    this.exceptions.push({ executionContextId, message });
+  };
+
+  constructor(private readonly session: VerifierCdpSession) {
+    session.on("Runtime.executionContextCreated", this.onContextCreated);
+    session.on("Runtime.exceptionThrown", this.onExceptionThrown);
+  }
+
+  errorsForFrame(frameId: string): readonly { readonly code: string; readonly message: string }[] {
+    return this.exceptions
+      .filter((entry) => this.frameByExecutionContext.get(entry.executionContextId) === frameId)
+      .map((entry) => ({ code: "runtime_exception", message: entry.message }));
+  }
+
+  close(): void {
+    this.session.off("Runtime.executionContextCreated", this.onContextCreated);
+    this.session.off("Runtime.exceptionThrown", this.onExceptionThrown);
+  }
+}
+
+function runtimeExceptionMessage(details: RuntimeExceptionDetails | undefined): string {
+  if (typeof details?.exception?.description === "string") return details.exception.description;
+  if (typeof details?.exception?.value === "string") return details.exception.value;
+  if (typeof details?.text === "string") return details.text;
+  return "runtime exception";
+}
+
 export function authorityChannelsDiverge(
   protocol: ProtocolObservation,
   isolated: ProtocolObservation | null,
@@ -604,20 +683,22 @@ async function observeArtifact(
   session: VerifierCdpSession,
   frame: { readonly frameId: string; readonly url: string },
   executionContextId: number,
+  runtimeErrors: readonly { readonly code: string; readonly message: string }[],
 ): Promise<ArtifactObservation> {
   const snapshot = await probeProtocolSnapshot(session, frame);
   const document = await probeProtocolGetDocument(session, frame);
   const isolated = await probeIsolatedCounts(session, executionContextId);
-  return { protocol: mergeProtocol(snapshot, document), isolated };
+  return { protocol: mergeProtocol(snapshot, document, runtimeErrors), isolated };
 }
 
 async function waitForStabilityObservation(
   session: VerifierCdpSession,
   frame: { readonly frameId: string; readonly url: string },
   executionContextId: number,
+  runtimeErrors: () => readonly { readonly code: string; readonly message: string }[],
 ): Promise<ArtifactObservation> {
   await Bun.sleep(TSX_STABILITY_WINDOW_MS);
-  return observeArtifact(session, frame, executionContextId);
+  return observeArtifact(session, frame, executionContextId, runtimeErrors());
 }
 
 interface EvidenceCapture {

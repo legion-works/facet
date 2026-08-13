@@ -101,6 +101,8 @@ describe("Tier 1 screenshot evidence", () => {
         calls.push(`${method}:${JSON.stringify(params ?? {})}`);
         return {} as T;
       },
+      on: () => {},
+      off: () => {},
       detach: async () => {},
     };
 
@@ -127,6 +129,8 @@ describe("Tier 1 screenshot evidence", () => {
         calls.push(params === undefined ? { method } : { method, params });
         return { data: calls.length === 1 ? oversized : viewportOnly } as T;
       },
+      on: () => {},
+      off: () => {},
       detach: async () => {},
     };
 
@@ -155,7 +159,12 @@ describe("Tier 1 screenshot evidence", () => {
 
   test("retries a bounded screenshot capture before recording it as unavailable", async () => {
     let attempts = 0;
-    const session = { send: async <T = unknown>() => ({}) as T, detach: async () => {} };
+    const session = {
+      send: async <T = unknown>() => ({}) as T,
+      on: () => {},
+      off: () => {},
+      detach: async () => {},
+    };
     const result = await captureScreenshotWithRetry(session, {
       attempts: 2,
       timeoutMs: 25,
@@ -173,7 +182,12 @@ describe("Tier 1 screenshot evidence", () => {
 
   test("records a screenshot-unavailable marker after bounded capture retries exhaust", async () => {
     const startedAt = performance.now();
-    const session = { send: async <T = unknown>() => ({}) as T, detach: async () => {} };
+    const session = {
+      send: async <T = unknown>() => ({}) as T,
+      on: () => {},
+      off: () => {},
+      detach: async () => {},
+    };
     const result = await captureScreenshotWithRetry(session, {
       attempts: 2,
       timeoutMs: 25,

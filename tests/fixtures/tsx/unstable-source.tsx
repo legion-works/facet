@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { createRoot } from "react-dom/client";
 
 export default function DelayedStructure() {
   const [ready, setReady] = useState(false);
@@ -18,6 +17,3 @@ export default function DelayedStructure() {
     <p>Loading</p>
   );
 }
-
-const mount = document.getElementById("facet-tsx-mount");
-if (mount !== null) createRoot(mount).render(<DelayedStructure />);

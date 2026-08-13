@@ -78,6 +78,14 @@ class PuppeteerCdpSessionAdapter implements VerifierCdpSession {
     }
   }
 
+  on(event: string, listener: (params: unknown) => void): void {
+    this.inner.on(event as never, listener as never);
+  }
+
+  off(event: string, listener: (params: unknown) => void): void {
+    this.inner.off(event as never, listener as never);
+  }
+
   async detach(): Promise<void> {
     try {
       await this.inner.detach();

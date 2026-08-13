@@ -29,6 +29,8 @@ const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
  */
 export interface VerifierCdpSession {
   send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
+  on(event: string, listener: (params: unknown) => void): void;
+  off(event: string, listener: (params: unknown) => void): void;
   detach(): Promise<void>;
 }
 
