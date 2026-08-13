@@ -279,8 +279,12 @@ jobs:
           - canvas-chart-tier1.test.ts
           - csp-consumer-baseline.test.ts
           - egress.test.ts
+          - gallery-contrast.test.ts
+          - gallery-interactive-tsx.test.ts
           - gallery-render.test.ts
           - gallery-geometry.test.ts
+          - gallery-static-tsx.test.ts
+          - gallery-tsx-styles.test.ts
           - gate-forgery.test.ts
           - harness-recovery.test.ts
           - html-differential.test.ts
@@ -294,7 +298,13 @@ jobs:
           - screenshot-evidence-failure.test.ts
           - secure-cli-tier1.test.ts
           - tsx-interactive-isolation.test.ts
-          - tsx-interactive-verdict.test.ts
+          - tsx-interactive-verdict-empty.test.ts
+          - tsx-interactive-verdict-non-component.test.ts
+          - tsx-interactive-verdict-rejected.test.ts
+          - tsx-interactive-verdict-stable.test.ts
+          - tsx-interactive-verdict-starter.test.ts
+          - tsx-interactive-verdict-throwing.test.ts
+          - tsx-interactive-verdict-unstable.test.ts
           - tsx-interactive.test.ts
           - tsx-measurement.test.ts
           - tsx-nested-frame-selection.test.ts
@@ -328,7 +338,7 @@ jobs:
         name: Tier 1 acceptance test
         run: |
           mkdir -p test-results
-          FACET_LIVE_GALLERY="${{ matrix.test == 'gallery-geometry.test.ts' && '1' || '' }}" bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
+          FACET_LIVE_GALLERY="${{ contains('gallery-contrast.test.ts,gallery-geometry.test.ts,gallery-interactive-tsx.test.ts,gallery-static-tsx.test.ts,gallery-tsx-styles.test.ts', matrix.test) && '1' || '' }}" bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
       - name: summarize Tier 1 acceptance
         if: always()
         shell: bash

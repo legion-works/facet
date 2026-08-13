@@ -30,16 +30,8 @@ function galleryBrowser(): PuppeteerTier1Browser {
 
 const browser = galleryBrowser();
 const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
-// probeAvailability() launches a REAL browser through the netns wrapper and
-// tears it down. Doing that at module level ran it on EVERY suite run for a
-// test that only executes under FACET_LIVE_GALLERY=1 — and a browser
-// lifecycle completing before the next file's service exists is the observed
-// trigger for a hung response in the following test.
-const availability = liveGateEnabled
-  ? await browser.probeAvailability()
-  : { available: false, reason: "live gallery gate disabled" };
 
-test.skipIf(!liveGateEnabled || !availability.available)(
+test.skipIf(!liveGateEnabled)(
   "real gallery route mounts an opaque frame and renders a canvas chart",
   async () => {
     const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-acceptance-"));
@@ -185,5 +177,3 @@ if (!liveGateEnabled)
   console.warn(
     "SKIP gallery-render.test.ts: set FACET_LIVE_GALLERY=1 to run the live browser gate",
   );
-else if (!availability.available)
-  console.warn(`SKIP gallery-render.test.ts: pinned browser unavailable — ${availability.reason}`);
