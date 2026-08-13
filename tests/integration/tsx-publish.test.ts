@@ -176,29 +176,139 @@ describe("TSX Tier 0 publish path", () => {
     }
   });
 
-  test("AST-denied source records an error without compiled evidence", async () => {
+  test("AST-denied capabilities stop at Tier 0 without compiled evidence", async () => {
+    const client = await start();
+    const db = new Database(join(root, "facet.sqlite"));
+    try {
+      for (const [label, sourceText, expectedCode] of [
+        [
+          "fetch",
+          `export default function App(){fetch("/x");return <p>Denied</p>;}`,
+          "tsx_capability_fetch",
+        ],
+        [
+          "eval",
+          `export default function App(){eval("1");return <p>Denied</p>;}`,
+          "tsx_capability_eval",
+        ],
+        [
+          "function",
+          `export default function App(){new Function("return 1");return <p>Denied</p>;}`,
+          "tsx_capability_function_constructor",
+        ],
+        [
+          "import",
+          `export default function App(){void import("denied");return <p>Denied</p>;}`,
+          "tsx_capability_dynamic_import",
+        ],
+        [
+          "worker",
+          `export default function App(){new Worker("/worker.js");return <p>Denied</p>;}`,
+          "tsx_capability_worker",
+        ],
+      ] as const) {
+        const denied = new TextEncoder().encode(sourceText);
+        const published = await publishArtifact(client, {
+          artifactType: "tsx",
+          bytes: denied.slice().buffer as ArrayBuffer,
+          execution: "interactive",
+        });
+        const row = db
+          .query(
+            `SELECT render_runs.status, render_runs.compiled_path, render_runs.observed_json
+             FROM render_runs
+             JOIN revisions ON revisions.id = render_runs.revision_id
+             WHERE revisions.sha256 = ?
+             ORDER BY render_runs.finished_at DESC
+             LIMIT 1`,
+          )
+          .get(published.revisionSha) as {
+          status: string;
+          compiled_path: string | null;
+          observed_json: string;
+        };
+        expect({
+          label,
+          status: row.status,
+          compiledPath: row.compiled_path,
+          observed: JSON.parse(row.observed_json),
+        }).toMatchObject({
+          label,
+          status: "error",
+          compiledPath: null,
+          observed: {
+            errorCount: 1,
+            discriminativeErrors: [expect.objectContaining({ code: expectedCode })],
+          },
+        });
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  test("static TSX HTML-policy violations retain the original source for export", async () => {
     const client = await start();
     const denied = new TextEncoder().encode(
-      `export default function App(){fetch("/x");return null;}`,
+      `import React from "react";
+export default function App(){return <main><h1>Policy probe</h1><script src="https://example.invalid/probe.js" /></main>;}`,
     );
-    await publishArtifact(client, {
+    const published = await publishArtifact(client, {
       artifactType: "tsx",
       bytes: denied.slice().buffer as ArrayBuffer,
       execution: "static",
     });
-    const db = new Database(join(root, "facet.sqlite"));
-    try {
-      const row = db
-        .query(
-          "SELECT status, compiled_path, observed_json FROM render_runs ORDER BY finished_at DESC LIMIT 1",
-        )
-        .get() as { status: string; compiled_path: string | null; observed_json: string };
-      expect(row.status).toBe("error");
-      expect(row.compiled_path).toBeNull();
-      expect(row.observed_json).toContain("tsx_capability_fetch");
-    } finally {
-      db.close();
-    }
+    const readBack = await client.sendCommand({
+      command: "readBack",
+      requestId: crypto.randomUUID(),
+      artifactId: published.artifactId,
+      revisionSha: published.revisionSha,
+      tier: 0,
+    });
+    const exported = await client.sendCommand({
+      command: "export",
+      requestId: crypto.randomUUID(),
+      artifactId: published.artifactId,
+      revisionSha: published.revisionSha,
+      format: "source",
+    });
+
+    expect({
+      tier1Status: published.tier1Status,
+      readBack,
+      exported,
+    }).toMatchObject({
+      tier1Status: null,
+      readBack: {
+        ok: true,
+        data: {
+          command: "readBack",
+          verdict: {
+            status: "error",
+            execution: "static",
+            observed: {
+              errorCount: 2,
+              discriminativeErrors: expect.arrayContaining([
+                expect.objectContaining({ code: "html_denied_element" }),
+              ]),
+            },
+          },
+        },
+      },
+      exported: {
+        ok: true,
+        data: {
+          command: "export",
+          bytes: Buffer.from(denied).toString("base64"),
+          sidecar: {
+            verdict: {
+              status: "error",
+              execution: "static",
+            },
+          },
+        },
+      },
+    });
   });
 
   test("compile-failing interactive TSX records its Tier 0 error without invoking Tier 1", async () => {

@@ -237,7 +237,10 @@ export async function runCli(
     return { code: EXIT_CODES.OK, spawnedPid: null };
   }
   if (parsed.kind === "usage") {
-    const env1 = buildUsageError(parsed.message, { reason: "usage_error" });
+    const env1 = buildUsageError(parsed.message, {
+      reason: "usage_error",
+      ...parsed.details,
+    });
     printEnvelope(io.stdout, env1);
     return { code: EXIT_CODES.USAGE, spawnedPid: null };
   }

@@ -35,7 +35,11 @@ export type ParsedCommand =
       readonly format: "text" | "json";
       readonly jsonFlag: boolean;
     }
-  | { readonly kind: "usage"; readonly message: string };
+  | {
+      readonly kind: "usage";
+      readonly message: string;
+      readonly details?: Readonly<Record<string, string>>;
+    };
 
 /**
  * Per-verb flag surface. Each entry is the list of accepted flags
@@ -216,6 +220,7 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
         return {
           kind: "usage",
           message: `Flag '${flag}' must be one of: ${def.values.join(", ")} (got '${value}')`,
+          details: { flag, allowedValues: def.values.join(", ") },
         };
       }
       args[flag.slice(2)] = value;

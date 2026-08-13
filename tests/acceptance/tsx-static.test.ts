@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 
 import { publishFixture, readBackFixture } from "../helpers/facet-testkit";
 
@@ -17,12 +18,37 @@ test("static TSX renders through the shared HTML path in Tier 1", async () => {
     tier: 1,
   });
 
-  expect({ status: published.tier1Status, observed: verdict.observed }).toEqual({
+  expect({
+    status: published.tier1Status,
+    execution: verdict.execution,
+    observed: verdict.observed,
+    screenshotPath: published.tier1ScreenshotPath,
+    screenshotError: published.tier1ScreenshotError,
+  }).toEqual({
     status: "ok",
-    observed: expect.objectContaining({
-      html: expect.objectContaining({ rendererRootCount: 1 }),
+    execution: "static",
+    observed: {
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+      externalImageCount: 0,
+      html: {
+        rendererRootCount: 1,
+        headingCount: 0,
+        tableCount: 0,
+        listCount: 0,
+        imageCount: 0,
+        canvasCount: 0,
+        externalImageCount: 0,
+      },
+      viewBoxes: [],
       errorCount: 0,
-    }),
+      discriminativeErrors: [],
+    },
+    screenshotPath: expect.any(String),
+    screenshotError: null,
   });
-  expect(verdict.execution).toBe("static");
+  expect(existsSync(published.tier1ScreenshotPath!)).toBe(true);
 }, 90_000);

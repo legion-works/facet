@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 
 import { readBackFixture, publishFixture } from "../helpers/facet-testkit";
 
@@ -24,18 +25,39 @@ test("interactive TSX records a nested-frame Tier 1 verdict", async () => {
     tier: 1,
   });
 
-  expect(published.tier1Status).toBe("ok");
-  expect(verdict).toEqual(
-    expect.objectContaining({
-      status: "ok",
-      execution: "interactive",
-      observed: expect.objectContaining({
-        html: expect.objectContaining({ headingCount: 1 }),
-        errorCount: 0,
-        discriminativeErrors: [],
-      }),
-    }),
-  );
+  expect({
+    status: published.tier1Status,
+    execution: verdict.execution,
+    observed: verdict.observed,
+    screenshotPath: published.tier1ScreenshotPath,
+    screenshotError: published.tier1ScreenshotError,
+  }).toEqual({
+    status: "ok",
+    execution: "interactive",
+    observed: {
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+      externalImageCount: 0,
+      html: {
+        rendererRootCount: 1,
+        headingCount: 1,
+        tableCount: 0,
+        listCount: 0,
+        imageCount: 0,
+        canvasCount: 0,
+        externalImageCount: 0,
+      },
+      viewBoxes: [],
+      errorCount: 0,
+      discriminativeErrors: [],
+    },
+    screenshotPath: expect.any(String),
+    screenshotError: null,
+  });
+  expect(existsSync(published.tier1ScreenshotPath!)).toBe(true);
 }, 90_000);
 
 test("interactive TSX reports delayed structure as unstable", async () => {

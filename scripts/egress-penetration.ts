@@ -182,6 +182,48 @@ export function buildArtifact(host: string, port: number): string {
 }
 
 /**
+ * Build an interactive TSX probe whose capability aliases deliberately evade
+ * the publish-time direct-use checks, leaving CSP and the netns as the runtime
+ * enforcement boundary. The test fixture owns the external sink address.
+ */
+export function buildTsxRuntimeEgressFixture(host: string, port: number): string {
+  const origin = `http://${host}:${port}`;
+  const socket = `ws://${host}:${port}`;
+  return `import React, { useEffect } from "react";
+
+export default function RuntimeEgressProbe() {
+  useEffect(() => {
+    const {
+      fetch: runtimeFetch,
+      XMLHttpRequest: RuntimeXHR,
+      WebSocket: RuntimeWebSocket,
+      EventSource: RuntimeEventSource,
+      Worker: RuntimeWorker,
+      SharedWorker: RuntimeSharedWorker,
+    } = globalThis;
+    const target = ${JSON.stringify(origin)};
+    const socket = ${JSON.stringify(socket)};
+    const attempt = (operation: () => void) => {
+      try { operation(); } catch {};
+    };
+    attempt(() => { void runtimeFetch(target + "/fetch").catch(() => {}); });
+    attempt(() => { const request = new RuntimeXHR(); request.open("GET", target + "/xhr"); request.send(); });
+    attempt(() => { new RuntimeWebSocket(socket + "/ws"); });
+    attempt(() => { new RuntimeEventSource(target + "/events"); });
+    attempt(() => { new RuntimeWorker(target + "/worker.js"); });
+    attempt(() => { new RuntimeSharedWorker(target + "/shared-worker.js"); });
+    attempt(() => { const image = new Image(); image.src = target + "/image"; document.body.appendChild(image); });
+    attempt(() => { const script = document.createElement("script"); script.src = target + "/script.js"; document.head.appendChild(script); });
+    attempt(() => { navigator.sendBeacon(target + "/beacon", "x"); });
+    attempt(() => { void window.parent.location.href; });
+  }, []);
+
+  return <main><h1>Runtime egress probe</h1><p>Alias paths reached the runtime boundary.</p></main>;
+}
+`;
+}
+
+/**
  * Run the penetration harness against the PRODUCTION netns launcher.
  *
  * The harness:

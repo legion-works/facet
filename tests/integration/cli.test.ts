@@ -412,6 +412,113 @@ describe("cli contract — surface", () => {
     expect(request.execution).toBe("interactive");
   });
 
+  test("declares TSX execution mode through literal template argv", async () => {
+    const { env } = makeEnv("tsx-declaration");
+    const originalCwd = process.cwd();
+    process.chdir(resolve(import.meta.dir, "../.."));
+    try {
+      const createIo = makeIo();
+      const createExit = await runCli(
+        ["create", "--project-id", "p", "--slug", "tsx-declaration", "--title", "TSX declaration"],
+        { ...createIo, env },
+      );
+      expect(createExit.code).toBe(0);
+      const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+      if (!created.ok) throw new Error("create must succeed");
+      const artifactId = (created.data["artifact"] as { id: string }).id;
+
+      const staticIo = makeIo();
+      const staticExit = await runCli(
+        [
+          "publish",
+          "--artifact-id",
+          artifactId,
+          "--type",
+          "tsx",
+          "--file",
+          "templates/tsx-status-report.tsx",
+        ],
+        { ...staticIo, env },
+      );
+      expect(staticExit.code).toBe(0);
+      const staticPublished = parseStdoutEnvelope(staticIo.stdoutBuf.value);
+      if (!staticPublished.ok) throw new Error("static template publish must succeed");
+      expect(staticPublished.data["revision"]).toMatchObject({ execution: "static" });
+      const staticRevisionSha = (staticPublished.data["revision"] as { sha256: string }).sha256;
+      const staticReadIo = makeIo();
+      const staticReadExit = await runCli(
+        [
+          "read-back",
+          "--artifact-id",
+          artifactId,
+          "--revision-sha",
+          staticRevisionSha,
+          "--tier",
+          "0",
+        ],
+        { ...staticReadIo, env },
+      );
+      expect(staticReadExit.code).toBe(0);
+      const staticRead = parseStdoutEnvelope(staticReadIo.stdoutBuf.value);
+      if (!staticRead.ok) throw new Error("static template read-back must succeed");
+      expect(staticRead.data["verdict"]).toMatchObject({
+        status: "ok",
+        execution: "static",
+        observed: {
+          errorCount: 0,
+          html: { headingCount: 2, tableCount: 1 },
+        },
+      });
+
+      const interactiveIo = makeIo();
+      const interactiveExit = await runCli(
+        [
+          "publish",
+          "--artifact-id",
+          artifactId,
+          "--type",
+          "tsx",
+          "--execution",
+          "interactive",
+          "--file",
+          "templates/tsx-interactive-counter.tsx",
+        ],
+        { ...interactiveIo, env },
+      );
+      expect(interactiveExit.code).toBe(0);
+      const interactivePublished = parseStdoutEnvelope(interactiveIo.stdoutBuf.value);
+      if (!interactivePublished.ok) throw new Error("interactive template publish must succeed");
+      expect(interactivePublished.data["revision"]).toMatchObject({ execution: "interactive" });
+      const interactiveRevisionSha = (interactivePublished.data["revision"] as { sha256: string })
+        .sha256;
+      const interactiveReadIo = makeIo();
+      const interactiveReadExit = await runCli(
+        [
+          "read-back",
+          "--artifact-id",
+          artifactId,
+          "--revision-sha",
+          interactiveRevisionSha,
+          "--tier",
+          "0",
+        ],
+        { ...interactiveReadIo, env },
+      );
+      expect(interactiveReadExit.code).toBe(0);
+      const interactiveRead = parseStdoutEnvelope(interactiveReadIo.stdoutBuf.value);
+      if (!interactiveRead.ok) throw new Error("interactive template read-back must succeed");
+      expect(interactiveRead.data["verdict"]).toMatchObject({
+        status: "ok",
+        execution: "interactive",
+        observed: {
+          errorCount: 0,
+        },
+      });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   test("publish rejects --execution interactive on non-tsx artifact types", () => {
     for (const type of ["markdown", "html"] as const) {
       expect(() =>
@@ -493,19 +600,40 @@ describe("cli contract — surface", () => {
     const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
     if (envelope.ok) throw new Error("envelope unexpectedly ok");
     expect(envelope.error.code).toBe("invalid_request");
+    expect(envelope.error.details).toEqual({ artifactType: "markdown", execution: "interactive" });
   });
 
-  test("publish rejects an unknown --execution value as a usage error before service startup", async () => {
+  test("publish rejects --execution inferred with its allowed values before service startup", async () => {
     const { env } = makeEnv("execution-unknown");
     const io = makeIo("hello");
     const exit = await runCli(
-      ["publish", "--artifact-id", "artifact-1", "--type", "tsx", "--execution", "side-channel"],
+      ["publish", "--artifact-id", "artifact-1", "--type", "tsx", "--execution", "inferred"],
       { ...io, env },
     );
     expect(exit.code).toBe(64);
     const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
     expect(envelope.ok).toBe(false);
-    if (!envelope.ok) expect(envelope.error.code).toBe("invalid_request");
+    if (!envelope.ok) {
+      expect(envelope.error.code).toBe("invalid_request");
+      expect(envelope.error.message).toContain("static, interactive");
+      expect(envelope.error.details).toEqual({
+        reason: "usage_error",
+        flag: "--execution",
+        allowedValues: "static, interactive",
+      });
+    }
+  });
+
+  test("publish without --type returns the typed allowed-type error", async () => {
+    const { env } = makeEnv("type-omitted");
+    const io = makeIo("hello");
+    const exit = await runCli(["publish", "--artifact-id", "artifact-1"], { ...io, env });
+    expect(exit.code).toBe(0);
+    const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+    if (envelope.ok) throw new Error("envelope unexpectedly ok");
+    expect(envelope.error.code).toBe("invalid_request");
+    expect(envelope.error.message).toContain("markdown, mermaid, svg, chart, html, tsx");
+    expect(envelope.error.details).toEqual({ reason: "invalid_artifact_type" });
   });
 
   test("publish without --renderer preserves the svg request shape", () => {
