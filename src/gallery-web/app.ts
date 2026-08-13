@@ -834,6 +834,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     artifactType: source.artifactType,
     renderer: source.renderer,
     bytes: source.bytes,
+    ...(source.execution === undefined ? {} : { execution: source.execution }),
   });
   const initialEvent = await current.awaitControlEvent("render-complete", DEFAULT_READY_TIMEOUT_MS);
   if (initialEvent === null || observedErrorCount(initialEvent) !== 0)

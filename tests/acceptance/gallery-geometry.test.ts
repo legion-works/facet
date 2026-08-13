@@ -1,13 +1,17 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
-import { createIsolatedWorld } from "../../src/validation/tier1/frame-target";
+import {
+  createIsolatedWorld,
+  resolveNestedArtifactFrame,
+} from "../../src/validation/tier1/frame-target";
 import { resolveLauncher } from "../../src/validation/tier1/launcher";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
@@ -27,13 +31,15 @@ const availability = liveGateEnabled
 async function navigateToArtifact(
   target: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>>,
   client: FacetClient,
-  artifactType: "markdown" | "svg",
+  artifactType: "markdown" | "svg" | "tsx",
   bytes: string,
+  execution?: "static" | "interactive",
 ): Promise<void> {
   const published = await publishArtifact(client, {
     artifactType,
     bytes: new TextEncoder().encode(bytes).buffer as ArrayBuffer,
     slug: `gallery-geometry-${artifactType}`,
+    ...(execution === undefined ? {} : { execution }),
   });
   const opened = await client.sendCommand({
     command: "open",
@@ -98,9 +104,9 @@ async function navigateToArtifact(
   expect(displayed.result?.value).toEqual({ status: "displayed", iframeCount: 1 });
 }
 
-async function artifactWorld(
+async function artifactFrame(
   target: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>>,
-): Promise<number> {
+): Promise<{ frameId: string; url: string }> {
   const tree = (await target.session.send("Page.getFrameTree")) as {
     frameTree: { childFrames?: readonly { frame: { id: string; url: string } }[] };
   };
@@ -116,8 +122,62 @@ async function artifactWorld(
     throw new Error(
       `gallery did not expose its artifact frame to CDP: ${frames.map((child) => child.frame.url).join(", ")}`,
     );
-  return (await createIsolatedWorld(target.session, artifact.frame.id)).executionContextId;
+  return { frameId: artifact.frame.id, url: artifact.frame.url };
 }
+
+async function artifactWorld(
+  target: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>>,
+): Promise<number> {
+  const artifact = await artifactFrame(target);
+  return (await createIsolatedWorld(target.session, artifact.frameId)).executionContextId;
+}
+
+test.skipIf(!liveGateEnabled || !availability.available)(
+  "gallery delivers interactive TSX execution and mounts component structure",
+  async () => {
+    const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-interactive-"));
+    const tier0Runner = createTier0RunnerForTests(0, {});
+    const service = await startFacetService({
+      dbPath: join(envDir, "facet.sqlite"),
+      installTokenPath: join(envDir, "install.token"),
+      promoteTokenPath: join(envDir, "promote.token"),
+      lockPath: join(envDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "gallery-tsx-interactive" }),
+      tier0Runner,
+    });
+    let target: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>> | undefined;
+    try {
+      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+      target = await browser.launch();
+      await navigateToArtifact(
+        target,
+        client,
+        "tsx",
+        readFileSync(join(import.meta.dir, "../../templates/tsx-interactive-counter.tsx"), "utf8"),
+        "interactive",
+      );
+      const outer = await artifactFrame(target);
+      const nested = await resolveNestedArtifactFrame(target.session, outer);
+      const nestedWorld = await createIsolatedWorld(target.session, nested.frameId);
+      const rendered = (await target.session.send("Runtime.evaluate", {
+        contextId: nestedWorld.executionContextId,
+        returnByValue: true,
+        expression: `({ heading: document.querySelector('h1')?.textContent ?? '', button: document.querySelector('button')?.textContent ?? '' })`,
+      })) as { result?: { value?: { heading: string; button: string } } };
+      expect(rendered.result?.value).toEqual({
+        heading: "Interactive counter",
+        button: "Increment",
+      });
+    } finally {
+      await target?.close();
+      await service.stop();
+      tier0Runner.close?.();
+      rmSync(envDir, { recursive: true, force: true });
+    }
+  },
+  90_000,
+);
 
 test.skipIf(!liveGateEnabled || !availability.available)(
   "gallery frame geometry stacks markdown blocks vertically",
