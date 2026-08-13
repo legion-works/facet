@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { parseHTML } from "linkedom";
 
 import { startGallery, type GalleryRuntime } from "../../src/gallery-web/app";
+import { countPageShim } from "../../src/gallery-web/frame/renderers/registry";
 
 type Listener = (event: Record<string, unknown>) => void;
 
@@ -60,8 +62,23 @@ class FakeElement {
   }
 }
 
+function pageShimObserved(body: string): ReturnType<typeof countPageShim> {
+  const globals = globalThis as Record<string, unknown>;
+  const previousDocument = globals.document;
+  const { document } = parseHTML(`<!doctype html><html><body>${body}</body></html>`);
+  globals.document = document;
+  try {
+    return countPageShim();
+  } finally {
+    globals.document = previousDocument;
+  }
+}
+
 class FakeIframe extends FakeElement {
-  constructor(private readonly viewModeEvent: unknown) {
+  constructor(
+    private readonly viewModeEvent: unknown,
+    private readonly observed: ReturnType<typeof countPageShim>,
+  ) {
     super();
   }
 
@@ -69,21 +86,16 @@ class FakeIframe extends FakeElement {
     postMessage: (_message: unknown, _origin: string, ports: MessagePort[]) => {
       const [ingress, control] = ports;
       ingress!.addEventListener("message", () => {
-        control!.postMessage(this.viewModeEvent, []);
-        control!.postMessage(
-          {
-            type: "render-complete",
-            observed: {
-              rendererRootSvgCount: 1,
-              graphCount: 0,
-              mermaidNodeCount: 0,
-              visibleSvgCount: 1,
-              opaqueRegionCount: 0,
-              errorCount: 0,
+        queueMicrotask(() => {
+          control!.postMessage(this.viewModeEvent, []);
+          control!.postMessage(
+            {
+              type: "render-complete",
+              observed: this.observed,
             },
-          },
-          [],
-        );
+            [],
+          );
+        });
       });
       ingress!.start();
       queueMicrotask(() => control!.postMessage({ type: "boot-ready" }, []));
@@ -94,6 +106,7 @@ class FakeIframe extends FakeElement {
 function createRuntime(
   viewModeEvent: unknown = { type: "view-mode", mode: "native" },
   verdict: Record<string, unknown> | null = null,
+  observed = pageShimObserved('<svg data-facet-renderer-root="true" viewBox="0 0 10 10"></svg>'),
 ) {
   const elements = new Map<string, FakeElement>();
   for (const id of [
@@ -127,7 +140,7 @@ function createRuntime(
   const document = {
     getElementById: (id: string) => elements.get(id) ?? null,
     createElement: (tag: string) =>
-      tag === "iframe" ? new FakeIframe(viewModeEvent) : new FakeElement(),
+      tag === "iframe" ? new FakeIframe(viewModeEvent, observed) : new FakeElement(),
     addEventListener: (type: string, listener: Listener) => documentListeners.set(type, listener),
   };
   const windowListeners = new Map<string, Listener>();
@@ -186,6 +199,22 @@ function createRuntime(
 }
 
 describe("gallery shell startup", () => {
+  test("accepts the page-shim observation shape with and without HTML counts", async () => {
+    const svgHarness = createRuntime();
+    await startGallery(svgHarness.runtime);
+    expect(svgHarness.elements.get("facet-status-line")?.textContent).toBe("displayed");
+
+    const htmlHarness = createRuntime(
+      undefined,
+      null,
+      pageShimObserved(
+        '<main data-facet-renderer-root="true"><h1>HTML artifact</h1><img src="https://example.com/report.png"></main>',
+      ),
+    );
+    await startGallery(htmlHarness.runtime);
+    expect(htmlHarness.elements.get("facet-status-line")?.textContent).toBe("displayed");
+  });
+
   test("labels opaque and layout partial verdicts and reports opaque evidence", async () => {
     const harness = createRuntime(undefined, {
       status: "partial:opaque_content",

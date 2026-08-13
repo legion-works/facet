@@ -28,6 +28,7 @@ import type {
   ProtocolObservation,
   RenderStatus,
 } from "../../shared/contracts/validation";
+import { OBSERVED_COUNT_KEYS } from "../../shared/contracts/observed-counts";
 
 // Re-export the protocol observation shape so the verdict tests can
 // typecheck without re-importing the validation contract.
@@ -42,15 +43,7 @@ export type PageShim = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[
 
 export type CountsLike = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[number] | "html">;
 
-const COUNT_COMPARISON_KEYS = [
-  "rendererRootSvgCount",
-  "graphCount",
-  "mermaidNodeCount",
-  "visibleSvgCount",
-  "errorCount",
-  "opaqueRegionCount",
-  "externalImageCount",
-] as const;
+const COUNT_COMPARISON_KEYS = OBSERVED_COUNT_KEYS;
 
 /**
  * Which optional probe channels produced a usable observation. The

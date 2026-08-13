@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ArtifactTypeSchema, RendererSchema } from "./artifact";
+import { HTML_OBSERVED_COUNT_KEYS, OBSERVED_COUNT_KEYS } from "./observed-counts";
 import { TSX_EXECUTION_MODES } from "../tsx/execution";
 
 /**
@@ -84,15 +85,11 @@ export const InsecureMarkerSchema = z.object({
 });
 export type InsecureMarker = z.infer<typeof InsecureMarkerSchema>;
 
-export const HtmlStructureCountsSchema = z.object({
-  rendererRootCount: z.number().int().nonnegative(),
-  headingCount: z.number().int().nonnegative(),
-  tableCount: z.number().int().nonnegative(),
-  listCount: z.number().int().nonnegative(),
-  imageCount: z.number().int().nonnegative(),
-  canvasCount: z.number().int().nonnegative(),
-  externalImageCount: z.number().int().nonnegative(),
-});
+const HtmlObservedCountShape = Object.fromEntries(
+  HTML_OBSERVED_COUNT_KEYS.map((key) => [key, z.number().int().nonnegative()]),
+) as Record<(typeof HTML_OBSERVED_COUNT_KEYS)[number], z.ZodNumber>;
+
+export const HtmlStructureCountsSchema = z.object(HtmlObservedCountShape);
 export type HtmlStructureCounts = z.infer<typeof HtmlStructureCountsSchema>;
 
 /**
@@ -131,13 +128,12 @@ export type LexicalCounters = z.infer<typeof LexicalCountersSchema>;
  * that does not surface it would fail those gates regardless of the
  * status.
  */
+const ObservedCountShape = Object.fromEntries(
+  OBSERVED_COUNT_KEYS.map((key) => [key, z.number().int().nonnegative()]),
+) as Record<(typeof OBSERVED_COUNT_KEYS)[number], z.ZodNumber>;
+
 export const VerdictObservedSchema = z.object({
-  rendererRootSvgCount: z.number().int().nonnegative(),
-  graphCount: z.number().int().nonnegative(),
-  mermaidNodeCount: z.number().int().nonnegative(),
-  visibleSvgCount: z.number().int().nonnegative(),
-  opaqueRegionCount: z.number().int().nonnegative(),
-  externalImageCount: z.number().int().nonnegative(),
+  ...ObservedCountShape,
   html: HtmlStructureCountsSchema.optional(),
   viewBoxes: z.array(z.string()).optional(),
   errorCount: z.number().int().nonnegative(),

@@ -1,6 +1,8 @@
 import type { ArtifactType } from "../../../shared/contracts/artifact-types";
 import { isRenderer, type Renderer as RendererKind } from "../../../shared/contracts/renderers";
 import { HTML_STRUCTURAL_GROUPS } from "../../../shared/html/policy";
+import type { VerdictObserved } from "../../../shared/contracts/validation";
+import type { ObservedCountKey } from "../../../shared/contracts/observed-counts";
 import { isTsxExecutionMode, type TsxExecutionMode } from "../../../shared/tsx/execution";
 
 export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/artifact-types";
@@ -62,24 +64,7 @@ export function appendRenderError(container: HTMLElement, message: string): void
   container.appendChild(el);
 }
 
-export interface PageShimCounts {
-  readonly rendererRootSvgCount: number;
-  readonly graphCount: number;
-  readonly mermaidNodeCount: number;
-  readonly visibleSvgCount: number;
-  readonly opaqueRegionCount: number;
-  readonly externalImageCount: number;
-  readonly errorCount: number;
-  readonly html?: {
-    readonly rendererRootCount: number;
-    readonly headingCount: number;
-    readonly tableCount: number;
-    readonly listCount: number;
-    readonly imageCount: number;
-    readonly canvasCount: number;
-    readonly externalImageCount: number;
-  };
-}
+export type PageShimCounts = Pick<VerdictObserved, ObservedCountKey | "html">;
 
 const RENDERER_ROOT_SELECTOR = 'svg[data-facet-renderer-root="true"]';
 const MARKED_ROOT_SELECTOR = '[data-facet-renderer-root="true"]';

@@ -32,6 +32,12 @@ import {
 import { createChannelPair } from "./frame/channels";
 import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
+import type { HtmlStructureCounts, VerdictObserved } from "../shared/contracts/validation";
+import {
+  HTML_OBSERVED_COUNT_KEYS,
+  OBSERVED_COUNT_KEYS,
+  type ObservedCountKey,
+} from "../shared/contracts/observed-counts";
 import {
   clampZoom,
   resetViewState,
@@ -150,14 +156,7 @@ export type { ViewIntent, ViewState } from "./view-state";
  * Control-port events the frame emits to the shell. The frame's
  * page-shim counts ride `render-complete.observed`.
  */
-interface FrameObserved {
-  readonly rendererRootSvgCount: number;
-  readonly graphCount: number;
-  readonly mermaidNodeCount: number;
-  readonly visibleSvgCount: number;
-  readonly opaqueRegionCount: number;
-  readonly errorCount: number;
-}
+type FrameObserved = Pick<VerdictObserved, ObservedCountKey | "html">;
 
 export interface FrameControlEvent {
   readonly type: string;
@@ -169,41 +168,31 @@ function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function validateFiniteCounts<Key extends string>(
+  value: Record<string, unknown>,
+  keys: readonly Key[],
+): Record<Key, number> | null {
+  const counts = Object.fromEntries(keys.map((key) => [key, value[key]]));
+  return Object.values(counts).every(finite) ? (counts as Record<Key, number>) : null;
+}
+
+function validateHtmlObserved(value: unknown): HtmlStructureCounts | null {
+  if (value === null || typeof value !== "object") return null;
+  const html = value as Record<string, unknown>;
+  if (Object.keys(html).length !== HTML_OBSERVED_COUNT_KEYS.length) return null;
+  return validateFiniteCounts(html, HTML_OBSERVED_COUNT_KEYS) as HtmlStructureCounts | null;
+}
+
 function validateObserved(value: unknown): FrameObserved | null {
   if (value === null || typeof value !== "object") return null;
   const observed = value as Record<string, unknown>;
-  const keys = [
-    "rendererRootSvgCount",
-    "graphCount",
-    "mermaidNodeCount",
-    "visibleSvgCount",
-    "opaqueRegionCount",
-    "errorCount",
-  ];
-  const rendererRootSvgCount = observed.rendererRootSvgCount;
-  const graphCount = observed.graphCount;
-  const mermaidNodeCount = observed.mermaidNodeCount;
-  const visibleSvgCount = observed.visibleSvgCount;
-  const opaqueRegionCount = observed.opaqueRegionCount;
-  const errorCount = observed.errorCount;
-  if (
-    Object.keys(observed).length !== keys.length ||
-    !finite(rendererRootSvgCount) ||
-    !finite(graphCount) ||
-    !finite(mermaidNodeCount) ||
-    !finite(visibleSvgCount) ||
-    !finite(opaqueRegionCount) ||
-    !finite(errorCount)
-  )
-    return null;
-  return {
-    rendererRootSvgCount,
-    graphCount,
-    mermaidNodeCount,
-    visibleSvgCount,
-    opaqueRegionCount,
-    errorCount,
-  };
+  const allowedKeyCount = OBSERVED_COUNT_KEYS.length + (observed.html === undefined ? 0 : 1);
+  if (Object.keys(observed).length !== allowedKeyCount) return null;
+  const counts = validateFiniteCounts(observed, OBSERVED_COUNT_KEYS);
+  if (counts === null) return null;
+  if (observed.html === undefined) return counts;
+  const html = validateHtmlObserved(observed.html);
+  return html === null ? null : { ...counts, html };
 }
 
 function validateFrameControlEvent(value: unknown): FrameControlEvent | null {
