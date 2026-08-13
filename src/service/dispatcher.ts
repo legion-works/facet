@@ -423,7 +423,8 @@ export async function dispatch(
       let tier1Verdict: Tier1Result | null = null;
       if (
         deps.tier1Runner !== undefined &&
-        !(artifactType === "html" && enriched.status === "error")
+        !(artifactType === "html" && enriched.status === "error") &&
+        !(artifactType === "tsx" && enriched.status === "error")
       ) {
         const tier1Input: Tier1Input = Tier1InputSchema.parse({
           ...tier0Input,

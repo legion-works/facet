@@ -38,16 +38,7 @@ export type { ProtocolObservation };
  * can monkey-patch `document.querySelectorAll` and report whatever it
  * likes. The verifier treats shim counts as advisory only.
  */
-export interface PageShim {
-  readonly rendererRootSvgCount: number;
-  readonly graphCount: number;
-  readonly mermaidNodeCount: number;
-  readonly visibleSvgCount: number;
-  readonly opaqueRegionCount: number;
-  readonly externalImageCount: number;
-  readonly errorCount: number;
-  readonly html?: ProtocolObservation["html"];
-}
+export type PageShim = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[number] | "html">;
 
 export type CountsLike = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[number] | "html">;
 
@@ -91,6 +82,8 @@ export interface LifecycleSummary {
   readonly bootReady: boolean;
   readonly renderComplete: boolean;
   readonly structureChanged?: boolean;
+  /** A protocol or isolated-world authority channel diverged at either observation. */
+  readonly channelDivergence?: boolean;
   /** Interactive TSX has no lexical HTML prediction and no trusted outer shim. */
   readonly interactive?: boolean;
 }
@@ -145,6 +138,7 @@ export function deriveVerdict(
   if (!lifecycle.renderComplete) return "timeout";
 
   if (
+    lifecycle.channelDivergence === true ||
     protocolObservation.discriminativeErrors.some((error) => error.code === "protocol_divergence")
   ) {
     return "tampered";

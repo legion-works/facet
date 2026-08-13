@@ -296,6 +296,8 @@ async function runTier1Attempt(
       : firstObservation;
     const protocolObservation = secondObservation.protocol;
     const isolatedObservation = secondObservation.isolated;
+    const channelDivergence =
+      interactiveTsx && observationsDiverge(firstObservation, secondObservation);
 
     const status = deriveVerdict(
       input.lexical,
@@ -306,6 +308,7 @@ async function runTier1Attempt(
         bootReady: shim.bootReady,
         renderComplete: shim.renderComplete,
         interactive: interactiveTsx,
+        channelDivergence,
         structureChanged:
           interactiveTsx && countsDiffer(firstObservation.protocol, secondObservation.protocol),
       },
@@ -572,9 +575,29 @@ function mergeProtocol(
   };
 }
 
-interface ArtifactObservation {
+export interface ArtifactObservation {
   readonly protocol: ProtocolObservation;
   readonly isolated: ProtocolObservation | null;
+}
+
+export function authorityChannelsDiverge(
+  protocol: ProtocolObservation,
+  isolated: ProtocolObservation | null,
+): boolean {
+  return (
+    protocol.discriminativeErrors.some((error) => error.code === "protocol_divergence") ||
+    (isolated !== null && countsDiffer(isolated, protocol))
+  );
+}
+
+export function observationsDiverge(
+  first: ArtifactObservation,
+  second: ArtifactObservation,
+): boolean {
+  return (
+    authorityChannelsDiverge(first.protocol, first.isolated) ||
+    authorityChannelsDiverge(second.protocol, second.isolated)
+  );
 }
 
 async function observeArtifact(
