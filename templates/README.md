@@ -10,6 +10,7 @@ reaches outside the sandbox fails closed by design.
 | `legion-flow.mmd`             | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-flow.mmd`                                 |
 | `legion-sequence.mmd`         | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-sequence.mmd`                             |
 | `metric-card.svg`             | `svg`      | `facet publish --artifact-id <id> --type svg --file templates/metric-card.svg`                                     |
+| `system-map.svg`              | `svg`      | `facet publish --artifact-id <id> --type svg --file templates/system-map.svg`                                      |
 | `timeseries.vl.json`          | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/timeseries.vl.json`                                |
 | `bar-compare.vl.json`         | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/bar-compare.vl.json`                               |
 | `decision-record.md`          | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/decision-record.md`                             |
@@ -17,6 +18,7 @@ reaches outside the sandbox fails closed by design.
 | `legion-state.mmd`            | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-state.mmd`                                |
 | `exemplar.md`                 | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/exemplar.md`                                    |
 | `html-status-report.html`     | `html`     | `facet publish --artifact-id <id> --type html --file templates/html-status-report.html`                            |
+| `html-release-ledger.html`    | `html`     | `facet publish --artifact-id <id> --type html --file templates/html-release-ledger.html`                           |
 | `tsx-status-report.tsx`       | `tsx`      | `facet publish --artifact-id <id> --type tsx --file templates/tsx-status-report.tsx`                               |
 | `tsx-interactive-counter.tsx` | `tsx`      | `facet publish --artifact-id <id> --type tsx --execution interactive --file templates/tsx-interactive-counter.tsx` |
 

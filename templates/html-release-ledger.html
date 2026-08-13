@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Release ledger</title>
+  </head>
+  <body class="bg-legion-paper text-legion-ink leading-relaxed">
+    <main class="max-w-2xl p-6 gap-6 flex flex-col">
+      <header class="flex flex-col gap-2">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="badge">release ledger</span>
+          <span class="text-xs text-legion-muted">2026-08-13 · r42</span>
+        </div>
+        <h1 class="text-2xl font-bold m-0">Verification ledger</h1>
+        <p class="text-legion-muted text-sm m-0">
+          A compact handoff for shipped revisions, open work, and the evidence that closes each
+          item.
+        </p>
+      </header>
+
+      <section class="alert border border-legion-line rounded-box p-4">
+        <span class="font-medium">Release state: ready for gallery review.</span>
+      </section>
+
+      <section class="grid grid-cols-3 gap-4">
+        <div class="stat card border border-legion-line rounded-box p-4">
+          <div class="text-xs text-legion-muted">artifact types</div>
+          <div class="text-xl font-semibold">7</div>
+          <div class="text-xs text-legion-cyan">full surface</div>
+        </div>
+        <div class="stat card border border-legion-line rounded-box p-4">
+          <div class="text-xs text-legion-muted">review stages</div>
+          <div class="text-xl font-semibold">2</div>
+          <div class="text-xs text-legion-cyan">policy and browser</div>
+        </div>
+        <div class="stat card border border-legion-line rounded-box p-4">
+          <div class="text-xs text-legion-muted">blocked</div>
+          <div class="text-xl font-semibold">0</div>
+          <div class="text-xs text-legion-muted">no action required</div>
+        </div>
+      </section>
+
+      <section class="card border border-legion-line rounded-box p-4 gap-3 flex flex-col">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold m-0">Revision queue</h2>
+          <button class="btn" type="button">Review evidence</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table table-zebra w-full">
+            <thead>
+              <tr>
+                <th class="text-left">surface</th>
+                <th class="text-left">revision</th>
+                <th class="text-right">verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>system map</td>
+                <td class="text-legion-muted">revision 01</td>
+                <td class="text-right"><span class="badge">ok</span></td>
+              </tr>
+              <tr>
+                <td>release ledger</td>
+                <td class="text-legion-muted">revision 02</td>
+                <td class="text-right"><span class="badge">ok</span></td>
+              </tr>
+              <tr>
+                <td>interactive counter</td>
+                <td class="text-legion-muted">observed structure</td>
+                <td class="text-right"><span class="badge">ok</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card border border-legion-line rounded-box p-4 gap-3 flex flex-col">
+        <h2 class="text-lg font-semibold m-0">Review order</h2>
+        <ol class="flex flex-col gap-2 m-0">
+          <li>Open the gallery and select a revision.</li>
+          <li>Confirm the verdict and observed structure.</li>
+          <li>Record the release decision against its revision sha.</li>
+        </ol>
+      </section>
+
+      <footer class="text-xs text-legion-muted">
+        Static HTML · vendored classes only · no external resources
+      </footer>
+    </main>
+  </body>
+</html>
