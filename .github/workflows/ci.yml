@@ -280,6 +280,7 @@ jobs:
           - csp-consumer-baseline.test.ts
           - egress.test.ts
           - gallery-render.test.ts
+          - gallery-geometry.test.ts
           - gate-forgery.test.ts
           - harness-recovery.test.ts
           - html-differential.test.ts
@@ -325,7 +326,7 @@ jobs:
         name: Tier 1 acceptance test
         run: |
           mkdir -p test-results
-          bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
+          FACET_LIVE_GALLERY="${{ matrix.test == 'gallery-geometry.test.ts' && '1' || '' }}" bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
       - name: summarize Tier 1 acceptance
         if: always()
         shell: bash
