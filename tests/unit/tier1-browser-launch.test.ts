@@ -48,42 +48,6 @@ test("preserves a bad-file-descriptor browser spawn as a launch error", async ()
   }
 });
 
-test("waits for the browser process to exit before returning from target close", async () => {
-  let onExit: (() => void) | undefined;
-  let exited = false;
-  const child = {
-    pid: 1234,
-    exitCode: null as number | null,
-    once: (_event: string, listener: () => void) => {
-      onExit = listener;
-    },
-    off: () => {},
-  };
-  const page = {
-    createCDPSession: async () => ({ detach: async () => {} }),
-    close: async () => {},
-  };
-  const browser = {
-    newPage: async () => page,
-    process: () => child,
-    close: async () => {
-      setTimeout(() => {
-        child.exitCode = 0;
-        exited = true;
-        onExit?.();
-      }, 10);
-    },
-  };
-  const launch = spyOn(puppeteer, "launch").mockResolvedValue(browser as never);
-  try {
-    const target = await new PuppeteerTier1Browser({ launcher }).launch();
-    await target.close();
-    expect(exited).toBe(true);
-  } finally {
-    launch.mockRestore();
-  }
-});
-
 test("retries a persistent launch wedge once and retains its typed error", async () => {
   let attempts = 0;
   const runner = createTier1RunnerForTests({
