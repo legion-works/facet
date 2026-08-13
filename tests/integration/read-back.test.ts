@@ -593,16 +593,10 @@ describe("read-back revision binding", () => {
     }
   });
 
-  test("tsx read-back carries the execution marker end-to-end (DRIFT 4.1)", async () => {
-    // DRIFT 4.1: the read-back seam (Must 1) was inlining the verdict
-    // rebuild instead of calling verdictFromStoredRun, so the
-    // execution marker survived publish but disappeared on read-back.
-    // The export-sidecar route uses the canvas-stored verdict and
-    // thus re-emits the marker; the read-back route does not. This
-    // test asserts the POSITIVE direction (a TSX interactive
-    // revision reads back WITH execution: 'interactive') — the
-    // pre-arc integration tests already pin the negative direction
-    // (a non-TSX pre-arc row reads back without the field).
+  test("tsx read-back carries the execution marker end-to-end", async () => {
+    // Read-back reconstructs TSX execution from revision metadata. The
+    // positive assertion here complements legacy coverage that non-TSX rows
+    // omit the field rather than serializing null.
     const env = await startEnv();
     try {
       const artifactId = await createArtifact(env, "tsx-readback");

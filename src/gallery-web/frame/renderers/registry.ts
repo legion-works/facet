@@ -64,7 +64,7 @@ export function appendRenderError(container: HTMLElement, message: string): void
   container.appendChild(el);
 }
 
-export type PageShimCounts = Pick<VerdictObserved, ObservedCountKey | "html">;
+export type PageShimCounts = Pick<VerdictObserved, ObservedCountKey | "html" | "errorCount">;
 
 const RENDERER_ROOT_SELECTOR = 'svg[data-facet-renderer-root="true"]';
 const MARKED_ROOT_SELECTOR = '[data-facet-renderer-root="true"]';

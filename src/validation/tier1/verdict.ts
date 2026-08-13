@@ -28,7 +28,10 @@ import type {
   ProtocolObservation,
   RenderStatus,
 } from "../../shared/contracts/validation";
-import { OBSERVED_COUNT_KEYS } from "../../shared/contracts/observed-counts";
+import {
+  HTML_OBSERVED_COUNT_KEYS,
+  OBSERVED_COUNT_KEYS,
+} from "../../shared/contracts/observed-counts";
 
 // Re-export the protocol observation shape so the verdict tests can
 // typecheck without re-importing the validation contract.
@@ -39,9 +42,15 @@ export type { ProtocolObservation };
  * can monkey-patch `document.querySelectorAll` and report whatever it
  * likes. The verifier treats shim counts as advisory only.
  */
-export type PageShim = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[number] | "html">;
+export type PageShim = Pick<
+  ProtocolObservation,
+  (typeof COUNT_COMPARISON_KEYS)[number] | "html" | "errorCount"
+>;
 
-export type CountsLike = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[number] | "html">;
+export type CountsLike = Pick<
+  ProtocolObservation,
+  (typeof COUNT_COMPARISON_KEYS)[number] | "html" | "errorCount"
+>;
 
 const COUNT_COMPARISON_KEYS = OBSERVED_COUNT_KEYS;
 
@@ -200,14 +209,9 @@ function isDegenerateViewBox(viewBox: string): boolean {
   return width <= 0 || height <= 0;
 }
 
-const HTML_COUNT_KEYS = [
-  "rendererRootCount",
-  "headingCount",
-  "tableCount",
-  "listCount",
-  "imageCount",
-  "canvasCount",
-] as const;
+// The top-level external-image count is compared with the other protocol
+// counts, preserving the existing single comparison for this duplicated value.
+const HTML_COUNT_KEYS = HTML_OBSERVED_COUNT_KEYS.filter((key) => key !== "externalImageCount");
 
 function htmlCountsDiffer(
   left: ProtocolObservation["html"],
@@ -220,6 +224,7 @@ function htmlCountsDiffer(
 export function countsDiffer(left: CountsLike, right: CountsLike): boolean {
   return (
     COUNT_COMPARISON_KEYS.some((key) => left[key] !== right[key]) ||
+    left.errorCount !== right.errorCount ||
     htmlCountsDiffer(left.html, right.html)
   );
 }

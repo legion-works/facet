@@ -41,6 +41,11 @@ import {
   type Tier1Input,
   type Tier1Result,
 } from "../../shared/contracts/validation";
+import {
+  HTML_OBSERVED_COUNT_KEYS,
+  type ObservedCountKey,
+  OBSERVED_COUNT_KEYS,
+} from "../../shared/contracts/observed-counts";
 import { FacetError } from "../../shared/errors/facet-error";
 import { probeLauncherAvailability } from "./browser-process";
 import { computeFacetPaths } from "../../shared/config/paths";
@@ -523,14 +528,9 @@ function mergeProtocol(
   runtimeErrors: readonly { readonly code: string; readonly message: string }[] = [],
 ): ProtocolObservation {
   const errors = [...snapshot.discriminativeErrors, ...runtimeErrors];
-  const counts = [
-    ["rendererRootSvg", snapshot.rendererRootSvgCount, getDocument.rendererRootSvgCount],
-    ["graph", snapshot.graphCount, getDocument.graphCount],
-    ["mermaidNode", snapshot.mermaidNodeCount, getDocument.mermaidNodeCount],
-    ["visibleSvg", snapshot.visibleSvgCount, getDocument.visibleSvgCount],
-    ["opaque", snapshot.opaqueRegionCount, getDocument.opaqueRegionCount],
-    ["errors", snapshot.errorCount, getDocument.errorCount],
-  ] as const;
+  const counts = OBSERVED_COUNT_KEYS.filter((key) => key !== "externalImageCount").map(
+    (key) => [key.replace(/Count$/, ""), snapshot[key], getDocument[key]] as const,
+  );
   for (const [name, fromSnapshot, fromDocument] of counts) {
     if (fromSnapshot === fromDocument) continue;
     errors.push({
@@ -538,14 +538,15 @@ function mergeProtocol(
       message: `DOMSnapshot.${name}=${fromSnapshot} vs DOM.getDocument.${name}=${fromDocument}`,
     });
   }
-  const htmlKeys = [
-    "rendererRootCount",
-    "headingCount",
-    "tableCount",
-    "listCount",
-    "imageCount",
-    "canvasCount",
-  ] as const;
+  if (snapshot.errorCount !== getDocument.errorCount) {
+    errors.push({
+      code: "protocol_divergence",
+      message: `DOMSnapshot.errors=${snapshot.errorCount} vs DOM.getDocument.errors=${getDocument.errorCount}`,
+    });
+  }
+  // The top-level external-image count is compared below, matching the
+  // established protocol divergence behavior without double-reporting it.
+  const htmlKeys = HTML_OBSERVED_COUNT_KEYS.filter((key) => key !== "externalImageCount");
   if (snapshot.html === undefined || getDocument.html === undefined) {
     if (snapshot.html !== getDocument.html) {
       errors.push({
@@ -569,15 +570,13 @@ function mergeProtocol(
       message: `DOMSnapshot.externalImageCount=${snapshot.externalImageCount} vs DOM.getDocument.externalImageCount=${getDocument.externalImageCount}`,
     });
   }
+  const observedCounts = Object.fromEntries(
+    OBSERVED_COUNT_KEYS.map((key) => [key, snapshot[key]]),
+  ) as Pick<ProtocolObservation, ObservedCountKey>;
   return {
-    rendererRootSvgCount: snapshot.rendererRootSvgCount,
-    graphCount: snapshot.graphCount,
-    mermaidNodeCount: snapshot.mermaidNodeCount,
-    visibleSvgCount: snapshot.visibleSvgCount,
+    ...observedCounts,
     viewBoxes: snapshot.viewBoxes,
     errorCount: snapshot.errorCount,
-    opaqueRegionCount: snapshot.opaqueRegionCount,
-    externalImageCount: snapshot.externalImageCount,
     ...(snapshot.html === undefined ? {} : { html: snapshot.html }),
     discriminativeErrors: errors,
   };

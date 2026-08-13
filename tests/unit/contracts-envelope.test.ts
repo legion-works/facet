@@ -26,6 +26,7 @@ import {
   VerdictObservedSchema,
   type HtmlStructureCounts,
 } from "../../src/shared/contracts/validation";
+import { OBSERVED_COUNT_KEYS } from "../../src/shared/contracts/observed-counts";
 import {
   HTML_DENIED_ELEMENTS,
   HTML_STRUCTURAL_GROUPS,
@@ -47,6 +48,33 @@ const HTML_COUNTS: HtmlStructureCounts = {
   canvasCount: 0,
   externalImageCount: 2,
 };
+
+test("protocol observations derive scalar counters while keeping verdict metadata explicit", () => {
+  expect(OBSERVED_COUNT_KEYS).not.toContain("errorCount");
+  expect(Object.keys(ProtocolObservationSchema.shape)).toEqual([
+    ...OBSERVED_COUNT_KEYS,
+    "html",
+    "viewBoxes",
+    "errorCount",
+    "discriminativeErrors",
+  ]);
+
+  const accepted = {
+    rendererRootSvgCount: 1,
+    graphCount: 1,
+    mermaidNodeCount: 2,
+    visibleSvgCount: 1,
+    opaqueRegionCount: 0,
+    externalImageCount: 0,
+    viewBoxes: ["0 0 100 100"],
+    errorCount: 0,
+    discriminativeErrors: [],
+  };
+  expect(ProtocolObservationSchema.safeParse(accepted).success).toBe(true);
+  expect(ProtocolObservationSchema.safeParse({ ...accepted, errorCount: -1 }).success).toBe(false);
+  const { externalImageCount: _externalImageCount, ...withoutExternalImageCount } = accepted;
+  expect(ProtocolObservationSchema.safeParse(withoutExternalImageCount).success).toBe(false);
+});
 
 describe("FACET_SCHEMA_VERSION", () => {
   test("is the literal facet.v1 string", () => {

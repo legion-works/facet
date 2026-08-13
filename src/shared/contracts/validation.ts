@@ -283,12 +283,7 @@ export type Tier1Result = z.infer<typeof Tier1ResultSchema>;
  * count; that probe is the gate-forgery acceptance contract.
  */
 export const ProtocolObservationSchema = z.object({
-  rendererRootSvgCount: z.number().int().nonnegative(),
-  graphCount: z.number().int().nonnegative(),
-  mermaidNodeCount: z.number().int().nonnegative(),
-  visibleSvgCount: z.number().int().nonnegative(),
-  opaqueRegionCount: z.number().int().nonnegative(),
-  externalImageCount: z.number().int().nonnegative(),
+  ...ObservedCountShape,
   html: HtmlStructureCountsSchema.optional(),
   viewBoxes: z.array(z.string()),
   errorCount: z.number().int().nonnegative(),

@@ -643,10 +643,8 @@ describe("artifact store", () => {
   });
 
   test("FK gate: restore to ON survives a pre-run OFF state", () => {
-    // The mechanism the reviewer flagged: if a connection comes in
-    // with FKs already OFF, the prior gate didn't restore them
-    // because the gate condition was foreignKeys.foreign_keys === 1.
-    // A migrated DB must end with FKs ON no matter the entry point.
+    // Migrations leave the connection with FK enforcement enabled regardless
+    // of the caller's entry state.
     const db = openDatabase({ databasePath: ":memory:" });
     databases.push(db);
     db.exec("PRAGMA foreign_keys = OFF");

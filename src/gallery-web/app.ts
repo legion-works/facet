@@ -156,7 +156,7 @@ export type { ViewIntent, ViewState } from "./view-state";
  * Control-port events the frame emits to the shell. The frame's
  * page-shim counts ride `render-complete.observed`.
  */
-type FrameObserved = Pick<VerdictObserved, ObservedCountKey | "html">;
+type FrameObserved = Pick<VerdictObserved, ObservedCountKey | "html" | "errorCount">;
 
 export interface FrameControlEvent {
   readonly type: string;
@@ -186,13 +186,13 @@ function validateHtmlObserved(value: unknown): HtmlStructureCounts | null {
 function validateObserved(value: unknown): FrameObserved | null {
   if (value === null || typeof value !== "object") return null;
   const observed = value as Record<string, unknown>;
-  const allowedKeyCount = OBSERVED_COUNT_KEYS.length + (observed.html === undefined ? 0 : 1);
+  const allowedKeyCount = OBSERVED_COUNT_KEYS.length + 1 + (observed.html === undefined ? 0 : 1);
   if (Object.keys(observed).length !== allowedKeyCount) return null;
   const counts = validateFiniteCounts(observed, OBSERVED_COUNT_KEYS);
-  if (counts === null) return null;
-  if (observed.html === undefined) return counts;
+  if (counts === null || !finite(observed.errorCount)) return null;
+  if (observed.html === undefined) return { ...counts, errorCount: observed.errorCount };
   const html = validateHtmlObserved(observed.html);
-  return html === null ? null : { ...counts, html };
+  return html === null ? null : { ...counts, errorCount: observed.errorCount, html };
 }
 
 function validateFrameControlEvent(value: unknown): FrameControlEvent | null {

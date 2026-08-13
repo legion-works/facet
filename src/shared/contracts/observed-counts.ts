@@ -5,7 +5,6 @@ export const OBSERVED_COUNT_KEYS = [
   "visibleSvgCount",
   "opaqueRegionCount",
   "externalImageCount",
-  "errorCount",
 ] as const;
 export type ObservedCountKey = (typeof OBSERVED_COUNT_KEYS)[number];
 
