@@ -19,7 +19,7 @@ Facet stores the source bytes without interpreting them, then asks independent v
 
 ## What it does
 
-- Publishes `markdown`, `mermaid`, `svg`, `chart`, and static `html` artifacts.
+- Publishes `markdown`, `mermaid`, `svg`, `chart`, static `html`, and declared-mode `tsx` artifacts.
 - Stores immutable revisions and keeps a ring of up to 50 per artifact.
 - Runs Tier 0 browser-free checks, Tier 1 isolated browser validation, and Tier 2 display-only inspection.
 - Compares lexical expectations with protocol, isolated-world, and page-shim observations.
@@ -94,7 +94,7 @@ Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) 
 ## Documentation
 
 - [Agents](docs/guides/agents.md) — the CLI workflow and adapter boundary.
-- [CLI reference](docs/reference/cli.md) · [Export](docs/reference/export.md) · [HTML reference](docs/reference/html.md) · [HTTP surface](docs/reference/http.md) · [Storage reference](docs/reference/storage.md) · [Validation reference](docs/reference/validation.md) · [Security](docs/reference/security.md)
+- [CLI reference](docs/reference/cli.md) · [Export](docs/reference/export.md) · [HTML reference](docs/reference/html.md) · [TSX reference](docs/reference/tsx.md) · [HTTP surface](docs/reference/http.md) · [Storage reference](docs/reference/storage.md) · [Validation reference](docs/reference/validation.md) · [Security](docs/reference/security.md)
 - [Architecture](ARCHITECTURE.md) · [Structure](STRUCTURE.md) · [v1 ship gate](docs/verification/v1-ship-gate.md) · [Roadmap](docs/roadmap.md)
 - [Contributing](CONTRIBUTING.md)
 

@@ -120,6 +120,15 @@ is the live gate that keeps the two parsers in agreement over a body
 of real documents. Any divergence in the corpus is a design input
 (shrink the accepted input set), never a verdict-comparison weakening.
 
+## TSX modes
+
+Tier 0 compiles TSX after direct AST-policy checks. Static output enters the
+HTML pipeline above. Interactive output runs in the nested artifact frame and
+is observed through CDP snapshot, `getDocument`, and isolated-world channels at
+the render barrier and after the one-second stability window. There is no SSR or
+hydration expectation. `partial:unstable` records a changed structure; channel
+divergence remains `tampered`.
+
 ## Retention policy
 
 Last-N retention runs INSIDE `recordRenderRun`'s write path. The

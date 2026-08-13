@@ -114,6 +114,7 @@ const REJECTED: readonly RejectedFixture[] = [
     label: "Rejected network capability",
     expectedCode: "tsx_capability_fetch",
     expectedMessage: 'TSX global "fetch(...)" is not allowed',
+    // Fixture line: changing the source layout requires revisiting this exact diagnostic position.
     expectedLocation: "4:8",
   },
   {
@@ -121,6 +122,7 @@ const REJECTED: readonly RejectedFixture[] = [
     label: "Rejected dynamic import",
     expectedCode: "tsx_capability_dynamic_import",
     expectedMessage: "TSX dynamic import() is not allowed",
+    // Fixture line: changing the source layout requires revisiting this exact diagnostic position.
     expectedLocation: "4:8",
   },
 ];

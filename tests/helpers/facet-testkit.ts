@@ -23,6 +23,8 @@ import {
   type EgressPenetrationResult,
 } from "../../scripts/egress-penetration";
 import { startFacetService, type RunningService } from "../../src/service/server";
+import { openDatabase } from "../../src/service/store/database";
+import { ArtifactRepository } from "../../src/service/store/repository";
 import { ACCEPTANCE_TEST_BUDGET_MS } from "../../src/shared/config/limits";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
@@ -290,6 +292,26 @@ export async function readBackFixtureRaw(opts: ReadBackFixtureOptions): Promise<
   });
   traceTier1Transport(`test:readback:complete status=${result.verdict.status}`);
   return result;
+}
+
+export async function readStoredRenderRunsForTests(input: {
+  readonly artifactId: string;
+  readonly revisionSha: string;
+  readonly productionTier0?: boolean;
+}): Promise<readonly { readonly compiledPath?: string | null }[]> {
+  const current = await ensureEnv(undefined, 0, input.productionTier0 ?? false);
+  const db = openDatabase({ databasePath: join(current.envDir, "facet.sqlite") });
+  try {
+    const repository = new ArtifactRepository(db);
+    const revision = repository.getRevisionBySha(input.artifactId, input.revisionSha);
+    if (revision === null)
+      throw new Error("published acceptance revision is missing from the store");
+    return ([0, 1] as const)
+      .flatMap((tier) => repository.listRenderRuns({ revisionId: revision.id, tier }))
+      .map((run) => ({ compiledPath: run.compiledPath ?? null }));
+  } finally {
+    db.close();
+  }
 }
 
 /**

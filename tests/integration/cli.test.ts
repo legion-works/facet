@@ -415,6 +415,7 @@ describe("cli contract — surface", () => {
   test("declares TSX execution mode through literal template argv", async () => {
     const { env } = makeEnv("tsx-declaration");
     const originalCwd = process.cwd();
+    // Literal template paths are resolved from the caller's cwd, not the test file.
     process.chdir(resolve(import.meta.dir, "../.."));
     try {
       const createIo = makeIo();

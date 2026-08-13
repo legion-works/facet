@@ -106,8 +106,8 @@ function assertLegacyBundleIsolation(
   const forbidden = [...gallery.sourcePaths, ...verifier.sourcePaths].filter(
     (sourcePath) =>
       sourcePath.includes("/gallery-web/frame/renderers/tsx.ts") ||
-      sourcePath.includes("/node_modules/react/") ||
-      sourcePath.includes("/node_modules/react-dom/"),
+      /\/node_modules\/react\//.test(sourcePath) ||
+      /\/node_modules\/react-dom\//.test(sourcePath),
   );
   if (forbidden.length > 0) {
     throw new Error(

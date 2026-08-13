@@ -14,19 +14,19 @@ Errors use the same top level with `ok: false` and
 
 ## Verbs and flags
 
-| verb          | flags                                                                                  |
-| ------------- | -------------------------------------------------------------------------------------- |
-| `create`      | `--project-id`, `--slug`, `--title`                                                    |
-| `publish`     | `--artifact-id`, `--type`, `--file`, `--note`, `--parent-revision-id`, `--renderer`    |
-| `list`        | `--project-id`, `--slug-prefix`, `--limit`                                             |
-| `read-back`   | `--artifact-id`, `--revision-sha`, `--tier` (one of: `0`, `1`, `visual`)               |
-| `status`      | `--artifact-id`, `--start`                                                             |
-| `open`        | `--artifact-id`, `--revision-sha`                                                      |
-| `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`           |
-| `instantiate` | `--name`, `--new-slug`, `--project-id`                                                 |
-| `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                        |
-| `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`            |
-|               | `--format source` writes `.md` / `.mmd` / `.svg` / `.json` / `.html` to match the type |
+| verb          | flags                                                                                                                  |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `create`      | `--project-id`, `--slug`, `--title`                                                                                    |
+| `publish`     | `--artifact-id`, `--type`, `--file`, `--note`, `--parent-revision-id`, `--renderer`, `--execution static\|interactive` |
+| `list`        | `--project-id`, `--slug-prefix`, `--limit`                                                                             |
+| `read-back`   | `--artifact-id`, `--revision-sha`, `--tier` (one of: `0`, `1`, `visual`)                                               |
+| `status`      | `--artifact-id`, `--start`                                                                                             |
+| `open`        | `--artifact-id`, `--revision-sha`                                                                                      |
+| `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`                                           |
+| `instantiate` | `--name`, `--new-slug`, `--project-id`                                                                                 |
+| `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                                                        |
+| `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`                                            |
+|               | `--format source` writes `.md` / `.mmd` / `.svg` / `.json` / `.html` to match the type                                 |
 
 `publish --file -` reads bytes from stdin. `--json` is shorthand for
 `--format json` on meta commands.
@@ -39,6 +39,9 @@ renderer value is a usage error and exits 64.
 See [HTML reference](html.md) for the static / script-free contract,
 the denied element and attribute set, the vendored class vocabulary,
 and the verdict precedence specific to HTML.
+
+`publish --type tsx` defaults to `--execution static`; `interactive` is valid
+only for TSX. Non-TSX `interactive` is rejected. See [TSX reference](tsx.md).
 
 ## Insecure mode
 

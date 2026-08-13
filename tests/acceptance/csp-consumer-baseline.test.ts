@@ -9,6 +9,7 @@ import {
   publishFixture,
   projectToAcceptanceVerdict,
   readBackFixtureRaw,
+  readStoredRenderRunsForTests,
 } from "../helpers/facet-testkit";
 
 const fixture = (name: string): string => `${import.meta.dir}/../fixtures/${name}`;
@@ -62,6 +63,16 @@ function projectConsumer(verdict: ReturnType<typeof projectToAcceptanceVerdict>)
     },
   };
 }
+
+function legacyRunsHaveNoCompiledPath(
+  runs: readonly { readonly compiledPath?: string | null }[],
+): boolean {
+  return runs.length > 0 && runs.every((run) => run.compiledPath === null);
+}
+
+test("legacy compiled-path guard rejects a non-null run row", () => {
+  expect(legacyRunsHaveNoCompiledPath([{ compiledPath: "/tmp/legacy.js" }])).toBe(false);
+});
 
 const CONSUMER_BASELINE: Record<string, ReturnType<typeof projectConsumer>> = {
   markdown: {
@@ -187,7 +198,15 @@ test("existing artifact consumers keep their projected payload under the unchang
       tier: 1,
       productionTier0: true,
     });
-    expect("compiled" in raw.verdict, `${consumer.key} read-back compiled payload`).toBe(false);
+    const runs = await readStoredRenderRunsForTests({
+      artifactId: published.artifactId,
+      revisionSha: published.revisionSha,
+      productionTier0: true,
+    });
+    expect(
+      legacyRunsHaveNoCompiledPath(runs),
+      `${consumer.key} run rows have no compiled path`,
+    ).toBe(true);
     rows[consumer.key] = projectConsumer(projectToAcceptanceVerdict(raw));
   }
   for (const [type, row] of Object.entries(rows)) {

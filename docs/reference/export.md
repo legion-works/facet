@@ -11,7 +11,8 @@ stdout and writes the exported bytes plus a mandatory sidecar locally.
 
 ## Source and render
 
-`source` exports the exact bytes stored for the selected revision. `render`
+`source` exports the exact bytes stored for the selected revision. For TSX that
+is the immutable `.tsx` source, not the derived compiled bundle. `render`
 exports the stored Tier 1 screenshot for that revision. Render export reads
 retained evidence; it never starts a renderer or reruns validation.
 
@@ -25,6 +26,7 @@ sidecar. A missing render screenshot is an `evidence_unavailable` error.
 | `source` | markdown or Mermaid | `.md`     |
 | `source` | SVG                 | `.svg`    |
 | `source` | chart               | `.json`   |
+| `source` | TSX                 | `.tsx`    |
 | `render` | any supported type  | `.png`    |
 
 The default name is `<slug>-<revisionSha prefix><extension>`.

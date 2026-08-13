@@ -1,9 +1,5 @@
 import React from "react";
 
-/**
- * Publish static by default, or select interactive explicitly:
- * `facet publish --artifact-id <id> --type tsx --file templates/tsx-status-report.tsx`
- */
 export default function StatusReport() {
   return (
     <main>

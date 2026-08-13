@@ -23,7 +23,7 @@ the evidence root and every per-run evidence directory.
 ## Schema migrations
 
 `runMigrations` records applied versions in `schema_migrations` and applies
-additive fragments in order. The current schema is v5:
+additive fragments in order. The current schema is v8:
 
 | version | change                                                                                                                                                                 |
 | ------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -32,6 +32,9 @@ additive fragments in order. The current schema is v5:
 |      v3 | Adds `revisions.renderer`, constrained to `svg` or `canvas`. `canvas` is a chart renderer, not an artifact type.                                                       |
 |      v4 | Adds `render_runs.screenshot_error_json` for typed transient screenshot-capture failures.                                                                              |
 |      v5 | Adds `render_runs.insecure_json` for the effective insecure execution marker and reason.                                                                               |
+|      v6 | Adds static `html` revisions and HTML observations.                                                                                                                    |
+|      v7 | Backfills HTML observation defaults.                                                                                                                                   |
+|      v8 | Adds `tsx`, declared revision execution, and nullable `render_runs.compiled_path`.                                                                                     |
 
 Migrations are additive and transactional. Existing revisions are not rewritten
 when a later schema version is applied.
@@ -53,8 +56,8 @@ reading verdict rows, so verdicts cannot cross revisions.
 
 ## Render evidence
 
-Tier 0 stores only its database row: expected and observed JSON, status, tier,
-and timing. Tier 1 stores the row plus a deterministic per-run directory:
+Tier 0 stores its row and, for successful TSX compilation, derived compiled
+bytes at `compiled_path`. Tier 1 stores the row plus a deterministic per-run directory:
 
 ```text
 <evidence>/<artifactId>/<revisionSha>/<runId>/

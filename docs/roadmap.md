@@ -7,6 +7,11 @@ types may extend registries, but artifact code never gains host capabilities.
 
 • Artifact-content secret and PII scanning
 • HTML boundary re-review
+✓ DONE — TSX artifacts: declared `static` mode reuses the HTML prediction path;
+`interactive` mode is client-rendered observation with a bounded stability
+re-check. The import set is vendored React only, source stays immutable, and
+compiled evidence retains last-N run bytes. See [TSX reference](reference/tsx.md)
+and [measurements](verification/tsx-measurements.md).
 ✓ DONE — Static `html` artifact type — script-free, no `<style>` block or
 `style=` attribute, styling from a vendored Tailwind/daisyUI subset.
 Generous element allowlist with a short known-dangerous deny set (D9,
@@ -98,6 +103,9 @@ Verification note for design time: verdicts observe structure at a point in time
 so an animated artifact verifies its static structure; animation fidelity is
 display-layer only unless a timeline probe is designed.
 • Forms `FormBridge`
+• Arbitrary npm for TSX artifacts
+• Split `src/validation/tier0/tsx/ast-policy.ts` and
+`src/validation/tier0/worker-entry.ts`; both exceed the focused-file target.
 • FTS5 `SearchIndex`
 • Trilium `ExportSink`
 • UDS `CliTransport`

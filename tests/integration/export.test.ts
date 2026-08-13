@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import { startFacetService } from "../../src/service/server";
@@ -210,6 +210,29 @@ describe("source export", () => {
         rendererRootCount: 1,
         headingCount: 0,
       });
+    } finally {
+      await env.service.stop();
+    }
+  });
+
+  test("exports each TSX starter's original source bytes", async () => {
+    const env = await startEnv();
+    try {
+      for (const [slug, file] of [
+        ["tsx-status-starter", "templates/tsx-status-report.tsx"],
+        ["tsx-interactive-starter", "templates/tsx-interactive-counter.tsx"],
+      ] as const) {
+        const artifactId = await createArtifact(env, slug);
+        const source = new Uint8Array(readFileSync(resolve(import.meta.dir, "../..", file)));
+        const published = await publish(env, artifactId, source, "tsx");
+        const exported = await result(env, {
+          command: "export",
+          artifactId,
+          revisionSha: published.revisionSha,
+          format: "source",
+        });
+        expect(new Uint8Array(Buffer.from(exported.bytes as string, "base64"))).toEqual(source);
+      }
     } finally {
       await env.service.stop();
     }

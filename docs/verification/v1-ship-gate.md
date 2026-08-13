@@ -115,6 +115,14 @@ Browser measurements on the pinned runtime additionally hit oven-sh/bun#37230: t
 aborting the run, so an upstream runtime defect cannot masquerade as a Facet regression. Expect those
 discards to reach zero after the 1.4.0 bump; if they do not, a second unknown defect exists.
 
+TSX compiler and interactive authority measurements are recorded separately in
+[tsx-measurements.md](tsx-measurements.md). Static compilation measured
+246.0 ms cold / 2.7 ms warm for a 151-byte report; the measured interactive
+bundle is 974,372 bytes at 285.8 ms cold / 26.7 ms warm. Same-worker hashes held
+for 20 runs and restarted-worker hashes held for 3 runs. Interactive stability
+uses a one-second re-check. Existing budgets above are unchanged; this evidence
+adds compiler and nested-channel coverage rather than revising them.
+
 ## Roadmap freeze
 
 The additive roadmap is recorded in [roadmap](../roadmap.md). New render types

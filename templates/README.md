@@ -4,19 +4,21 @@ Styled starting points for every type Facet renders. Each is self-contained:
 inline data, fragment-only references, no remote fonts — a source that
 reaches outside the sandbox fails closed by design.
 
-| file                      | type       | publish                                                                                  |
-| ------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
-| `status-report.md`        | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/status-report.md`     |
-| `legion-flow.mmd`         | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-flow.mmd`       |
-| `legion-sequence.mmd`     | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-sequence.mmd`   |
-| `metric-card.svg`         | `svg`      | `facet publish --artifact-id <id> --type svg --file templates/metric-card.svg`           |
-| `timeseries.vl.json`      | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/timeseries.vl.json`      |
-| `bar-compare.vl.json`     | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/bar-compare.vl.json`     |
-| `decision-record.md`      | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/decision-record.md`   |
-| `legion-boundaries.mmd`   | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-boundaries.mmd` |
-| `legion-state.mmd`        | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-state.mmd`      |
-| `exemplar.md`             | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/exemplar.md`          |
-| `html-status-report.html` | `html`     | `facet publish --artifact-id <id> --type html --file templates/html-status-report.html`  |
+| file                          | type       | publish                                                                                                            |
+| ----------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| `status-report.md`            | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/status-report.md`                               |
+| `legion-flow.mmd`             | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-flow.mmd`                                 |
+| `legion-sequence.mmd`         | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-sequence.mmd`                             |
+| `metric-card.svg`             | `svg`      | `facet publish --artifact-id <id> --type svg --file templates/metric-card.svg`                                     |
+| `timeseries.vl.json`          | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/timeseries.vl.json`                                |
+| `bar-compare.vl.json`         | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/bar-compare.vl.json`                               |
+| `decision-record.md`          | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/decision-record.md`                             |
+| `legion-boundaries.mmd`       | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-boundaries.mmd`                           |
+| `legion-state.mmd`            | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/legion-state.mmd`                                |
+| `exemplar.md`                 | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/exemplar.md`                                    |
+| `html-status-report.html`     | `html`     | `facet publish --artifact-id <id> --type html --file templates/html-status-report.html`                            |
+| `tsx-status-report.tsx`       | `tsx`      | `facet publish --artifact-id <id> --type tsx --file templates/tsx-status-report.tsx`                               |
+| `tsx-interactive-counter.tsx` | `tsx`      | `facet publish --artifact-id <id> --type tsx --execution interactive --file templates/tsx-interactive-counter.tsx` |
 
 `exemplar.md` is the reference artifact for the current surface: one publish
 carrying tables, checklists, a JSON fence, and three themed diagrams — and
@@ -61,3 +63,8 @@ diagram theme. Reuse it verbatim in docs and new diagrams:
   downgrade. `<img src="https://…">` is permitted and downgrades
   the verdict to `partial:external_resources`; `http:`,
   protocol-relative, and `javascript:` URLs fail closed.
+- TSX: `static` is the default and enters the HTML pipeline. `interactive`
+  observes client-rendered structure twice; it has no SSR or hydration claim.
+  Use only vendored React imports and the HTML class vocabulary. Facet mounts
+  the default export, so templates must not self-mount. See
+  [TSX reference](../docs/reference/tsx.md).

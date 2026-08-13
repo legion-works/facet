@@ -72,6 +72,17 @@ under the per-frame nonce. A custom `data:` font ships in the bundle as
 
 → [HTML reference](html.md) for the full HTML contract.
 
+## TSX execution policy
+
+TSX is executable artifact code, so interactive bundles run only inside a nested
+opaque-origin frame. Tier 0 rejects direct capability use for typed author
+feedback, but the runtime boundary is authoritative: netns blocks egress and
+the frozen CSP denies `connect-src`, `worker-src`, `form-action`, dynamic string
+execution, and `frame-src`. The AST policy is intentionally not complete under
+aliasing; runtime controls cover those indirect forms.
+
+Facet mounts the default export. Artifact source must not self-mount.
+
 ## Insecure mode
 
 Insecure mode is never enabled by default. It is boot-only: set `FACET_INSECURE=1`,

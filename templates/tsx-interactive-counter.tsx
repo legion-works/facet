@@ -1,9 +1,5 @@
 import React, { useState } from "react";
 
-/**
- * Publish with `--execution interactive` to enable the handler below.
- * Facet mounts this default export; templates never call createRoot themselves.
- */
 export default function InteractiveCounter() {
   const [count, setCount] = useState(0);
 

@@ -34,8 +34,11 @@ const INTERACTIVE_MOUNT_ENTRY = [
 
 function canonicalizeBundleBytes(rawBytes: Uint8Array): Uint8Array {
   const source = new TextDecoder().decode(rawBytes);
-  // Bun emits source labels for bundled modules; they reflect resolver paths,
-  // not artifact semantics, and must not become stored artifact data.
+  // Per-call mkdtemp workspaces below vary the entrypoint path. Strip Bun's
+  // path-bearing labels before hashing or storing so that isolation preserves
+  // deterministic bytes. Re-run tests/unit/tsx-compiler.test.ts (cross-checkout
+  // identity) and tests/acceptance/tsx-measurement.test.ts (same-worker ×20,
+  // restart ×3) when either mechanism changes.
   const canonical = source.replace(
     /^\/\/ (?:(?:[A-Za-z]:)?[./~][^\r\n]*|[^\r\n]*node_modules\/[^\r\n]*)\.(?:[cm]?[jt]sx?|json)\r?\n/gm,
     "",
@@ -74,6 +77,12 @@ async function compileTsxAtWorkRoot(
   }
 
   mkdirSync(workRoot, { recursive: true, mode: 0o700 });
+  // Each compile needs a private entry/output directory so concurrent builds
+  // cannot substitute one artifact's output for another. That directory makes
+  // paths vary; canonicalizeBundleBytes removes Bun's labels before hashing and
+  // storage. Re-run tests/unit/tsx-compiler.test.ts (cross-checkout identity)
+  // and tests/acceptance/tsx-measurement.test.ts (same-worker ×20, restart ×3)
+  // when either mechanism changes.
   const compileRoot = mkdtempSync(join(workRoot, "compile-"));
   try {
     chmodSync(compileRoot, 0o700);

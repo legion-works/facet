@@ -9,6 +9,7 @@ test("static TSX renders through the shared HTML path in Tier 1", async () => {
   const published = await publishFixture({
     fixturePath: STATIC_FIXTURE,
     artifactType: "tsx",
+    execution: "static",
     slug: "tsx-static-html-path",
     productionTier0: true,
   });
