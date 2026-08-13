@@ -49,6 +49,18 @@ export interface PageShim {
   readonly html?: ProtocolObservation["html"];
 }
 
+type CountsLike = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[number] | "html">;
+
+const COUNT_COMPARISON_KEYS = [
+  "rendererRootSvgCount",
+  "graphCount",
+  "mermaidNodeCount",
+  "visibleSvgCount",
+  "errorCount",
+  "opaqueRegionCount",
+  "externalImageCount",
+] as const;
+
 /**
  * Which optional probe channels produced a usable observation. The
  * protocol channel is always populated (a missing protocol result is
@@ -135,7 +147,7 @@ export function deriveVerdict(
   ) {
     return "tampered";
   }
-  if (pageShim !== null && shimDiverges(pageShim, protocolObservation)) return "tampered";
+  if (pageShim !== null && countsDiffer(pageShim, protocolObservation)) return "tampered";
   if (isolatedObservation !== null && countsDiffer(isolatedObservation, protocolObservation)) {
     return "tampered";
   }
@@ -206,28 +218,9 @@ function htmlCountsDiffer(
   return HTML_COUNT_KEYS.some((key) => left[key] !== right[key]);
 }
 
-function shimDiverges(shim: PageShim, protocol: ProtocolObservation): boolean {
+function countsDiffer(left: CountsLike, right: CountsLike): boolean {
   return (
-    shim.rendererRootSvgCount !== protocol.rendererRootSvgCount ||
-    shim.graphCount !== protocol.graphCount ||
-    shim.mermaidNodeCount !== protocol.mermaidNodeCount ||
-    shim.errorCount !== protocol.errorCount ||
-    shim.visibleSvgCount !== protocol.visibleSvgCount ||
-    shim.opaqueRegionCount !== protocol.opaqueRegionCount ||
-    shim.externalImageCount !== protocol.externalImageCount ||
-    htmlCountsDiffer(shim.html, protocol.html)
-  );
-}
-
-function countsDiffer(left: ProtocolObservation, right: ProtocolObservation): boolean {
-  return (
-    left.rendererRootSvgCount !== right.rendererRootSvgCount ||
-    left.graphCount !== right.graphCount ||
-    left.mermaidNodeCount !== right.mermaidNodeCount ||
-    left.visibleSvgCount !== right.visibleSvgCount ||
-    left.errorCount !== right.errorCount ||
-    left.opaqueRegionCount !== right.opaqueRegionCount ||
-    left.externalImageCount !== right.externalImageCount ||
+    COUNT_COMPARISON_KEYS.some((key) => left[key] !== right[key]) ||
     htmlCountsDiffer(left.html, right.html)
   );
 }

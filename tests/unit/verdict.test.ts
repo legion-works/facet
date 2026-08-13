@@ -102,6 +102,24 @@ describe("deriveVerdict — happy path", () => {
 });
 
 describe("deriveVerdict — tamper detection (page shim is untrusted)", () => {
+  test("canonical comparison applies externalImageCount to shim and isolated channels", () => {
+    const expected = lex({ externalImageCount: 1 });
+    const observed = protocol({ externalImageCount: 1 });
+
+    expect(
+      deriveVerdict(expected, observed, observed, shim({ externalImageCount: 0 }), lifecycle()),
+    ).toBe("tampered");
+    expect(
+      deriveVerdict(
+        expected,
+        observed,
+        protocol({ externalImageCount: 0 }),
+        shim({ externalImageCount: 1 }),
+        lifecycle(),
+      ),
+    ).toBe("tampered");
+  });
+
   test("isolated opaque-region count differs from protocol → tampered", () => {
     const status = deriveVerdict(
       lex(),
