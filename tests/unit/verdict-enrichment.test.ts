@@ -41,7 +41,7 @@ const baseExpected = {
   externalImageCount: 0,
 };
 
-describe("enrichVerdict — D10 execution marker", () => {
+describe("enrichVerdict — execution marker", () => {
   test("attaches execution when provided", () => {
     const enriched = enrichVerdict(
       { tier: 0, status: "ok", expected: baseExpected, observed: baseObserved },

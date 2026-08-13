@@ -450,8 +450,8 @@ describe("HTML validation observables", () => {
   });
 
   test("tsx verdict accepts execution marker; non-tsx verdict omits it on the wire", () => {
-    // D10: the execution marker is a top-level marker on the verdict.
-    // It is emitted for TSX static and interactive verdicts and
+    // The execution marker is a top-level verdict marker. It is emitted for
+    // TSX static and interactive verdicts and
     // ABSENT — not null — for every other artifact type. The byte
     // baseline already pins the non-TSX wire form, so this test
     // asserts the +presence side: the schema accepts the marker,

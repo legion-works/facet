@@ -515,6 +515,8 @@ describe("cli contract — surface", () => {
           errorCount: 0,
         },
       });
+      // The CLI integration tier has no Chromium surface. The acceptance
+      // starter test proves the template's component-owned heading mounts.
     } finally {
       process.chdir(originalCwd);
     }

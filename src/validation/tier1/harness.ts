@@ -140,11 +140,10 @@ export async function buildHarnessSrcdoc(artifactType: string): Promise<{
 }
 
 /**
- * Write the harness srcdoc to `hostDir` and build the host page that
- * transfers the artifact + ports into the frame. The host page's
- * iframe points at the srcdoc; the artifact's declared type travels
- * with the ingress payload so the harness dispatches the same
- * renderer the gallery uses.
+ * Write the harness document to `hostDir` and build the host page that
+ * transfers the artifact and ports into the frame. The host iframe loads the
+ * generated file, matching the file-backed Tier 1 launch path; the declared
+ * type travels with ingress so the harness dispatches the gallery renderer.
  */
 export interface HostPageInputs {
   readonly html: string;

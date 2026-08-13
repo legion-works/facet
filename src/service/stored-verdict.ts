@@ -65,8 +65,8 @@ export function verdictFromStoredRun(revision: Revision, run: RenderRun): Verdic
       ? { screenshotError: JSON.parse(run.screenshotErrorJson) }
       : {}),
     ...(run.insecureJson !== null ? { insecure: JSON.parse(run.insecureJson) } : {}),
-    // D10: reconstruct the execution marker from the revision row
-    // rather than the stored verdict. The render_run row carries no
+    // Reconstruct execution from the revision row rather than the stored
+    // verdict. The render_run row carries no
     // execution column (the marker is a verdict-level property, not a
     // run-level one), and the marker is only emitted for TSX
     // revisions — every other artifact type reads back with the

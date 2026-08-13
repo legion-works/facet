@@ -54,10 +54,10 @@ capabilities unreachable.
 ## Execution boundary
 
 Interactive bundles run in a nested opaque-origin `srcdoc` frame. The frozen
-CSP is `default-src 'none'` with nonce-only scripts, `connect-src 'none'`,
-`worker-src 'none'`, `form-action 'none'`, `object-src 'none'`, `base-uri
-'none'`, and `frame-src 'none'`. The artifact code has no host port or service
-capability.
+CSP is defined in `src/shared/security/frozen-csp.ts`: `default-src 'none'`,
+nonce-only scripts, inline styles, `img-src data: https:`, `font-src data:`,
+and denied workers, connections, objects, base URLs, forms, frames, and media.
+The artifact code has no host port or service capability.
 
 ## Storage and export
 

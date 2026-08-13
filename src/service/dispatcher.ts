@@ -119,8 +119,8 @@ function buildVerdict(input: {
   insecure?: InsecureMarker;
   screenshotError?: unknown;
   /**
-   * D10 execution marker. Passed only when the artifact is a TSX
-   * revision (static or interactive). Non-TSX verdicts carry NO
+   * Passed only when the artifact is a TSX revision (static or interactive).
+   * Non-TSX verdicts carry NO
    * execution field — the field is absent, not null, so the wire
    * form for non-TSX stays byte-identical to the pre-arc shape.
    */
@@ -335,10 +335,8 @@ export async function dispatch(
         ...(artifactType === "tsx" ? { execution: executionMode } : {}),
       });
       const insecure = insecureMarker(deps.insecureLevel, deps.insecureReason);
-      // D10: only TSX verdicts carry the execution marker. Every
-      // other type stays BYTE-IDENTICAL to the pre-arc wire shape;
-      // the field is absent, not null. The marker is the declared
-      // mode on the revision (default 'static' for TSX).
+      // Execution is revision metadata for TSX only. Other types omit the
+      // field rather than serializing null; TSX uses its declared mode.
       const verdictExecution: TsxExecutionMode | undefined =
         artifactType === "tsx" ? executionMode : undefined;
       if (deps.insecureLevel === 3) {
@@ -609,11 +607,8 @@ export async function dispatch(
         renderer: source.renderer,
         source: new Uint8Array(source.source),
         note: `Instantiated from template ${template.name}`,
-        // DRIFT 1.2: propagate the source revision's execution mode
-        // so a TSX interactive template instantiates as interactive,
-        // not the canvas default. The pre-TSX row omits this field
-        // entirely; the publish path's `?? 'static'` fallback already
-        // handles the non-TSX case.
+        // Template instantiation preserves declared TSX mode. Non-TSX source
+        // omits it and the publish path applies its existing default.
         ...(source.execution !== undefined ? { execution: source.execution } : {}),
       });
       return {

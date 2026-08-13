@@ -44,7 +44,7 @@ export const RenderStatusSchema = z.enum([
 export type RenderStatus = z.infer<typeof RenderStatusSchema>;
 
 /**
- * TSX execution mode marker (D2 / D10). Carried on TSX static and
+ * TSX execution mode marker. Carried on TSX static and
  * interactive verdicts; ABSENT for every other artifact type. The
  * shape mirrors the existing top-level marker precedents
  * (`insecure`, `screenshotError`) — a discriminated literal, not a
@@ -147,7 +147,7 @@ export type VerdictObserved = z.infer<typeof VerdictObservedSchema>;
  * this shape. Tier results extend it (with `expected` for the
  * expected-vs-observed comparison); read-back uses it directly.
  *
- * `execution` (D10) is the top-level marker for TSX static and
+ * `execution` is the top-level marker for TSX static and
  * interactive verdicts. It is ABSENT — not null — for every other
  * artifact type, so the wire form for non-TSX stays byte-identical
  * to the pre-arc shape. The runtime read-back reconstructs this field

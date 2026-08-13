@@ -656,8 +656,8 @@ describe("artifact store", () => {
   });
 
   test("FK gate: rebuild steps actually toggle FKs OFF mid-migration (observation seam)", () => {
-    // The reviewer-flagged gap: the prior gate tests only asserted the
-    // FK state AFTER the migration completed, by which time the finally
+    // The final FK state cannot prove that rebuilds ran with FKs disabled:
+    // the finally
     // block had restored FKs to ON. The pragma's mid-migration value
     // was never observed, so a regression that drops
     // `requiresForeignKeyDisable` from v8 would still pass those tests

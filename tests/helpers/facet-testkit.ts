@@ -73,11 +73,8 @@ export interface AcceptanceVerdict {
   readonly insecure?: InsecureMarker;
   readonly screenshotError?: ScreenshotError;
   /**
-   * TSX execution marker (D10). Tasks 6-9 will need this; the
-   * previous interface dropped it entirely so no acceptance test
-   * could assert on the TSX marker. Conditional spread on the
-   * verdict-only — same byte-identity rule as the production
-   * envelope.
+   * TSX execution mode belongs on TSX verdicts only. Non-TSX verdicts omit it
+   * rather than serializing null, preserving their established wire shape.
    */
   readonly execution?: import("../../src/shared/contracts/validation").TsxExecutionMode;
 }

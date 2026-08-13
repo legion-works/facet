@@ -3,14 +3,12 @@
  *
  * `verdictFromStoredRun` is the boundary the read-back / export /
  * gallery-source routes cross to turn a SQL row into a typed
- * `Verdict`. The trait we care about for Task 3 is the D10
- * execution marker: it is reconstructed from the revision's
+ * `Verdict`. The execution marker is reconstructed from the revision's
  * declared mode, NOT carried on the render_run row, and is emitted
  * only when the revision is TSX.
  *
- * The pre-arc integration tests already cover the negative case
- * (markdown rows have no execution field on the wire). This file
- * covers the positive case at unit resolution so the
+ * Integration coverage already proves markdown rows omit execution on the
+ * wire. This file covers the positive case at unit resolution so the
  * reconstruction is pinned independent of the service surface.
  */
 
@@ -65,7 +63,7 @@ function makeRun(overrides: Partial<RenderRun> = {}): RenderRun {
   };
 }
 
-describe("verdictFromStoredRun — D10 execution marker reconstruction", () => {
+describe("verdictFromStoredRun — execution marker reconstruction", () => {
   test("tsx revision with execution: static re-emits the marker on read-back", () => {
     const verdict = verdictFromStoredRun(
       makeRevision({ artifactType: "tsx", execution: "static" }),

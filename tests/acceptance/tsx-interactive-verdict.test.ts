@@ -10,6 +10,7 @@ const REJECTED_FIXTURE = `${import.meta.dir}/../fixtures/tsx/rejected-source.tsx
 const EMPTY_FIXTURE = `${import.meta.dir}/../fixtures/tsx/empty-source.tsx`;
 const NON_COMPONENT_FIXTURE = `${import.meta.dir}/../fixtures/tsx/non-component-source.tsx`;
 const NO_DEFAULT_FIXTURE = `${import.meta.dir}/../fixtures/tsx/no-default-source.tsx`;
+const INTERACTIVE_STARTER = `${import.meta.dir}/../../templates/tsx-interactive-counter.tsx`;
 
 test("interactive TSX records a nested-frame Tier 1 verdict", async () => {
   const published = await publishFixture({
@@ -58,6 +59,32 @@ test("interactive TSX records a nested-frame Tier 1 verdict", async () => {
     screenshotError: null,
   });
   expect(existsSync(published.tier1ScreenshotPath!)).toBe(true);
+}, 90_000);
+
+test("the interactive starter mounts its component-owned heading", async () => {
+  const published = await publishFixture({
+    fixturePath: INTERACTIVE_STARTER,
+    artifactType: "tsx",
+    execution: "interactive",
+    slug: "tsx-interactive-starter-mount",
+    productionTier0: true,
+  });
+  const verdict = await readBackFixture({
+    artifactId: published.artifactId,
+    revisionSha: published.revisionSha,
+    tier: 1,
+  });
+
+  expect(published.tier1Status).toBe("ok");
+  expect(verdict).toEqual(
+    expect.objectContaining({
+      execution: "interactive",
+      observed: expect.objectContaining({
+        html: expect.objectContaining({ headingCount: 1 }),
+        errorCount: 0,
+      }),
+    }),
+  );
 }, 90_000);
 
 test("interactive TSX reports delayed structure as unstable", async () => {

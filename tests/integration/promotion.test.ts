@@ -213,12 +213,11 @@ describe("promotion", () => {
     expect(request).not.toHaveProperty("promotedBy");
   });
 
-  test("DRIFT 1.2: instantiate propagates the source execution mode (TSX interactive stays interactive)", () => {
+  test("instantiate preserves source execution mode for TSX interactive templates", () => {
     // The instantiate command must copy the source revision's
     // execution mode end-to-end. A TSX interactive template must
-    // produce an interactive revision, not silently fall back to
-    // the canvas default. The fix: pass source.execution into the
-    // publishRevision call.
+    // produce an interactive revision rather than silently falling
+    // back to the non-TSX default.
     const { repository, artifact } = makeStore();
     const source = new Uint8Array([1, 2, 3]);
     const revision = repository.publishRevision({

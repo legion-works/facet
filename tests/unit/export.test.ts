@@ -399,8 +399,8 @@ describe("buildExportSidecar", () => {
   });
 
   test("preserves the TSX execution marker; non-tsx verdicts omit it on the wire", () => {
-    // D10: the execution marker is emitted for TSX static and
-    // interactive verdicts and ABSENT — not null — for every
+    // The execution marker is emitted for TSX static and interactive
+    // verdicts and ABSENT — not null — for every
     // other artifact type. The ExportSidecarSchema parses the
     // verdict through VerdictSchema, so this test confirms the
     // marker round-trips for TSX and is rejected for non-TSX.

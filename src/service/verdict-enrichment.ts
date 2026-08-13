@@ -17,7 +17,7 @@ export function insecureMarker(
 
 /**
  * Bind the verdict to its (artifactId, revisionSha) pair and attach
- * the insecure marker and the TSX execution marker (D10) when set.
+ * the insecure marker and the TSX execution marker when set.
  * The execution marker is conditional spread so non-TSX verdicts
  * stay BYTE-IDENTICAL to the pre-arc wire shape — the field is
  * absent, not null. The Tier 0/1 result schema extends VerdictSchema,

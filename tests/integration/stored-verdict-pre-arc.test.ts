@@ -212,14 +212,9 @@ describe("pre-arc stored verdicts survive read-back / export / gallery-source", 
   });
 
   test("read-back of a non-tsx pre-arc row does NOT emit an execution field", async () => {
-    // D10 trap: the trap that shipped twice (opaqueRegionCount
-    // v1.2.0, externalImageCount HTML arc) is shape-extension
-    // breaking read-back. The execution marker is OPTIONAL and
-    // conditional-spread on artifactType === "tsx", so a pre-arc
-    // markdown row (planted without an execution column) must read
-    // back WITHOUT the field on the wire — exactly byte-identical
-    // to the pre-arc shape. The wire must not contain the string
-    // "execution" anywhere in the response body.
+    // Optional verdict fields must not alter legacy read-back shapes. A
+    // markdown row without execution metadata reads back without the field;
+    // the wire must not contain "execution" anywhere in the response body.
     const { service } = await startPreArcEnv();
     try {
       const res = await fetch(`${service.url}/api/v1/commands`, {
