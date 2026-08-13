@@ -48,6 +48,7 @@ test("interactive TSX rejects nested control-channel handshakes", async () => {
     `fetch(${JSON.stringify(sinkUrl)}).then(() => { result.network = { reached: true }; }).catch((error) => { result.network = { name: error && error.name }; });`,
     "const csp = document.querySelector('meta[http-equiv=\"Content-Security-Policy\"]')?.content ?? '';",
     "const nestedNonce = /'nonce-([^']+)'/.exec(csp)?.[1] ?? null;",
+    "const inheritedBaseUri = document.baseURI;",
     "const nonceIngress = new MessageChannel(); const nonceControl = new MessageChannel(); const nonceForgeryEvents = [];",
     "const sourceIngress = new MessageChannel(); const sourceControl = new MessageChannel(); const sourceForgeryEvents = [];",
     "nonceControl.port1.onmessage = (event) => nonceForgeryEvents.push(event.data);",
@@ -55,7 +56,7 @@ test("interactive TSX rejects nested control-channel handshakes", async () => {
     "parent.postMessage({ facetHandshake: 'ports', nonce: nestedNonce }, '*', [nonceIngress.port2, nonceControl.port2]);",
     `parent.postMessage({ facetHandshake: 'ports', nonce: ${JSON.stringify(HANDSHAKE_NONCE)} }, '*', [sourceIngress.port2, sourceControl.port2]);`,
     "const mount = document.getElementById('facet-tsx-mount'); if (mount) mount.textContent = 'nested mount';",
-    "setTimeout(() => parent.postMessage({ kind: 'tsx-inner-report', nestedNonce, nonceForgeryEvents, sourceForgeryEvents, result }, '*'), 350);",
+    "setTimeout(() => parent.postMessage({ kind: 'tsx-inner-report', nestedNonce, inheritedBaseUri, nonceForgeryEvents, sourceForgeryEvents, result }, '*'), 350);",
   ].join("\n");
   const artifactBase64 = Buffer.from(source).toString("base64");
   const csp = FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", CSP_NONCE);
@@ -141,6 +142,7 @@ shell.addEventListener('load',function(){
           timedOut?: boolean;
           reports?: readonly {
             nestedNonce?: string | null;
+            inheritedBaseUri?: string;
             nonceForgeryEvents?: readonly { type?: string }[];
             sourceForgeryEvents?: readonly { type?: string }[];
             result?: Record<string, { name?: string; value?: string; reached?: boolean }>;
@@ -172,6 +174,7 @@ shell.addEventListener('load',function(){
     expect(report?.sourceForgeryEvents).toEqual([]);
     expect(report?.nestedNonce).toBe(CSP_NONCE);
     expect(report?.nestedNonce).not.toBe(HANDSHAKE_NONCE);
+    expect(report?.inheritedBaseUri).not.toContain(`handshake=${HANDSHAKE_NONCE}`);
     expect(value?.control).toContainEqual({ type: "boot-ready" });
     expect(value?.control).toContainEqual(expect.objectContaining({ type: "render-complete" }));
     expect(value?.secondControl).toEqual([]);

@@ -295,6 +295,13 @@ describe("gallery frame program (bootstrap source)", () => {
     expect(source).toContain("data.nonce !== handshakeNonce");
     expect(source).toContain("event.source !== window.parent");
     expect(source).toContain("handshakeComplete");
+    const stripIndex = source.indexOf("history.replaceState(");
+    const rendererIndex = source.indexOf("dispatchRender(");
+    expect(stripIndex).toBeGreaterThanOrEqual(0);
+    expect(stripIndex).toBeLessThan(rendererIndex);
+    expect(source).toContain(
+      'throw new Error("bootstrap: history.replaceState is required to remove the handshake secret")',
+    );
   });
 
   test("signals boot-ready and render-complete via the control port", async () => {

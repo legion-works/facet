@@ -58,12 +58,22 @@ if (containerElement === null) {
 }
 const container: HTMLElement = containerElement;
 
-// Nested srcdoc documents inherit this CSP and can read their meta content,
-// so the CSP nonce cannot authenticate the shell's transferable ports.
-// The distinct URL secret is not exposed to the nested opaque origin.
+// Nested srcdoc documents inherit both this CSP and the parent URL as their
+// fallback base. The CSP nonce cannot authenticate ports; remove the distinct
+// channel secret before renderer dispatch creates a nested document.
 const frameParams = new URLSearchParams(location.search);
 const nonce = frameParams.get("nonce") ?? "";
 const handshakeNonce = frameParams.get("handshake") ?? "";
+frameParams.delete("handshake");
+if (typeof history.replaceState !== "function") {
+  throw new Error("bootstrap: history.replaceState is required to remove the handshake secret");
+}
+const strippedSearch = frameParams.toString();
+history.replaceState(
+  null,
+  "",
+  `${location.pathname}${strippedSearch.length === 0 ? "" : `?${strippedSearch}`}${location.hash}`,
+);
 
 let controlPost: ((event: unknown) => void) | null = null;
 let handshakeComplete = false;
