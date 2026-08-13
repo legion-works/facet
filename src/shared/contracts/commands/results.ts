@@ -22,10 +22,8 @@ export const PublishResultSchema = BaseResultSchema.extend({
   revision: RevisionEnvelopeSchema,
   verdict: VerdictSchema.optional(),
   /**
-   * Tier 1 verdict surfaced alongside the publish envelope when the
-   * service was configured with a Tier1Runner. The shape is the
-   * canonical VerdictSchema (Tier 1 extends it); `.nullable()` lets
-   * the wire response carry `null` when no Tier1Runner is wired.
+   * Deprecated compatibility field. Publish is browser-free; visual
+   * read-back owns Tier 1 verification.
    */
   tier1Verdict: Tier1ResultSchema.nullable().optional(),
 });

@@ -291,6 +291,7 @@ jobs:
           - nested-frame-denials.test.ts
           - runtime-exception-event.test.ts
           - screenshot-evidence-failure.test.ts
+          - secure-cli-tier1.test.ts
           - tsx-interactive-isolation.test.ts
           - tsx-interactive-verdict.test.ts
           - tsx-interactive.test.ts

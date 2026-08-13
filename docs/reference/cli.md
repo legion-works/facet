@@ -43,6 +43,12 @@ and the verdict precedence specific to HTML.
 `publish --type tsx` defaults to `--execution static`; `interactive` is valid
 only for TSX. Non-TSX `interactive` is rejected. See [TSX reference](tsx.md).
 
+Regular boots run Tier 0 on publish. `read-back --tier 1` and
+`read-back --tier visual` run Tier 1 on demand, then reuse the stored
+revision-bound verdict. If the pinned browser or its network namespace is
+unavailable, visual read-back records a Tier 1 `error` verdict with a typed
+`tier1_*` code. Publish still returns its Tier 0 result.
+
 ## Insecure mode
 
 `FACET_INSECURE=1|2|3` sets a boot-only forced floor. `FACET_INSECURE_AUTO=1`

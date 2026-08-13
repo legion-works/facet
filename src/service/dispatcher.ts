@@ -18,7 +18,7 @@ import {
   type ArtifactEnvelope,
   type CommandRequest,
 } from "../shared/contracts/commands";
-import type { Artifact, ArtifactType } from "../shared/contracts/artifact";
+import type { Artifact, ArtifactType, RenderRun, Revision } from "../shared/contracts/artifact";
 import { ArtifactTypeSchema } from "../shared/contracts/artifact";
 import { RevisionCommittedEventSchema } from "../shared/contracts/events";
 import {
@@ -76,16 +76,11 @@ export interface DispatcherDeps {
   readonly leases: GalleryLeaseManager;
   readonly idle: IdleController;
   readonly tier0Runner: Tier0Runner;
-  /**
-   * Optional Tier 1 verifier. When present, publish records BOTH a
-   * Tier 0 and a Tier 1 render_run; read-back of tier 1 returns the
-   * Tier 1 verdict. When absent, tier 1 is never recorded and
-   * read-back of tier 1 surfaces `revision_not_found`.
-   */
+  /** Optional Tier 1 verifier, invoked only by explicit visual read-back. */
   readonly tier1Runner: Tier1Runner | undefined;
   /**
    * Write-path seam: called AFTER the revision is committed AND its
-   * Tier 0 (and configured Tier 1) runs are recorded, with the
+   * Tier 0 run is recorded, with the
    * canonical `revision:committed` event. The server wires this to
    * the SSE broadcaster so gallery leases see the revision land.
    */
@@ -204,48 +199,99 @@ async function retainCompiledEvidence(
 }
 
 /**
- * Pin the verdict to the (artifactId, revisionSha) pair the parent
- * service is committing. The worker doesn't know the artifactId (it
- * runs out of process and only needs the sha); we fill it in here so
- * every Tier 0 verdict carries the canonical binding.
- */
-/**
  * Map a Tier 1 runner failure into a synthetic Tier1Result with
- * `status: "error"`. The publish path ALWAYS records a tier 1 run
- * when a Tier1Runner is configured; a thrown FacetError here means
- * the verifier could not even obtain a verdict, so the run row
- * carries the typed code via `discriminativeErrors[].code`.
+ * `status: "error"`. A failed launch is distinct from a rendered
+ * verdict failure, so callers can tell an actionable environment fault
+ * from an observed page defect.
  */
 async function runTier1Safe(
-  runner: Tier1Runner,
+  runner: Tier1Runner | undefined,
   input: Tier1Input,
   artifactId: string,
 ): Promise<Tier1Result> {
   try {
-    return await runner(input);
+    if (runner === undefined) {
+      throw new FacetError("tier1_unavailable", "Tier 1 runner is not configured", {
+        retryable: false,
+      });
+    }
+    return Tier1ResultSchema.parse(await runner(input));
   } catch (error) {
-    const facet = FacetError.from(error);
-    return Tier1ResultSchema.parse({
-      tier: 1,
-      status: "error",
-      artifactId,
-      revisionSha: input.revisionSha,
-      expected: input.lexical,
-      observed: {
-        rendererRootSvgCount: 0,
-        graphCount: 0,
-        mermaidNodeCount: 0,
-        visibleSvgCount: 0,
-        opaqueRegionCount: 0,
-        externalImageCount: 0,
-        viewBoxes: [],
-        errorCount: 1,
-        discriminativeErrors: [{ code: facet.code, message: facet.message }],
-      },
-      screenshotPath: null,
-      consolePath: null,
-    });
+    return tier1Failure(input, artifactId, error);
   }
+}
+
+function tier1Failure(input: Tier1Input, artifactId: string, error: unknown): Tier1Result {
+  const facet = FacetError.from(error);
+  return Tier1ResultSchema.parse({
+    tier: 1,
+    status: "error",
+    artifactId,
+    revisionSha: input.revisionSha,
+    expected: input.lexical,
+    observed: {
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      opaqueRegionCount: 0,
+      externalImageCount: 0,
+      viewBoxes: [],
+      errorCount: 1,
+      discriminativeErrors: [{ code: facet.code, message: facet.message }],
+    },
+    screenshotPath: null,
+    consolePath: null,
+  });
+}
+
+function tier1InputForRevision(revision: Revision, tier0Run: RenderRun): Tier1Input {
+  const compiledPath = tier0Run.compiledPath ?? null;
+  const source =
+    revision.artifactType === "tsx" && compiledPath !== null
+      ? new Uint8Array(readFileSync(compiledPath))
+      : new Uint8Array(revision.source);
+  return Tier1InputSchema.parse({
+    revisionSha: revision.sha256,
+    artifactType: revision.artifactType,
+    renderer: revision.renderer,
+    source,
+    lexical: JSON.parse(tier0Run.expectedJson),
+    ...(revision.artifactType === "tsx" ? { execution: revision.execution ?? "static" } : {}),
+    launcherVersion: TIER1_PINNED_VERSION,
+    networkNamespace: "facet-tier1-egress-isolated",
+  });
+}
+
+function recordTier1Run(
+  deps: DispatcherDeps,
+  revision: Revision,
+  result: Tier1Result,
+): Tier1Result {
+  const execution = revision.artifactType === "tsx" ? (revision.execution ?? "static") : undefined;
+  const enriched = Tier1ResultSchema.parse(
+    enrichVerdict(
+      result,
+      revision.artifactId,
+      revision.sha256,
+      insecureMarker(deps.insecureLevel, deps.insecureReason),
+      execution,
+    ),
+  );
+  deps.repository.recordRenderRun({
+    revisionId: revision.id,
+    tier: 1,
+    status: enriched.status,
+    expected: enriched.expected,
+    observed: enriched.observed,
+    ...(enriched.screenshotPath !== null ? { screenshotPath: enriched.screenshotPath } : {}),
+    ...(enriched.consolePath !== null ? { consolePath: enriched.consolePath } : {}),
+    ...(enriched.screenshotError !== undefined
+      ? { screenshotError: enriched.screenshotError }
+      : {}),
+    insecure: enriched.insecure ?? null,
+  });
+  return enriched;
 }
 
 export async function dispatch(
@@ -413,58 +459,8 @@ export async function dispatch(
         insecure: enriched.insecure ?? null,
         ...(compiledPath === null ? {} : { compiledPath }),
       });
-      // 4. Tier 1 (optional). When configured, run the headless-shell
-      // verifier over the SAME bytes and record a separate render_run.
-      // Acceptance tests gate on the Tier 1 verdict (forgery +
-      // layout); integration tests skip this branch entirely because
-      // they inject no Tier1Runner.
-      let tier1Verdict: Tier1Result | null = null;
-      if (
-        deps.tier1Runner !== undefined &&
-        !(artifactType === "html" && enriched.status === "error") &&
-        !(artifactType === "tsx" && enriched.status === "error")
-      ) {
-        const tier1Input: Tier1Input = Tier1InputSchema.parse({
-          ...tier0Input,
-          lexical: enriched.expected,
-          ...(artifactType === "tsx" && compiledPath !== null
-            ? { source: new Uint8Array(readFileSync(compiledPath)) }
-            : {}),
-          launcherVersion: TIER1_PINNED_VERSION,
-          networkNamespace: "facet-tier1-egress-isolated",
-        });
-        const tier1Result = await runTier1Safe(deps.tier1Runner, tier1Input, command.artifactId);
-        traceTier1Transport(`publish:tier1-return status=${tier1Result.status}`);
-        const enrichedTier1 = Tier1ResultSchema.parse(
-          enrichVerdict(
-            tier1Result,
-            command.artifactId,
-            revision.sha256,
-            insecure,
-            verdictExecution,
-          ),
-        );
-        traceTier1Transport("publish:tier1-record:start");
-        deps.repository.recordRenderRun({
-          revisionId: revision.id,
-          tier: 1,
-          status: enrichedTier1.status,
-          expected: enrichedTier1.expected,
-          observed: enrichedTier1.observed,
-          ...(enrichedTier1.screenshotPath !== null
-            ? { screenshotPath: enrichedTier1.screenshotPath }
-            : {}),
-          ...(enrichedTier1.consolePath !== null ? { consolePath: enrichedTier1.consolePath } : {}),
-          ...(enrichedTier1.screenshotError !== undefined
-            ? { screenshotError: enrichedTier1.screenshotError }
-            : {}),
-          insecure: enrichedTier1.insecure ?? null,
-        });
-        traceTier1Transport("publish:tier1-record:complete");
-        tier1Verdict = enrichedTier1;
-      }
-      // 5. Write-path SSE seam: the revision is committed and its
-      // verdict runs are recorded, so gallery streams bound to this
+      // 4. Write-path SSE seam: the revision is committed and its Tier 0
+      // verdict is recorded, so gallery streams bound to this
       // artifact may now learn the exact revision to fetch + swap to.
       deps.onPublished?.(
         RevisionCommittedEventSchema.parse({
@@ -478,13 +474,11 @@ export async function dispatch(
       );
       const { source: _source, ...envelope } = revision;
       void _source;
-      traceTier1Transport("publish:return:before");
       return {
         command: "publish",
         requestId,
         revision: envelope,
         ...(insecure !== undefined ? { verdict: enriched } : {}),
-        ...(tier1Verdict !== null ? { tier1Verdict } : {}),
       };
     }
     case "list": {
@@ -510,7 +504,31 @@ export async function dispatch(
         });
       }
       const tier = normalizeReadBackTier(command.tier);
-      const runs = deps.repository.listRenderRuns({ revisionId: revision.id, tier });
+      let runs = deps.repository.listRenderRuns({ revisionId: revision.id, tier });
+      if (tier === 1 && runs.length === 0) {
+        const tier0Run = deps.repository.listRenderRuns({ revisionId: revision.id, tier: 0 })[0];
+        if (tier0Run === undefined) {
+          throw new FacetError("tier1_unavailable", "Tier 1 requires a Tier 0 render run", {
+            retryable: false,
+            details: { revisionId: revision.id },
+          });
+        }
+        const tier1Input = tier1InputForRevision(revision, tier0Run);
+        const tier1Result =
+          revision.artifactType === "tsx" && tier0Run.compiledPath === null
+            ? tier1Failure(
+                tier1Input,
+                revision.artifactId,
+                new FacetError(
+                  "tier1_unavailable",
+                  "Tier 1 requires compiled TSX evidence from a successful Tier 0 run",
+                  { retryable: false },
+                ),
+              )
+            : await runTier1Safe(deps.tier1Runner, tier1Input, revision.artifactId);
+        recordTier1Run(deps, revision, tier1Result);
+        runs = deps.repository.listRenderRuns({ revisionId: revision.id, tier });
+      }
       if (runs.length === 0) {
         throw new FacetError("revision_not_found", "No render runs recorded for revision", {
           retryable: false,

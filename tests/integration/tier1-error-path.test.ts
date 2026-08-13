@@ -4,7 +4,7 @@
  * The dispatcher wraps the Tier 1 runner in `runTier1Safe` so a
  * thrown `FacetError` (browser spawn failure, timeout, protocol
  * error, …) becomes a recorded Tier 1 `error` render_run bound to
- * the (artifactId, revisionSha) pair the parent service committed.
+ * the revision requested through visual read-back.
  *
  * The synthetic Tier1Result the safe-wrapper constructs had
  * `artifactId: ""` — which `VerdictSchema.artifactId.min(1)` rejects
@@ -16,21 +16,19 @@
  * The fix threads the real `command.artifactId` through to the
  * synthetic result. This test pins the contract by injecting a
  * Tier 1 runner that ALWAYS throws, publishes a real revision,
- * and asserts:
+ * then requests visual read-back and asserts:
  *
- *   1. publish returns 200 with a Tier1Result-shaped
- *      `tier1Verdict` (NOT an abort envelope, NOT a missing field)
- *   2. `tier1Verdict.artifactId` equals the published artifact's id
- *   3. `tier1Verdict.revisionSha` equals the published revision sha
- *   4. `tier1Verdict.status === "error"`
- *   5. `tier1Verdict.discriminativeErrors[0].code` is the typed
+ *   1. publish returns 200 without launching Tier 1
+ *   2. visual read-back returns a Tier1Result-shaped verdict
+ *   3. the verdict artifactId equals the published artifact's id
+ *   4. the verdict revisionSha equals the published revision sha
+ *   5. the verdict status is `error`
+ *   6. `discriminativeErrors[0].code` is the typed
  *      runner failure code
  *
  * The test MUST fail against the pre-fix `artifactId: ""` code. The
- * pre-fix path either (a) aborts publish with an internal-error
- * envelope (zod parse throws ZodError → FacetError.from → 500), or
- * (b) silently strips `tier1Verdict` from the wire because the parse
- * never returned.
+ * pre-fix path either aborts visual read-back with an internal-error
+ * envelope or fails to record the error verdict.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -50,7 +48,7 @@ interface TestEnv {
   service: RunningService;
   baseUrl: string;
   installToken: string;
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
 }
 
 const scratchRoot = join(tmpdir(), `facet-tier1-err-${crypto.randomUUID()}`);
@@ -138,7 +136,7 @@ describe("Tier 1 graceful-failure path binds to real artifactId+revisionSha", ()
       if (createParsed.command !== "create") throw new Error("expected create result");
       const artifactId = createParsed.artifact.id;
 
-      // 2. Publish — the Tier 1 runner WILL throw.
+      // 2. Publish stays browser-free.
       const pubRes = await envelopeRequest(env, {
         command: "publish",
         artifactId,
@@ -152,27 +150,9 @@ describe("Tier 1 graceful-failure path binds to real artifactId+revisionSha", ()
       if (pubParsed.command !== "publish") throw new Error("expected publish result");
       const revisionSha = pubParsed.revision.sha256;
 
-      // 3. The graceful Tier 1 error verdict MUST be on the wire —
-      //    the publish MUST NOT have aborted just because the runner threw.
-      const tier1Verdict = pubParsed.tier1Verdict;
-      expect(tier1Verdict).toBeDefined();
-      expect(tier1Verdict).not.toBeNull();
-      if (tier1Verdict === null || tier1Verdict === undefined) return;
+      expect(pubParsed.tier1Verdict).toBeUndefined();
 
-      // 4. Bound to the REAL artifactId+revisionSha (NOT "").
-      expect(tier1Verdict.artifactId).toBe(artifactId);
-      expect(tier1Verdict.artifactId).not.toBe("");
-      expect(tier1Verdict.revisionSha).toBe(revisionSha);
-
-      // 5. Status is error, discriminativeErrors carries the typed code.
-      expect(tier1Verdict.status).toBe("error");
-      expect((tier1Verdict.observed.discriminativeErrors ?? []).length).toBeGreaterThan(0);
-      const code = tier1Verdict.observed.discriminativeErrors?.[0]?.code;
-      expect(code).toBe("tier1_browser_died");
-
-      // 6. The same verdict is reachable via read-back tier 1 — the
-      //    render_run was actually recorded against the real
-      //    (artifactId, revisionSha), not lost to a silent abort.
+      // 3. A visual request runs Tier 1 and records its typed failure.
       const rbRes = await envelopeRequest(env, {
         command: "readBack",
         artifactId,
@@ -184,6 +164,7 @@ describe("Tier 1 graceful-failure path binds to real artifactId+revisionSha", ()
       const rbParsed = CommandResultSchema.parse((rbEnv as { ok: true; data: unknown }).data);
       if (rbParsed.command !== "readBack") throw new Error("expected readBack result");
       expect(rbParsed.verdict.artifactId).toBe(artifactId);
+      expect(rbParsed.verdict.artifactId).not.toBe("");
       expect(rbParsed.verdict.revisionSha).toBe(revisionSha);
       expect(rbParsed.verdict.status).toBe("error");
       expect((rbParsed.verdict.observed.discriminativeErrors ?? []).length).toBeGreaterThan(0);

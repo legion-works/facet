@@ -62,9 +62,7 @@ async function boot(fixture: ReturnType<typeof makeFixture>, level?: string) {
     "--tier0-runner-path",
     fixture.runner,
   ];
-  if (level !== undefined) {
-    args.push("--tier1-runner-path", fixture.tier1);
-  }
+  args.push("--tier1-runner-path", fixture.tier1);
   const child = Bun.spawn([process.execPath, ...args], {
     cwd: join(import.meta.dir, "../.."),
     env: {
@@ -99,15 +97,18 @@ describe("insecure level boot threading", () => {
     expect(readFileSync(absent.records, "utf8")).toBe(readFileSync(explicit.records, "utf8"));
   });
 
-  test.each(["1", "2", "3"])("passes level %s to both runner factories", async (level) => {
-    const fixture = makeFixture();
-    const result = await boot(fixture, level);
-    if (result.code !== 0) throw new Error(result.stderr);
-    expect(result.code).toBe(0);
-    const records = readFileSync(fixture.records, "utf8");
-    expect(records).toContain(`{"kind":"Tier0","level":${level}}`);
-    expect(records).toContain(`{"kind":"Tier1","level":${level}}`);
-  });
+  test.each(["1", "2", "3"])(
+    "defers the Tier 1 factory at level %s until visual read-back",
+    async (level) => {
+      const fixture = makeFixture();
+      const result = await boot(fixture, level);
+      if (result.code !== 0) throw new Error(result.stderr);
+      expect(result.code).toBe(0);
+      const records = readFileSync(fixture.records, "utf8");
+      expect(records).toContain(`{"kind":"Tier0","level":${level}}`);
+      expect(records).not.toContain(`{"kind":"Tier1","level":${level}}`);
+    },
+  );
 
   test.each(["1", "2", "3"])(
     "emits an unsuppressible warning before ready at level %s",
@@ -176,7 +177,7 @@ describe("insecure level boot threading", () => {
     },
   );
 
-  test("secure CLI spawn argv excludes Tier 1 runner path", async () => {
+  test("secure CLI spawn argv includes the Tier 1 runner path without inheriting stderr", async () => {
     const fixture = makeFixture();
     let stderrMode: "ignore" | "inherit" | undefined;
     const argv: readonly string[] | undefined = await (async () => {
@@ -200,7 +201,7 @@ describe("insecure level boot threading", () => {
     })();
     expect(argv).toBeDefined();
     expect(argv).toContain("--tier0-runner-path");
-    expect(argv).not.toContain("--tier1-runner-path");
+    expect(argv).toContain("--tier1-runner-path");
     expect(stderrMode).toBe("ignore");
   });
 

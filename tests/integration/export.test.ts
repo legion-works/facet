@@ -140,6 +140,14 @@ async function publish(
   };
 }
 
+async function visualReadBack(
+  env: TestEnv,
+  artifactId: string,
+  revisionSha: string,
+): Promise<void> {
+  await result(env, { command: "readBack", artifactId, revisionSha, tier: 1 });
+}
+
 function tier1(status: Tier1Result["status"]): Tier1Runner {
   return async (input: Tier1Input): Promise<Tier1Result> => ({
     tier: 1,
@@ -428,6 +436,7 @@ describe("render export", () => {
     try {
       const artifactId = await createArtifact(env, "render-success");
       const published = await publish(env, artifactId, SOURCE_ONE);
+      await visualReadBack(env, artifactId, published.revisionSha);
       expect(calls.value).toBe(1);
       const source = await result(env, {
         command: "export",
@@ -479,6 +488,7 @@ describe("render export", () => {
       try {
         const artifactId = await createArtifact(env, `render-confinement-${hostile}`);
         const revisionSha = (await publish(env, artifactId, SOURCE_ONE)).revisionSha;
+        await visualReadBack(env, artifactId, revisionSha);
         const evidenceRoot = join(envDir, "evidence");
         let screenshotPath: string;
         if (hostile === "absolute") {
@@ -533,6 +543,7 @@ describe("render export", () => {
     try {
       const artifactId = await createArtifact(env, "render-null");
       const revisionSha = (await publish(env, artifactId, SOURCE_ONE)).revisionSha;
+      await visualReadBack(env, artifactId, revisionSha);
       const response = await request(env, {
         command: "export",
         artifactId,
@@ -560,6 +571,7 @@ describe("render export", () => {
     try {
       const artifactId = await createArtifact(active, "render-newest-null");
       const revisionSha = (await publish(active, artifactId, SOURCE_ONE)).revisionSha;
+      await visualReadBack(active, artifactId, revisionSha);
       expect(calls.value).toBe(1);
 
       await active.service.stop();
@@ -638,6 +650,7 @@ describe("render export", () => {
     try {
       const artifactId = await createArtifact(active, "render-retained");
       const revisionSha = (await publish(active, artifactId, SOURCE_ONE)).revisionSha;
+      await visualReadBack(active, artifactId, revisionSha);
       const screenshotPath = paths[0];
       if (screenshotPath === undefined) throw new Error("missing stub screenshot path");
       await active.service.stop();
@@ -718,7 +731,7 @@ test("source export sidecar preserves a stored external-resource Tier 1 verdict"
   const env = await startEnv({ tier0Runner: tier0("ok"), tier1Runner: externalTier1 });
   try {
     const artifactId = await createArtifact(env, "html-external-sidecar");
-    await publish(
+    const published = await publish(
       env,
       artifactId,
       new TextEncoder().encode(
@@ -726,6 +739,7 @@ test("source export sidecar preserves a stored external-resource Tier 1 verdict"
       ),
       "html",
     );
+    await visualReadBack(env, artifactId, published.revisionSha);
     const exported = await result(env, { command: "export", artifactId, format: "source" });
     expect(exported.sidecar.verdict.status).toBe("partial:external_resources");
   } finally {

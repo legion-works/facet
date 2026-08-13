@@ -124,6 +124,7 @@ function spawnChild(
   // Pass per-path overrides as flags so the child does not have to
   // recompute paths from FACET_HOME; this keeps parent + child
   // identical even when an operator sets XDG_* vars.
+  const tier1RunnerPath = options.tier1RunnerPath ?? resolveDefaultTier1RunnerPath();
   const args = [
     entrypoint,
     "--db-path",
@@ -136,13 +137,12 @@ function spawnChild(
     paths.lock,
     "--tier0-runner-path",
     tier0RunnerPath,
+    "--tier1-runner-path",
+    tier1RunnerPath,
   ];
   const insecureBoot =
     ["1", "2", "3"].includes(options.env.FACET_INSECURE ?? "") ||
     options.env.FACET_INSECURE_AUTO === "1";
-  if (insecureBoot) {
-    args.push("--tier1-runner-path", options.tier1RunnerPath ?? resolveDefaultTier1RunnerPath());
-  }
   if (options.idleTimeoutMs !== undefined) {
     args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
   }

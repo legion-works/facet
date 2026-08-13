@@ -29,6 +29,7 @@ import { ACCEPTANCE_TEST_BUDGET_MS } from "../../src/shared/config/limits";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
 import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
+import type { RenderRun } from "../../src/shared/contracts/artifact";
 import type { Renderer } from "../../src/shared/contracts/renderers";
 import type {
   InsecureLevel,
@@ -241,25 +242,61 @@ beforeAll(async () => {
 export async function publishFixture(opts: PublishFixtureOptions): Promise<PublishedArtifact> {
   traceTier1Transport("test:publish:start");
   const bytes = await Bun.file(opts.fixturePath).arrayBuffer();
-  const { client } = await ensureEnv(
+  const current = await ensureEnv(
     opts.screenshotMode ?? "live",
     opts.insecureLevel ?? 0,
     opts.productionTier0 ?? false,
   );
-  const result = await publishArtifact(client, {
+  const result = await publishArtifact(current.client, {
     artifactType: opts.artifactType,
     ...(opts.renderer !== undefined ? { renderer: opts.renderer } : {}),
     bytes,
     ...(opts.slug !== undefined ? { slug: opts.slug } : {}),
     ...(opts.execution !== undefined ? { execution: opts.execution } : {}),
   });
+  const tier0 = await readBack(current.client, {
+    artifactId: result.artifactId,
+    revisionSha: result.revisionSha,
+    tier: 0,
+  });
+  if (tier0.verdict.status === "error") {
+    traceTier1Transport("test:publish:complete tier1=skipped-tier0-error");
+    return {
+      artifactId: result.artifactId,
+      revisionSha: result.revisionSha,
+      tier1ScreenshotPath: null,
+      tier1Status: null,
+      tier1ScreenshotError: null,
+    };
+  }
+  const tier1 = await readBack(current.client, {
+    artifactId: result.artifactId,
+    revisionSha: result.revisionSha,
+    tier: 1,
+  });
+  const db = openDatabase({ databasePath: join(current.envDir, "facet.sqlite") });
+  let tier1Run: RenderRun | undefined;
+  try {
+    const repository = new ArtifactRepository(db);
+    const revision = repository.getRevisionBySha(result.artifactId, result.revisionSha);
+    if (revision === null)
+      throw new Error("published acceptance revision is missing from the store");
+    tier1Run = repository.listRenderRuns({ revisionId: revision.id, tier: 1 })[0];
+  } finally {
+    db.close();
+  }
+  if (tier1Run === undefined)
+    throw new Error("visual acceptance read-back did not record a Tier 1 run");
   traceTier1Transport("test:publish:complete");
   return {
     artifactId: result.artifactId,
     revisionSha: result.revisionSha,
-    tier1ScreenshotPath: result.tier1ScreenshotPath,
-    tier1Status: result.tier1Status,
-    tier1ScreenshotError: result.tier1ScreenshotError,
+    tier1ScreenshotPath: tier1Run.screenshotPath,
+    tier1Status: tier1.verdict.status,
+    tier1ScreenshotError:
+      tier1Run.screenshotErrorJson === null
+        ? null
+        : (JSON.parse(tier1Run.screenshotErrorJson) as ScreenshotError),
   };
 }
 

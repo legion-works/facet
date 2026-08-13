@@ -176,9 +176,8 @@ function isMutationMethodFor(_command: CommandRequest["command"]): boolean {
 /**
  * Result of a successful publish. `artifactId` and `revisionSha` are
  * the canonical IDs every downstream verb (read-back, status, open)
- * carries. The `tier1Verdict` field is populated only when the
- * service was started with a Tier1Runner configured; otherwise it
- * is `null`.
+ * carries. Publish is browser-free, so Tier 1 fields remain `null`;
+ * request a visual read-back for a Tier 1 verdict.
  */
 export interface PublishArtifactResult {
   readonly artifactId: string;
@@ -244,8 +243,7 @@ export async function publishArtifact(
       `expected publish result, got ${parsedPublish.command}`,
     );
   }
-  // The dispatcher only embeds `tier1Verdict` on the wire response
-  // when a Tier1Runner is configured; otherwise the field is null.
+  // Publish stays browser-free. Tier 1 is explicit through read-back.
   const tier1Status = parsedPublish.tier1Verdict?.status ?? null;
   return {
     artifactId,

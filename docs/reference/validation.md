@@ -75,6 +75,12 @@ PNG exceeds the 8 MiB cap. Before capture it emulates
 `prefers-reduced-motion: reduce` and awaits `document.fonts.ready`; these
 pre-flights keep repeated captures byte-identical (perf-spike finding).
 
+Levels 0–2 record Tier 0 on publish. A Tier 1 run is explicit: visual
+read-back records it on demand, then reuses the revision-bound result. A
+browser or network-namespace failure records a Tier 1 `error` verdict with its
+typed `tier1_*` code; it does not erase the Tier 0 verdict or turn visual
+read-back into `revision_not_found`.
+
 ## Observed fields and renderer expectations
 
 The canonical observed fields include `rendererRootSvgCount`, `graphCount`,

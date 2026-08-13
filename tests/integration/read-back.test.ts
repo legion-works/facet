@@ -568,6 +568,42 @@ describe("read-back revision binding", () => {
     }
   });
 
+  test("visual read-back runs Tier 1 once on demand and reuses the stored run", async () => {
+    let invocations = 0;
+    const tier1Runner: Tier1Runner = async (input) => {
+      invocations += 1;
+      return placeholderIdentityTier1Runner(input);
+    };
+    const env = await startEnv({ tier1Runner });
+    try {
+      const artifactId = await createArtifact(env, "tier1-on-demand");
+      const published = await publishMarkdown(env, artifactId, "on demand");
+      expect(invocations).toBe(0);
+
+      const first = await envelopeOk(env, {
+        command: "readBack",
+        artifactId,
+        revisionSha: published.revisionSha,
+        tier: "visual",
+      });
+      if (first.command !== "readBack") throw new Error("expected readBack");
+      expect(first.verdict.tier).toBe(1);
+      expect(invocations).toBe(1);
+
+      const second = await envelopeOk(env, {
+        command: "readBack",
+        artifactId,
+        revisionSha: published.revisionSha,
+        tier: 1,
+      });
+      if (second.command !== "readBack") throw new Error("expected readBack");
+      expect(second.verdict).toEqual(first.verdict);
+      expect(invocations).toBe(1);
+    } finally {
+      await env.cleanup();
+    }
+  });
+
   test("read-back exposes the revision renderer", async () => {
     const env = await startEnv();
     try {
@@ -641,7 +677,7 @@ describe("screenshot mandate for partial verdicts", () => {
     "partial:opaque_content",
     "partial:external_resources",
   ] as const) {
-    test(`${status} WITHOUT screenshot path or marker is rejected at parse — publish fails`, async () => {
+    test(`${status} WITHOUT screenshot path or marker becomes a typed visual read-back failure`, async () => {
       const tier1Runner = buildStubTier1({
         evidenceDir: scratchRoot,
         status,
@@ -650,17 +686,18 @@ describe("screenshot mandate for partial verdicts", () => {
       const env = await startEnv({ tier1Runner });
       try {
         const artifactId = await createArtifact(env, "partial-no-shot");
-        const res = await envelopeRequest(env, {
-          command: "publish",
+        const published = await publishMarkdown(env, artifactId, "hi");
+        const visualReadBack = await envelopeOk(env, {
+          command: "readBack",
           artifactId,
-          artifactType: "markdown",
-          bytes: Buffer.from("hi", "utf8").toString("base64"),
+          revisionSha: published.revisionSha,
+          tier: 1,
         });
-        const envelope = FacetEnvelopeSchema.parse(JSON.parse(await res.text()));
-        if (envelope.ok) throw new Error("expected error envelope");
-        // The Tier1Result refine throws ZodError which FacetError.from
-        // maps to invalid_envelope on the wire.
-        expect(envelope.error.code).toBe("invalid_envelope");
+        if (visualReadBack.command !== "readBack") throw new Error("expected readBack");
+        expect(visualReadBack.verdict.status).toBe("error");
+        expect(visualReadBack.verdict.observed.discriminativeErrors).toEqual([
+          expect.objectContaining({ code: "invalid_envelope" }),
+        ]);
       } finally {
         await env.cleanup();
       }
@@ -675,22 +712,12 @@ describe("screenshot mandate for partial verdicts", () => {
       const env = await startEnv({ tier1Runner });
       try {
         const artifactId = await createArtifact(env, "partial-with-shot");
-        const publishResult = await envelopeOk(env, {
-          command: "publish",
-          artifactId,
-          artifactType: "markdown",
-          bytes: Buffer.from("hi", "utf8").toString("base64"),
-        });
-        if (publishResult.command !== "publish") throw new Error("expected publish");
-        expect(publishResult.tier1Verdict).not.toBeNull();
-        if (publishResult.tier1Verdict === null || publishResult.tier1Verdict === undefined) return;
-        expect(publishResult.tier1Verdict.status).toBe(status);
-        expect(publishResult.tier1Verdict.screenshotPath).not.toBeNull();
+        const published = await publishMarkdown(env, artifactId, "hi");
 
         const readback = await envelopeOk(env, {
           command: "readBack",
           artifactId,
-          revisionSha: publishResult.revision.sha256,
+          revisionSha: published.revisionSha,
           tier: 1,
         });
         if (readback.command !== "readBack") throw new Error("expected readBack");
@@ -837,6 +864,12 @@ describe("evidence directory mode + retention", () => {
         });
         if (result.command !== "publish") throw new Error("expected publish");
         revisions.push(result.revision.sha256);
+        await envelopeOk(env, {
+          command: "readBack",
+          artifactId,
+          revisionSha: result.revision.sha256,
+          tier: 1,
+        });
       }
       // Find the run directory for the FIRST revision (must be gone).
       // The stub wrote under <scratchRoot>/evidence/<type>/<sha>/<runId>.

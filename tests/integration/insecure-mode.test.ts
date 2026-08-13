@@ -141,6 +141,20 @@ async function publish(env: TestEnv): Promise<Extract<CommandResult, { command: 
   return result;
 }
 
+async function visualReadBack(
+  env: TestEnv,
+  published: Extract<CommandResult, { command: "publish" }>,
+): Promise<Extract<CommandResult, { command: "readBack" }>> {
+  const result = await command(env, {
+    command: "readBack",
+    artifactId: published.revision.artifactId,
+    revisionSha: published.revision.sha256,
+    tier: 1,
+  });
+  if (result.command !== "readBack") throw new Error("expected readBack result");
+  return result;
+}
+
 describe("insecure dispatcher semantics", () => {
   test("gallery source exposes insecure markers while keeping secure verdicts marker-free", async () => {
     const insecure = await startEnv(1, runners({ tier0: "ok", tier1: "ok" }));
@@ -191,18 +205,20 @@ describe("insecure dispatcher semantics", () => {
   });
 
   test.each([1, 2] as const)(
-    "level %d invokes both runners and marks every verdict",
+    "level %d runs Tier 1 only on explicit visual read-back and marks every verdict",
     async (level) => {
       const configured = runners({ tier0: "error", tier1: "tampered" });
       const env = await startEnv(level, configured);
       const result = await publish(env);
 
-      expect(configured.calls).toEqual({ tier0: 1, tier1: 1 });
+      expect(configured.calls).toEqual({ tier0: 1, tier1: 0 });
       expect(result.verdict).toMatchObject({
         status: "error",
         insecure: { level, reason: expect.any(String) },
       });
-      expect(result.tier1Verdict).toMatchObject({
+      const tier1 = await visualReadBack(env, result);
+      expect(configured.calls).toEqual({ tier0: 1, tier1: 1 });
+      expect(tier1.verdict).toMatchObject({
         status: "tampered",
         insecure: { level, reason: expect.any(String) },
       });
@@ -222,7 +238,8 @@ describe("insecure dispatcher semantics", () => {
     const result = await publish(env);
 
     expect(result.verdict).toMatchObject({ insecure: { level } });
-    expect(result.tier1Verdict).toMatchObject({ insecure: { level } });
+    const tier1 = await visualReadBack(env, result);
+    expect(tier1.verdict).toMatchObject({ insecure: { level } });
   });
 
   test("level 3 skips both runners and records a zero-valued unvalidated verdict", async () => {

@@ -271,6 +271,7 @@ function normalizeAdapterValue(value: unknown, key = ""): unknown {
     key === "id" ||
     key.endsWith("Id") ||
     key.endsWith("At") ||
+    key.endsWith("Path") ||
     key === "timestamp"
   )
     return "<volatile>";

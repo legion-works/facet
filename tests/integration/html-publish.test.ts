@@ -132,6 +132,12 @@ describe("HTML publish prediction boundary", () => {
       });
 
       expect(published.data.revision.artifactType).toBe("html");
+      await request(service, {
+        command: "readBack",
+        artifactId,
+        revisionSha: published.data.revision.sha256,
+        tier: 1,
+      });
       expect(tier1Inputs[0]?.lexical.html).toEqual(htmlPrediction);
       const db = new Database(dbPath, { readonly: true });
       try {

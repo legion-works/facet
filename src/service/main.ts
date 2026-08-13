@@ -176,6 +176,14 @@ async function loadTier1Runner(path: string): Promise<LoadedTier1Runner> {
   };
 }
 
+function createLazyTier1Runner(path: string, level: InsecureLevel): Tier1Runner {
+  let runner: Promise<Tier1Runner> | undefined;
+  return async (input) => {
+    runner ??= loadTier1Runner(path).then((loaded) => loaded.factory(level));
+    return runner.then((loaded) => loaded(input));
+  };
+}
+
 function parseInsecureLevel(raw: string | undefined): InsecureLevel {
   if (raw === undefined || raw === "0") return 0;
   if (raw === "1" || raw === "2" || raw === "3") return Number(raw) as InsecureLevel;
@@ -223,25 +231,18 @@ async function main(): Promise<void> {
     const forcedLevel = parseInsecureLevel(insecureRaw);
     const autoFallback = isAutoFallbackEnabled(process.env.FACET_INSECURE_AUTO);
     const tier0Module = await loadRequiredTier0Runner(args.tier0RunnerPath);
+    const tier1RunnerPath = requireTier1RunnerPath(args.tier1RunnerPath);
+    let tier1Module: LoadedTier1Runner | undefined;
     let insecureLevel = forcedLevel;
     let insecureReason: string | null = null;
     if (autoFallback && forcedLevel < 2) {
+      tier1Module = await loadTier1Runner(tier1RunnerPath);
       const tier0Probe = requireProbe(tier0Module.probe, "Tier 0 isolation");
       const tier0 = await tier0Probe();
       if (!tier0.available) {
         insecureLevel = 2;
         insecureReason = `auto:${boundedProbeReason(tier0)}`;
       } else if (forcedLevel === 0) {
-        if (args.tier1RunnerPath === undefined) {
-          throw new FacetError(
-            "internal",
-            "Tier 1 runner path is required for insecure auto fallback",
-            {
-              retryable: false,
-            },
-          );
-        }
-        const tier1Module = await loadTier1Runner(args.tier1RunnerPath);
         const tier1Probe = requireProbe(tier1Module.probe, "Tier 1 availability");
         const tier1 = await tier1Probe();
         if (!tier1.available) {
@@ -255,16 +256,10 @@ async function main(): Promise<void> {
       process.stderr.write(`WARN: FACET_INSECURE=${insecureLevel} — ${reason}\n`);
     }
     const configuredTier0Runner = tier0Module.factory(insecureLevel);
-    let tier1Runner: Tier1Runner | undefined;
-    if (insecureLevel > 0) {
-      if (args.tier1RunnerPath === undefined) {
-        throw new FacetError("internal", "Tier 1 runner path is required for insecure boots", {
-          retryable: false,
-        });
-      }
-      const tier1Module = await loadTier1Runner(args.tier1RunnerPath);
-      tier1Runner = tier1Module.factory(insecureLevel);
-    }
+    const tier1Runner =
+      tier1Module === undefined
+        ? createLazyTier1Runner(tier1RunnerPath, insecureLevel)
+        : tier1Module.factory(insecureLevel);
     running = await startFacetService({
       ...(args.dbPath !== undefined ? { dbPath: args.dbPath } : {}),
       ...(args.installTokenPath !== undefined ? { installTokenPath: args.installTokenPath } : {}),
@@ -272,7 +267,7 @@ async function main(): Promise<void> {
       ...(args.lockPath !== undefined ? { lockPath: args.lockPath } : {}),
       ...(args.idleTimeoutMs !== undefined ? { idleTimeoutMs: args.idleTimeoutMs } : {}),
       tier0Runner: configuredTier0Runner,
-      ...(tier1Runner !== undefined ? { tier1Runner } : {}),
+      tier1Runner,
       insecureLevel,
       insecureReason,
       logger,
@@ -312,6 +307,17 @@ async function loadRequiredTier0Runner(path: string | undefined): Promise<Loaded
     );
   }
   return loadTier0Runner(path);
+}
+
+function requireTier1RunnerPath(path: string | undefined): string {
+  if (path === undefined) {
+    throw new FacetError(
+      "internal",
+      "Tier 1 runner path is required (pass --tier1-runner-path <module>)",
+      { retryable: false },
+    );
+  }
+  return path;
 }
 
 if (import.meta.main) {

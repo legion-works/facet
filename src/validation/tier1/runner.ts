@@ -195,11 +195,6 @@ async function runTier1Attempt(
   if (!Number.isInteger(input.artifactType === undefined)) {
     void (input.artifactType as unknown);
   }
-  const browser =
-    hooks.createBrowser?.() ??
-    new PuppeteerTier1Browser({
-      launcher: resolveLauncher(level, { version: input.launcherVersion }),
-    });
   const profileDir = mkdtempSync(join(tmpdir(), "facet-tier1-host-"));
   let target: VerifierTarget | undefined;
   let runtimeExceptions: RuntimeExceptionCollector | undefined;
@@ -225,6 +220,11 @@ async function runTier1Attempt(
   const observationPath = join(runEvidenceDir, "protocol-observation.json");
 
   try {
+    const browser =
+      hooks.createBrowser?.() ??
+      new PuppeteerTier1Browser({
+        launcher: resolveLauncher(level, { version: input.launcherVersion }),
+      });
     traceTier1("launch:start", startedAt);
     target = await browser.launch();
     traceTier1("launch:complete", startedAt, `pid=${target.pid}`);
