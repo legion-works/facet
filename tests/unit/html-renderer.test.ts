@@ -12,6 +12,10 @@ globals["HTMLElement"] = shimWindow.HTMLElement;
 globals["Node"] = shimWindow.Node;
 globals["DocumentFragment"] = shimWindow.DocumentFragment;
 globals["DOMParser"] = (shimWindow as unknown as Record<string, unknown>)["DOMParser"];
+Object.defineProperty(shimDocument, "adoptNode", {
+  configurable: true,
+  value: <T extends Node>(node: T): T => node,
+});
 
 function freshContainer(): HTMLElement {
   const container = shimDocument.createElement("main");
@@ -32,6 +36,42 @@ describe("HTML frame renderer", () => {
     const root = html.createHtmlRendererRoot(freshContainer().ownerDocument);
     expect(root?.getAttribute("data-facet-renderer-root")).toBe("true");
     expect(root?.className).toBe("facet-html-root");
+  });
+
+  test("keeps safe HTML beneath the frame-owned root while stripping executable markup", async () => {
+    const container = freshContainer();
+    await html.renderHtml(
+      { container },
+      new TextEncoder().encode(`
+        <!doctype html><html><body>
+        <script id="denied-script">window.facetCompromised = true;</script>
+        <iframe id="denied-frame" src="https://outside.invalid/"></iframe>
+        <section id="safe-section" onclick="window.facetCompromised = true" style="color: red">
+          <a id="safe-link" href="https://example.com/report">report</a>
+          <a id="unsafe-link" href="javascript:window.facetCompromised = true">unsafe</a>
+          <img id="safe-image" src="data:image/png;base64,AA==">
+          <img id="unsafe-image" src="https://["><div id="misplaced-url" href="https://outside.invalid/">text</div>
+        </section>
+        </body></html>
+      `),
+    );
+
+    const root = container.firstElementChild;
+    expect(root?.getAttribute("data-facet-renderer-root")).toBe("true");
+    expect(root?.className).toBe("facet-html-root");
+    expect(root?.querySelector("#denied-script")).toBeNull();
+    expect(root?.querySelector("#denied-frame")).toBeNull();
+    expect(root?.querySelector("#safe-section")?.getAttribute("onclick")).toBeNull();
+    expect(root?.querySelector("#safe-section")?.getAttribute("style")).toBeNull();
+    expect(root?.querySelector("#safe-link")?.getAttribute("href")).toBe(
+      "https://example.com/report",
+    );
+    expect(root?.querySelector("#unsafe-link")?.getAttribute("href")).toBeNull();
+    expect(root?.querySelector("#safe-image")?.getAttribute("src")).toBe(
+      "data:image/png;base64,AA==",
+    );
+    expect(root?.querySelector("#unsafe-image")?.getAttribute("src")).toBeNull();
+    expect(root?.querySelector("#misplaced-url")?.getAttribute("href")).toBeNull();
   });
 
   test("publishes the starter classes in the canonical style vocabulary", () => {

@@ -12,7 +12,7 @@
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt",
     "format:check": "bun scripts/check-format.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.runtime-egress-fixture.json",
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov",
     "coverage:check": "bun scripts/check-coverage.ts",

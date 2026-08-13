@@ -22,6 +22,7 @@
 // directly (no iframe wrapper). The page title is set to the
 // attempted-channel list after a 2s settle window.
 
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,6 +37,14 @@ export interface EgressPenetrationResult {
   readonly attemptedChannels: readonly string[];
   readonly sinkHits: readonly string[];
   readonly udpPackets: number;
+}
+
+interface EgressSink {
+  readonly port: number;
+  readonly hits: string[];
+  readonly udpPackets: () => number;
+  readonly udpPacketObserved: Promise<void>;
+  readonly close: () => Promise<void>;
 }
 
 /**
@@ -58,6 +67,17 @@ export const EGRESS_CHANNELS = [
 ] as const;
 export type EgressChannel = (typeof EGRESS_CHANNELS)[number];
 
+const TSX_RUNTIME_EGRESS_FIXTURE_PATH = join(
+  import.meta.dir,
+  "..",
+  "tests",
+  "fixtures",
+  "tsx",
+  "runtime-egress-probe.tsx",
+);
+const TSX_RUNTIME_EGRESS_ORIGIN_TOKEN = "__FACET_EGRESS_ORIGIN__";
+const TSX_RUNTIME_EGRESS_SOCKET_TOKEN = "__FACET_EGRESS_SOCKET__";
+
 /** Read the first non-loopback IPv4 address; the sink binds here. */
 export function hostAddress(): string {
   for (const addresses of Object.values(networkInterfaces())) {
@@ -73,14 +93,13 @@ export function hostAddress(): string {
  * UDP datagrams increment `packets`. Both bind to `0.0.0.0` so the
  * browser can target the host's routable address.
  */
-async function startSink(host: string): Promise<{
-  port: number;
-  hits: string[];
-  udpPackets: () => number;
-  close: () => Promise<void>;
-}> {
+async function startSink(host: string): Promise<EgressSink> {
   const hits: string[] = [];
   let packets = 0;
+  let resolveUdpPacketObserved: (() => void) | undefined;
+  const udpPacketObserved = new Promise<void>((resolve) => {
+    resolveUdpPacketObserved = resolve;
+  });
   const server = Bun.serve({
     hostname: "0.0.0.0",
     port: 0,
@@ -107,6 +126,7 @@ async function startSink(host: string): Promise<{
   const udp = dgram.createSocket("udp4");
   udp.on("message", () => {
     packets += 1;
+    resolveUdpPacketObserved?.();
   });
   await new Promise<void>((resolve, reject) => {
     udp.once("error", reject);
@@ -117,11 +137,16 @@ async function startSink(host: string): Promise<{
     port: server.port ?? 0,
     hits,
     udpPackets: () => packets,
+    udpPacketObserved,
     close: async () => {
       server.stop(true);
       await new Promise<void>((resolve) => udp.close(() => resolve()));
     },
   };
+}
+
+export async function startEgressSinkForTests(): Promise<EgressSink> {
+  return startSink("127.0.0.1");
 }
 
 /**
@@ -189,38 +214,9 @@ export function buildArtifact(host: string, port: number): string {
 export function buildTsxRuntimeEgressFixture(host: string, port: number): string {
   const origin = `http://${host}:${port}`;
   const socket = `ws://${host}:${port}`;
-  return `import React, { useEffect } from "react";
-
-export default function RuntimeEgressProbe() {
-  useEffect(() => {
-    const {
-      fetch: runtimeFetch,
-      XMLHttpRequest: RuntimeXHR,
-      WebSocket: RuntimeWebSocket,
-      EventSource: RuntimeEventSource,
-      Worker: RuntimeWorker,
-      SharedWorker: RuntimeSharedWorker,
-    } = globalThis;
-    const target = ${JSON.stringify(origin)};
-    const socket = ${JSON.stringify(socket)};
-    const attempt = (operation: () => void) => {
-      try { operation(); } catch {};
-    };
-    attempt(() => { void runtimeFetch(target + "/fetch").catch(() => {}); });
-    attempt(() => { const request = new RuntimeXHR(); request.open("GET", target + "/xhr"); request.send(); });
-    attempt(() => { new RuntimeWebSocket(socket + "/ws"); });
-    attempt(() => { new RuntimeEventSource(target + "/events"); });
-    attempt(() => { new RuntimeWorker(target + "/worker.js"); });
-    attempt(() => { new RuntimeSharedWorker(target + "/shared-worker.js"); });
-    attempt(() => { const image = new Image(); image.src = target + "/image"; document.body.appendChild(image); });
-    attempt(() => { const script = document.createElement("script"); script.src = target + "/script.js"; document.head.appendChild(script); });
-    attempt(() => { navigator.sendBeacon(target + "/beacon", "x"); });
-    attempt(() => { void window.parent.location.href; });
-  }, []);
-
-  return <main><h1>Runtime egress probe</h1><p>Alias paths reached the runtime boundary.</p></main>;
-}
-`;
+  return readFileSync(TSX_RUNTIME_EGRESS_FIXTURE_PATH, "utf8")
+    .replaceAll(JSON.stringify(TSX_RUNTIME_EGRESS_ORIGIN_TOKEN), JSON.stringify(origin))
+    .replaceAll(JSON.stringify(TSX_RUNTIME_EGRESS_SOCKET_TOKEN), JSON.stringify(socket));
 }
 
 /**

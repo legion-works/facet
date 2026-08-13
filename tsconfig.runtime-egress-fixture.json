@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react"
+  },
+  "include": ["tests/fixtures/tsx/runtime-egress-probe.tsx"]
+}
