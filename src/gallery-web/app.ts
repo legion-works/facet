@@ -39,6 +39,8 @@ import {
   type ObservedCountKey,
 } from "../shared/contracts/observed-counts";
 import {
+  clampCssPan,
+  clampNativeSvgPan,
   clampZoom,
   resetViewState,
   validateViewIntent,
@@ -919,6 +921,20 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       Object.assign(
         viewState,
         zoomAtPoint(viewState, clampZoom(viewState.zoom * factor), intent.cursorX, intent.cursorY),
+      );
+    }
+    const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${current.frameId}"]`);
+    if (iframe !== null) {
+      const rect = canvasRect();
+      Object.assign(
+        viewState,
+        viewModes.get(current.frameId) === "native"
+          ? clampNativeSvgPan(viewState, { width: iframe.clientWidth, height: iframe.clientHeight })
+          : clampCssPan(
+              viewState,
+              { width: rect.width, height: rect.height },
+              { width: iframe.offsetWidth, height: iframe.offsetHeight },
+            ),
       );
     }
     current.sendControl(viewStateMessage(viewState));

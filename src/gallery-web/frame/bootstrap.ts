@@ -32,6 +32,7 @@ import {
 } from "./renderers/registry";
 import { validateRenderer } from "./renderer-validation";
 import { applySvgViewBox, type SvgViewBox } from "./view-box";
+import { clampNativeSvgPan } from "../view-state";
 import { isTsxExecutionMode, type TsxExecutionMode } from "../../shared/tsx/execution";
 
 declare global {
@@ -154,15 +155,11 @@ function receiveViewState(value: unknown): void {
   const width = renderedSvg.clientWidth;
   const height = renderedSvg.clientHeight;
   if (width <= 0 || height <= 0) return;
-  const next = applySvgViewBox(
-    originalViewBox,
+  const clamped = clampNativeSvgPan(
+    { zoom: event.zoom, panX: event.panX, panY: event.panY },
     { width, height },
-    {
-      zoom: event.zoom,
-      panX: event.panX,
-      panY: event.panY,
-    },
   );
+  const next = applySvgViewBox(originalViewBox, { width, height }, clamped);
   renderedSvg.setAttribute("viewBox", `${next.minX} ${next.minY} ${next.width} ${next.height}`);
 }
 

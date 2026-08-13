@@ -68,7 +68,8 @@ export function buildFrameDocument(options: {
     // only resolves against a DEFINITE parent height, so min-height let
     // an oversized SVG overflow and crop instead of fitting.
     `#artifact{margin:0;height:100%;box-sizing:border-box;padding:16px;` +
-    `display:flex;align-items:center;justify-content:center;overflow:auto}` +
+    `display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;overflow:auto}` +
+    `#artifact>svg:only-child,#artifact>canvas:only-child,#artifact>.facet-html-root:only-child,#artifact>iframe:only-child{align-self:center;margin-block:auto}` +
     `#artifact>svg{max-width:100%;max-height:100%;height:auto;width:auto}` +
     `#artifact a{color:#82aaff}` +
     `#artifact code,#artifact pre{background:#1e2030;color:#c3e88d;border-radius:4px}` +

@@ -1,10 +1,16 @@
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 8;
+const MIN_VISIBLE_PX = 48;
 
 export interface ViewState {
   zoom: number;
   panX?: number;
   panY?: number;
+}
+
+export interface ViewportSize {
+  readonly width: number;
+  readonly height: number;
 }
 
 export type ViewMode = "native" | "css";
@@ -32,6 +38,58 @@ export function clampZoom(zoom: number): number {
 
 export function resetViewState(_state: ViewState): ViewState {
   return { zoom: 1, panX: 0, panY: 0 };
+}
+
+function clampPanAxis(
+  pan: number,
+  content: number,
+  viewport: number,
+  zoom: number,
+  offset: number,
+): number {
+  if (!Number.isFinite(pan) || content <= 0 || viewport <= 0) return 0;
+  const visible = Math.min(MIN_VISIBLE_PX, viewport);
+  const scaled = content * zoom;
+  return Math.max(visible - offset - scaled, Math.min(viewport - visible - offset, pan));
+}
+
+/**
+ * Clamp shell-transformed frames to retain 48px of the artifact. The frame
+ * begins centered in the grid, while its inline transform origin stays top-left.
+ */
+export function clampCssPan(
+  state: ViewState,
+  viewport: ViewportSize,
+  artifact: ViewportSize,
+): ViewState {
+  const zoom = clampZoom(state.zoom);
+  return {
+    zoom,
+    panX: clampPanAxis(
+      state.panX ?? 0,
+      artifact.width,
+      viewport.width,
+      zoom,
+      (viewport.width - artifact.width) / 2,
+    ),
+    panY: clampPanAxis(
+      state.panY ?? 0,
+      artifact.height,
+      viewport.height,
+      zoom,
+      (viewport.height - artifact.height) / 2,
+    ),
+  };
+}
+
+/** Clamp native SVG viewBox translation to retain 48px of the source image. */
+export function clampNativeSvgPan(state: ViewState, viewport: ViewportSize): ViewState {
+  const zoom = clampZoom(state.zoom);
+  return {
+    zoom,
+    panX: clampPanAxis(state.panX ?? 0, viewport.width, viewport.width, zoom, 0),
+    panY: clampPanAxis(state.panY ?? 0, viewport.height, viewport.height, zoom, 0),
+  };
 }
 
 export function zoomAtPoint(

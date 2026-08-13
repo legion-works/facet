@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  clampCssPan,
+  clampNativeSvgPan,
   clampZoom,
   resetViewState,
   validateViewMode,
@@ -27,6 +29,35 @@ describe("gallery view state", () => {
       panX: 0,
       panY: 0,
     });
+  });
+
+  test("keeps at least 48 pixels of a CSS-transformed artifact visible", () => {
+    expect(
+      clampCssPan(
+        { zoom: 8, panX: 100_000, panY: -100_000 },
+        { width: 800, height: 600 },
+        { width: 800, height: 600 },
+      ),
+    ).toEqual({ zoom: 8, panX: 752, panY: -4752 });
+  });
+
+  test("allows a zoomed-out CSS artifact to pan while retaining 48 pixels", () => {
+    expect(
+      clampCssPan(
+        { zoom: 0.25, panX: 10_000, panY: -10_000 },
+        { width: 800, height: 600 },
+        { width: 800, height: 600 },
+      ),
+    ).toEqual({ zoom: 0.25, panX: 752, panY: -102 });
+  });
+
+  test("keeps a native SVG intersecting the viewport at both zoom extremes", () => {
+    expect(
+      clampNativeSvgPan({ zoom: 8, panX: 100_000, panY: -100_000 }, { width: 800, height: 600 }),
+    ).toEqual({ zoom: 8, panX: 752, panY: -4752 });
+    expect(
+      clampNativeSvgPan({ zoom: 0.25, panX: 100_000, panY: -100_000 }, { width: 800, height: 600 }),
+    ).toEqual({ zoom: 0.25, panX: 752, panY: -102 });
   });
 
   test("accepts bounded numeric frame intents and rejects hostile values", () => {
