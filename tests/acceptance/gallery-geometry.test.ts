@@ -221,6 +221,74 @@ test.skipIf(!liveGateEnabled || !availability.available)(
 );
 
 test.skipIf(!liveGateEnabled || !availability.available)(
+  "gallery interactive TSX carries the vendored HTML style vocabulary",
+  async () => {
+    const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-styles-"));
+    const tier0Runner = createTier0RunnerForTests(0, {});
+    const service = await startFacetService({
+      dbPath: join(envDir, "facet.sqlite"),
+      installTokenPath: join(envDir, "install.token"),
+      promoteTokenPath: join(envDir, "promote.token"),
+      lockPath: join(envDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "gallery-tsx-styles" }),
+      tier0Runner,
+    });
+    let target: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>> | undefined;
+    try {
+      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+      target = await browser.launch();
+      await navigateToArtifact(
+        target,
+        client,
+        "tsx",
+        [
+          'import React from "react";',
+          "export default function StyledCounter(){",
+          '  return <section className="alert"><span className="badge">ready</span><button className="btn">Increment</button></section>;',
+          "}",
+        ].join("\n"),
+        "interactive",
+      );
+      const outer = await artifactFrame(target);
+      const nested = await resolveNestedArtifactFrame(target.session, outer);
+      const nestedWorld = await createIsolatedWorld(target.session, nested.frameId);
+      const styles = (await target.session.send("Runtime.evaluate", {
+        contextId: nestedWorld.executionContextId,
+        returnByValue: true,
+        expression: `(() => {
+          const alert = document.querySelector('.alert');
+          const button = document.querySelector('.btn');
+          if (alert === null || button === null) throw new Error('styled TSX structure missing');
+          return {
+            alertBackground: getComputedStyle(alert).backgroundColor,
+            buttonBorderRadius: getComputedStyle(button).borderRadius,
+            buttonPaddingLeft: getComputedStyle(button).paddingLeft,
+          };
+        })()`,
+      })) as {
+        result?: {
+          value?: {
+            alertBackground: string;
+            buttonBorderRadius: string;
+            buttonPaddingLeft: string;
+          };
+        };
+      };
+      expect(styles.result?.value?.alertBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
+      expect(styles.result?.value?.buttonBorderRadius).not.toBe("0px");
+      expect(styles.result?.value?.buttonPaddingLeft).not.toBe("6px");
+    } finally {
+      await target?.close();
+      await service.stop();
+      tier0Runner.close?.();
+      rmSync(envDir, { recursive: true, force: true });
+    }
+  },
+  90_000,
+);
+
+test.skipIf(!liveGateEnabled || !availability.available)(
   "gallery delivers interactive TSX execution and mounts component structure",
   async () => {
     const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-interactive-"));

@@ -1,6 +1,7 @@
 import { FROZEN_CSP_TEMPLATE } from "../../../shared/security/frozen-csp";
 import { TSX_ARTIFACT_FRAME_ATTRIBUTE, type TsxExecutionMode } from "../../../shared/tsx/execution";
 import type { Renderer } from "../../../shared/contracts/renderers";
+import htmlVendoredStyles from "../styles/html-vendored.css" with { type: "text" };
 import { renderHtml } from "./html";
 import {
   FacetRenderError,
@@ -35,6 +36,7 @@ export function buildInteractiveTsxSrcdoc(compiledBytes: Uint8Array, nonce: stri
     "<!doctype html><html><head>" +
     '<meta charset="utf-8">' +
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
+    `<style>${htmlVendoredStyles.replace(/<\/style/gi, "<\\/style")}</style>` +
     "</head><body>" +
     '<main id="facet-tsx-mount" data-facet-renderer-root="true"></main>' +
     // Frame-owned marker is visible diagnostics only; Tier 1 trusts CDP runtime exceptions.
