@@ -19,6 +19,7 @@
  */
 
 import puppeteer, { type Browser, type CDPSession, type Page } from "puppeteer-core";
+import type { ChildProcess } from "node:child_process";
 
 import { buildBrowserArgs, resolveLauncher, type ResolvedLauncher } from "./launcher";
 import { TIER1_CDP_CALL_WATCHDOG_MS } from "./limits";
@@ -51,6 +52,27 @@ const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 function traceLaunch(stage: string, startedAt: number): void {
   if (!TIER1_TRACE) return;
   process.stderr.write(`[tier1] +${Date.now() - startedAt}ms browser:${stage}\n`);
+}
+
+async function waitForBrowserExit(child: ChildProcess | null, timeoutMs = 2_000): Promise<void> {
+  if (child === null || child.exitCode !== null) return;
+  await new Promise<void>((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      child.off("exit", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    child.once("exit", finish);
+  });
+}
+
+async function closeBrowserAndRemoveProfile(browser: Browser, profileDir: string): Promise<void> {
+  const child = browser.process();
+  await closeAndRemoveEphemeralProfile(async () => {
+    await browser.close().catch(() => {});
+    await waitForBrowserExit(child);
+  }, profileDir);
 }
 
 class PuppeteerCdpSessionAdapter implements VerifierCdpSession {
@@ -138,10 +160,12 @@ class PuppeteerVerifierTarget implements VerifierTarget {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    const child = this.browser.process();
     await closeAndRemoveEphemeralProfile(async () => {
       await this.session.detach().catch(() => {});
       await this.page.close().catch(() => {});
       await this.browser.close().catch(() => {});
+      await waitForBrowserExit(child);
     }, this.profileDir);
   }
 }
@@ -218,8 +242,7 @@ export class PuppeteerTier1Browser {
       page = await browser.newPage();
       traceLaunch("page-created", startedAt);
     } catch (error) {
-      await browser.close().catch(() => {});
-      removeEphemeralProfileDir(profileDir);
+      await closeBrowserAndRemoveProfile(browser, profileDir);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`tier1: failed to open page: ${message}`, { cause: error });
     }
@@ -229,8 +252,7 @@ export class PuppeteerTier1Browser {
       traceLaunch("cdp-session-created", startedAt);
     } catch (error) {
       await page.close().catch(() => {});
-      await browser.close().catch(() => {});
-      removeEphemeralProfileDir(profileDir);
+      await closeBrowserAndRemoveProfile(browser, profileDir);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`tier1: failed to open CDP session: ${message}`, { cause: error });
     }
@@ -252,20 +274,16 @@ export class PuppeteerTier1Browser {
       });
       const page = await browser.newPage();
       await page.close();
-      await browser.close();
       return { available: true, reason: null };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { available: false, reason: message };
     } finally {
       if (browser !== undefined) {
-        try {
-          await browser.close();
-        } catch {
-          // already closed
-        }
+        await closeBrowserAndRemoveProfile(browser, profileDir);
+      } else {
+        removeEphemeralProfileDir(profileDir);
       }
-      removeEphemeralProfileDir(profileDir);
     }
   }
 }
