@@ -167,6 +167,7 @@ export async function buildHostPage(
     "<!doctype html><html><head>" +
     `<meta charset="utf-8">` +
     "<title>facet-tier1-host</title>" +
+    "<style>html,body{margin:0;min-height:100%;}iframe{border:0;width:100%;height:100vh;}</style>" +
     "</head><body>" +
     `<main id="host-root"></main>` +
     "<script>" +
