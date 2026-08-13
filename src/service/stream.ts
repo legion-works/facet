@@ -185,6 +185,16 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
     deps.leases.release(leaseId);
     deps.idle.release(`stream:${streamId}`);
   };
+  // SSE-only teardown: used when the client disconnects (cancel) so the
+  // stream's idle reason clears but the lease survives for a refresh
+  // that reuses the sessionStorage-persisted session. The lease expires
+  // on its own TTL.
+  const releaseStreamOnly = (): void => {
+    if (closed) return;
+    closed = true;
+    unregister?.();
+    deps.idle.release(`stream:${streamId}`);
+  };
 
   const readable = new ReadableStream({
     start(controller) {
@@ -250,8 +260,17 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
       (controller as unknown as { facetStop?: () => void }).facetStop = stop;
     },
     cancel() {
-      // Client-initiated disconnect: tear down without sending close.
-      releaseLease();
+      // Client-initiated disconnect: tear down the stream and the
+      // idle reason, but leave the lease alone. The lease has its own
+      // per-lease TTL on the lease manager and is the authoritative
+      // credential the shell persists to sessionStorage. Releasing it
+      // here would defeat the F5 refresh path: the cancel fires when
+      // the navigation tears down the SSE stream, the new shell would
+      // retry the lease it just released, and the typed "session
+      // expired" state would mask a perfectly valid credential.
+      // `stream:${streamId}` is the per-stream idle reason; the lease
+      // remains governed by GalleryLeaseManager.schedule.
+      releaseStreamOnly();
     },
   });
 

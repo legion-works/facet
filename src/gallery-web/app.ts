@@ -66,12 +66,127 @@ export {
 export { planSwap, type SwapPlanStep } from "./swap";
 export { connectRevisionStream } from "./sse-client";
 
+import {
+  clearSession,
+  persistSession,
+  readPersistedSession,
+  validatePersistedSession,
+  type GallerySession,
+  type SessionStorageLike,
+} from "./session";
+
 export interface BootstrapHandoff {
   readonly authorization: string;
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly lease: { readonly leaseId: string; readonly expiresAt: number };
   readonly headers: Headers;
+}
+
+export type GalleryBootstrap =
+  | {
+      readonly outcome: "bootstrapped";
+      readonly session: BootstrapHandoff;
+      readonly storage: SessionStorageLike;
+    }
+  | {
+      readonly outcome: "reused";
+      readonly session: BootstrapHandoff;
+      readonly storage: SessionStorageLike;
+    }
+  | { readonly outcome: "expired"; readonly reason: "missing" | "expired" | "invalid" };
+
+export interface ResolveGalleryBootstrapOptions {
+  readonly location: string;
+  readonly storage: SessionStorageLike;
+  readonly fetchImpl?: typeof fetch;
+  readonly clearFragment?: () => void;
+  /** Cheap authed probe — true if the live lease still services the artifact. */
+  readonly validateLease: (session: GallerySession) => Promise<boolean> | boolean;
+}
+
+/**
+ * Resolve the shell's bootstrap state on load.
+ *
+ * 1. Live `bootstrap=` token in the URL fragment → exchange it for a
+ *    lease and persist the granted session to `sessionStorage`. The
+ *    consumed token is stripped from the URL.
+ * 2. No token, but a persisted session is still in `sessionStorage` →
+ *    reuse the stored lease. The caller validates the lease via a
+ *    authed round-trip; the URL is left untouched.
+ * 3. No token and no persisted session, or the stored lease is
+ *    expired/invalid → exhaustive fail states surface the typed
+ *    "session expired — run `facet open` again" message instead of
+ *    throwing on the missing-token path.
+ *
+ * The shell treats a service restart as an expired lease: the lease
+ * manager is in-memory, so every outstanding lease evaporates the
+ * moment the service comes back. The honest route is the expired
+ * state, not a longer-lived credential.
+ */
+export async function resolveGalleryBootstrap(
+  options: ResolveGalleryBootstrapOptions,
+): Promise<GalleryBootstrap> {
+  const url = new URL(options.location);
+  assertLoopbackHostname(url.hostname);
+  const fragment = new URLSearchParams(url.hash.replace(/^#/, ""));
+  const liveToken = fragment.get("bootstrap");
+
+  if (liveToken !== null && liveToken.length > 0) {
+    options.clearFragment?.();
+    const fetcher = options.fetchImpl ?? fetch;
+    const response = await fetcher(`${url.origin}/api/v1/gallery/bootstrap`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: liveToken }),
+    });
+    if (!response.ok) throw new Error(`Gallery bootstrap failed (${response.status})`);
+    const payload = (await response.json()) as Omit<BootstrapHandoff, "headers">;
+    const headers = new Headers({
+      authorization: payload.authorization,
+      "x-gallery-lease": payload.lease.leaseId,
+      "x-gallery-artifact": payload.artifactId,
+    });
+    const session: BootstrapHandoff = { ...payload, headers };
+    const persisted: GallerySession = {
+      authorization: payload.authorization,
+      artifactId: payload.artifactId,
+      revisionSha: payload.revisionSha,
+      lease: payload.lease,
+    };
+    persistSession(options.storage, persisted);
+    return { outcome: "bootstrapped", session, storage: options.storage };
+  }
+
+  const persisted = readPersistedSession(options.storage);
+  if (persisted === null) return { outcome: "expired", reason: "missing" };
+  const validity = validatePersistedSession(persisted);
+  if (!validity.valid) {
+    // Stored lease is past its nominal expiry. Even if the service
+    // restarted inside the same window, the persisted session is no
+    // longer the source of truth — wipe it so the next refresh starts
+    // from a clean state.
+    clearSession(options.storage);
+    return { outcome: "expired", reason: "expired" };
+  }
+  const leaseStillValid = await options.validateLease(persisted);
+  if (!leaseStillValid) {
+    clearSession(options.storage);
+    return { outcome: "expired", reason: "invalid" };
+  }
+  const headers = new Headers({
+    authorization: persisted.authorization,
+    "x-gallery-lease": persisted.lease.leaseId,
+    "x-gallery-artifact": persisted.artifactId,
+  });
+  const session: BootstrapHandoff = {
+    authorization: persisted.authorization,
+    artifactId: persisted.artifactId,
+    revisionSha: persisted.revisionSha,
+    lease: persisted.lease,
+    headers,
+  };
+  return { outcome: "reused", session, storage: options.storage };
 }
 
 export function buildGalleryUrl(baseUrl: string, bootstrapToken: string): string {
@@ -605,11 +720,31 @@ async function fetchGallerySource(
 function setGalleryStatus(document: Document, status: string): void {
   const target = document.getElementById("facet-status-line");
   if (target !== null) target.textContent = status;
+  if (status !== "session expired") {
+    const expired = document.getElementById("facet-expired");
+    if (expired !== null) expired.hidden = true;
+  }
 }
 
 function setGalleryError(document: Document, message: string): void {
   const target = document.getElementById("facet-error");
-  if (target !== null) target.textContent = message;
+  if (target !== null) {
+    target.textContent = message;
+    target.classList.toggle("facet-visible", message.length > 0);
+  }
+}
+
+function renderSessionExpired(
+  document: Document,
+  setError: (message: string) => void,
+  setStatus: (status: string) => void,
+): void {
+  const empty = document.getElementById("facet-empty");
+  if (empty !== null) empty.hidden = true;
+  const expired = document.getElementById("facet-expired");
+  if (expired !== null) expired.hidden = false;
+  setStatus("session expired");
+  setError("session expired — run facet open again");
 }
 
 function setGalleryVerdict(document: Document, verdict: Verdict | null): void {
@@ -757,11 +892,33 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   const updateSwapBar = (state: "start" | "ready" | "complete" | "failed"): void =>
     setSwapBar(document, window, state);
   const baseUrl = window.location.origin;
-  const handoff = await consumeBootstrapHandoff({
+  const bootstrap = await resolveGalleryBootstrap({
     location: window.location.href,
-    clearFragment: () => history.replaceState(null, "", window.location.pathname),
+    storage: window.sessionStorage,
     fetchImpl: fetch,
+    clearFragment: () => history.replaceState(null, "", window.location.pathname),
+    validateLease: async (session) => {
+      try {
+        const probe = new URL(`${baseUrl.replace(/\/$/, "")}/api/v1/gallery/source`);
+        probe.searchParams.set("revisionSha", session.revisionSha);
+        const response = await fetch(probe, {
+          headers: {
+            authorization: session.authorization,
+            "x-gallery-lease": session.lease.leaseId,
+            "x-gallery-artifact": session.artifactId,
+          },
+        });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    },
   });
+  if (bootstrap.outcome === "expired") {
+    renderSessionExpired(document, updateGalleryError, updateGalleryStatus);
+    return;
+  }
+  const handoff = bootstrap.session;
   const title = document.getElementById("facet-title");
   const revision = document.getElementById("facet-revision");
   if (title !== null) title.textContent = "facet";
@@ -902,14 +1059,14 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     },
   });
   const shutdown = (): void => {
+    // The display lease is bound to a per-lease TTL on the service
+    // (see GalleryLeaseManager.schedule). Releasing it eagerly on
+    // beforeunload would defeat the sessionStorage re-attach path on
+    // F5 — the lease would be gone by the time the new shell ran
+    // resolveGalleryBootstrap. The idle controller on the service
+    // releases the lease when the TTL fires, which is the only path
+    // that lets "refresh the tab" reach the same displayed canvas.
     stream.close();
-    void releaseDisplayLease({
-      baseUrl,
-      authorization: handoff.authorization,
-      artifactId: handoff.artifactId,
-      leaseId: handoff.lease.leaseId,
-      fetchImpl: fetch,
-    });
   };
   window.addEventListener("beforeunload", shutdown, { once: true });
 

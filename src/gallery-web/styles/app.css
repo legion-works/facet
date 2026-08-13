@@ -184,6 +184,42 @@ body {
   color: #545c7e;
 }
 
+#facet-expired {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+#facet-expired[hidden] {
+  display: none;
+}
+#facet-expired .glyph {
+  font-size: 26px;
+  color: var(--facet-error);
+}
+#facet-expired .head {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--facet-ink);
+}
+#facet-expired .sub {
+  font-size: 13px;
+  color: var(--facet-ink-faint);
+}
+#facet-expired .cmd {
+  font-family: var(--facet-font-mono);
+  font-size: 12px;
+  color: var(--facet-ink-dim);
+  background: var(--facet-navy);
+  border: 1px solid var(--facet-rule);
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+#facet-expired .cmd .p {
+  color: #545c7e;
+}
+
 #facet-canvas iframe {
   border: 1px solid #26262f;
   border-radius: 10px;

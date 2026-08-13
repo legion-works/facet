@@ -123,6 +123,7 @@ function createRuntime(
     "facet-live-label",
     "facet-canvas",
     "facet-empty",
+    "facet-expired",
     "facet-zoom-in",
     "facet-zoom-out",
     "facet-zoom-reset",
@@ -144,6 +145,18 @@ function createRuntime(
     addEventListener: (type: string, listener: Listener) => documentListeners.set(type, listener),
   };
   const windowListeners = new Map<string, Listener>();
+  const sessionStorageData = new Map<string, string>();
+  const sessionStorage = {
+    getItem: (key: string) =>
+      sessionStorageData.has(key) ? (sessionStorageData.get(key) as string) : null,
+    setItem: (key: string, value: string) => {
+      sessionStorageData.set(key, value);
+    },
+    removeItem: (key: string) => {
+      sessionStorageData.delete(key);
+    },
+    clear: () => sessionStorageData.clear(),
+  };
   const window = {
     location: {
       origin: "http://127.0.0.1:43123",
@@ -156,6 +169,7 @@ function createRuntime(
       return 1;
     },
     addEventListener: (type: string, listener: Listener) => windowListeners.set(type, listener),
+    sessionStorage,
   };
   const requests: { url: string; init?: RequestInit }[] = [];
   const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
@@ -336,7 +350,7 @@ describe("gallery shell startup", () => {
     ).toBe("· opaque · INSECURE L2 · T1");
   });
 
-  test("boots one frame, renders source, binds controls, and releases its lease", async () => {
+  test("boots one frame, renders source, binds controls, and closes the SSE stream on unload", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);
 
@@ -364,7 +378,13 @@ describe("gallery shell startup", () => {
 
     expect(prevented).toBe(true);
     expect(harness.elements.get("facet-canvas")?.dataset["fullscreen"]).toBe("yes");
-    expect(harness.requests.some(({ url }) => url.endsWith("/api/v1/gallery/release"))).toBe(true);
+    // The shell no longer releases the lease on beforeunload — the lease
+    // expires via the service's per-lease TTL, so a F5 refresh can reuse
+    // it. Eagerly releasing would defeat the sessionStorage re-attach
+    // path; the SSE stream closure still runs (the stream survives the
+    // request log filter because its fetch is on the global `fetch`,
+    // not the harness shim).
+    expect(harness.requests.some(({ url }) => url.endsWith("/api/v1/gallery/release"))).toBe(false);
   });
 
   test("clears iframe CSS transforms after a frame selects native SVG viewBox zoom", async () => {
