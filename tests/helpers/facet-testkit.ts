@@ -23,6 +23,7 @@ import {
   type EgressPenetrationResult,
 } from "../../scripts/egress-penetration";
 import { startFacetService, type RunningService } from "../../src/service/server";
+import { ACCEPTANCE_TEST_BUDGET_MS } from "../../src/shared/config/limits";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
 import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
@@ -96,6 +97,7 @@ export interface PublishFixtureOptions {
   readonly fixturePath: string;
   readonly artifactType: ArtifactType;
   readonly renderer?: Renderer;
+  readonly execution?: import("../../src/shared/tsx/execution").TsxExecutionMode;
   readonly slug?: string;
   readonly screenshotMode?: ScreenshotMode;
   readonly insecureLevel?: InsecureLevel;
@@ -116,8 +118,6 @@ export interface RunEgressPenetrationOptions {
 
 let env: AcceptanceEnv | null = null;
 let cleanupRegistered = false;
-const ACCEPTANCE_IDLE_TIMEOUT_MS = 120_000;
-
 interface AcceptanceEnv {
   readonly client: FacetClient;
   readonly service: RunningService;
@@ -157,7 +157,7 @@ async function startAcceptanceService(
     installTokenPath,
     promoteTokenPath,
     lockPath,
-    idleTimeoutMs: ACCEPTANCE_IDLE_TIMEOUT_MS,
+    idleTimeoutMs: ACCEPTANCE_TEST_BUDGET_MS,
     logger: createQuietLogger({ component: "acceptance" }),
     tier0Runner: productionTier0 ? createTier0Runner(insecureLevel) : stubTier0Runner,
     tier1Runner,
@@ -252,6 +252,7 @@ export async function publishFixture(opts: PublishFixtureOptions): Promise<Publi
     ...(opts.renderer !== undefined ? { renderer: opts.renderer } : {}),
     bytes,
     ...(opts.slug !== undefined ? { slug: opts.slug } : {}),
+    ...(opts.execution !== undefined ? { execution: opts.execution } : {}),
   });
   traceTier1Transport("test:publish:complete");
   return {

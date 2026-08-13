@@ -340,6 +340,7 @@ function tsxDiscriminativeErrors(
           }),
     }));
   }
+  if (typeof details?.message === "string") return [{ code, message: details.message }];
   return [
     {
       code,

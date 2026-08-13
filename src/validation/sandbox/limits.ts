@@ -11,7 +11,10 @@
 /** Wall-clock budget for one Tier 0 worker invocation. */
 export const TIER0_TIMEOUT_MS = 5_000;
 
-/** TSX includes a cold Bun.build and static SSR, so it owns a separate budget. */
+/**
+ * TSX includes worker boot, a cold Bun.build, and static SSR in this budget:
+ * the parent starts the timer before the pooled worker has imported Bun and React.
+ */
 export const TIER0_TSX_COLD_P95_BASELINE_MS = 250;
 export const TIER0_TSX_CONTENTION_FACTOR = 3;
 export const TIER0_TSX_TIMEOUT_MS = 2_000;

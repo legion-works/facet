@@ -54,8 +54,9 @@ describe("TSX renderer", () => {
     expect(frame?.getAttribute("sandbox")).not.toContain("allow-same-origin");
     expect(frame?.getAttribute("referrerpolicy")).toBe("no-referrer");
     expect(frame?.getAttribute("allow")).toBe("");
+    expect(frame?.getAttribute("data-facet-tsx-frame")).toBe("true");
     const srcdoc = frame?.getAttribute("srcdoc") ?? "";
-    expect(srcdoc).toContain('<main id="facet-tsx-mount"></main>');
+    expect(srcdoc).toContain('<main id="facet-tsx-mount" data-facet-renderer-root="true"></main>');
     expect(srcdoc.match(/<script type="module" nonce="n-interactive">/g)).toHaveLength(1);
     expect(srcdoc).toContain("default-src 'none'");
     expect(srcdoc).toContain("connect-src 'none'");

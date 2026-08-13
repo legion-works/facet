@@ -1,5 +1,6 @@
 import { FROZEN_CSP_TEMPLATE } from "../../../shared/security/frozen-csp";
-import type { TsxExecutionMode } from "../../../shared/tsx/execution";
+import { TSX_ARTIFACT_FRAME_ATTRIBUTE, type TsxExecutionMode } from "../../../shared/tsx/execution";
+import type { Renderer } from "../../../shared/contracts/renderers";
 import { renderHtml } from "./html";
 import { FacetRenderError, decodeArtifactBytes, type RenderContext } from "./registry";
 
@@ -15,7 +16,7 @@ export function buildInteractiveTsxSrcdoc(compiledBytes: Uint8Array, nonce: stri
     '<meta charset="utf-8">' +
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     "</head><body>" +
-    '<main id="facet-tsx-mount"></main>' +
+    '<main id="facet-tsx-mount" data-facet-renderer-root="true"></main>' +
     `<script type="module" nonce="${nonce}">${compiled}</script>` +
     "</body></html>"
   );
@@ -24,7 +25,7 @@ export function buildInteractiveTsxSrcdoc(compiledBytes: Uint8Array, nonce: stri
 export async function renderTsx(
   ctx: RenderContext,
   bytes: Uint8Array,
-  renderer: "svg" | "canvas",
+  renderer: Renderer,
   execution: TsxExecutionMode = "static",
 ): Promise<void> {
   void renderer;
@@ -39,6 +40,7 @@ export async function renderTsx(
     );
   }
   const iframe = ctx.container.ownerDocument.createElement("iframe");
+  iframe.setAttribute(TSX_ARTIFACT_FRAME_ATTRIBUTE, "true");
   iframe.setAttribute("sandbox", "allow-scripts");
   iframe.setAttribute("referrerpolicy", "no-referrer");
   iframe.setAttribute("allow", "");

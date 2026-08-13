@@ -49,7 +49,7 @@ export interface PageShim {
   readonly html?: ProtocolObservation["html"];
 }
 
-type CountsLike = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[number] | "html">;
+export type CountsLike = Pick<ProtocolObservation, (typeof COUNT_COMPARISON_KEYS)[number] | "html">;
 
 const COUNT_COMPARISON_KEYS = [
   "rendererRootSvgCount",
@@ -91,6 +91,8 @@ export interface LifecycleSummary {
   readonly bootReady: boolean;
   readonly renderComplete: boolean;
   readonly structureChanged?: boolean;
+  /** Interactive TSX has no lexical HTML prediction and no trusted outer shim. */
+  readonly interactive?: boolean;
 }
 
 /**
@@ -147,19 +149,25 @@ export function deriveVerdict(
   ) {
     return "tampered";
   }
-  if (pageShim !== null && countsDiffer(pageShim, protocolObservation)) return "tampered";
+  if (!lifecycle.interactive && pageShim !== null && countsDiffer(pageShim, protocolObservation)) {
+    return "tampered";
+  }
   if (isolatedObservation !== null && countsDiffer(isolatedObservation, protocolObservation)) {
     return "tampered";
   }
 
   const shimAvailable = pageShim !== null;
   const isolatedAvailable = isolatedObservation !== null;
-  if (!shimAvailable && !isolatedAvailable) return "probe_only";
-  if (!shimAvailable) return "probe_only";
-  if (!isolatedAvailable) return "shim_only";
+  if (lifecycle.interactive) {
+    if (!isolatedAvailable) return "probe_only";
+  } else {
+    if (!shimAvailable && !isolatedAvailable) return "probe_only";
+    if (!shimAvailable) return "probe_only";
+    if (!isolatedAvailable) return "shim_only";
+  }
 
   if (protocolObservation.discriminativeErrors.length > 0) return "error";
-  if (!matchesExpected(expected, protocolObservation)) return "error";
+  if (!lifecycle.interactive && !matchesExpected(expected, protocolObservation)) return "error";
   // D11: structure changed between the barrier and the stability
   // window. This is the only path that does not also depend on a
   // single observation — it depends on TWO observations, so it
@@ -177,7 +185,11 @@ export function deriveVerdict(
   if (protocolObservation.externalImageCount > 0) {
     return "partial:external_resources";
   }
-  if (expected.html === undefined && !layoutObservable(protocolObservation)) {
+  if (
+    !lifecycle.interactive &&
+    expected.html === undefined &&
+    !layoutObservable(protocolObservation)
+  ) {
     return "partial:layout_unverified";
   }
   return "ok";
@@ -218,7 +230,7 @@ function htmlCountsDiffer(
   return HTML_COUNT_KEYS.some((key) => left[key] !== right[key]);
 }
 
-function countsDiffer(left: CountsLike, right: CountsLike): boolean {
+export function countsDiffer(left: CountsLike, right: CountsLike): boolean {
   return (
     COUNT_COMPARISON_KEYS.some((key) => left[key] !== right[key]) ||
     htmlCountsDiffer(left.html, right.html)

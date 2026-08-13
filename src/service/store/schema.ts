@@ -1,3 +1,5 @@
+import { TSX_EXECUTION_MODES } from "../../shared/tsx/execution";
+
 /**
  * The canonical DDL applied to a fresh database. Every column the
  * schema holds today lives here; the v1 migration runs this block
@@ -193,7 +195,7 @@ CREATE TABLE revisions_v8(
   pinned INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   renderer TEXT NOT NULL DEFAULT 'svg' CHECK(renderer IN ('svg','canvas')),
-  execution TEXT NOT NULL DEFAULT 'static' CHECK(execution IN ('static','interactive')),
+  execution TEXT NOT NULL DEFAULT 'static' CHECK(execution IN (${TSX_EXECUTION_MODES.map((mode) => `'${mode}'`).join(",")})),
   UNIQUE(artifact_id, revision_number),
   UNIQUE(artifact_id, sha256)
 );

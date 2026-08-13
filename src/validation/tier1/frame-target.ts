@@ -15,6 +15,7 @@
  */
 
 import type { VerifierCdpSession } from "./browser-process";
+import { TSX_ARTIFACT_FRAME_ATTRIBUTE } from "../../shared/tsx/execution";
 
 export interface ResolvedChildFrame {
   readonly frameId: string;
@@ -46,6 +47,104 @@ export async function resolveSrcdocChildFrame(
     }
   }
   throw new Error("verifier: no about:srcdoc child frame resolved");
+}
+
+interface FrameTreeNode {
+  readonly frame: { readonly id: string; readonly url: string };
+  readonly childFrames?: readonly FrameTreeNode[];
+}
+
+interface ProtocolDomNode {
+  readonly nodeName?: string;
+  readonly backendNodeId?: number;
+  readonly attributes?: readonly string[];
+  readonly contentDocument?: ProtocolDomNode;
+  readonly children?: readonly ProtocolDomNode[];
+  readonly shadowRoots?: readonly ProtocolDomNode[];
+}
+
+function findFrameTreeNode(node: FrameTreeNode, frameId: string): FrameTreeNode | null {
+  if (node.frame.id === frameId) return node;
+  for (const child of node.childFrames ?? []) {
+    const found = findFrameTreeNode(child, frameId);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+function findContentDocument(node: ProtocolDomNode, backendNodeId: number): ProtocolDomNode | null {
+  if (node.backendNodeId === backendNodeId) return node.contentDocument ?? null;
+  for (const child of [
+    node.contentDocument,
+    ...(node.children ?? []),
+    ...(node.shadowRoots ?? []),
+  ]) {
+    if (child === undefined) continue;
+    const found = findContentDocument(child, backendNodeId);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+function isMarkedArtifactFrame(node: ProtocolDomNode, backendNodeId: number): boolean {
+  if (node.backendNodeId === backendNodeId) {
+    const attributes = node.attributes ?? [];
+    for (let index = 0; index + 1 < attributes.length; index += 2) {
+      if (attributes[index] === TSX_ARTIFACT_FRAME_ATTRIBUTE && attributes[index + 1] === "true") {
+        return true;
+      }
+    }
+    return false;
+  }
+  for (const child of [
+    node.contentDocument,
+    ...(node.children ?? []),
+    ...(node.shadowRoots ?? []),
+  ]) {
+    if (child !== undefined && isMarkedArtifactFrame(child, backendNodeId)) return true;
+  }
+  return false;
+}
+
+/**
+ * Resolve the renderer-owned nested TSX frame under the outer harness child.
+ * Frame order and `about:srcdoc` URLs are non-authoritative: the backend node
+ * ties each frame ID to its iframe element in the outer document.
+ */
+export async function resolveNestedArtifactFrame(
+  session: VerifierCdpSession,
+  outerFrame: ResolvedChildFrame,
+): Promise<ResolvedChildFrame> {
+  const tree = (await session.send("Page.getFrameTree")) as { readonly frameTree: FrameTreeNode };
+  const outerNode = findFrameTreeNode(tree.frameTree, outerFrame.frameId);
+  if (outerNode === null) {
+    throw new Error("verifier: outer child frame disappeared before nested TSX resolution");
+  }
+  const candidates = outerNode.childFrames ?? [];
+  const document = (await session.send("DOM.getDocument", { depth: -1, pierce: true })) as {
+    readonly root: ProtocolDomNode;
+  };
+  const outerOwner = (await session.send("DOM.getFrameOwner", { frameId: outerFrame.frameId })) as {
+    readonly backendNodeId: number;
+  };
+  const outerDocument = findContentDocument(document.root, outerOwner.backendNodeId);
+  if (outerDocument === null) {
+    throw new Error("verifier: outer child document unavailable for nested TSX resolution");
+  }
+  const owned: ResolvedChildFrame[] = [];
+  for (const candidate of candidates) {
+    const owner = (await session.send("DOM.getFrameOwner", { frameId: candidate.frame.id })) as {
+      readonly backendNodeId: number;
+    };
+    if (!isMarkedArtifactFrame(outerDocument, owner.backendNodeId)) continue;
+    owned.push({ frameId: candidate.frame.id, url: candidate.frame.url });
+  }
+  if (owned.length !== 1) {
+    throw new Error(
+      `verifier: expected one renderer-owned nested TSX frame, found ${owned.length}`,
+    );
+  }
+  return owned[0]!;
 }
 
 /**

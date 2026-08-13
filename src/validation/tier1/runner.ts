@@ -49,7 +49,11 @@ import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 import { buildHostPage } from "./harness";
 import { PuppeteerTier1Browser, Tier1TransportWedgeError } from "./cdp-pipe";
 import { resolveLauncher } from "./launcher";
-import { createIsolatedWorld, resolveSrcdocChildFrame } from "./frame-target";
+import {
+  createIsolatedWorld,
+  resolveNestedArtifactFrame,
+  resolveSrcdocChildFrame,
+} from "./frame-target";
 import { probeProtocolGetDocument, probeProtocolSnapshot } from "./protocol-probe";
 import { probeIsolatedCounts } from "./isolated-probe";
 import {
@@ -59,9 +63,10 @@ import {
   TIER1_SCREENSHOT_CAPTURE_TIMEOUT_MS,
   TIER1_VIEWPORT_HEIGHT,
   TIER1_VIEWPORT_WIDTH,
+  TSX_STABILITY_WINDOW_MS,
 } from "./limits";
 import { type VerifierCdpSession, type VerifierTarget } from "./browser-process";
-import { deriveVerdict, type PageShim } from "./verdict";
+import { countsDiffer, deriveVerdict, type PageShim } from "./verdict";
 import { readPidStartTimeTicks } from "../../shared/util/process";
 
 /**
@@ -247,9 +252,10 @@ async function runTier1Attempt(
     traceTier1("frame-resolve:start", startedAt);
     const childFrame = await resolveSrcdocChildFrame(target.session);
     traceTier1("frame-resolve:complete", startedAt);
-    traceTier1("isolated-world:start", startedAt);
-    const isolated = await createIsolatedWorld(target.session, childFrame.frameId);
-    traceTier1("isolated-world:complete", startedAt);
+    const interactiveTsx = input.artifactType === "tsx" && input.execution === "interactive";
+    const staticIsolated = interactiveTsx
+      ? null
+      : await createIsolatedWorld(target.session, childFrame.frameId);
 
     // Inject the artifact via the parent page world's transfer (the
     // parent page has the ingress port; the iframe receives it via
@@ -271,27 +277,38 @@ async function runTier1Attempt(
     const shim = await waitForRenderComplete(target, TIER1_RENDER_BARRIER_MS);
     traceTier1("render-complete:complete", startedAt, `received=${shim.renderComplete}`);
 
-    traceTier1("protocol-snapshot:start", startedAt);
-    const protocolSnapshot = await probeProtocolSnapshot(target.session, childFrame);
-    traceTier1("protocol-snapshot:complete", startedAt);
-    traceTier1("protocol-document:start", startedAt);
-    const protocolGetDocument = await probeProtocolGetDocument(target.session, childFrame);
-    traceTier1("protocol-document:complete", startedAt);
-    traceTier1("isolated-probe:start", startedAt);
-    const isolatedObservation = await probeIsolatedCounts(
+    const artifactFrame = interactiveTsx
+      ? await resolveNestedArtifactFrame(target.session, childFrame)
+      : childFrame;
+    const isolated =
+      staticIsolated ?? (await createIsolatedWorld(target.session, artifactFrame.frameId));
+    const firstObservation = await observeArtifact(
       target.session,
+      artifactFrame,
       isolated.executionContextId,
     );
-    traceTier1("isolated-probe:complete", startedAt);
-
-    const protocolObservation = mergeProtocol(protocolSnapshot, protocolGetDocument);
+    const secondObservation = interactiveTsx
+      ? await waitForStabilityObservation(
+          target.session,
+          artifactFrame,
+          isolated.executionContextId,
+        )
+      : firstObservation;
+    const protocolObservation = secondObservation.protocol;
+    const isolatedObservation = secondObservation.isolated;
 
     const status = deriveVerdict(
       input.lexical,
       protocolObservation,
       isolatedObservation,
-      shim.pageShim,
-      { bootReady: shim.bootReady, renderComplete: shim.renderComplete },
+      interactiveTsx ? null : shim.pageShim,
+      {
+        bootReady: shim.bootReady,
+        renderComplete: shim.renderComplete,
+        interactive: interactiveTsx,
+        structureChanged:
+          interactiveTsx && countsDiffer(firstObservation.protocol, secondObservation.protocol),
+      },
     );
     traceTier1("verdict:complete", startedAt, `status=${status}`);
 
@@ -302,6 +319,7 @@ async function runTier1Attempt(
         screenshotPath,
         consolePath,
         observationPath,
+        firstProtocolObservation: firstObservation.protocol,
         protocolObservation,
         pageShim: shim.pageShim,
       },
@@ -554,6 +572,31 @@ function mergeProtocol(
   };
 }
 
+interface ArtifactObservation {
+  readonly protocol: ProtocolObservation;
+  readonly isolated: ProtocolObservation | null;
+}
+
+async function observeArtifact(
+  session: VerifierCdpSession,
+  frame: { readonly frameId: string; readonly url: string },
+  executionContextId: number,
+): Promise<ArtifactObservation> {
+  const snapshot = await probeProtocolSnapshot(session, frame);
+  const document = await probeProtocolGetDocument(session, frame);
+  const isolated = await probeIsolatedCounts(session, executionContextId);
+  return { protocol: mergeProtocol(snapshot, document), isolated };
+}
+
+async function waitForStabilityObservation(
+  session: VerifierCdpSession,
+  frame: { readonly frameId: string; readonly url: string },
+  executionContextId: number,
+): Promise<ArtifactObservation> {
+  await Bun.sleep(TSX_STABILITY_WINDOW_MS);
+  return observeArtifact(session, frame, executionContextId);
+}
+
 interface EvidenceCapture {
   readonly screenshotPath: string | null;
   readonly screenshotError: ScreenshotError | null;
@@ -677,6 +720,7 @@ async function captureEvidence(
     readonly screenshotPath: string;
     readonly consolePath: string;
     readonly observationPath: string;
+    readonly firstProtocolObservation: ProtocolObservation;
     readonly protocolObservation: ProtocolObservation;
     readonly pageShim: PageShim | null;
   },
@@ -728,7 +772,11 @@ async function captureEvidence(
   writeFileSync(options.consolePath, summary, "utf8");
   writeFileSync(
     options.observationPath,
-    JSON.stringify(options.protocolObservation, null, 2),
+    JSON.stringify(
+      { first: options.firstProtocolObservation, second: options.protocolObservation },
+      null,
+      2,
+    ),
     "utf8",
   );
   return { screenshotPath, screenshotError, consolePath: options.consolePath };

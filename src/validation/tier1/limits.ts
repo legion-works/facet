@@ -37,6 +37,13 @@ export const TIER1_USER_DATA_DIR_MODE = 0o700;
 export const TIER1_RENDER_BARRIER_MS = 30_000;
 
 /**
+ * Time between the first interactive TSX observation and its bounded
+ * stability re-check. It stays below the headroom after the render barrier so
+ * a typed `partial:unstable` verdict remains observable before Tier 1 times out.
+ */
+export const TSX_STABILITY_WINDOW_MS = 1_000;
+
+/**
  * Ceiling for any single CDP call. Every protocol round-trip in a
  * healthy session completes in well under a second; a call that
  * outlives this budget means the pipe transport silently wedged

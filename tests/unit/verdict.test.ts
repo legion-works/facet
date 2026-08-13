@@ -658,3 +658,29 @@ describe("deriveVerdict — unstable (D11)", () => {
     ).toBe("partial:opaque_content");
   });
 });
+
+describe("deriveVerdict — interactive TSX authority", () => {
+  test("interactive ignores static lexical expectations and the outer shim", () => {
+    expect(
+      deriveVerdict(
+        lex({ rendererRootSvgCount: 9, mermaidNodeCount: 9, visibleSvgCount: 9 }),
+        protocol(),
+        protocol(),
+        null,
+        lifecycle({ interactive: true }),
+      ),
+    ).toBe("ok");
+  });
+
+  test("interactive channel divergence beats an unstable second observation", () => {
+    expect(
+      deriveVerdict(
+        lex({ rendererRootSvgCount: 9 }),
+        protocol(),
+        protocol({ graphCount: 0 }),
+        null,
+        lifecycle({ interactive: true, structureChanged: true }),
+      ),
+    ).toBe("tampered");
+  });
+});

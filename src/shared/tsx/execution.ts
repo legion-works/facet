@@ -16,13 +16,16 @@
  * accidentally trips an inference rule would silently earn the weaker
  * verdict.
  *
- * The exported constant is the single source of truth: every consumer
- * (publish request schema, validator, CLI parser, storage CHECK)
- * derives from `TSX_EXECUTION_MODES` so a typo lands in one place.
+ * The exported constant is the single source of truth for TypeScript
+ * consumers; the storage CHECK derives its SQL literal from it at schema-build
+ * time so a new mode lands in the database contract too.
  */
 
 export const TSX_EXECUTION_MODES = ["static", "interactive"] as const;
 export type TsxExecutionMode = (typeof TSX_EXECUTION_MODES)[number];
+
+/** Marker on the nested iframe that owns an interactive TSX artifact document. */
+export const TSX_ARTIFACT_FRAME_ATTRIBUTE = "data-facet-tsx-frame";
 
 export function isTsxExecutionMode(value: unknown): value is TsxExecutionMode {
   return typeof value === "string" && TSX_EXECUTION_MODES.includes(value as TsxExecutionMode);

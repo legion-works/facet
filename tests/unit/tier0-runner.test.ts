@@ -176,7 +176,7 @@ describe("Tier 0 worker pool", () => {
 
   test("keeps measured cold TSX compile within the stated contention headroom", () => {
     expect(TIER0_TSX_TIMEOUT_MS).toBeGreaterThan(
-      TIER0_TSX_COLD_P95_BASELINE_MS * TIER0_TSX_CONTENTION_FACTOR,
+      TIER0_TSX_COLD_P95_BASELINE_MS * TIER0_TSX_CONTENTION_FACTOR * 2,
     );
   });
 

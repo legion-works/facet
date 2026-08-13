@@ -13,6 +13,9 @@ export const SOURCE_CAP_BYTES = 5 * 1024 * 1024;
  */
 export const TIER1_PINNED_VERSION = "151.0.7922.77";
 
+/** Acceptance commands must outlive the Tier 1 verifier and return its typed verdict. */
+export const ACCEPTANCE_TEST_BUDGET_MS = 90_000;
+
 /**
  * Lexical guard: at most this many ```mermaid fenced blocks in one
  * artifact. Larger graphs hit the mermaid parser's own limits and
