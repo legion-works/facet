@@ -29,7 +29,11 @@ test("interactive TSX records a nested-frame Tier 1 verdict", async () => {
     expect.objectContaining({
       status: "ok",
       execution: "interactive",
-      observed: expect.objectContaining({ errorCount: 0, discriminativeErrors: [] }),
+      observed: expect.objectContaining({
+        html: expect.objectContaining({ headingCount: 1 }),
+        errorCount: 0,
+        discriminativeErrors: [],
+      }),
     }),
   );
 }, 90_000);
