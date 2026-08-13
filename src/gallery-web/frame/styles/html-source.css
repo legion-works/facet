@@ -1,14 +1,14 @@
 @import "tailwindcss" source(none);
 
 @theme {
-  --color-legion-ink: #111111;
-  --color-legion-muted: #5f6368;
+  --color-legion-ink: #c8d3f5;
+  --color-legion-muted: #a9b8e8;
   --color-legion-cyan: #86e1fc;
-  --color-legion-paper: #f7f7f2;
-  --color-legion-line: #2d2d2d;
+  --color-legion-paper: #151823;
+  --color-legion-line: #444a73;
 }
 
 @plugin "daisyui" {
-  themes: light --default;
+  themes: night --default;
   include: alert, badge, button, card, stat, table;
 }
