@@ -286,6 +286,7 @@ jobs:
           - gallery-geometry.test.ts
           - gallery-static-tsx.test.ts
           - gallery-tsx-styles.test.ts
+          - gallery-tsx-styles-templates.test.ts
           - gate-forgery.test.ts
           - harness-recovery.test.ts
           - html-differential.test.ts
@@ -339,7 +340,7 @@ jobs:
         name: Tier 1 acceptance test
         run: |
           mkdir -p test-results
-          FACET_LIVE_GALLERY="${{ contains('gallery-contrast.test.ts,gallery-geometry.test.ts,gallery-interactive-tsx.test.ts,gallery-refresh.test.ts,gallery-static-tsx.test.ts,gallery-tsx-styles.test.ts', matrix.test) && '1' || '' }}" bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
+          FACET_LIVE_GALLERY="${{ contains('gallery-contrast.test.ts,gallery-geometry.test.ts,gallery-interactive-tsx.test.ts,gallery-refresh.test.ts,gallery-static-tsx.test.ts,gallery-tsx-styles.test.ts,gallery-tsx-styles-templates.test.ts', matrix.test) && '1' || '' }}" bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
       - name: summarize Tier 1 acceptance
         if: always()
         shell: bash

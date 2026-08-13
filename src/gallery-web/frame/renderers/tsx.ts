@@ -68,6 +68,13 @@ export async function renderTsx(
   iframe.setAttribute("sandbox", "allow-scripts");
   iframe.setAttribute("referrerpolicy", "no-referrer");
   iframe.setAttribute("allow", "");
+  // The nested frame must fill the artifact container and drop the UA
+  // default border, otherwise interactive TSX renders inside the
+  // 300×150 iframe placeholder instead of the same stage every other
+  // artifact type fills.
+  iframe.style.width = "100%";
+  iframe.style.height = "100%";
+  iframe.style.border = "0";
   iframe.srcdoc = buildInteractiveTsxSrcdoc(bytes, ctx.nonce);
   ctx.container.replaceChildren(iframe);
 }

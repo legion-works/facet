@@ -75,4 +75,21 @@ describe("TSX renderer", () => {
     expect(srcdoc).not.toContain('"</script><p>escaped</p>"');
     expect(bytes).toEqual(before);
   });
+
+  test("interactive iframe fills the container and drops the default UA border", async () => {
+    const bytes = new TextEncoder().encode("// mounted");
+    const container = freshContainer();
+
+    await tsx.renderTsx({ container, nonce: "n-fill" }, bytes, "svg", "interactive");
+
+    const frame = container.querySelector("iframe") as HTMLElement;
+    expect(frame).not.toBeNull();
+    // The nested frame must inherit the artifact container's full size
+    // and its own UA-default border would render a small white-bordered
+    // box inside the stage — the size + border must be set so the
+    // interactive TSX receives the same stage as every other artifact.
+    expect(frame.style.width).toBe("100%");
+    expect(frame.style.height).toBe("100%");
+    expect(frame.style.border).toBe("0");
+  });
 });
