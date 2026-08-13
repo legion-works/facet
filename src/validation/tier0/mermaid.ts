@@ -42,7 +42,7 @@ export type MermaidParseResult = MermaidParseOk | MermaidParseFail;
  */
 function countMermaidNodes(bytes: Uint8Array): number {
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-  return countMermaidNodeDeclarations(text);
+  return countMermaidNodeDeclarations(text) ?? 0;
 }
 
 interface MermaidResolved {

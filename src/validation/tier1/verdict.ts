@@ -231,7 +231,8 @@ export function countsDiffer(left: CountsLike, right: CountsLike): boolean {
 
 function matchesExpected(expected: LexicalCounters, protocol: ProtocolObservation): boolean {
   if (expected.rendererRootSvgCount !== protocol.rendererRootSvgCount) return false;
-  if (expected.mermaidNodeCount !== protocol.mermaidNodeCount) return false;
+  if (expected.mermaidNodeCount !== null && expected.mermaidNodeCount !== protocol.mermaidNodeCount)
+    return false;
   if (expected.html !== undefined && htmlCountsDiffer(expected.html, protocol.html)) return false;
   // opaqueRegionCount is not compared here: expected > 0 / observed 0 returns
   // error above, observed > 0 returns partial:opaque_content above, and 0 / 0

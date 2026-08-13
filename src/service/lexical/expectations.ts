@@ -45,12 +45,12 @@ export interface LexicalExpectations {
   /** Expected opaque regions produced by renderer modes without SVG roots. */
   readonly expectedOpaqueRegions: number;
   /**
-   * Lexical node count: identifier-`[` declarations (`N1[...]`,
-   * `A[...]`) across all mermaid blocks — the prediction the verdict
-   * compares against the renderer-owned `g.node` count. Bounds the
-   * verifier's expected observation independent of byte count.
+   * Lexical node expectation across all Mermaid blocks. `null` is a typed
+   * no-expectation marker for a diagram type without a maintained `g.node`
+   * grammar, so Tier 1 skips this one comparison rather than treating zero
+   * as a vacuous match.
    */
-  readonly mermaidNodeCount: number;
+  readonly mermaidNodeCount: number | null;
   /** True iff the source exceeds MAX_MERMAID_BLOCKS or MAX_MERMAID_NODES. */
   readonly exceedsComplexityBudget: boolean;
 }
@@ -123,12 +123,14 @@ function findFenceSpans(text: string): FenceSpan[] {
   return spans;
 }
 
-function countMermaidNodes(text: string, spans: readonly FenceSpan[]): number {
+function countMermaidNodes(text: string, spans: readonly FenceSpan[]): number | null {
   let count = 0;
   for (const span of spans) {
     if (span.info !== "mermaid") continue;
     const body = text.slice(span.start, span.end);
-    count += countMermaidNodeDeclarations(body);
+    const nodes = countMermaidNodeDeclarations(body);
+    if (nodes === null) return null;
+    count += nodes;
   }
   return count;
 }
@@ -192,7 +194,8 @@ export function computeLexicalExpectations(
         ? countMermaidNodeDeclarations(text)
         : 0;
   const exceedsComplexityBudget =
-    mermaid > MAX_MERMAID_BLOCKS || mermaidNodeCount > MAX_MERMAID_NODES;
+    mermaid > MAX_MERMAID_BLOCKS ||
+    (mermaidNodeCount !== null && mermaidNodeCount > MAX_MERMAID_NODES);
   const canvasChart = artifactType === "chart" && renderer === "canvas";
   const expectedRendererRoots = canvasChart ? 0 : artifactType === "markdown" ? mermaid : 1;
   return {

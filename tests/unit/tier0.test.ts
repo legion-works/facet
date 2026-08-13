@@ -17,6 +17,7 @@ import { resolve as resolvePath } from "node:path";
 import { Lexer } from "marked";
 
 import { LexicalCountersSchema } from "../../src/shared/contracts/validation";
+import { countMermaidNodeDeclarations } from "../../src/shared/util/mermaid-nodes";
 import { parseMermaid } from "../../src/validation/tier0/mermaid";
 import { parseMarkdown } from "../../src/validation/tier0/markdown";
 import { parseSvg } from "../../src/validation/tier0/svg";
@@ -30,6 +31,7 @@ import { TIER0_TIMEOUT_MS } from "../../src/validation/sandbox/limits";
 const FIXTURES = {
   adversarial: `${import.meta.dir}/../fixtures/adversarial-md-mermaid.md`,
   rawHtml: `${import.meta.dir}/../fixtures/markdown-raw-html.md`,
+  markdownMermaid: `${import.meta.dir}/../fixtures/markdown-heading-link.md`,
   hostileSvg: `${import.meta.dir}/../fixtures/hostile-svg-label.md`,
   malformedMermaid: `${import.meta.dir}/../fixtures/malformed-mermaid.md`,
   chartBarline: `${import.meta.dir}/../fixtures/chart-barline.vl.json`,
@@ -74,6 +76,64 @@ describe("Tier 0 mermaid parser", () => {
     expect(result.observed.errorCount).toBe(0);
   });
 
+  test.each([
+    ["square", "A[label]", 1],
+    ["round", "A(label)", 1],
+    ["stadium", "A([label])", 1],
+    ["subroutine", "A[[label]]", 1],
+    ["cylinder", "A[(label)]", 1],
+    ["circle", "A((label))", 1],
+    ["asymmetric", "A>label]", 1],
+    ["rhombus", "A{label}", 1],
+    ["hexagon", "A{{label}}", 1],
+    ["parallelogram", "A[/label\\]", 1],
+    ["parallelogram alternate", "A[\\label/]", 1],
+    ["bare edge endpoint", "A --> B", 2],
+  ])("counts flowchart %s node syntax", (_shape, declaration, expected) => {
+    expect(countMermaidNodeDeclarations(`flowchart TD\n  ${declaration}`)).toBe(expected);
+  });
+
+  test("counts each flowchart id once and ignores metadata syntax", () => {
+    const source = [
+      "%%{init: { 'theme': 'dark' }}%%",
+      "flowchart TD",
+      "  %% comment A[ignored]",
+      "  A([source]) --> B[store]",
+      "  B --> C{validate}",
+      "  C -->|tier 0| D[parse]",
+      "  C -->|tier 1| E[browser]",
+      "  D --> F([verdict])",
+      "  E --> F",
+      "  subgraph group [subgraph title]",
+      "    G --> H",
+      "  end",
+      "  classDef ok stroke:#c3e88d",
+      "  class F ok",
+    ].join("\n");
+
+    expect(countMermaidNodeDeclarations(source)).toBe(8);
+  });
+
+  test.each([["sequence", "sequenceDiagram\nparticipant A\nparticipant B\nA->>B: hello"]])(
+    "reports zero nodes for %s diagrams with no g.node groups",
+    (_kind, source) => {
+      expect(countMermaidNodeDeclarations(source)).toBe(0);
+    },
+  );
+
+  test("counts Mermaid state nodes, including both pseudo-states rendered from [*]", () => {
+    const source = "stateDiagram-v2\n[*] --> dormant\ndormant --> active";
+    expect(countMermaidNodeDeclarations(source)).toBe(4);
+  });
+
+  test("marks diagram types without a reliable g.node grammar as uncountable", () => {
+    expect(
+      countMermaidNodeDeclarations(
+        "gantt\ntitle Release\nsection Build\ncompile :done, 2026-01-01, 1d",
+      ),
+    ).toBeNull();
+  });
+
   test("rejects malformed mermaid with status=error and surfaces error text", async () => {
     const bytes = readBytes(FIXTURES.malformedMermaid);
     const result = await parseMermaid(bytes);
@@ -96,6 +156,12 @@ describe("Tier 0 markdown parser", () => {
     // countFencedBlocks expectation.
     expect(result.observed.rendererRootSvgCount).toBe(2);
     expect(result.observed.graphCount).toBe(2);
+  });
+
+  test("surfaces Mermaid node counts from fenced flowcharts", () => {
+    const result = parseMarkdown(readBytes(FIXTURES.markdownMermaid));
+    expect(result.status).toBe("ok");
+    if (result.status === "ok") expect(result.observed.mermaidNodeCount).toBe(2);
   });
 
   test("raw HTML in markdown is counted as data, never executed", () => {

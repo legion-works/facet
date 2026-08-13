@@ -11,6 +11,7 @@ const FIXTURES = {
   adversarial: `${import.meta.dir}/../fixtures/adversarial-md-mermaid.md`,
   hostileSvg: `${import.meta.dir}/../fixtures/hostile-svg-label.md`,
   rawHtml: `${import.meta.dir}/../fixtures/markdown-raw-html.md`,
+  markdownMermaid: `${import.meta.dir}/../fixtures/markdown-heading-link.md`,
 };
 
 function readBytes(path: string): Uint8Array {
@@ -241,6 +242,14 @@ describe("computeLexicalExpectations — public shape", () => {
 });
 
 describe("computeLexicalExpectations — node-declaration prediction (real-renderer semantics)", () => {
+  test("counts nodes inside a fenced flowchart body", () => {
+    const expectations = computeLexicalExpectations(
+      readBytes(FIXTURES.markdownMermaid),
+      "markdown",
+    );
+    expect(expectations.mermaidNodeCount).toBe(2);
+  });
+
   test("adversarial fixture predicts 40 nodes across its two mermaid fences", () => {
     const bytes = readBytes(FIXTURES.adversarial);
     const expectations = computeLexicalExpectations(bytes, "markdown");
@@ -255,11 +264,11 @@ describe("computeLexicalExpectations — node-declaration prediction (real-rende
     expect(expectations.mermaidNodeCount).toBe(2);
   });
 
-  test("edge references without brackets are not node declarations", () => {
+  test("bare edge endpoints are nodes even without shape declarations", () => {
     const bytes = new TextEncoder().encode(
       ["```mermaid", "flowchart TD", "  A --> B", "  B --> C", "```"].join("\n"),
     );
-    expect(computeLexicalExpectations(bytes, "markdown").mermaidNodeCount).toBe(0);
+    expect(computeLexicalExpectations(bytes, "markdown").mermaidNodeCount).toBe(3);
   });
 
   test("node declarations outside mermaid fences are ignored", () => {

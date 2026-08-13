@@ -29,6 +29,7 @@
 import { Lexer, type Token, type Tokens } from "marked";
 
 import type { DiscriminativeError, VerdictObserved } from "../../shared/contracts/validation";
+import { countMermaidNodeDeclarations } from "../../shared/util/mermaid-nodes";
 
 export interface MarkdownParseOk {
   readonly status: "ok";
@@ -46,6 +47,7 @@ export type MarkdownParseResult = MarkdownParseOk | MarkdownParseFail;
 interface MarkdownCounts {
   totalFenced: number;
   mermaidFenced: number;
+  mermaidNodeCount: number | null;
   rendererRoots: number;
   htmlTokens: number;
   externalImageCount: number;
@@ -102,6 +104,11 @@ function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
       if (lang === "mermaid") {
         counts.mermaidFenced += 1;
         counts.rendererRoots += 1;
+        const nodes = countMermaidNodeDeclarations(code.text);
+        counts.mermaidNodeCount =
+          counts.mermaidNodeCount === null || nodes === null
+            ? null
+            : counts.mermaidNodeCount + nodes;
       }
     } else if (token.type === "html") {
       const html = token as Tokens.HTML;
@@ -164,6 +171,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
   const counts: MarkdownCounts = {
     totalFenced: 0,
     mermaidFenced: 0,
+    mermaidNodeCount: 0,
     rendererRoots: 0,
     htmlTokens: 0,
     externalImageCount: 0,
@@ -188,7 +196,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
       observed: {
         rendererRootSvgCount: 0,
         graphCount: 0,
-        mermaidNodeCount: 0,
+        mermaidNodeCount: counts.mermaidNodeCount ?? 0,
         visibleSvgCount: 0,
         externalImageCount: 0,
         errorCount: 1,
@@ -207,7 +215,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
       observed: {
         rendererRootSvgCount: counts.rendererRoots,
         graphCount: counts.mermaidFenced,
-        mermaidNodeCount: 0,
+        mermaidNodeCount: counts.mermaidNodeCount ?? 0,
         visibleSvgCount: 0,
         externalImageCount: counts.externalImageCount,
         errorCount: 1,
@@ -227,7 +235,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
       observed: {
         rendererRootSvgCount: counts.rendererRoots,
         graphCount: counts.mermaidFenced,
-        mermaidNodeCount: 0,
+        mermaidNodeCount: counts.mermaidNodeCount ?? 0,
         visibleSvgCount: 0,
         externalImageCount: counts.externalImageCount,
         errorCount: 1,
@@ -247,7 +255,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
       observed: {
         rendererRootSvgCount: counts.rendererRoots,
         graphCount: counts.mermaidFenced,
-        mermaidNodeCount: 0,
+        mermaidNodeCount: counts.mermaidNodeCount ?? 0,
         visibleSvgCount: 0,
         externalImageCount: counts.externalImageCount,
         errorCount: 1,
@@ -267,7 +275,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
     observed: {
       rendererRootSvgCount: counts.rendererRoots,
       graphCount: counts.mermaidFenced,
-      mermaidNodeCount: 0,
+      mermaidNodeCount: counts.mermaidNodeCount ?? 0,
       visibleSvgCount: 0,
       externalImageCount: counts.externalImageCount,
       errorCount: 0,

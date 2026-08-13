@@ -222,7 +222,7 @@ describe("HTML publish prediction boundary", () => {
         observed: {
           rendererRootSvgCount: input.lexical.rendererRootSvgCount,
           graphCount: 0,
-          mermaidNodeCount: input.lexical.mermaidNodeCount,
+          mermaidNodeCount: input.lexical.mermaidNodeCount ?? 0,
           visibleSvgCount: 0,
           opaqueRegionCount: input.lexical.opaqueRegionCount,
           externalImageCount: input.lexical.externalImageCount,

@@ -7,6 +7,52 @@ import { FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 
 const homes: string[] = [];
 const mermaidFixture = resolve(import.meta.dir, "../fixtures/mermaid-flowchart.md");
+const legionFlowTemplate = resolve(import.meta.dir, "../../templates/legion-flow.mmd");
+const mermaidParityCases = [
+  {
+    name: "template legion flow",
+    path: legionFlowTemplate,
+    artifactType: "mermaid" as const,
+    nodes: 6,
+  },
+  {
+    name: "template legion sequence",
+    path: resolve(import.meta.dir, "../../templates/legion-sequence.mmd"),
+    artifactType: "mermaid" as const,
+    nodes: 0,
+  },
+  {
+    name: "template legion state",
+    path: resolve(import.meta.dir, "../../templates/legion-state.mmd"),
+    artifactType: "mermaid" as const,
+    nodes: 4,
+  },
+  {
+    name: "template legion boundaries",
+    path: resolve(import.meta.dir, "../../templates/legion-boundaries.mmd"),
+    artifactType: "mermaid" as const,
+    nodes: 6,
+  },
+  { name: "fixture flowchart", path: mermaidFixture, artifactType: "mermaid" as const, nodes: 2 },
+  {
+    name: "fixture fenced flowchart",
+    path: resolve(import.meta.dir, "../fixtures/markdown-heading-link.md"),
+    artifactType: "markdown" as const,
+    nodes: 2,
+  },
+  {
+    name: "fixture SVG label text",
+    path: resolve(import.meta.dir, "../fixtures/hostile-svg-label.md"),
+    artifactType: "markdown" as const,
+    nodes: 2,
+  },
+  {
+    name: "fixture adversarial flowcharts",
+    path: resolve(import.meta.dir, "../fixtures/adversarial-md-mermaid.md"),
+    artifactType: "markdown" as const,
+    nodes: 40,
+  },
+] as const;
 const forgedFixture = resolve(import.meta.dir, "../fixtures/hostile-monkeypatch.json");
 
 afterEach(() => {
@@ -59,7 +105,7 @@ async function invoke(
   return FacetEnvelopeSchema.parse(JSON.parse(stdout));
 }
 
-async function publishAndReadBack(
+async function publishFixture(
   home: string,
   fixturePath = mermaidFixture,
   artifactType: "markdown" | "mermaid" = "mermaid",
@@ -79,17 +125,24 @@ async function publishAndReadBack(
   );
   const revision = successfulData(published).revision as { sha256: string };
 
+  return { artifactId: artifact.id, revisionSha: revision.sha256 };
+}
+
+async function publishAndReadBack(
+  home: string,
+  fixturePath = mermaidFixture,
+  artifactType: "markdown" | "mermaid" = "mermaid",
+  overrides: NodeJS.ProcessEnv = {},
+) {
+  const { artifactId, revisionSha } = await publishFixture(
+    home,
+    fixturePath,
+    artifactType,
+    overrides,
+  );
   return invoke(
     home,
-    [
-      "read-back",
-      "--artifact-id",
-      artifact.id,
-      "--revision-sha",
-      revision.sha256,
-      "--tier",
-      "visual",
-    ],
+    ["read-back", "--artifact-id", artifactId, "--revision-sha", revisionSha, "--tier", "visual"],
     overrides,
   );
 }
@@ -137,6 +190,42 @@ test("secure CLI boot records a Tier 1 visual verdict through the detached servi
     },
   });
 }, 180_000);
+
+for (const { name, path, artifactType, nodes } of mermaidParityCases) {
+  test(`secure CLI keeps Tier 0 and Tier 1 Mermaid node counts equal for ${name}`, async () => {
+    const home = mkdtempSync(join(tmpdir(), "facet-secure-cli-tier1-parity-"));
+    homes.push(home);
+    const { artifactId, revisionSha } = await publishFixture(home, path, artifactType);
+
+    const tier0 = await invoke(home, [
+      "read-back",
+      "--artifact-id",
+      artifactId,
+      "--revision-sha",
+      revisionSha,
+      "--tier",
+      "0",
+    ]);
+    const tier1 = await invoke(home, [
+      "read-back",
+      "--artifact-id",
+      artifactId,
+      "--revision-sha",
+      revisionSha,
+      "--tier",
+      "visual",
+    ]);
+
+    expect(tier0).toMatchObject({
+      ok: true,
+      data: { verdict: { tier: 0, status: "ok", observed: { mermaidNodeCount: nodes } } },
+    });
+    expect(tier1).toMatchObject({
+      ok: true,
+      data: { verdict: { tier: 1, status: "ok", observed: { mermaidNodeCount: nodes } } },
+    });
+  }, 180_000);
+}
 
 test("secure CLI distinguishes a Tier 1 verdict failure from an unavailable browser", async () => {
   const home = mkdtempSync(join(tmpdir(), "facet-secure-cli-tier1-forged-"));

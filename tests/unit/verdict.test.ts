@@ -81,6 +81,18 @@ describe("deriveVerdict — happy path", () => {
     expect(deriveVerdict(lex(), protocol(), protocol(), shim(), lifecycle())).toBe("ok");
   });
 
+  test("explicitly skips an unavailable Mermaid node expectation", () => {
+    expect(
+      deriveVerdict(
+        lex({ mermaidNodeCount: null }),
+        protocol({ mermaidNodeCount: 7 }),
+        protocol({ mermaidNodeCount: 7 }),
+        shim({ mermaidNodeCount: 7 }),
+        lifecycle(),
+      ),
+    ).toBe("ok");
+  });
+
   test("insecure marker is attached outside deriveVerdict and does not alter observed errors", () => {
     const status = deriveVerdict(lex(), protocol(), protocol(), shim(), lifecycle());
     expect(status).toBe("ok");

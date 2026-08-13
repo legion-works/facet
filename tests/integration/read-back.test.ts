@@ -268,7 +268,7 @@ function buildStubTier1(input: {
       observed: {
         rendererRootSvgCount: t1Input.lexical.rendererRootSvgCount,
         graphCount: 0,
-        mermaidNodeCount: t1Input.lexical.mermaidNodeCount,
+        mermaidNodeCount: t1Input.lexical.mermaidNodeCount ?? 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
         externalImageCount: 0,

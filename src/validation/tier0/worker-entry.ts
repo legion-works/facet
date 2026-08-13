@@ -96,7 +96,7 @@ function parseWorkerInput(text: string): WorkerInput {
   if (
     lexical === undefined ||
     typeof lexical.rendererRootSvgCount !== "number" ||
-    typeof lexical.mermaidNodeCount !== "number" ||
+    (typeof lexical.mermaidNodeCount !== "number" && lexical.mermaidNodeCount !== null) ||
     typeof lexical.visibleSvgCount !== "number"
   ) {
     throw new Error("invalid lexical counters");

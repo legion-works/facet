@@ -60,7 +60,7 @@ export const stubTier0Runner = async (input: Tier0Input): Promise<Tier0Result> =
     observed: {
       rendererRootSvgCount: input.lexical.rendererRootSvgCount,
       graphCount: 0,
-      mermaidNodeCount: input.lexical.mermaidNodeCount,
+      mermaidNodeCount: input.lexical.mermaidNodeCount ?? 0,
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
       externalImageCount: input.lexical.externalImageCount,

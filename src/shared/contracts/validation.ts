@@ -108,7 +108,9 @@ export type HtmlStructureCounts = z.infer<typeof HtmlStructureCountsSchema>;
  */
 export const LexicalCountersSchema = z.object({
   rendererRootSvgCount: z.number().int().nonnegative(),
-  mermaidNodeCount: z.number().int().nonnegative(),
+  // `null` is an explicit no-expectation marker for Mermaid diagram types
+  // whose renderer-owned `g.node` output lacks a maintained lexical grammar.
+  mermaidNodeCount: z.number().int().nonnegative().nullable(),
   visibleSvgCount: z.number().int().nonnegative(),
   opaqueRegionCount: z.number().int().nonnegative(),
   externalImageCount: z.number().int().nonnegative(),
