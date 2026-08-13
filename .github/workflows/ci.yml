@@ -283,6 +283,7 @@ jobs:
           - gate-forgery.test.ts
           - harness-recovery.test.ts
           - html-differential.test.ts
+          - html-harness-csp.test.ts
           - html-render.test.ts
           - html-tier1-status.test.ts
           - insecure-sandbox.test.ts
