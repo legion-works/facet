@@ -175,6 +175,69 @@ describe("service lifecycle", () => {
     }
   }, 10_000);
 
+  test("a live stream renews its lease, then idle proceeds one TTL after stream close", async () => {
+    const paths = envPaths("stream-lease-renewal");
+    const service = await startFacetService({
+      logger: createQuietLogger({ component: "test" }),
+      ...paths,
+      idleTimeoutMs: 50,
+      leaseTtlMs: 300,
+      heartbeatIntervalMs: 100,
+      tier0Runner: stubTier0Runner,
+    });
+    const streamAbort = new AbortController();
+    try {
+      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+      const published = await publishArtifact(client, {
+        artifactType: "markdown",
+        bytes: new TextEncoder().encode("# stream lease renewal\n").buffer as ArrayBuffer,
+      });
+      const opened = await client.sendCommand({
+        command: "open",
+        requestId: crypto.randomUUID(),
+        artifactId: published.artifactId,
+        revisionSha: published.revisionSha,
+      });
+      if (!opened.ok || opened.data.command !== "open") throw new Error("open failed");
+
+      const stream = await fetch(`${service.url}/api/v1/stream`, {
+        headers: {
+          authorization: `Bearer ${service.installToken}`,
+          host: `127.0.0.1:${service.port}`,
+          "x-gallery-lease": opened.data.lease.leaseId,
+          "x-gallery-artifact": published.artifactId,
+        },
+        signal: streamAbort.signal,
+      });
+      expect(stream.status).toBe(200);
+      expect(stream.body).not.toBeNull();
+      const reader = stream.body!.getReader();
+      await reader.read();
+
+      await Bun.sleep(700);
+      const source = await fetch(
+        `${service.url}/api/v1/gallery/source?revisionSha=${published.revisionSha}`,
+        {
+          headers: {
+            authorization: `Bearer ${service.installToken}`,
+            host: `127.0.0.1:${service.port}`,
+            "x-gallery-lease": opened.data.lease.leaseId,
+            "x-gallery-artifact": published.artifactId,
+          },
+        },
+      );
+      expect(source.status).toBe(200);
+      expect(await portClosed(service.port)).toBe(false);
+
+      streamAbort.abort();
+      await service.waitUntilIdle();
+      expect(await portClosed(service.port)).toBe(true);
+    } finally {
+      streamAbort.abort();
+      await service.stop();
+    }
+  }, 5_000);
+
   test("stale-lock (dead pid) reclaimed on next start", async () => {
     const paths = envPaths("stale");
     writeFileSync(

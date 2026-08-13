@@ -30,6 +30,7 @@ export interface GalleryLeaseManagerOptions {
 export interface GalleryLeaseManager {
   issue(input: { artifactId: string; pid: number }): GalleryLease;
   validate(lease: GalleryLease): boolean;
+  renew(leaseId: string): boolean;
   release(leaseId: string): void;
   /**
    * Register a callback fired exactly once when the lease expires
@@ -112,6 +113,17 @@ export function createLeaseManager(options: GalleryLeaseManagerOptions): Gallery
       if (record.expiresAt <= now()) return false;
       if (record.artifactId !== lease.artifactId) return false;
       if (record.pid !== lease.pid) return false;
+      return true;
+    },
+    renew(leaseId) {
+      const record = active.get(leaseId);
+      if (!record) return false;
+      if (record.expiresAt <= now()) {
+        expire(leaseId);
+        return false;
+      }
+      active.set(leaseId, { ...record, expiresAt: now() + options.leaseTtlMs });
+      schedule(leaseId, options.leaseTtlMs);
       return true;
     },
     release(leaseId) {

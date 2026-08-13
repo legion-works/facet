@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { createLeaseManager, type GalleryLeaseManager } from "../../src/service/security/leases";
+import { assertHeartbeatBeforeLeaseTtl } from "../../src/service/stream";
 
 let manager: GalleryLeaseManager;
 const callbacks: Array<{ leaseId: string; artifactId: string }> = [];
@@ -24,6 +25,13 @@ afterEach(() => {
 });
 
 describe("GalleryLeaseManager", () => {
+  test("requires the heartbeat interval to be shorter than the lease TTL", () => {
+    expect(() => assertHeartbeatBeforeLeaseTtl(100, 300)).not.toThrow();
+    expect(() => assertHeartbeatBeforeLeaseTtl(300, 300)).toThrow(
+      "SSE heartbeat interval must be shorter than the lease TTL",
+    );
+  });
+
   test("issues a lease bound to (artifactId, pid)", () => {
     const lease = manager.issue({ artifactId: "a-1", pid: 42 });
     expect(lease.leaseId.length).toBeGreaterThan(0);
@@ -94,6 +102,42 @@ describe("GalleryLeaseManager", () => {
     await new Promise((r) => setTimeout(r, 60));
     expect(callbacks.find((c) => c.leaseId === lease.leaseId)).toBeUndefined();
     shortManager.clear();
+  });
+
+  test("renew() extends a live lease past its original expiry", async () => {
+    const shortManager = createLeaseManager({ leaseTtlMs: 80 });
+    const lease = shortManager.issue({ artifactId: "a-1", pid: 42 });
+
+    await Bun.sleep(50);
+    expect(shortManager.renew(lease.leaseId)).toBe(true);
+
+    const renewed = shortManager.list().find((entry) => entry.leaseId === lease.leaseId);
+    expect(renewed?.expiresAt).toBeGreaterThan(lease.expiresAt);
+
+    await Bun.sleep(50);
+    expect(shortManager.validate(lease)).toBe(true);
+    shortManager.clear();
+  });
+
+  test("renew() refuses an expired lease without resurrecting it", async () => {
+    const shortManager = createLeaseManager({
+      leaseTtlMs: 30,
+      onExpire: (entry) => callbacks.push(entry),
+    });
+    const lease = shortManager.issue({ artifactId: "a-1", pid: 42 });
+
+    await Bun.sleep(80);
+    expect(shortManager.renew(lease.leaseId)).toBe(false);
+    expect(shortManager.list()).toEqual([]);
+    expect(callbacks.filter((entry) => entry.leaseId === lease.leaseId)).toHaveLength(1);
+
+    await Bun.sleep(40);
+    expect(callbacks.filter((entry) => entry.leaseId === lease.leaseId)).toHaveLength(1);
+    shortManager.clear();
+  });
+
+  test("renew() refuses an unknown lease", () => {
+    expect(manager.renew("no-such")).toBe(false);
   });
 
   test("list() reflects active leases only", () => {

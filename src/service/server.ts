@@ -30,7 +30,11 @@ import { ArtifactRepository } from "./store/repository";
 import { buildRouter } from "./router";
 import { createInstallTokenStore, createPromoteTokenStore } from "./security/token-store";
 import { createLeaseManager, type GalleryLeaseManager } from "./security/leases";
-import { createRevisionBroadcaster } from "./stream";
+import {
+  assertHeartbeatBeforeLeaseTtl,
+  createRevisionBroadcaster,
+  STREAM_HEARTBEAT_INTERVAL_MS,
+} from "./stream";
 import { defaultInsecureReason } from "./verdict-enrichment";
 import {
   InsecureLevelSchema,
@@ -62,6 +66,7 @@ export interface StartServiceOptions {
   readonly lockPath?: string;
   readonly idleTimeoutMs?: number;
   readonly leaseTtlMs?: number;
+  readonly heartbeatIntervalMs?: number;
   readonly logger?: FacetLogger;
   readonly host?: string;
   readonly onIdle?: () => void;
@@ -105,6 +110,8 @@ export async function startFacetService(
   const lockPath = options.lockPath ?? paths.lock;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const leaseTtlMs = options.leaseTtlMs ?? LEASE_TTL_MS;
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? STREAM_HEARTBEAT_INTERVAL_MS;
+  assertHeartbeatBeforeLeaseTtl(heartbeatIntervalMs, leaseTtlMs);
   const host = options.host ?? "127.0.0.1";
 
   // Pre-lock: orphan cleanup (read-only inspection of disk state).
@@ -258,6 +265,7 @@ export async function startFacetService(
       tier0Runner,
       tier1Runner,
       broadcaster,
+      heartbeatIntervalMs,
       onPublished: (event) => broadcaster.emit(event),
     });
     let server: ReturnType<typeof Bun.serve>;

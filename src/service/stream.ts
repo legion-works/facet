@@ -29,6 +29,16 @@ import type { IdleController } from "./lifecycle/idle-controller";
 import { envelopeResponse, generateRequestId } from "./http-utils";
 
 const NO_STORE = "no-store";
+export const STREAM_HEARTBEAT_INTERVAL_MS = 15_000;
+
+export function assertHeartbeatBeforeLeaseTtl(
+  heartbeatIntervalMs: number,
+  leaseTtlMs: number,
+): void {
+  if (heartbeatIntervalMs >= leaseTtlMs) {
+    throw new RangeError("SSE heartbeat interval must be shorter than the lease TTL");
+  }
+}
 
 export type RevisionCommittedEvent = z.infer<typeof RevisionCommittedEventSchema>;
 
@@ -91,6 +101,7 @@ export interface StreamHandlerDeps {
   readonly expectedHost: string | (() => string);
   readonly ownOrigin: string | (() => string);
   readonly broadcaster: RevisionBroadcaster;
+  readonly heartbeatIntervalMs?: number;
 }
 
 interface StreamParsedRequest {
@@ -243,13 +254,17 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+          if (!deps.leases.renew(leaseId)) {
+            clearInterval(heartbeat);
+            return;
+          }
           send({ type: "stream:heartbeat", streamId, at: new Date().toISOString() });
         } catch {
           // stream torn down between check and send
           clearInterval(heartbeat);
           releaseLease();
         }
-      }, 15_000);
+      }, deps.heartbeatIntervalMs ?? STREAM_HEARTBEAT_INTERVAL_MS);
       if (typeof heartbeat.unref === "function") heartbeat.unref();
 
       const stop = (): void => {

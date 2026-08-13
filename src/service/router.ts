@@ -108,6 +108,7 @@ export interface RouterDeps extends DispatcherDeps {
   readonly startTime: number;
   /** Per-artifact SSE fan-out the stream route registers into. */
   readonly broadcaster: RevisionBroadcaster;
+  readonly heartbeatIntervalMs?: number;
   readonly galleryBootstrap?: Map<
     string,
     { readonly artifactId: string; readonly revisionSha: string; readonly leaseId: string }

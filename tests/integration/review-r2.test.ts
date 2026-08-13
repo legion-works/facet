@@ -10,8 +10,8 @@
  *   3. Per-route AUTH MATRIX — every route returns 401 without a Bearer,
  *      including the SSE stream route, so a future un-authed route fails
  *      the test.
- *   4. Stream-expiry test actually WAITS for the lease TTL to elapse
- *      and asserts the stream closed + the service can idle-exit.
+ *   4. Stream-renewal test holds a stream past its original lease TTL,
+ *      then asserts teardown still permits idle exit.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -43,7 +43,7 @@ interface TestEnv {
 }
 
 async function startEnv(
-  opts: { leaseTtlMs?: number; idleTimeoutMs?: number } = {},
+  opts: { leaseTtlMs?: number; idleTimeoutMs?: number; heartbeatIntervalMs?: number } = {},
 ): Promise<TestEnv> {
   const envDir = join(scratchRoot, crypto.randomUUID());
   mkdirSync(envDir, { recursive: true });
@@ -54,6 +54,9 @@ async function startEnv(
     lockPath: join(envDir, "facet.lock"),
     idleTimeoutMs: opts.idleTimeoutMs ?? 5_000,
     ...(opts.leaseTtlMs !== undefined ? { leaseTtlMs: opts.leaseTtlMs } : {}),
+    ...(opts.heartbeatIntervalMs !== undefined
+      ? { heartbeatIntervalMs: opts.heartbeatIntervalMs }
+      : {}),
     logger: createQuietLogger({ component: "r2-test" }),
     tier0Runner: stubTier0Runner,
   });
@@ -310,15 +313,10 @@ describe("Round-2 #3: per-route AUTH MATRIX", () => {
   }
 });
 
-describe("Round-2 #4: stream-expiry actually exercises TTL", () => {
-  test("short-TTL lease → stream closes on expiry + idle returns to baseline", async () => {
-    // 60 ms lease TTL — enough to open a stream, not enough to outlive
-    // a 200 ms wait. The stream must be closed by the per-lease timer,
-    // NOT by client cancel. We assert the closed state via the
-    // manager's onExpire hook fired (the service exposes no public
-    // stream-close probe; the integration proves it via the idle
-    // controller returning to baseline and the service shutting down).
-    const env = await startEnv({ leaseTtlMs: 60, idleTimeoutMs: 200 });
+describe("Round-2 #4: stream renewal actually exercises TTL", () => {
+  test("short-TTL lease → live stream survives original expiry + idle returns after close", async () => {
+    const env = await startEnv({ leaseTtlMs: 60, heartbeatIntervalMs: 15, idleTimeoutMs: 200 });
+    const streamAbort = new AbortController();
     try {
       const createRes = await fetch(`${env.baseUrl}/api/v1/commands`, {
         method: "POST",
@@ -386,34 +384,21 @@ describe("Round-2 #4: stream-expiry actually exercises TTL", () => {
           "x-gallery-lease": opened.lease.leaseId,
           "x-gallery-artifact": artifactId,
         },
+        signal: streamAbort.signal,
       });
       expect(streamRes.status).toBe(200);
-      // We DO NOT cancel — we let the lease TTL elapse and the per-lease
-      // timer close the stream. Drain one heartbeat to confirm the
-      // stream is open, then wait past the 60ms TTL.
       const reader = streamRes.body?.getReader();
-      const decoder = new TextDecoder();
-      // Read at least the first event (the `stream:open` event) so we
-      // know the stream is wired.
       if (reader !== undefined) {
         await reader.read();
       }
-      void decoder;
-      // Now wait past the TTL — the per-lease timer should fire and
-      // close the stream, releasing the stream:<id> idle reason. The
-      // service idle window is 200ms; if the stream stayed open past
-      // TTL, the service would NOT shut down within the 200ms window.
+      await Bun.sleep(200);
+      const afterOriginalTtl = await reader?.read();
+      expect(afterOriginalTtl?.done).toBe(false);
+
+      streamAbort.abort();
       await env.service.waitUntilIdle();
-      // If we got here, the service idle-fired and the stream reason
-      // was released (because waitUntilIdle resolves on idle, which
-      // requires count → 0 → timer → fire).
-      // Drain the reader to release the test-side connection cleanly.
-      try {
-        await reader?.cancel();
-      } catch {
-        // already closed
-      }
     } finally {
+      streamAbort.abort();
       await env.cleanup();
     }
   }, 10_000);
