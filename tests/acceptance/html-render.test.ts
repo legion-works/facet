@@ -62,6 +62,7 @@ test("uses one frame-owned renderer root and applies vendored HTML styling", asy
               cardDisplay: root === null ? "" : getComputedStyle(root.querySelector('.card')).display,
               badgeDisplay: root === null ? "" : getComputedStyle(root.querySelector('.badge')).display,
               unknownColor: root === null ? "" : getComputedStyle(root.querySelector('.not-shipped')).color,
+              baseColor: root === null ? "" : getComputedStyle(root).color,
               requests: performance.getEntriesByType('resource').map((entry) => entry.name),
             }));
             return;
@@ -79,6 +80,7 @@ test("uses one frame-owned renderer root and applies vendored HTML styling", asy
       cardDisplay: string;
       badgeDisplay: string;
       unknownColor: string;
+      baseColor: string;
       requests: readonly string[];
     };
     expect(observed.roots).toBe(1);
@@ -87,7 +89,11 @@ test("uses one frame-owned renderer root and applies vendored HTML styling", asy
     expect(observed.script).toBe(false);
     expect(observed.cardDisplay).toBe("flex");
     expect(observed.badgeDisplay).toBe("flex");
-    expect(observed.unknownColor).toBe("rgb(0, 0, 0)");
+    // A class outside the vendored vocabulary must inherit the root's colour —
+    // proving the stylesheet shipped no rule for it. The literal value tracks the
+    // vendored THEME (dark since d1a92c8), so compare against the root rather
+    // than a hard-coded colour that silently encodes whichever theme shipped.
+    expect(observed.unknownColor).toBe(observed.baseColor);
     expect(observed.requests.filter((request) => request.startsWith("http"))).toEqual([]);
   } finally {
     await target?.close();
