@@ -74,12 +74,15 @@ under the per-frame nonce. A custom `data:` font ships in the bundle as
 
 ## TSX execution policy
 
-TSX is executable artifact code, so interactive bundles run only inside a nested
-opaque-origin frame. Tier 0 rejects direct capability use for typed author
-feedback, but the runtime boundary is authoritative: netns blocks egress and
-the frozen CSP denies `connect-src`, `worker-src`, `form-action`, dynamic string
-execution, and `frame-src`. The AST policy is intentionally not complete under
-aliasing; runtime controls cover those indirect forms.
+TSX is executable artifact code, so interactive bundles run only inside the
+artifact's gallery frame, under that frame's own restrictive CSP (`self`,
+plus `blob:` for the compiled module import) — a display-time policy,
+separate from the frozen nonce-only CSP the Tier 1 verifier enforces during
+validation. Tier 0 rejects direct capability use for typed author feedback,
+but the compilation-time runtime boundary is authoritative: netns blocks
+egress during `Bun.build` compilation. The AST policy is intentionally not
+complete under aliasing; the vendored-module allowlist (`src/shared/tsx/import-policy.ts`)
+is what makes indirect import forms unreachable at compile time.
 
 Facet mounts the default export. Artifact source must not self-mount.
 
