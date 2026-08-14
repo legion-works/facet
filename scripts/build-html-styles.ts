@@ -3,7 +3,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { HTML_STYLE_CLASSES } from "../src/shared/html/style-vocabulary";
+import { HTML_TAILWIND_BUILD_CLASSES } from "../src/shared/html/style-vocabulary";
 
 const REPO_ROOT = import.meta.dir.replace(/\/scripts$/, "");
 const SOURCE_PATH = join(REPO_ROOT, "src/gallery-web/frame/styles/html-source.css");
@@ -20,7 +20,7 @@ async function buildStyles(destination: string): Promise<void> {
   try {
     const corpusPath = join(directory, "classes.html");
     const inputPath = join(directory, "input.css");
-    await writeFile(corpusPath, `<main class="${HTML_STYLE_CLASSES.join(" ")}"></main>\n`);
+    await writeFile(corpusPath, `<main class="${HTML_TAILWIND_BUILD_CLASSES.join(" ")}"></main>\n`);
     await writeFile(inputPath, cssSourceFor(corpusPath, await readFile(SOURCE_PATH, "utf8")));
     const child = Bun.spawn([process.execPath, TAILWIND_CLI, "-i", inputPath, "-o", destination], {
       cwd: REPO_ROOT,

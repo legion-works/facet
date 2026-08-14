@@ -121,43 +121,39 @@ cannot weaken the verdict.
 
 → [Security reference](security.md) for the full frozen-CSP contract.
 
-## Vendored styling vocabulary
+## Vendored styling
 
-Styling comes exclusively from the frame's vendored stylesheet. Two source
-arrays live in `src/shared/html/style-vocabulary.ts`:
+Styling comes exclusively from the frame's offline-vendored stylesheet.
+daisyUI ships every component from the pinned package with the `night` theme
+as the default. Tailwind utilities come from a deterministic corpus that
+covers the templates, this reference, and common layout, spacing, typography,
+and color classes.
 
-- `HTML_TAILWIND_CLASSES` — Tailwind 4 utility subset (layout, spacing,
-  typography, Legion Works design tokens, borders, tables)
-- `HTML_DAISY_COMPONENTS` — daisyUI 5 components included in the
-  vendored stylesheet (`alert`, `badge`, `btn`, `card`, `stat`, `table`)
-
-A class outside this set renders the element **unstyled**, with **no error**
-and **no trust downgrade**. The agent writing the markup cannot see the
-subset without reading it; the canonical arrays are the only source of
-truth and a focused test fails the build if the published vocabulary below
-drifts from either array.
+`HTML_TAILWIND_CLASSES` and `HTML_DAISY_COMPONENTS` in
+`src/shared/html/style-vocabulary.ts` are recommendations, not a styling
+ceiling. Use them for predictable artifact output. A valid daisyUI class or
+an included Tailwind utility outside this list can still render.
 
 <!-- VOCABULARY:START -->
 
-### Tailwind utilities
+### Recommended Tailwind utilities
 
 `block`, `flex`, `grid`, `inline-flex`, `flex-col`, `flex-wrap`, `items-center`, `justify-between`, `justify-center`, `grid-cols-1`, `grid-cols-2`, `grid-cols-3`, `gap-2`, `gap-3`, `gap-4`, `gap-6`, `p-2`, `p-3`, `p-4`, `p-6`, `px-3`, `px-4`, `py-2`, `py-3`, `m-0`, `mt-2`, `mt-4`, `mb-2`, `mb-4`, `w-full`, `max-w-prose`, `max-w-2xl`, `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`, `font-medium`, `font-semibold`, `font-bold`, `leading-relaxed`, `text-left`, `text-center`, `text-right`, `text-legion-ink`, `text-legion-muted`, `text-legion-cyan`, `bg-legion-paper`, `bg-legion-ink`, `bg-legion-cyan`, `border`, `border-2`, `border-legion-line`, `rounded`, `rounded-box`, `overflow-x-auto`, `table`, `table-zebra`.
 
-59 utilities in total.
+59 recommended utilities.
 
-### daisyUI components
+### Recommended daisyUI components
 
 `alert`, `badge`, `btn`, `card`, `stat`, `table`.
 
-6 components in total · 64 classes shipped across both arrays.
+6 recommended components · 64 documented recommendations.
 
 <!-- VOCABULARY:END -->
 
 ### Unknown classes
 
-No error, no `partial:`, no trust downgrade — the element renders without
-the intended style. Document and check the vocabulary above before
-publishing.
+No error, no `partial:`, no trust downgrade. A class that is neither a real
+daisyUI class nor present in the Tailwind corpus has no styling effect.
 
 ## Pinned styling packages
 
@@ -168,7 +164,7 @@ publishing.
 | `daisyui`          | 5.7.16  | no (vendored CSS, no runtime JS)     |
 
 Tailwind is bundled at build time (`bun scripts/build-html-styles.ts`)
-against the canonical class list in `src/shared/html/style-vocabulary.ts`;
+against the deterministic build corpus in `src/shared/html/style-vocabulary.ts`;
 no Tailwind runtime runs in the frame. `daisyui` 5.7.16 ships CSS-var themes
 and components only — the vendored bundle contains zero `<script>` and zero
 `javascript:` URLs. The `img-src` and `font-src` widenings do not load any

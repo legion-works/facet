@@ -1,11 +1,9 @@
 /**
  * Vocabulary drift guard for `docs/reference/html.md`.
  *
- * The reference doc publishes the exact Tailwind utility and daisyUI
- * component vocabulary the HTML frame renders. The single source of
- * truth is `src/shared/html/style-vocabulary.ts`; this test generates
- * the expected markdown for the doc's vocabulary block from that file
- * and asserts the doc matches it byte-for-byte.
+ * The reference doc publishes recommended Tailwind utilities and daisyUI
+ * components. The vendored stylesheet is broader: all daisyUI components
+ * plus a deterministic Tailwind utility corpus ship offline.
  *
  * Why generated, not hand-maintained: a hand-copied second list drifts.
  * This repo has hit that drift three times across separate passes
@@ -25,6 +23,7 @@ import { expect, test } from "bun:test";
 import {
   HTML_DAISY_COMPONENTS,
   HTML_STYLE_CLASSES_DISTINCT,
+  HTML_TAILWIND_BUILD_CLASSES,
   HTML_TAILWIND_CLASSES,
 } from "../../src/shared/html/style-vocabulary";
 
@@ -44,21 +43,21 @@ function renderVocabularyMarkdown(): string {
   const twCount = HTML_TAILWIND_CLASSES.length;
   const dzCount = HTML_DAISY_COMPONENTS.length;
   return [
-    "### Tailwind utilities",
+    "### Recommended Tailwind utilities",
     "",
     `${tailwind}.`,
     "",
-    `${twCount} utilities in total.`,
+    `${twCount} recommended utilities.`,
     "",
-    "### daisyUI components",
+    "### Recommended daisyUI components",
     "",
     `${daisy}.`,
     "",
-    `${dzCount} components in total · ${total} classes shipped across both arrays.`,
+    `${dzCount} recommended components · ${total} documented recommendations.`,
   ].join("\n");
 }
 
-test("docs/reference/html.md vocabulary matches src/shared/html/style-vocabulary.ts", () => {
+test("docs/reference/html.md recommendations match src/shared/html/style-vocabulary.ts", () => {
   const doc = readFileSync(DOC_PATH, "utf8");
   const startIndex = doc.indexOf(VOCABULARY_MARKER_START);
   const endIndex = doc.indexOf(VOCABULARY_MARKER_END);
@@ -73,33 +72,19 @@ test("docs/reference/html.md vocabulary matches src/shared/html/style-vocabulary
   const block = rawBlock.replace(/^\s*\n/, "").replace(/\n\s*$/, "");
   if (block !== expected) {
     throw new Error(
-      `docs/reference/html.md vocabulary block drifted from src/shared/html/style-vocabulary.ts.\n` +
+      `docs/reference/html.md recommendation block drifted from src/shared/html/style-vocabulary.ts.\n` +
         `Replace the block between the VOCABULARY markers with:\n\n${expected}`,
     );
   }
 });
 
-test("vocabulary dedup pins the exact duplicate set (catches second-duplicate regressions)", () => {
-  // A guard that only checks `totalCount ≤ tailwindCount + daisyCount`
-  // is a tautology — it is ALWAYS true and cannot catch a second
-  // duplicate. The durable guard is the actual set of classes that
-  // appear in BOTH arrays: that set must equal exactly the known
-  // duplicates. Adding a second class to both arrays (e.g.
-  // duplicating `border`) makes this test fail BEFORE any doc
-  // regeneration, catching the regression at the source.
-  const tailwindSet = new Set<string>(HTML_TAILWIND_CLASSES);
-  const daisySet = new Set<string>(HTML_DAISY_COMPONENTS);
-  const duplicates: string[] = [];
-  for (const name of tailwindSet) {
-    if (daisySet.has(name)) duplicates.push(name);
-  }
-  duplicates.sort();
-  expect(duplicates).toEqual(["table"]);
+test("Tailwind build corpus contains every documented utility", () => {
+  const buildClasses = new Set<string>(HTML_TAILWIND_BUILD_CLASSES);
+  for (const name of HTML_TAILWIND_CLASSES) expect(buildClasses.has(name)).toBe(true);
+  expect(buildClasses.size).toBeGreaterThan(200);
 });
 
-test("vocabulary contains at least one class per shipped family", () => {
-  // Sanity checks — a vocabulary with zero classes would be vacuous
-  // and a vocabulary with only one family would be incomplete.
+test("recommendations contain both documented families", () => {
   const tailwindCount: number = HTML_TAILWIND_CLASSES.length;
   const daisyCount: number = HTML_DAISY_COMPONENTS.length;
   expect(tailwindCount).toBeGreaterThan(20);

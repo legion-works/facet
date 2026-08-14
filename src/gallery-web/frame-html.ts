@@ -64,13 +64,10 @@ export function buildFrameDocument(options: {
     `<style>` +
     `html,body{margin:0;height:100%;background:transparent;` +
     `color:#c8d3f5;font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}` +
-    // height (not min-height): a percentage max-height on the artifact
-    // only resolves against a DEFINITE parent height, so min-height let
-    // an oversized SVG overflow and crop instead of fitting.
     `#artifact{margin:0;height:100%;box-sizing:border-box;padding:16px;` +
-    `display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;overflow:auto}` +
-    `#artifact>svg:only-child,#artifact>canvas:only-child,#artifact>.facet-html-root:only-child,#artifact>iframe:only-child{align-self:center;margin-block:auto}` +
-    `#artifact>svg{max-width:100%;max-height:100%;height:auto;width:auto}` +
+    `overflow:auto}` +
+    `#artifact>svg{display:block;width:fit-content;max-height:none;height:auto}` +
+    `#artifact>canvas,#artifact>iframe{display:block}` +
     `#artifact a{color:#82aaff}` +
     `#artifact code,#artifact pre{background:#1e2030;color:#c3e88d;border-radius:4px}` +
     `#artifact code{padding:1px 4px}#artifact pre{padding:10px;overflow:auto}` +
