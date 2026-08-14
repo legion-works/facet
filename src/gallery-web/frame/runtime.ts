@@ -17,7 +17,7 @@ import {
   type FrameViewState,
 } from "./frame-payload";
 import type { SvgViewBox } from "./view-box";
-
+import { clampZoom, zoomAtPoint } from "../view-state";
 export interface FrameRenderPayload {
   readonly artifactType: string;
   readonly renderer: string;
@@ -86,6 +86,18 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   if (container === null) throw new Error("frame runtime: #artifact container missing");
   let rendered = false;
 
+  document.documentElement.style.height = "100%";
+  document.documentElement.style.overflow = "hidden";
+  document.body.style.height = "100%";
+  document.body.style.margin = "0";
+  document.body.style.padding = "0";
+  document.body.style.overflow = "hidden";
+  container.style.height = "100%";
+  container.style.width = "100%";
+  container.style.overflow = "auto";
+  container.style.boxSizing = "border-box";
+
+  let currentRenderResult: RenderResult | null = null;
   const api: GalleryFrameApi = {
     async render(payload: FrameRenderPayload): Promise<RenderResult> {
       if (rendered) throw new FacetRenderError("frame already rendered", "invalid_request");
@@ -105,20 +117,119 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
           throw new FacetRenderError("view state is invalid", "invalid_request");
         }
         viewState = { zoom: state.zoom, panX: state.panX, panY: state.panY };
-        if (svg === null) return;
-        svg.svg.style.width = `${Math.ceil(svg.viewBox.width * state.zoom)}px`;
-        svg.svg.style.maxWidth = "none";
-        svg.svg.style.height = "auto";
+        if (svg !== null) {
+          svg.svg.style.width = `${Math.ceil(svg.viewBox.width * state.zoom)}px`;
+          svg.svg.style.maxWidth = "none";
+          svg.svg.style.height = "auto";
+        } else {
+          const root = container.firstElementChild;
+          if (root instanceof HTMLElement) {
+            root.style.transformOrigin = "top left";
+            root.style.transform = `scale(${state.zoom})`;
+          }
+        }
         container.scrollLeft = Math.max(0, -state.panX);
         container.scrollTop = Math.max(0, -state.panY);
       };
-      return {
+      currentRenderResult = {
         observed: countPageShim(),
         viewMode,
         applyViewState,
         readViewState: () => ({ ...viewState }),
       };
+      return currentRenderResult;
     },
   };
   Reflect.set(window, "__facetFrame", api);
+
+  let drag: { x: number; y: number } | null = null;
+  container.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const state = currentRenderResult?.readViewState() ?? { zoom: 1, panX: 0, panY: 0 };
+      const factor = Math.exp(-event.deltaY * 0.001);
+      const nextZoom = clampZoom(state.zoom * factor);
+      const cursorX = event.clientX - rect.left;
+      const cursorY = event.clientY - rect.top;
+      const next = zoomAtPoint(state, nextZoom, cursorX, cursorY);
+      currentRenderResult?.applyViewState({
+        zoom: next.zoom,
+        panX: next.panX ?? 0,
+        panY: next.panY ?? 0,
+      });
+    },
+    { passive: false },
+  );
+  container.addEventListener("pointerdown", (event) => {
+    drag = { x: event.clientX, y: event.clientY };
+    container.setPointerCapture(event.pointerId);
+    container.style.cursor = "grabbing";
+  });
+  container.addEventListener("pointermove", (event) => {
+    if (drag === null) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    drag = { x: event.clientX, y: event.clientY };
+    const state = currentRenderResult?.readViewState() ?? { zoom: 1, panX: 0, panY: 0 };
+    currentRenderResult?.applyViewState({
+      ...state,
+      panX: (state.panX ?? 0) + dx,
+      panY: (state.panY ?? 0) + dy,
+    });
+  });
+  const endDrag = (event: PointerEvent): void => {
+    drag = null;
+    container.releasePointerCapture(event.pointerId);
+    container.style.cursor = "auto";
+  };
+  container.addEventListener("pointerup", endDrag);
+  container.addEventListener("pointercancel", endDrag);
+  document.addEventListener("keydown", (event) => {
+    const result = currentRenderResult;
+    if (!result) return;
+    const state = result.readViewState();
+    const rect = container.getBoundingClientRect();
+
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      const factor = Math.exp(100 * 0.001);
+      const next = zoomAtPoint(
+        state,
+        clampZoom(state.zoom * factor),
+        rect.width / 2,
+        rect.height / 2,
+      );
+      result.applyViewState({ zoom: next.zoom, panX: next.panX ?? 0, panY: next.panY ?? 0 });
+    } else if (event.key === "-") {
+      event.preventDefault();
+      const factor = Math.exp(-100 * 0.001);
+      const next = zoomAtPoint(
+        state,
+        clampZoom(state.zoom * factor),
+        rect.width / 2,
+        rect.height / 2,
+      );
+      result.applyViewState({ zoom: next.zoom, panX: next.panX ?? 0, panY: next.panY ?? 0 });
+    } else if (event.key === "0") {
+      event.preventDefault();
+      result.applyViewState({ zoom: 1, panX: 0, panY: 0 });
+    } else if (
+      event.key === "ArrowLeft" ||
+      event.key === "ArrowRight" ||
+      event.key === "ArrowUp" ||
+      event.key === "ArrowDown"
+    ) {
+      event.preventDefault();
+      const amount = event.shiftKey ? 50 : 10;
+      const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
+      const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
+      result.applyViewState({
+        ...state,
+        panX: (state.panX ?? 0) + dx,
+        panY: (state.panY ?? 0) + dy,
+      });
+    }
+  });
 }

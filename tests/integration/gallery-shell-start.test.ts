@@ -451,12 +451,10 @@ describe("gallery shell startup", () => {
     expect(harness.elements.get("facet-live-label")?.textContent).toBe("live");
     expect(harness.elements.get("facet-title")?.dataset["cleared"]).toBe("yes");
 
-    let prevented = false;
-    harness.elements.get("facet-canvas")?.emit("wheel", {
-      preventDefault: () => (prevented = true),
-      deltaY: -100,
-      clientX: 410,
-      clientY: 320,
+    harness.documentListeners.get("keydown")?.({
+      key: "ArrowRight",
+      shiftKey: true,
+      preventDefault() {},
     });
     harness.documentListeners.get("keydown")?.({
       key: "ArrowRight",
@@ -467,7 +465,6 @@ describe("gallery shell startup", () => {
     harness.windowListeners.get("beforeunload")?.({});
     await Promise.resolve();
 
-    expect(prevented).toBe(true);
     expect(harness.elements.get("facet-canvas")?.dataset["fullscreen"]).toBe("yes");
     // The shell no longer releases the lease on beforeunload — the lease
     // expires via the service's per-lease TTL, so a F5 refresh can reuse
@@ -478,26 +475,35 @@ describe("gallery shell startup", () => {
     expect(harness.requests.some(({ url }) => url.endsWith("/api/v1/gallery/release"))).toBe(false);
   });
 
-  test("clears iframe CSS transforms after a frame selects native SVG viewBox zoom", async () => {
-    const harness = createRuntime("native");
-    await startGallery(harness.runtime);
-    await Promise.resolve();
-
-    const canvas = harness.elements.get("facet-canvas")!;
-    const iframe = canvas.children[0] as FakeIframe;
-    expect(canvas.dataset["viewMode"]).toBe("native");
-    expect(iframe.style["transform"]).toBe("");
-  });
-
-  test("applies CSS transforms when the render result reports the css view mode", async () => {
+  test("shell never CSS-transforms the iframe, and delegates view state to the frame document", async () => {
     const harness = createRuntime("css");
+    let appliedState: any = null;
+    harness.pendingFrameConfigs.push({
+      viewMode: "css",
+      observed: harness.defaultObserved,
+      render: async () => ({
+        observed: harness.defaultObserved,
+        viewMode: "css",
+        applyViewState: (state: any) => {
+          appliedState = state;
+        },
+        readViewState: () => appliedState ?? { zoom: 1, panX: 0, panY: 0 },
+      }),
+    });
     await startGallery(harness.runtime);
     await Promise.resolve();
 
     const canvas = harness.elements.get("facet-canvas")!;
     const iframe = canvas.children[0] as FakeIframe;
-    expect(canvas.dataset["viewMode"]).toBe("css");
-    expect(iframe.style["transform"]).toBe("translate(0px, 0px) scale(1)");
+
+    // Simulate a zoom intent via toolbar
+    harness.elements.get("facet-zoom-in")?.emit("click");
+
+    // The shell should NOT apply a transform to the iframe
+    expect(iframe.style["transform"]).toBeUndefined();
+    // The frame document should receive the view state directly
+    expect(appliedState).not.toBeNull();
+    expect(appliedState.zoom).toBeGreaterThan(1);
   });
 
   test("two rapid revision commits serialize: newest revision wins, exactly one frame at settle", async () => {

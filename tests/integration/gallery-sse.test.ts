@@ -21,7 +21,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  type FrameHost,
   SHELL_EXPORTS,
+  type ShellDom,
+  type SwapPlanStep,
   assertLoopbackHostname,
   buildFrameAttributes,
   buildFrameDocument,
@@ -31,10 +34,6 @@ import {
   planSwap,
   replaceArtifactFrame,
   swapToRevision,
-  type FrameHost,
-  type ShellDom,
-  type SwapPlanStep,
-  type ViewState,
 } from "../../src/gallery-web/app";
 import { createChannelPair, type ChannelPair } from "../../src/gallery-web/frame/channels";
 import { startFacetService } from "../../src/service/server";
@@ -496,22 +495,17 @@ interface RecordingHost {
   readonly host: FrameHost;
   readonly calls: HostCall[];
   readonly badges: string[];
-  readonly viewStates: Map<string, ViewState>;
   readonly mounted: Set<string>;
 }
 
 function createRecordingHost(): RecordingHost {
   const calls: HostCall[] = [];
   const badges: string[] = [];
-  const viewStates = new Map<string, ViewState>();
   const mounted = new Set<string>();
   const host: FrameHost = {
     mountOffScreen(frameId) {
       calls.push({ op: "mount-off-screen", frameId });
       mounted.add(frameId);
-    },
-    setViewMode(frameId, mode) {
-      calls.push({ op: `view-mode:${mode}`, frameId });
     },
     setVisibility(frameId, visible) {
       calls.push({ op: visible ? "show" : "hide", frameId });
@@ -520,15 +514,11 @@ function createRecordingHost(): RecordingHost {
       calls.push({ op: "unmount", frameId });
       mounted.delete(frameId);
     },
-    applyViewState(frameId, viewState) {
-      calls.push({ op: "apply-view-state", frameId });
-      viewStates.set(frameId, viewState);
-    },
     showErrorBadge(message) {
       badges.push(message);
     },
   };
-  return { host, calls, badges, viewStates, mounted };
+  return { host, calls, badges, mounted };
 }
 
 type FakeRenderScript = (payload: unknown) => Promise<unknown>;
@@ -677,8 +667,7 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     expect(removeOld).toBe(ops.length - 1);
     // The exact revision payload reached the frame's render exactly once.
     expect(nextFrame.receivedPayloads).toEqual([SOURCE]);
-    // The frame's mode is recorded before visibility flips.
-    expect(ops).toContain(`view-mode:native:${next.frameId}`);
+    // Frame owns its view mode; the host is not notified.
     expect(recording.mounted.has(current.frameId)).toBe(false);
     expect(recording.mounted.has(next.frameId)).toBe(true);
   });
@@ -710,7 +699,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     });
 
     expect(result.failedNewFrameReady).toBe(false);
-    expect(recording.viewStates.get(next.frameId)).toEqual({ zoom: 1.75 });
+    // Frame's own render result reflects the applied view state.
+    expect(next.renderResult?.readViewState()).toEqual({
+      zoom: 1.75,
+      panX: 0,
+      panY: 0,
+    });
   });
 
   test("every revision gets a fresh ordinary frame — no artifact-JS carryover", async () => {
@@ -951,7 +945,8 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     expect(frames[1]!.receivedPayloads).toEqual([
       { artifactType: "markdown", renderer: "svg", bytes },
     ]);
-    expect(recording.viewStates.get(frame.frameId)).toEqual({ zoom: 2 });
+    // View state is preserved through the frame's own render result, not the host.
+    expect(frame.renderResult?.readViewState()).toEqual({ zoom: 2, panX: 0, panY: 0 });
     expect(recording.mounted.has(current.frameId)).toBe(false);
   });
 });
