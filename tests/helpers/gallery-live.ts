@@ -3,10 +3,7 @@ import { expect } from "bun:test";
 import { FacetClient, publishArtifact } from "../../src/cli/client";
 import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
-import {
-  createIsolatedWorld,
-  resolveNestedArtifactFrame,
-} from "../../src/validation/tier1/frame-target";
+import { createIsolatedWorld } from "../../src/validation/tier1/frame-target";
 import { resolveLauncher } from "../../src/validation/tier1/launcher";
 
 export type GalleryTarget = Awaited<ReturnType<PuppeteerTier1Browser["launch"]>>;
@@ -118,12 +115,6 @@ export async function artifactFrame(
 export async function artifactWorld(target: GalleryTarget): Promise<number> {
   const artifact = await artifactFrame(target);
   return (await createIsolatedWorld(target.session, artifact.frameId)).executionContextId;
-}
-
-export async function nestedArtifactWorld(target: GalleryTarget): Promise<number> {
-  const outer = await artifactFrame(target);
-  const nested = await resolveNestedArtifactFrame(target.session, outer);
-  return (await createIsolatedWorld(target.session, nested.frameId)).executionContextId;
 }
 
 export async function artifactBlockRects(

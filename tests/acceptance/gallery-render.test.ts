@@ -32,7 +32,7 @@ const browser = galleryBrowser();
 const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
 
 test.skipIf(!liveGateEnabled)(
-  "real gallery route mounts an opaque frame and renders a canvas chart",
+  "real gallery route mounts an ordinary same-origin frame and renders a canvas chart",
   async () => {
     const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-acceptance-"));
     const service = await startFacetService({
@@ -133,7 +133,7 @@ test.skipIf(!liveGateEnabled)(
       expect(result?.iframeCount).toBe(1);
       expect(result?.status).toBe("displayed");
       expect(result?.live).toBe("live");
-      // The shell can only observe the opaque frame URL; both routing values
+      // The shell observes the frame's own src URL; both routing values
       // prove the gallery selected the chart bundle and canvas backend.
       expect(result?.frameSrc).toContain("type=chart");
       expect(result?.frameSrc).toContain("renderer=canvas");
@@ -150,6 +150,38 @@ test.skipIf(!liveGateEnabled)(
       });
       // The shell never CSS-transforms the iframe — the frame document handles zoom.
       expect(nativeView.result?.value?.transform).toBe("");
+
+      // Ordinary same-origin frame, not a sandboxed opaque one: no sandbox
+      // tokens, exactly one iframe, and the parent can read straight into the
+      // frame's own document (contentDocument is non-null and readable).
+      const frameContract = await target.session.send<{
+        result?: {
+          value?: {
+            iframeCount: number;
+            sandboxLength: number;
+            contentDocumentReadable: boolean;
+            canvasCount: number;
+          };
+        };
+      }>("Runtime.evaluate", {
+        returnByValue: true,
+        awaitPromise: false,
+        expression: `(() => {
+           const iframes = document.querySelectorAll('iframe');
+           const iframe = iframes[0];
+           const contentDocument = iframe?.contentDocument ?? null;
+           return {
+             iframeCount: iframes.length,
+             sandboxLength: iframe?.sandbox.length ?? -1,
+             contentDocumentReadable: contentDocument !== null,
+             canvasCount: contentDocument?.querySelectorAll('canvas').length ?? 0,
+           };
+         })()`,
+      });
+      expect(frameContract.result?.value?.iframeCount).toBe(1);
+      expect(frameContract.result?.value?.sandboxLength).toBe(0);
+      expect(frameContract.result?.value?.contentDocumentReadable).toBe(true);
+      expect(frameContract.result?.value?.canvasCount).toBeGreaterThan(0);
     } finally {
       await target?.close();
       await service.stop();

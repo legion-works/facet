@@ -298,7 +298,6 @@ jobs:
           - html-tier1-status.test.ts
           - insecure-sandbox.test.ts
           - markdown-mermaid-labels.test.ts
-          - nested-frame-denials.test.ts
           - runtime-exception-event.test.ts
           - screenshot-evidence-failure.test.ts
           - secure-cli-tier1.test.ts
