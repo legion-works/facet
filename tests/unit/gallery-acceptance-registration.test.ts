@@ -17,6 +17,17 @@ function galleryAcceptanceFiles(): readonly string[] {
     .toSorted();
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matrixListsFile(ciWorkflow: string, file: string): boolean {
+  // A commented-out matrix line (`# - gallery-x.test.ts`) still contains the
+  // substring `- gallery-x.test.ts`; anchor to a line that starts (after
+  // leading whitespace) with the list marker so a comment can't satisfy it.
+  return new RegExp(`^\\s+-\\s+${escapeRegExp(file)}\\s*$`, "m").test(ciWorkflow);
+}
+
 test("every gallery acceptance file runs unconditionally in CI", () => {
   const ciWorkflow = readFileSync(ciWorkflowPath, "utf8");
   const files = galleryAcceptanceFiles();
@@ -26,7 +37,7 @@ test("every gallery acceptance file runs unconditionally in CI", () => {
   const conditional: string[] = [];
 
   for (const file of files) {
-    if (!ciWorkflow.includes(`- ${file}`)) unregistered.push(file);
+    if (!matrixListsFile(ciWorkflow, file)) unregistered.push(file);
 
     const source = readFileSync(join(acceptanceDirectory, file), "utf8");
     for (const pattern of conditionalGatePatterns) {
@@ -49,6 +60,6 @@ test("deleted gallery acceptance files stay out of the CI matrix", () => {
   const removedFiles = ["tsx-interactive-isolation.test.ts", "nested-frame-denials.test.ts"];
 
   for (const file of removedFiles) {
-    expect(ciWorkflow).not.toContain(`- ${file}`);
+    expect(matrixListsFile(ciWorkflow, file)).toBe(false);
   }
 });
