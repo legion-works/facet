@@ -540,15 +540,15 @@ export async function replaceArtifactFrame(
   });
   const executed: SwapPlanStep["name"][] = [];
   // The plan's step list executes against the real DOM through these
-  // runners; the async boot-ready/render-complete barrier runs between
-  // `open-new-control` and `new-frame-ready`.
+  // runners; the async boot-ready/render-complete barrier runs before
+  // `render-new`.
   const runners: Record<SwapPlanStep["name"], () => void> = {
     "build-new": () => host.mountOffScreen(next.frameId, next.element.raw),
-    "open-new-control": () => {
+    "load-new": () => {
       // The control channel opens at frame creation and stays open
       // across the swap; nothing to do here.
     },
-    "new-frame-ready": () => {
+    "render-new": () => {
       // Awaited below; this step records the barrier passed.
     },
     swap: () => {
@@ -559,15 +559,17 @@ export async function replaceArtifactFrame(
       next.sendControl(viewStateMessage(viewState));
       host.applyViewState(next.frameId, viewState);
     },
-    "close-old-control": () => current.closeControl(),
-    "remove-old": () => host.unmount(current.frameId),
+    "remove-old": () => {
+      current.closeControl();
+      host.unmount(current.frameId);
+    },
   };
   const runStep = (step: SwapPlanStep): void => {
     runners[step.name]();
     executed.push(step.name);
   };
 
-  // build-new + open-new-control run BEFORE the barrier: the iframe
+  // build-new + load-new run BEFORE the barrier: the iframe
   // must be mounted off-screen to load and boot.
   for (const step of plan.slice(0, 2)) runStep(step);
 
@@ -591,7 +593,7 @@ export async function replaceArtifactFrame(
     return { executedSteps: executed, failedNewFrameReady: true };
   }
 
-  // new-frame-ready → … → remove-old: the rest of the plan, in order.
+  // render-new → … → remove-old: the rest of the plan, in order.
   for (const step of plan.slice(2)) runStep(step);
   options.onProgress?.("complete");
   return { executedSteps: executed, failedNewFrameReady: false };

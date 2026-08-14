@@ -1,5 +1,8 @@
+import { installGalleryFrameApi } from "../runtime";
 import { startGalleryFrame } from "../bootstrap";
 import { renderMermaidDocument } from "../renderers/mermaid";
 import { createRendererRegistry } from "../renderers/registry";
 
-startGalleryFrame(createRendererRegistry([["mermaid", renderMermaidDocument]]));
+const registry = createRendererRegistry([["mermaid", renderMermaidDocument]]);
+startGalleryFrame(registry);
+installGalleryFrameApi(registry);

@@ -408,13 +408,16 @@ const runSwapPlan = (
 };
 
 describe("gallery shell — double-buffered HMR swap ordering", () => {
-  test("new frame reaches ready BEFORE old frame is removed (ordering)", () => {
+  test("new frame renders BEFORE old frame is removed (ordering)", () => {
     const log = runSwapPlan("frame-old", "frame-new", { zoom: 1.0 });
-    const readyIdx = log.indexOf("new-frame-ready");
-    const removeIdx = log.indexOf("remove-old");
-    expect(readyIdx).toBeGreaterThanOrEqual(0);
-    expect(removeIdx).toBeGreaterThanOrEqual(0);
-    expect(readyIdx).toBeLessThan(removeIdx);
+    expect(log).toEqual([
+      "build-new",
+      "load-new",
+      "render-new",
+      "swap",
+      "apply-view-state",
+      "remove-old",
+    ]);
   });
 
   test("view state (zoom/pan) is preserved across the swap", () => {
@@ -443,40 +446,40 @@ describe("gallery shell — double-buffered HMR swap ordering", () => {
     });
     for (const step of plan) step.run();
     expect(ids.has("frame-B")).toBe(true);
-    // The plan only targets the new frame for source delivery — frame-A
-    // is touched only by `close-old-control` and `remove-old`.
+    // The plan only targets the new frame before swap — frame-A is
+    // touched only by `remove-old`.
     const sourceTouches = plan.filter(
-      (s) => s.name === "build-new" || s.name === "open-new-control",
+      (s) => s.name === "build-new" || s.name === "load-new" || s.name === "render-new",
     );
     for (const step of sourceTouches) {
       expect(step.frameId).not.toBe("frame-A");
     }
   });
 
-  test("old control port closes during swap; new control port stays open", () => {
-    const opened: string[] = [];
-    const closed: string[] = [];
+  test("new frame load and render target the replacement frame", () => {
+    const loaded: string[] = [];
+    const rendered: string[] = [];
     const plan = planSwap({
       currentFrameId: "frame-old",
       nextFrameId: "frame-new",
       viewState: { zoom: 1 },
       onStep: (step) => {
-        if (step.name === "open-new-control" && "frameId" in step) opened.push(step.frameId);
-        if (step.name === "close-old-control" && "frameId" in step) closed.push(step.frameId);
+        if (step.name === "load-new" && "frameId" in step) loaded.push(step.frameId);
+        if (step.name === "render-new" && "frameId" in step) rendered.push(step.frameId);
       },
     });
     for (const step of plan) step.run();
-    expect(opened).toEqual(["frame-new"]);
-    expect(closed).toEqual(["frame-old"]);
+    expect(loaded).toEqual(["frame-new"]);
+    expect(rendered).toEqual(["frame-new"]);
   });
 
-  test("failed new-frame ready keeps the old frame visible (error path)", () => {
+  test("failed new render keeps the old frame visible (error path)", () => {
     let removed = false;
     const plan = planSwap({
       currentFrameId: "frame-old",
       nextFrameId: "frame-new",
       viewState: { zoom: 1 },
-      failNewFrameReady: true,
+      failNewRender: true,
       onStep: (step) => {
         if (step.name === "remove-old") removed = true;
       },
@@ -493,7 +496,8 @@ describe("gallery shell — double-buffered HMR swap ordering", () => {
     });
     const names = plan.map((s) => s.name);
     expect(names).toContain("build-new");
-    expect(names).toContain("new-frame-ready");
+    expect(names).toContain("load-new");
+    expect(names).toContain("render-new");
     expect(names).toContain("swap");
     expect(names).toContain("apply-view-state");
     expect(names).toContain("remove-old");
@@ -524,6 +528,7 @@ describe("gallery shell — no zod in frame bundle (boundary check stays clean)"
   const FRAME_FILES = [
     "../../src/gallery-web/frame/channels.ts",
     "../../src/gallery-web/frame/bootstrap.ts",
+    "../../src/gallery-web/frame/runtime.ts",
     "../../src/gallery-web/frame/renderers/registry.ts",
     "../../src/gallery-web/frame/renderers/markdown.ts",
     "../../src/gallery-web/frame/renderers/mermaid.ts",
@@ -571,11 +576,10 @@ describe("gallery shell — frame attributes type contract", () => {
     });
     const KNOWN: ReadonlyArray<SwapPlanStep["name"]> = [
       "build-new",
-      "open-new-control",
-      "new-frame-ready",
+      "load-new",
+      "render-new",
       "swap",
       "apply-view-state",
-      "close-old-control",
       "remove-old",
     ];
     for (const step of plan) {
@@ -742,11 +746,10 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     expect(result.failedNewFrameReady).toBe(false);
     expect(result.executedSteps).toEqual([
       "build-new",
-      "open-new-control",
-      "new-frame-ready",
+      "load-new",
+      "render-new",
       "swap",
       "apply-view-state",
-      "close-old-control",
       "remove-old",
     ]);
     const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
@@ -896,7 +899,7 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     });
 
     expect(result.failedNewFrameReady).toBe(true);
-    expect(result.executedSteps).toEqual(["build-new", "open-new-control"]);
+    expect(result.executedSteps).toEqual(["build-new", "load-new"]);
     // Old frame untouched: no hide, no unmount.
     const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
     expect(ops).not.toContain(`unmount:${current.frameId}`);
