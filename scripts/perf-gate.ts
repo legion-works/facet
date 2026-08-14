@@ -345,16 +345,16 @@ async function main(): Promise<void> {
           visible.stages.map((sample) => sample.frameBuiltMs),
           0.95,
         ),
-        bootstrapLoadedMs: nearestRankPercentile(
-          visible.stages.map((sample) => sample.bootstrapLoadedMs),
+        frameLoadedMs: nearestRankPercentile(
+          visible.stages.map((sample) => sample.frameLoadedMs),
           0.95,
         ),
-        bootReadyMs: nearestRankPercentile(
-          visible.stages.map((sample) => sample.bootReadyMs),
+        renderResolvedMs: nearestRankPercentile(
+          visible.stages.map((sample) => sample.renderResolvedMs),
           0.95,
         ),
-        renderCompleteMs: nearestRankPercentile(
-          visible.stages.map((sample) => sample.renderCompleteMs),
+        swapCompleteMs: nearestRankPercentile(
+          visible.stages.map((sample) => sample.swapCompleteMs),
           0.95,
         ),
         visibleMs: nearestRankPercentile(
@@ -375,7 +375,7 @@ async function main(): Promise<void> {
       );
       metrics.push({
         name: "publish → visible stage p95",
-        observed: `commit=${fixed(stageP95.committedMs)}ms SSE=${fixed(stageP95.sseDeliveredMs)}ms handled=${fixed(stageP95.sseHandledMs)}ms frame=${fixed(stageP95.frameBuiltMs)}ms bootstrap=${fixed(stageP95.bootstrapLoadedMs)}ms bootReady=${fixed(stageP95.bootReadyMs)}ms render=${fixed(stageP95.renderCompleteMs)}ms visible=${fixed(stageP95.visibleMs)}ms frameLoad+parse=${fixed(stageP95.frameLoadAndParseMs)}ms`,
+        observed: `commit=${fixed(stageP95.committedMs)}ms SSE=${fixed(stageP95.sseDeliveredMs)}ms handled=${fixed(stageP95.sseHandledMs)}ms frame=${fixed(stageP95.frameBuiltMs)}ms load=${fixed(stageP95.frameLoadedMs)}ms render=${fixed(stageP95.renderResolvedMs)}ms swap=${fixed(stageP95.swapCompleteMs)}ms visible=${fixed(stageP95.visibleMs)}ms frameLoad+parse=${fixed(stageP95.frameLoadAndParseMs)}ms`,
         status: "info",
         enforced: false,
         method: `${visible.sampleCount} instrumented replacements; wall-clock markers are injected into the real gallery without changing product code`,

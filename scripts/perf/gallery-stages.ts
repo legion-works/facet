@@ -5,9 +5,9 @@ type BrowserTarget = Awaited<ReturnType<PuppeteerTier1Browser["launch"]>>;
 export interface GalleryStageTimestamps {
   readonly sseHandledAt: number | null;
   readonly frameBuiltAt: number | null;
-  readonly bootstrapLoadedAt: number | null;
-  readonly bootReadyAt: number | null;
-  readonly renderCompleteAt: number | null;
+  readonly frameLoadedAt: number | null;
+  readonly renderResolvedAt: number | null;
+  readonly swapCompleteAt: number | null;
   readonly visibleAt: number | null;
 }
 
@@ -15,9 +15,9 @@ const INSTRUMENTATION_SOURCE = `(() => {
   const empty = () => ({
     sseHandledAt: null,
     frameBuiltAt: null,
-    bootstrapLoadedAt: null,
-    bootReadyAt: null,
-    renderCompleteAt: null,
+    frameLoadedAt: null,
+    renderResolvedAt: null,
+    swapCompleteAt: null,
     visibleAt: null,
   });
   window.__facetPerf = { targetRevision: '', stages: empty(), observerReady: false };
@@ -36,14 +36,14 @@ const INSTRUMENTATION_SOURCE = `(() => {
         frame.dataset.perfLoadObserved = '1';
         frame.addEventListener('load', () => {
           const current = window.__facetPerf;
-          if (current?.targetRevision && current.stages.bootstrapLoadedAt === null) {
-            current.stages.bootstrapLoadedAt = Date.now();
+          if (current?.targetRevision && current.stages.frameLoadedAt === null) {
+            current.stages.frameLoadedAt = Date.now();
           }
         }, { once: true });
       }
       const width = document.querySelector('#facet-swapbar .bar')?.style.width ?? '';
-      if (width === '80%' && state.stages.bootReadyAt === null) state.stages.bootReadyAt = now;
-      if (width === '100%' && state.stages.renderCompleteAt === null) state.stages.renderCompleteAt = now;
+      if (width === '80%' && state.stages.renderResolvedAt === null) state.stages.renderResolvedAt = now;
+      if (width === '100%' && state.stages.swapCompleteAt === null) state.stages.swapCompleteAt = now;
       const revision = document.querySelector('#facet-revision')?.textContent ?? '';
       const visibleFrames = frames.filter((frame) => frame.style.visibility === 'visible');
       if (status === 'displayed' && revision === state.targetRevision && visibleFrames.length === 1 && state.stages.visibleAt === null) {
@@ -85,9 +85,9 @@ export async function armGalleryStageInstrumentation(
         window.__facetPerf.stages = {
         sseHandledAt: null,
         frameBuiltAt: null,
-        bootstrapLoadedAt: null,
-        bootReadyAt: null,
-        renderCompleteAt: null,
+        frameLoadedAt: null,
+        renderResolvedAt: null,
+        swapCompleteAt: null,
         visibleAt: null,
         };
         return true;

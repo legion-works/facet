@@ -15,6 +15,7 @@ class FakeElement {
   hidden = false;
   private readonly listeners = new Map<string, Listener[]>();
   readonly children: FakeElement[] = [];
+  private parent: FakeElement | null = null;
   private tier: FakeElement | null = null;
   private bar: FakeElement | null = null;
 
@@ -33,8 +34,13 @@ class FakeElement {
   }
 
   appendChild(child: FakeElement): void {
+    child.parent = this;
     this.children.push(child);
-    queueMicrotask(() => child.emit("load"));
+    // A real iframe fires `load` once mounted; the direct shell awaits
+    // that event before touching contentWindow.
+    if (child instanceof FakeIframe && child.autoLoadOnAppend) {
+      queueMicrotask(() => child.emit("load"));
+    }
   }
 
   querySelector<T>(selector: string): T | null {
@@ -50,7 +56,13 @@ class FakeElement {
     else this.bar = child;
   }
 
-  remove(): void {}
+  remove(): void {
+    if (this.parent === null) return;
+    const index = this.parent.children.indexOf(this);
+    if (index >= 0) this.parent.children.splice(index, 1);
+    this.parent = null;
+  }
+
   setPointerCapture(_pointerId: number): void {}
   releasePointerCapture(_pointerId: number): void {}
   requestFullscreen(): Promise<void> {
@@ -74,40 +86,79 @@ function pageShimObserved(body: string): ReturnType<typeof countPageShim> {
   }
 }
 
-class FakeIframe extends FakeElement {
-  constructor(
-    private readonly viewModeEvent: unknown,
-    private readonly observed: ReturnType<typeof countPageShim>,
-  ) {
-    super();
-  }
+type PageShimCounts = ReturnType<typeof countPageShim>;
 
-  readonly contentWindow = {
-    postMessage: (_message: unknown, _origin: string, ports: MessagePort[]) => {
-      const [ingress, control] = ports;
-      ingress!.addEventListener("message", () => {
-        queueMicrotask(() => {
-          control!.postMessage(this.viewModeEvent, []);
-          control!.postMessage(
-            {
-              type: "render-complete",
-              observed: this.observed,
-            },
-            [],
-          );
-        });
-      });
-      ingress!.start();
-      queueMicrotask(() => control!.postMessage({ type: "boot-ready" }, []));
+interface FakeRenderResultShape {
+  readonly observed: PageShimCounts;
+  readonly viewMode: "native" | "css";
+  readonly applyViewState: (state: { zoom: number; panX: number; panY: number }) => void;
+  readonly readViewState: () => { zoom: number; panX: number; panY: number };
+}
+
+function makeRenderResult(
+  viewMode: "native" | "css",
+  observed: PageShimCounts,
+): FakeRenderResultShape {
+  let applied: { zoom: number; panX: number; panY: number } | null = null;
+  return {
+    observed,
+    viewMode,
+    applyViewState: (state) => {
+      applied = { ...state };
     },
+    readViewState: () => applied ?? { zoom: 1, panX: 0, panY: 0 },
   };
 }
 
+interface FakeFrameConfig {
+  readonly viewMode: "native" | "css";
+  readonly observed: PageShimCounts;
+  /** Override the render promise (default: resolve immediately). */
+  readonly render?: (payload: unknown) => Promise<FakeRenderResultShape>;
+  /** Disable the auto `load` event fired on append (timeout-path tests). */
+  readonly autoLoad?: boolean;
+}
+
+class FakeIframe extends FakeElement {
+  autoLoadOnAppend = true;
+  readonly receivedPayloads: unknown[] = [];
+  readonly contentWindow: {
+    __facetFrame?: { readonly render?: (payload: unknown) => Promise<unknown> };
+  } = {};
+
+  install(config: FakeFrameConfig): void {
+    if (config.autoLoad === false) this.autoLoadOnAppend = false;
+    // oxlint-disable-next-line no-underscore-dangle
+    this.contentWindow.__facetFrame = {
+      render: async (payload: unknown) => {
+        this.receivedPayloads.push(payload);
+        if (config.render !== undefined) return config.render(payload);
+        return makeRenderResult(config.viewMode, config.observed);
+      },
+    };
+  }
+}
+
+interface GalleryHarness {
+  readonly runtime: GalleryRuntime;
+  readonly elements: Map<string, FakeElement>;
+  readonly requests: { url: string; init?: RequestInit }[];
+  readonly documentListeners: Map<string, Listener>;
+  readonly windowListeners: Map<string, Listener>;
+  /** Every fake iframe created by the shell, in creation order. */
+  readonly frames: FakeIframe[];
+  /** Per-frame install scripts consumed in creation order (swap tests). */
+  readonly pendingFrameConfigs: FakeFrameConfig[];
+  readonly defaultObserved: PageShimCounts;
+  /** Push a `revision:committed` SSE event into the live stream. */
+  emitCommitted(event: { readonly revisionSha: string; readonly revisionNumber: number }): void;
+}
+
 function createRuntime(
-  viewModeEvent: unknown = { type: "view-mode", mode: "native" },
+  viewMode: "native" | "css" = "native",
   verdict: Record<string, unknown> | null = null,
   observed = pageShimObserved('<svg data-facet-renderer-root="true" viewBox="0 0 10 10"></svg>'),
-) {
+): GalleryHarness {
   const elements = new Map<string, FakeElement>();
   for (const id of [
     "facet-title",
@@ -138,10 +189,18 @@ function createRuntime(
   elements.set("facet-swapbar", swapbar);
 
   const documentListeners = new Map<string, Listener>();
+  const frames: FakeIframe[] = [];
+  const pendingFrameConfigs: FakeFrameConfig[] = [];
   const document = {
     getElementById: (id: string) => elements.get(id) ?? null,
-    createElement: (tag: string) =>
-      tag === "iframe" ? new FakeIframe(viewModeEvent, observed) : new FakeElement(),
+    createElement: (tag: string) => {
+      if (tag !== "iframe") return new FakeElement();
+      const frame = new FakeIframe();
+      const config = pendingFrameConfigs.shift();
+      frame.install(config ?? { viewMode, observed });
+      frames.push(frame);
+      return frame;
+    },
     addEventListener: (type: string, listener: Listener) => documentListeners.set(type, listener),
   };
   const windowListeners = new Map<string, Listener>();
@@ -172,6 +231,12 @@ function createRuntime(
     sessionStorage,
   };
   const requests: { url: string; init?: RequestInit }[] = [];
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller;
+    },
+  });
   const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
     const url = String(input);
     requests.push({ url, ...(init === undefined ? {} : { init }) });
@@ -182,15 +247,17 @@ function createRuntime(
         revisionSha: "a".repeat(64),
         lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
       });
-    if (url.includes("/source"))
+    if (url.includes("/source")) {
+      const revisionSha = new URL(url).searchParams.get("revisionSha") ?? "a".repeat(64);
       return Response.json({
         artifactId: "artifact-1",
-        revisionSha: "a".repeat(64),
+        revisionSha,
         artifactType: "markdown",
-        source: "# shell",
+        source: `# ${revisionSha.slice(0, 8)}`,
         verdict,
       });
-    if (url.endsWith("/stream")) return new Response(new ReadableStream());
+    }
+    if (url.endsWith("/stream")) return new Response(stream);
     return new Response(null, { status: 204 });
   }) as typeof fetch;
 
@@ -202,14 +269,38 @@ function createRuntime(
         replaceState: () => (elements.get("facet-title")!.dataset["cleared"] = "yes"),
       },
       HTMLElement: FakeElement,
-      MessageChannel,
       fetch: fetchImpl,
     } as unknown as GalleryRuntime,
     elements,
     requests,
     documentListeners,
     windowListeners,
+    frames,
+    pendingFrameConfigs,
+    defaultObserved: observed,
+    emitCommitted(event) {
+      const payload = {
+        type: "revision:committed",
+        artifactId: "artifact-1",
+        artifactType: "markdown",
+        at: new Date().toISOString(),
+        ...event,
+      };
+      streamController?.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`));
+    },
   };
+}
+
+async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error("waitFor timeout");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+function isIframe(child: FakeElement): child is FakeIframe {
+  return child instanceof FakeIframe;
 }
 
 describe("gallery shell startup", () => {
@@ -219,7 +310,7 @@ describe("gallery shell startup", () => {
     expect(svgHarness.elements.get("facet-status-line")?.textContent).toBe("displayed");
 
     const htmlHarness = createRuntime(
-      undefined,
+      "native",
       null,
       pageShimObserved(
         '<main data-facet-renderer-root="true"><h1>HTML artifact</h1><img src="https://example.com/report.png"></main>',
@@ -230,7 +321,7 @@ describe("gallery shell startup", () => {
   });
 
   test("labels opaque and layout partial verdicts and reports opaque evidence", async () => {
-    const harness = createRuntime(undefined, {
+    const harness = createRuntime("native", {
       status: "partial:opaque_content",
       tier: 1,
       revisionSha: "a".repeat(64),
@@ -252,7 +343,7 @@ describe("gallery shell startup", () => {
     expect(badge.dataset["status"]).toBe("partial:opaque_content");
     expect(harness.elements.get("facet-evidence-counts")?.textContent).toContain("opaque 1");
 
-    const layoutHarness = createRuntime(undefined, {
+    const layoutHarness = createRuntime("native", {
       status: "partial:layout_unverified",
       tier: 1,
       revisionSha: "a".repeat(64),
@@ -273,7 +364,7 @@ describe("gallery shell startup", () => {
   });
 
   test("labels external-resource partial verdicts and reports HTML evidence", async () => {
-    const harness = createRuntime(undefined, {
+    const harness = createRuntime("native", {
       status: "partial:external_resources",
       tier: 1,
       revisionSha: "a".repeat(64),
@@ -307,7 +398,7 @@ describe("gallery shell startup", () => {
   });
 
   test("labels insecure verdicts and preserves the full L3 status", async () => {
-    const harness = createRuntime(undefined, {
+    const harness = createRuntime("native", {
       status: "insecure:unvalidated",
       tier: 0,
       revisionSha: "a".repeat(64),
@@ -329,7 +420,7 @@ describe("gallery shell startup", () => {
   });
 
   test("composes opaque detail before the insecure marker and tier", async () => {
-    const harness = createRuntime(undefined, {
+    const harness = createRuntime("native", {
       status: "partial:opaque_content",
       tier: 1,
       revisionSha: "a".repeat(64),
@@ -357,7 +448,7 @@ describe("gallery shell startup", () => {
     expect(harness.elements.get("facet-title")?.textContent).toBe("facet");
     expect(harness.elements.get("facet-revision")?.textContent).toBe("aaaaaaaaaaaa");
     expect(harness.elements.get("facet-status-line")?.textContent).toBe("displayed");
-    expect(harness.elements.get("facet-live-label")?.textContent).toBe("connecting");
+    expect(harness.elements.get("facet-live-label")?.textContent).toBe("live");
     expect(harness.elements.get("facet-title")?.dataset["cleared"]).toBe("yes");
 
     let prevented = false;
@@ -388,7 +479,7 @@ describe("gallery shell startup", () => {
   });
 
   test("clears iframe CSS transforms after a frame selects native SVG viewBox zoom", async () => {
-    const harness = createRuntime();
+    const harness = createRuntime("native");
     await startGallery(harness.runtime);
     await Promise.resolve();
 
@@ -398,8 +489,8 @@ describe("gallery shell startup", () => {
     expect(iframe.style["transform"]).toBe("");
   });
 
-  test("ignores a forged view-mode event with extra fields", async () => {
-    const harness = createRuntime({ type: "view-mode", mode: "native", forged: true });
+  test("applies CSS transforms when the render result reports the css view mode", async () => {
+    const harness = createRuntime("css");
     await startGallery(harness.runtime);
     await Promise.resolve();
 
@@ -407,5 +498,50 @@ describe("gallery shell startup", () => {
     const iframe = canvas.children[0] as FakeIframe;
     expect(canvas.dataset["viewMode"]).toBe("css");
     expect(iframe.style["transform"]).toBe("translate(0px, 0px) scale(1)");
+  });
+
+  test("two rapid revision commits serialize: newest revision wins, exactly one frame at settle", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    const canvas = harness.elements.get("facet-canvas")!;
+
+    // Script the two swap frames BEFORE the commits: the first commit's
+    // render resolves only when released; the newest commit's resolves.
+    let releaseFirstRender: (() => void) | null = null;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseFirstRender = () => resolve(makeRenderResult("native", harness.defaultObserved));
+        }),
+    });
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+    });
+
+    const firstSha = "a2".padEnd(64, "a");
+    const newestSha = "b2".padEnd(64, "b");
+    harness.emitCommitted({ revisionSha: firstSha, revisionNumber: 2 });
+    harness.emitCommitted({ revisionSha: newestSha, revisionNumber: 3 });
+    // The first swap's frame is mounted off-screen; the newest commit
+    // is queued behind it (latest-wins).
+    await waitFor(() => canvas.children.filter(isIframe).length >= 2);
+    expect(releaseFirstRender).not.toBeNull();
+    expect(harness.elements.get("facet-revision")?.textContent).toBe("aaaaaaaaaaaa");
+    releaseFirstRender!();
+    await waitFor(
+      () => harness.elements.get("facet-revision")?.textContent === newestSha.slice(0, 12),
+    );
+    // Exactly one frame remains — the intermediate swap's frame and the
+    // initial frame were both removed; no orphan.
+    const survivors = canvas.children.filter(isIframe);
+    expect(survivors).toHaveLength(1);
+    expect(survivors[0]).toBe(harness.frames[2]);
+    // The newest commit's bytes reached the frame, not the intermediate's.
+    expect(harness.frames[2]!.receivedPayloads).toHaveLength(1);
+    const payload = harness.frames[2]!.receivedPayloads[0] as { bytes: Uint8Array };
+    expect(new TextDecoder().decode(payload.bytes)).toContain(newestSha.slice(0, 8));
   });
 });

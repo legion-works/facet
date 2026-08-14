@@ -15,7 +15,6 @@
  */
 
 import type { VerifierCdpSession } from "./browser-process";
-import { TSX_ARTIFACT_FRAME_ATTRIBUTE } from "../../shared/tsx/execution";
 
 export interface ResolvedChildFrame {
   readonly frameId: string;
@@ -86,26 +85,6 @@ function findContentDocument(node: ProtocolDomNode, backendNodeId: number): Prot
   return null;
 }
 
-function isMarkedArtifactFrame(node: ProtocolDomNode, backendNodeId: number): boolean {
-  if (node.backendNodeId === backendNodeId) {
-    const attributes = node.attributes ?? [];
-    for (let index = 0; index + 1 < attributes.length; index += 2) {
-      if (attributes[index] === TSX_ARTIFACT_FRAME_ATTRIBUTE && attributes[index + 1] === "true") {
-        return true;
-      }
-    }
-    return false;
-  }
-  for (const child of [
-    node.contentDocument,
-    ...(node.children ?? []),
-    ...(node.shadowRoots ?? []),
-  ]) {
-    if (child !== undefined && isMarkedArtifactFrame(child, backendNodeId)) return true;
-  }
-  return false;
-}
-
 function hasDirectTsxMount(node: ProtocolDomNode): boolean {
   const attributes = node.attributes ?? [];
   for (let index = 0; index + 1 < attributes.length; index += 2) {
@@ -154,20 +133,12 @@ export async function resolveNestedArtifactFrame(
       `verifier: direct TSX mount is ambiguous with ${candidates.length} nested frame(s)`,
     );
   }
-  const owned: ResolvedChildFrame[] = [];
-  for (const candidate of candidates) {
-    const owner = (await session.send("DOM.getFrameOwner", { frameId: candidate.frame.id })) as {
-      readonly backendNodeId: number;
-    };
-    if (!isMarkedArtifactFrame(outerDocument, owner.backendNodeId)) continue;
-    owned.push({ frameId: candidate.frame.id, url: candidate.frame.url });
-  }
-  if (owned.length !== 1) {
-    throw new Error(
-      `verifier: expected one renderer-owned nested TSX frame, found ${owned.length}`,
-    );
-  }
-  return owned[0]!;
+  // The direct mount is the ONLY interactive-TSX model (nested
+  // sandboxed frames were removed); its absence is a mount failure,
+  // not a nested-frame lookup problem.
+  throw new Error(
+    "verifier: direct TSX mount is missing — the artifact frame did not render its renderer-owned mount",
+  );
 }
 
 /**

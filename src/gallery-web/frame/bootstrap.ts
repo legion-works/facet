@@ -32,6 +32,7 @@ import {
 import { validateRenderer } from "./renderer-validation";
 import type { SvgViewBox } from "./view-box";
 import { isTsxExecutionMode, type TsxExecutionMode } from "../../shared/tsx/execution";
+import { decodePayloadBytes, isFrameViewState, isUint8Array, parseViewBox } from "./frame-payload";
 
 declare global {
   interface Window {
@@ -73,31 +74,6 @@ function deliver(event: unknown): void {
   }
 }
 
-function decodePayloadBytes(bytes: Uint8Array | string): Uint8Array {
-  if (bytes instanceof Uint8Array) return bytes;
-  // Base64 form (used by hosts that must embed bytes as text).
-  const binary = atob(bytes);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
-function parseViewBox(value: string | null): SvgViewBox | null {
-  if (value === null) return null;
-  const values = value
-    .trim()
-    .split(/[\s,]+/)
-    .map(Number);
-  if (
-    values.length !== 4 ||
-    values.some((entry) => !Number.isFinite(entry)) ||
-    values[2]! <= 0 ||
-    values[3]! <= 0
-  )
-    return null;
-  return { minX: values[0]!, minY: values[1]!, width: values[2]!, height: values[3]! };
-}
-
 function cacheRenderedSvg(): void {
   const root = container.children.length === 1 ? container.firstElementChild : null;
   if (!(root instanceof SVGSVGElement)) return;
@@ -110,17 +86,8 @@ function cacheRenderedSvg(): void {
 function receiveViewState(value: unknown): void {
   if (value === null || typeof value !== "object") return;
   const event = value as Record<string, unknown>;
-  if (
-    event.type !== "view-state" ||
-    typeof event.zoom !== "number" ||
-    !Number.isFinite(event.zoom) ||
-    event.zoom <= 0 ||
-    typeof event.panX !== "number" ||
-    !Number.isFinite(event.panX) ||
-    typeof event.panY !== "number" ||
-    !Number.isFinite(event.panY)
-  )
-    return;
+  if (event.type !== "view-state" || !isFrameViewState(event)) return;
+  const viewState = event as unknown as { zoom: number; panX: number; panY: number };
   if (renderedSvg === null || originalViewBox === null) {
     if (!viewModeReported) {
       viewModeReported = true;
@@ -140,12 +107,12 @@ function receiveViewState(value: unknown): void {
   // sized element cannot clip: overflow extends the scroll range.
   const naturalWidth = originalViewBox.width;
   if (naturalWidth <= 0) return;
-  renderedSvg.style.width = `${Math.ceil(naturalWidth * event.zoom)}px`;
+  renderedSvg.style.width = `${Math.ceil(naturalWidth * viewState.zoom)}px`;
   renderedSvg.style.maxWidth = "none";
   renderedSvg.style.height = "auto";
   const scroller = container;
-  scroller.scrollLeft = Math.max(0, -event.panX);
-  scroller.scrollTop = Math.max(0, -event.panY);
+  scroller.scrollLeft = Math.max(0, -viewState.panX);
+  scroller.scrollTop = Math.max(0, -viewState.panY);
 }
 
 export function startGalleryFrame(registry: RendererRegistry): void {
@@ -214,10 +181,12 @@ export function startGalleryFrame(registry: RendererRegistry): void {
             );
           }
           const renderer = validateRenderer(payload.renderer);
-          const bytes = payload.bytes;
-          if (bytes === undefined) {
+          // Strict type check (shared with the direct API path): a
+          // `bytes: null` must not fall through to atob(null).
+          if (typeof payload.bytes !== "string" && !isUint8Array(payload.bytes)) {
             throw new FacetRenderError("artifact payload is missing bytes", "invalid_request");
           }
+          const bytes = payload.bytes;
           if (payload.execution !== undefined && !isTsxExecutionMode(payload.execution)) {
             throw new FacetRenderError("artifact payload has invalid execution", "invalid_request");
           }

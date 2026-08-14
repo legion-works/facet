@@ -34,9 +34,9 @@ export interface PublishVisibleStageSample {
   readonly publishResponseMs: number;
   readonly sseHandledMs: number;
   readonly frameBuiltMs: number;
-  readonly bootstrapLoadedMs: number;
-  readonly bootReadyMs: number;
-  readonly renderCompleteMs: number;
+  readonly frameLoadedMs: number;
+  readonly renderResolvedMs: number;
+  readonly swapCompleteMs: number;
   readonly visibleMs: number;
   readonly frameLoadAndParseMs: number;
 }
@@ -363,7 +363,7 @@ export async function measurePublishVisible(): Promise<{
       if (!Number.isFinite(committedAtWall))
         throw new Error("revision event commit time is invalid");
       const frameBuiltMs = requiredStage(stages, "frameBuiltAt", startedAtWall);
-      const bootstrapLoadedMs = requiredStage(stages, "bootstrapLoadedAt", startedAtWall);
+      const frameLoadedMs = requiredStage(stages, "frameLoadedAt", startedAtWall);
       samples.push(totalMs);
       stageSamples.push({
         totalMs,
@@ -372,11 +372,11 @@ export async function measurePublishVisible(): Promise<{
         publishResponseMs: responseAtWall - startedAtWall,
         sseHandledMs: requiredStage(stages, "sseHandledAt", startedAtWall),
         frameBuiltMs,
-        bootstrapLoadedMs,
-        bootReadyMs: requiredStage(stages, "bootReadyAt", startedAtWall),
-        renderCompleteMs: requiredStage(stages, "renderCompleteAt", startedAtWall),
+        frameLoadedMs,
+        renderResolvedMs: requiredStage(stages, "renderResolvedAt", startedAtWall),
+        swapCompleteMs: requiredStage(stages, "swapCompleteAt", startedAtWall),
         visibleMs: requiredStage(stages, "visibleAt", startedAtWall),
-        frameLoadAndParseMs: bootstrapLoadedMs - frameBuiltMs,
+        frameLoadAndParseMs: frameLoadedMs - frameBuiltMs,
       });
     }
     return { sampleCount: VISIBLE_SAMPLE_COUNT, samplesMs: samples, stages: stageSamples };

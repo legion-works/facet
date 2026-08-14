@@ -9,6 +9,13 @@ import {
   type PageShimCounts,
   type RendererRegistry,
 } from "./renderers/registry";
+import {
+  decodePayloadBytes,
+  isFrameViewState,
+  isUint8Array,
+  parseViewBox,
+  type FrameViewState,
+} from "./frame-payload";
 import type { SvgViewBox } from "./view-box";
 
 export interface FrameRenderPayload {
@@ -18,11 +25,7 @@ export interface FrameRenderPayload {
   readonly execution?: TsxExecutionMode;
 }
 
-export interface FrameViewState {
-  readonly zoom: number;
-  readonly panX: number;
-  readonly panY: number;
-}
+export type { FrameViewState };
 
 export interface RenderResult {
   readonly observed: PageShimCounts;
@@ -41,34 +44,6 @@ declare global {
   }
 }
 
-function decodePayloadBytes(bytes: Uint8Array | string): Uint8Array {
-  if (typeof bytes !== "string") return new Uint8Array(bytes);
-  const binary = atob(bytes);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
-function isUint8Array(value: unknown): value is Uint8Array {
-  return Object.prototype.toString.call(value) === "[object Uint8Array]";
-}
-
-function parseViewBox(value: string | null): SvgViewBox | null {
-  if (value === null) return null;
-  const values = value
-    .trim()
-    .split(/[\s,]+/)
-    .map(Number);
-  if (
-    values.length !== 4 ||
-    values.some((entry) => !Number.isFinite(entry)) ||
-    values[2]! <= 0 ||
-    values[3]! <= 0
-  )
-    return null;
-  return { minX: values[0]!, minY: values[1]!, width: values[2]!, height: values[3]! };
-}
-
 function renderedSvg(
   container: HTMLElement,
 ): { readonly svg: SVGSVGElement; readonly viewBox: SvgViewBox } | null {
@@ -77,20 +52,6 @@ function renderedSvg(
   const viewBox = parseViewBox(root.getAttribute("viewBox"));
   if (viewBox === null) return null;
   return { svg: root as SVGSVGElement, viewBox };
-}
-
-function isFrameViewState(value: unknown): value is FrameViewState {
-  if (value === null || typeof value !== "object") return false;
-  const state = value as Record<string, unknown>;
-  return (
-    typeof state.zoom === "number" &&
-    Number.isFinite(state.zoom) &&
-    state.zoom > 0 &&
-    typeof state.panX === "number" &&
-    Number.isFinite(state.panX) &&
-    typeof state.panY === "number" &&
-    Number.isFinite(state.panY)
-  );
 }
 
 function validatePayload(value: unknown): {
