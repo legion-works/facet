@@ -138,15 +138,26 @@ function stateOperand(line: string): string | null {
   return match?.[0] ?? null;
 }
 
+function compositeStateId(line: string): string | null {
+  const match = line.match(
+    /^state\s+(?:"(?:[^"\\]|\\.)*"\s+as\s+)?([A-Za-z_][A-Za-z0-9_-]*)\s*\{\s*$/i,
+  );
+  return match?.[1] ?? null;
+}
+
 /**
- * State diagrams render named states once each and render `[*]` as the
- * entry-and-exit pseudo-state pair. Mermaid's parser only reports the
- * diagram type, so this is the smallest grammar needed to match the
- * renderer-owned `g.node` census.
+ * State diagrams render composite states as clusters rather than `g.node`
+ * groups. Pseudo-states coalesce by scope and direction, while inline notes
+ * are `g.node` groups. Mermaid's parser only reports the diagram type, so
+ * this is the smallest grammar needed to match the renderer-owned census.
  */
 function countStateNodeGroups(text: string): number {
   const states = new Set<string>();
-  let pseudoStateOccurrences = 0;
+  const compositeStates = new Set<string>();
+  const pseudoStates = new Set<string>();
+  const scopes = ["root"];
+  let nextScope = 0;
+  let notes = 0;
   let inDirective = false;
 
   for (const rawLine of text.split(/\r?\n/)) {
@@ -162,19 +173,41 @@ function countStateNodeGroups(text: string): number {
     }
     const commentStart = line.indexOf("%%");
     if (commentStart !== -1) line = line.slice(0, commentStart).trim();
-    if (!line || STATE_HEADER_RE.test(line) || /^note\b/i.test(line)) continue;
+    if (!line || STATE_HEADER_RE.test(line)) continue;
+
+    const composite = compositeStateId(line);
+    if (composite !== null) {
+      compositeStates.add(composite);
+      nextScope += 1;
+      scopes.push(`scope-${nextScope}`);
+      continue;
+    }
+    if (line === "}") {
+      scopes.pop();
+      continue;
+    }
+    if (/^note\b/i.test(line)) {
+      notes += 1;
+      continue;
+    }
 
     const arrow = line.indexOf("-->");
     if (arrow === -1) continue;
     const left = stateOperand(line.slice(0, arrow));
     const right = stateOperand(line.slice(arrow + 3).split(":", 1)[0] ?? "");
+    const scope = scopes.at(-1) ?? "root";
     for (const operand of [left, right]) {
       if (operand === null) continue;
-      if (operand === "[*]") pseudoStateOccurrences += 1;
-      else states.add(operand);
+      if (operand !== "[*]") states.add(operand);
     }
+    if (left === "[*]") pseudoStates.add(`${scope}:entry`);
+    if (right === "[*]") pseudoStates.add(`${scope}:exit`);
   }
-  return states.size + pseudoStateOccurrences * 2;
+  let leafStates = 0;
+  for (const state of states) {
+    if (!compositeStates.has(state)) leafStates += 1;
+  }
+  return leafStates + pseudoStates.size + notes;
 }
 
 /**

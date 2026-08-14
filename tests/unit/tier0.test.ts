@@ -38,6 +38,8 @@ const FIXTURES = {
   chartExternal: `${import.meta.dir}/../fixtures/chart-external-data-rejected.vl.json`,
   svgClean: `${import.meta.dir}/../fixtures/svg-clean.svg`,
   svgHostile: `${import.meta.dir}/../fixtures/svg-hostile-script.svg`,
+  legionState: `${import.meta.dir}/../../templates/legion-state.mmd`,
+  deploymentState: `${import.meta.dir}/../../templates/deployment-state.mmd`,
 };
 
 function readBytes(path: string): Uint8Array<ArrayBuffer> {
@@ -121,9 +123,51 @@ describe("Tier 0 mermaid parser", () => {
     },
   );
 
-  test("counts Mermaid state nodes, including both pseudo-states rendered from [*]", () => {
-    const source = "stateDiagram-v2\n[*] --> dormant\ndormant --> active";
-    expect(countMermaidNodeDeclarations(source)).toBe(4);
+  test.each([
+    ["flat state template", readFileSync(FIXTURES.legionState, "utf8"), 4],
+    [
+      "composite state template with pseudo-states in every scope",
+      readFileSync(FIXTURES.deploymentState, "utf8"),
+      21,
+    ],
+    [
+      "composite state without inner pseudo-states",
+      [
+        "stateDiagram-v2",
+        "  [*] --> Parent",
+        "  state Parent {",
+        "    ChildA --> ChildB",
+        "  }",
+        "  Parent --> Done",
+        "  Done --> [*]",
+      ].join("\n"),
+      5,
+    ],
+    [
+      "three-level composite state",
+      [
+        "stateDiagram-v2",
+        "  [*] --> Parent",
+        "  state Parent {",
+        "    [*] --> Child",
+        "    state Child {",
+        "      [*] --> Inner",
+        "      state Inner {",
+        "        [*] --> First",
+        "        First --> Second",
+        "        Second --> [*]",
+        "      }",
+        "      Inner --> [*]",
+        "    }",
+        "    Child --> [*]",
+        "  }",
+        "  Parent --> Complete",
+        "  Complete --> [*]",
+      ].join("\n"),
+      11,
+    ],
+  ])("matches browser-derived g.node counts for %s", (_name, source, expected) => {
+    expect(countMermaidNodeDeclarations(source)).toBe(expected);
   });
 
   test("marks diagram types without a reliable g.node grammar as uncountable", () => {
