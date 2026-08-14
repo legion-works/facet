@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
 
 import { FacetClient, publishArtifact } from "../../src/cli/client";
+import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
 import {
   createIsolatedWorld,
@@ -20,7 +21,7 @@ export function galleryBrowser(): PuppeteerTier1Browser {
 export async function navigateToArtifact(
   target: GalleryTarget,
   client: FacetClient,
-  artifactType: "markdown" | "svg" | "tsx" | "html",
+  artifactType: ArtifactType,
   bytes: string,
   execution?: "static" | "interactive",
 ): Promise<void> {
