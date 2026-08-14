@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Fleet dashboard</title>
+  </head>
+  <body class="bg-legion-paper text-legion-ink leading-relaxed">
+    <main class="max-w-2xl p-6 gap-6 flex flex-col">
+      <header class="flex flex-col gap-2">
+        <div class="flex flex-wrap gap-2 items-center">
+          <span class="badge">operations</span>
+          <span class="badge">tier 1 verified</span>
+          <span class="badge">region set: north</span>
+        </div>
+        <h1 class="text-2xl font-bold">Fleet dashboard</h1>
+        <p class="text-legion-muted text-sm">
+          Release workers, evidence queues, and exception paths — current operating window.
+        </p>
+      </header>
+
+      <section class="grid grid-cols-3 gap-4" aria-label="fleet statistics">
+        <article class="stat card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
+          <span class="text-xs text-legion-muted">ready workers</span>
+          <strong class="text-2xl font-bold">42</strong>
+          <span class="text-xs text-legion-cyan">✓ capacity above floor</span>
+        </article>
+        <article class="stat card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
+          <span class="text-xs text-legion-muted">queued revisions</span>
+          <strong class="text-2xl font-bold">18</strong>
+          <span class="text-xs text-legion-muted">7 visual read-backs</span>
+        </article>
+        <article class="stat card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
+          <span class="text-xs text-legion-muted">p95 publish → visible</span>
+          <strong class="text-2xl font-bold">214 ms</strong>
+          <span class="text-xs text-legion-cyan">−12 ms this window</span>
+        </article>
+      </section>
+
+      <section
+        class="alert border border-legion-line rounded-box p-4 flex flex-col gap-2"
+        role="status"
+      >
+        <strong class="font-semibold">Verification window stable</strong>
+        <span class="text-sm text-legion-muted">
+          One parity investigation remains open. New releases continue through the standard evidence
+          path.
+        </span>
+      </section>
+
+      <section class="card border border-legion-line rounded-box p-4 gap-3 flex flex-col">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Worker allocation</h2>
+          <span class="badge">42 / 48 ready</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div class="bg-legion-ink rounded p-3 flex flex-col gap-2">
+            <span class="text-xs text-legion-muted">ingest</span>
+            <strong class="text-xl font-semibold">12</strong>
+            <span class="text-xs text-legion-cyan">active</span>
+          </div>
+          <div class="bg-legion-ink rounded p-3 flex flex-col gap-2">
+            <span class="text-xs text-legion-muted">validation</span>
+            <strong class="text-xl font-semibold">16</strong>
+            <span class="text-xs text-legion-cyan">active</span>
+          </div>
+          <div class="bg-legion-ink rounded p-3 flex flex-col gap-2">
+            <span class="text-xs text-legion-muted">visual</span>
+            <strong class="text-xl font-semibold">14</strong>
+            <span class="text-xs text-legion-cyan">active</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card border border-legion-line rounded-box p-4 gap-3 flex flex-col">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-lg font-semibold">Current releases</h2>
+          <span class="text-xs text-legion-muted">revision-bound evidence</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table table-zebra w-full">
+            <thead>
+              <tr>
+                <th class="text-left">release</th>
+                <th class="text-left">stage</th>
+                <th class="text-right">workers</th>
+                <th class="text-right">verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>north-2026.08.14.3</td>
+                <td><span class="badge">visual</span></td>
+                <td class="text-right">8</td>
+                <td class="text-right text-legion-cyan">✓ ok</td>
+              </tr>
+              <tr>
+                <td>core-2026.08.14.2</td>
+                <td><span class="badge">canary</span></td>
+                <td class="text-right">6</td>
+                <td class="text-right text-legion-cyan">✓ ok</td>
+              </tr>
+              <tr>
+                <td>edge-2026.08.14.1</td>
+                <td><span class="badge">review</span></td>
+                <td class="text-right">4</td>
+                <td class="text-right">→ hold</td>
+              </tr>
+              <tr>
+                <td>archive-2026.08.13.9</td>
+                <td><span class="badge">complete</span></td>
+                <td class="text-right">0</td>
+                <td class="text-right text-legion-cyan">✓ retained</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="grid grid-cols-2 gap-4">
+        <article class="card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
+          <h2 class="text-lg font-semibold">Queue controls</h2>
+          <ul class="flex flex-col gap-2 text-sm">
+            <li>✓ rejected inputs retained as typed envelopes</li>
+            <li>✓ browser checks run by revision SHA</li>
+            <li>→ operator review required for promotion</li>
+          </ul>
+        </article>
+        <article class="card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
+          <h2 class="text-lg font-semibold">Open attention</h2>
+          <p class="text-sm text-legion-muted">
+            Reconcile the observed-count investigation before expanding the canary allocation.
+          </p>
+          <button class="btn bg-legion-cyan text-legion-ink px-4 py-2 rounded" type="button">
+            Review evidence
+          </button>
+        </article>
+      </section>
+
+      <footer class="text-xs text-legion-muted">
+        Static dashboard · no external assets · all classes from the vendored vocabulary.
+      </footer>
+    </main>
+  </body>
+</html>

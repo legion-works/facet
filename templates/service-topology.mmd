@@ -1,0 +1,47 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "transparent", "primaryColor": "#1e2030", "primaryTextColor": "#c8d3f5", "primaryBorderColor": "#3b4261", "secondaryColor": "#222436", "tertiaryColor": "#16161e", "lineColor": "#545c7e", "textColor": "#a9b1d6", "fontFamily": "ui-monospace, Menlo, monospace", "fontSize": "14px", "edgeLabelBackground": "#16161e", "clusterBkg": "#1a1b26", "clusterBorder": "#2e2e3a"}}}%%
+flowchart LR
+  subgraph Intake[release intake]
+    A([source bytes]) --> B[hash gate]
+    B --> C{content policy}
+    C -->|accepted| D{{revision queue}}
+    C -->|denied| X((typed refusal))
+  end
+
+  subgraph Control[control plane]
+    D --> E[(artifact store)]
+    E --> F[revision index]
+    F --> G{publish mode}
+    G -->|static| H[lexical validator]
+    G -->|interactive| I[tsx compiler]
+    H --> J([tier 0 verdict])
+    I --> J
+  end
+
+  subgraph Evidence[verification plane]
+    J -->|visual requested| K{{browser lease}}
+    K --> L[isolated frame]
+    L --> M{observed parity}
+    M -->|match| N((tier 1 ok))
+    M -->|drift| O{{counter finding}}
+    N --> P[(evidence ledger)]
+    O --> P
+  end
+
+  subgraph Delivery[operator surface]
+    P --> Q[gallery revision]
+    Q --> R{operator review}
+    R -->|approve| S([release record])
+    R -->|hold| T[review queue]
+  end
+
+  classDef ok fill:#1e2030,stroke:#c3e88d,color:#c3e88d
+  classDef warn fill:#222436,stroke:#ffc777,color:#ffc777
+  classDef fail fill:#222436,stroke:#ff757f,color:#ff757f
+  classDef accent fill:#1e2030,stroke:#86e1fc,color:#86e1fc
+  classDef muted fill:#16161e,stroke:#545c7e,color:#a9b1d6
+
+  class A,D,J,K,N,S ok
+  class C,G,M,R accent
+  class O,T,X fail
+  class B,E,F,H,I,L,P,Q muted
+  class X,O,T warn

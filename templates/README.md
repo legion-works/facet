@@ -27,6 +27,22 @@ carrying tables, checklists, a JSON fence, and three themed diagrams — and
 its three mermaid fences ARE the lexical expectation the verifier checks.
 Publish it, read it back at `--tier visual`, open the gallery.
 
+## Complex tier
+
+Stress-tier counterparts exercise the wider supported surface. Each remains
+self-contained and publishes through the same revision-bound proof path.
+
+| file                      | type       | publish                                                                                                     |
+| ------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `pipeline-audit.md`       | `markdown` | `facet publish --artifact-id <id> --type markdown --file templates/pipeline-audit.md`                       |
+| `service-topology.mmd`    | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/service-topology.mmd`                     |
+| `deployment-state.mmd`    | `mermaid`  | `facet publish --artifact-id <id> --type mermaid --file templates/deployment-state.mmd`                     |
+| `observability-map.svg`   | `svg`      | `facet publish --artifact-id <id> --type svg --file templates/observability-map.svg`                        |
+| `release-metrics.vl.json` | `chart`    | `facet publish --artifact-id <id> --type chart --file templates/release-metrics.vl.json`                    |
+| `fleet-dashboard.html`    | `html`     | `facet publish --artifact-id <id> --type html --file templates/fleet-dashboard.html`                        |
+| `incident-console.tsx`    | `tsx`      | `facet publish --artifact-id <id> --type tsx --execution interactive --file templates/incident-console.tsx` |
+| `capacity-report.tsx`     | `tsx`      | `facet publish --artifact-id <id> --type tsx --file templates/capacity-report.tsx`                          |
+
 Read back what you published, then promote a good revision into a service
 template (operator token required, provisioned out of band):
 

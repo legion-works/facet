@@ -1,0 +1,40 @@
+%%{init: {"theme": "base", "themeVariables": {"background": "transparent", "primaryColor": "#1e2030", "primaryTextColor": "#c8d3f5", "primaryBorderColor": "#3b4261", "lineColor": "#545c7e", "textColor": "#a9b1d6", "fontFamily": "ui-monospace, Menlo, monospace", "fontSize": "13px"}}}%%
+stateDiagram-v2
+  [*] --> Admission
+
+  state "admission controls" as Admission {
+    [*] --> Intake
+    Intake --> PolicyCheck : revision received
+    PolicyCheck --> Accepted : policy passed
+    PolicyCheck --> Rejected : policy denied
+    Accepted --> [*]
+    Rejected --> [*]
+  }
+
+  Admission --> Staging : accepted revision
+  Admission --> [*] : rejected revision
+
+  state "staging rollout" as Staging {
+    [*] --> Provisioning
+    Provisioning --> Verifying : workers ready
+    Verifying --> Ready : tier 0 ok
+    Verifying --> Blocked : validation error
+    Ready --> [*]
+    Blocked --> [*]
+  }
+
+  Staging --> Canary : release requested
+  Staging --> [*] : staging blocked
+
+  state "canary release" as Canary {
+    [*] --> Routing
+    Routing --> Observing : traffic shifted
+    Observing --> Stable : checks pass
+    Observing --> RollingBack : error budget spent
+    RollingBack --> [*] : traffic restored
+    Stable --> [*]
+  }
+
+  Canary --> Complete : stable observation
+  Canary --> Staging : rollback complete
+  Complete --> [*]

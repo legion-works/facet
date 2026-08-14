@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-label="Observability architecture map">
+  <defs>
+    <linearGradient id="control-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#222436" />
+      <stop offset="1" stop-color="#1a1b26" />
+    </linearGradient>
+    <linearGradient id="signal-gradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#86e1fc" stop-opacity="0.18" />
+      <stop offset="1" stop-color="#c3e88d" stop-opacity="0.08" />
+    </linearGradient>
+    <linearGradient id="alert-gradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc777" stop-opacity="0.22" />
+      <stop offset="1" stop-color="#ff757f" stop-opacity="0.08" />
+    </linearGradient>
+  </defs>
+
+  <g aria-label="signal sources">
+    <rect x="48" y="78" width="260" height="500" rx="18" fill="url(#control-gradient)" stroke="#3b4261" stroke-width="2" />
+    <text x="76" y="122" font-family="ui-monospace, Menlo, monospace" font-size="13" letter-spacing="2" fill="#86e1fc">SIGNAL SOURCES</text>
+    <text x="76" y="154" font-family="system-ui, sans-serif" font-size="24" font-weight="600" fill="#e6ecff">Release surface</text>
+
+    <g>
+      <rect x="76" y="190" width="204" height="82" rx="12" fill="#16161e" stroke="#545c7e" />
+      <text x="98" y="223" font-family="ui-monospace, Menlo, monospace" font-size="14" fill="#c8d3f5">publish envelope</text>
+      <text x="98" y="247" font-family="system-ui, sans-serif" font-size="12" fill="#828bb8">identity · policy · timing</text>
+    </g>
+    <g>
+      <rect x="76" y="304" width="204" height="82" rx="12" fill="#16161e" stroke="#545c7e" />
+      <text x="98" y="337" font-family="ui-monospace, Menlo, monospace" font-size="14" fill="#c8d3f5">tier 0 result</text>
+      <text x="98" y="361" font-family="system-ui, sans-serif" font-size="12" fill="#828bb8">parse counts · policy verdict</text>
+    </g>
+    <g>
+      <rect x="76" y="418" width="204" height="82" rx="12" fill="#16161e" stroke="#545c7e" />
+      <text x="98" y="451" font-family="ui-monospace, Menlo, monospace" font-size="14" fill="#c8d3f5">tier 1 evidence</text>
+      <text x="98" y="475" font-family="system-ui, sans-serif" font-size="12" fill="#828bb8">frame observation · screenshot</text>
+    </g>
+  </g>
+
+  <g aria-label="telemetry pipeline">
+    <rect x="400" y="78" width="390" height="500" rx="18" fill="url(#signal-gradient)" stroke="#3b4261" stroke-width="2" />
+    <text x="430" y="122" font-family="ui-monospace, Menlo, monospace" font-size="13" letter-spacing="2" fill="#86e1fc">TELEMETRY PIPELINE</text>
+    <text x="430" y="154" font-family="system-ui, sans-serif" font-size="24" font-weight="600" fill="#e6ecff">Evidence routing</text>
+
+    <path d="M 452 226 C 520 176, 620 176, 690 226" fill="none" stroke="#86e1fc" stroke-width="3" />
+    <path d="M 452 334 C 530 384, 610 384, 690 334" fill="none" stroke="#c3e88d" stroke-width="3" />
+    <path d="M 452 442 C 530 392, 610 392, 690 442" fill="none" stroke="#ffc777" stroke-width="3" stroke-dasharray="8 8" />
+
+    <rect x="438" y="200" width="120" height="52" rx="10" fill="#1e2030" stroke="#86e1fc" />
+    <text x="498" y="232" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#c8d3f5">ingest</text>
+    <rect x="632" y="200" width="120" height="52" rx="10" fill="#1e2030" stroke="#86e1fc" />
+    <text x="692" y="232" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#c8d3f5">normalize</text>
+
+    <rect x="438" y="308" width="120" height="52" rx="10" fill="#1e2030" stroke="#c3e88d" />
+    <text x="498" y="340" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#c8d3f5">correlate</text>
+    <rect x="632" y="308" width="120" height="52" rx="10" fill="#1e2030" stroke="#c3e88d" />
+    <text x="692" y="340" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#c8d3f5">retain</text>
+
+    <rect x="438" y="416" width="120" height="52" rx="10" fill="#1e2030" stroke="#ffc777" />
+    <text x="498" y="448" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#c8d3f5">query</text>
+    <rect x="632" y="416" width="120" height="52" rx="10" fill="#1e2030" stroke="#ffc777" />
+    <text x="692" y="448" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#c8d3f5">review</text>
+  </g>
+
+  <g aria-label="operator outcomes">
+    <rect x="882" y="78" width="270" height="500" rx="18" fill="url(#alert-gradient)" stroke="#3b4261" stroke-width="2" />
+    <text x="912" y="122" font-family="ui-monospace, Menlo, monospace" font-size="13" letter-spacing="2" fill="#86e1fc">OPERATOR OUTCOMES</text>
+    <text x="912" y="154" font-family="system-ui, sans-serif" font-size="24" font-weight="600" fill="#e6ecff">Decision surface</text>
+
+    <rect x="912" y="208" width="210" height="88" rx="12" fill="#16161e" stroke="#c3e88d" />
+    <text x="936" y="242" font-family="ui-monospace, Menlo, monospace" font-size="14" fill="#c3e88d">✓ release record</text>
+    <text x="936" y="268" font-family="system-ui, sans-serif" font-size="12" fill="#828bb8">evidence bound to revision</text>
+
+    <rect x="912" y="328" width="210" height="88" rx="12" fill="#16161e" stroke="#ffc777" />
+    <text x="936" y="362" font-family="ui-monospace, Menlo, monospace" font-size="14" fill="#ffc777">→ follow-up queue</text>
+    <text x="936" y="388" font-family="system-ui, sans-serif" font-size="12" fill="#828bb8">parity drift needs review</text>
+
+    <rect x="912" y="448" width="210" height="88" rx="12" fill="#16161e" stroke="#ff757f" />
+    <text x="936" y="482" font-family="ui-monospace, Menlo, monospace" font-size="14" fill="#ff757f">✗ typed refusal</text>
+    <text x="936" y="508" font-family="system-ui, sans-serif" font-size="12" fill="#828bb8">unsafe input stopped early</text>
+  </g>
+
+  <g fill="none" stroke="#545c7e" stroke-width="2" stroke-dasharray="7 7">
+    <path d="M 308 231 C 344 231, 366 226, 438 226" />
+    <path d="M 308 345 C 352 345, 382 334, 438 334" />
+    <path d="M 308 459 C 350 459, 390 442, 438 442" />
+    <path d="M 752 334 C 804 334, 842 252, 912 252" />
+    <path d="M 752 442 C 812 442, 848 372, 912 372" />
+  </g>
+
+  <g aria-label="legend">
+    <rect x="48" y="630" width="1104" height="82" rx="14" fill="#16161e" stroke="#2e2e3a" />
+    <text x="76" y="664" font-family="ui-monospace, Menlo, monospace" font-size="12" letter-spacing="2" fill="#a9b1d6">LEGEND</text>
+    <line x1="196" y1="660" x2="244" y2="660" stroke="#86e1fc" stroke-width="3" />
+    <text x="258" y="665" font-family="system-ui, sans-serif" font-size="13" fill="#c8d3f5">ingest path</text>
+    <line x1="396" y1="660" x2="444" y2="660" stroke="#c3e88d" stroke-width="3" />
+    <text x="458" y="665" font-family="system-ui, sans-serif" font-size="13" fill="#c8d3f5">verified route</text>
+    <line x1="614" y1="660" x2="662" y2="660" stroke="#ffc777" stroke-width="3" stroke-dasharray="8 8" />
+    <text x="676" y="665" font-family="system-ui, sans-serif" font-size="13" fill="#c8d3f5">operator review</text>
+    <text x="1124" y="690" text-anchor="end" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#545c7e">facet · observability map · revision-bound evidence</text>
+  </g>
+</svg>

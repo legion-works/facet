@@ -1,0 +1,98 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Release throughput and verification latency — inline data only.",
+  "background": "transparent",
+  "width": 700,
+  "height": 330,
+  "title": {
+    "text": "Release throughput · verification latency",
+    "anchor": "start",
+    "color": "#c8d3f5",
+    "font": "system-ui, sans-serif",
+    "fontSize": 16,
+    "fontWeight": 600,
+    "offset": 18
+  },
+  "data": {
+    "values": [
+      { "release": "R01", "published": 18, "verified": 17, "latencyMs": 214 },
+      { "release": "R02", "published": 22, "verified": 22, "latencyMs": 196 },
+      { "release": "R03", "published": 25, "verified": 24, "latencyMs": 228 },
+      { "release": "R04", "published": 21, "verified": 21, "latencyMs": 187 },
+      { "release": "R05", "published": 29, "verified": 28, "latencyMs": 205 },
+      { "release": "R06", "published": 31, "verified": 31, "latencyMs": 179 }
+    ]
+  },
+  "transform": [
+    { "calculate": "datum.verified / datum.published", "as": "verificationRate" },
+    { "calculate": "datum.latencyMs / 100", "as": "latencyScale" }
+  ],
+  "layer": [
+    {
+      "mark": { "type": "bar", "cornerRadiusTopLeft": 4, "cornerRadiusTopRight": 4 },
+      "encoding": {
+        "x": { "field": "release", "type": "ordinal", "title": null, "axis": { "labelAngle": 0 } },
+        "y": {
+          "field": "verified",
+          "type": "quantitative",
+          "title": "verified releases",
+          "axis": { "titleColor": "#86e1fc" },
+          "scale": { "domain": [0, 36] }
+        },
+        "color": {
+          "value": "#86e1fc",
+          "legend": { "title": "series", "labelColor": "#c8d3f5", "titleColor": "#a9b1d6" }
+        },
+        "tooltip": [
+          { "field": "release", "type": "ordinal", "title": "release" },
+          { "field": "verified", "type": "quantitative", "title": "verified" },
+          {
+            "field": "verificationRate",
+            "type": "quantitative",
+            "title": "verification rate",
+            "format": ".1%"
+          }
+        ]
+      }
+    },
+    {
+      "mark": { "type": "line", "strokeWidth": 3, "point": { "filled": true, "size": 70 } },
+      "encoding": {
+        "x": { "field": "release", "type": "ordinal", "title": null },
+        "y": {
+          "field": "latencyScale",
+          "type": "quantitative",
+          "title": "latency · 100 ms",
+          "axis": { "orient": "right", "titleColor": "#ffc777" },
+          "scale": { "domain": [0, 3.6] }
+        },
+        "color": { "value": "#ffc777" },
+        "tooltip": [
+          { "field": "release", "type": "ordinal", "title": "release" },
+          { "field": "latencyMs", "type": "quantitative", "title": "latency ms" }
+        ]
+      }
+    }
+  ],
+  "resolve": { "scale": { "y": "independent" } },
+  "config": {
+    "view": { "stroke": null },
+    "axis": {
+      "domainColor": "#3b4261",
+      "tickColor": "#3b4261",
+      "gridColor": "#232330",
+      "gridDash": [2, 4],
+      "labelColor": "#828bb8",
+      "titleColor": "#a9b1d6",
+      "labelFont": "ui-monospace, Menlo, monospace",
+      "titleFont": "ui-monospace, Menlo, monospace",
+      "labelFontSize": 11,
+      "titleFontSize": 11,
+      "titlePadding": 12
+    },
+    "legend": {
+      "labelFont": "ui-monospace, Menlo, monospace",
+      "titleFont": "ui-monospace, Menlo, monospace"
+    }
+  }
+}
