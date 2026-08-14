@@ -17,21 +17,21 @@
         </p>
       </header>
 
-      <section class="grid grid-cols-3 gap-4" aria-label="fleet statistics">
-        <article class="stat card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
-          <span class="text-xs text-legion-muted">ready workers</span>
-          <strong class="text-2xl font-bold">42</strong>
-          <span class="text-xs text-legion-cyan">✓ capacity above floor</span>
+      <section class="stats stats-vertical bg-base-200 shadow" aria-label="fleet statistics">
+        <article class="stat">
+          <span class="stat-title">ready workers</span>
+          <strong class="stat-value">42</strong>
+          <span class="stat-desc text-success">✓ capacity above floor</span>
         </article>
-        <article class="stat card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
-          <span class="text-xs text-legion-muted">queued revisions</span>
-          <strong class="text-2xl font-bold">18</strong>
-          <span class="text-xs text-legion-muted">7 visual read-backs</span>
+        <article class="stat">
+          <span class="stat-title">queued revisions</span>
+          <strong class="stat-value">18</strong>
+          <span class="stat-desc">7 visual read-backs</span>
         </article>
-        <article class="stat card border border-legion-line rounded-box p-4 gap-2 flex flex-col">
-          <span class="text-xs text-legion-muted">p95 publish → visible</span>
-          <strong class="text-2xl font-bold">214 ms</strong>
-          <span class="text-xs text-legion-cyan">−12 ms this window</span>
+        <article class="stat">
+          <span class="stat-title">p95 publish → visible</span>
+          <strong class="stat-value">214 ms</strong>
+          <span class="stat-desc text-success">−12 ms this window</span>
         </article>
       </section>
 
@@ -129,9 +129,7 @@
           <p class="text-sm text-legion-muted">
             Reconcile the observed-count investigation before expanding the canary allocation.
           </p>
-          <button class="btn bg-legion-cyan text-legion-ink px-4 py-2 rounded" type="button">
-            Review evidence
-          </button>
+          <button class="btn btn-primary" type="button">Review evidence</button>
         </article>
       </section>
 

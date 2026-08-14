@@ -51,6 +51,7 @@ test.skipIf(!liveGateEnabled)(
             scrollHeight: viewport.scrollHeight,
             scrollTop: viewport.scrollTop,
             maxScrollTop: viewport.scrollHeight - viewport.clientHeight,
+            overflowY: getComputedStyle(viewport).overflowY,
             viewportTop: viewportRect.top,
             viewportBottom: viewportRect.bottom,
             finalRowTop: finalRowRect.top,
@@ -64,6 +65,7 @@ test.skipIf(!liveGateEnabled)(
             scrollHeight: number;
             scrollTop: number;
             maxScrollTop: number;
+            overflowY: string;
             viewportTop: number;
             viewportBottom: number;
             finalRowTop: number;
@@ -74,6 +76,7 @@ test.skipIf(!liveGateEnabled)(
       const observed = reachability.result?.value;
       expect(observed).toBeDefined();
       expect(observed!.scrollHeight).toBeGreaterThan(observed!.clientHeight);
+      expect(observed!.overflowY).toBe("auto");
       expect(observed!.scrollTop).toBeGreaterThanOrEqual(observed!.maxScrollTop - 1);
       expect(observed!.finalRowTop).toBeGreaterThanOrEqual(observed!.viewportTop);
       expect(observed!.finalRowBottom).toBeLessThanOrEqual(observed!.viewportBottom);

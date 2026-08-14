@@ -73,7 +73,7 @@ export default function IncidentConsole() {
           <button
             key={nextSeverity}
             type="button"
-            className="btn border border-legion-line px-3 py-2 rounded"
+            className="btn btn-outline"
             onClick={() => setSeverity(nextSeverity)}
           >
             {nextSeverity}
@@ -81,7 +81,7 @@ export default function IncidentConsole() {
         ))}
         <button
           type="button"
-          className="btn bg-legion-cyan text-legion-ink px-3 py-2 rounded"
+          className="btn btn-primary"
           onClick={() => setAutoRefresh((value) => !value)}
         >
           {autoRefresh ? "Pause refresh" : "Resume refresh"}
@@ -96,7 +96,7 @@ export default function IncidentConsole() {
               <button
                 key={incident.id}
                 type="button"
-                className="btn border border-legion-line p-3 rounded text-left flex flex-col gap-2"
+                className="btn btn-ghost h-auto items-start p-3 text-left flex flex-col gap-2"
                 onClick={() => setSelectedId(incident.id)}
               >
                 <span className="flex items-center justify-between gap-2">
