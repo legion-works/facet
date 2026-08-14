@@ -184,27 +184,32 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
   deps.idle.acquire(`stream:${streamId}`);
   const encoder = new TextEncoder();
 
-  // Per-stream close handle. The lease-expiry callback AND the
-  // ReadableStream cancel handler both call this — calling it twice is
-  // safe (the inner guards short-circuit).
+  // Per-stream teardown. Every teardown path (cancel, lease-gone,
+  // renew-failure) funnels through `releaseStreamOnly`; calling any of
+  // them twice is a no-op (the inner `closed` guard short-circuits).
   let closed = false;
   let unregister: (() => void) | null = null;
-  const releaseLease = (): void => {
-    if (closed) return;
-    closed = true;
-    unregister?.();
-    deps.leases.release(leaseId);
-    deps.idle.release(`stream:${streamId}`);
-  };
-  // SSE-only teardown: used when the client disconnects (cancel) so the
-  // stream's idle reason clears but the lease survives for a refresh
-  // that reuses the sessionStorage-persisted session. The lease expires
-  // on its own TTL.
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+  // Shared stream-only teardown: clear the heartbeat interval, drop the
+  // broadcaster registration, and release the stream's idle reason. The
+  // lease is deliberately NOT touched here — the cancel path keeps the
+  // lease alive for the F5 refresh (the lease has its own TTL on the
+  // manager and is the credential the shell persists).
   const releaseStreamOnly = (): void => {
     if (closed) return;
     closed = true;
+    if (heartbeat !== null) clearInterval(heartbeat);
     unregister?.();
     deps.idle.release(`stream:${streamId}`);
+  };
+
+  // Full teardown: shared stream cleanup plus lease release. Runs when
+  // the lease is gone (expired or explicitly released).
+  const releaseLease = (): void => {
+    if (closed) return;
+    releaseStreamOnly();
+    deps.leases.release(leaseId);
   };
 
   const readable = new ReadableStream({
@@ -247,32 +252,28 @@ export function handleStream(deps: StreamHandlerDeps, req: StreamParsedRequest):
         releaseLease();
       });
 
-      const heartbeat = setInterval(() => {
-        // Re-check liveness — if the lease was released by the expiry
-        // hook in the meantime, the controller is closed and these
-        // enqueues throw, which the surrounding try/catch swallows.
+      heartbeat = setInterval(() => {
+        // Re-check liveness — if the lease was removed by the expiry
+        // hook or an explicit release in the meantime, the controller
+        // is closed and the teardown already ran, so `closed` is set
+        // and we return without re-enqueueing.
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`));
           if (!deps.leases.renew(leaseId)) {
-            clearInterval(heartbeat);
+            // Lease is gone (released or expired). The notification path
+            // normally fires first, but converge on the shared cleanup so
+            // the interval and idle reason are always released.
+            releaseStreamOnly();
             return;
           }
           send({ type: "stream:heartbeat", streamId, at: new Date().toISOString() });
         } catch {
           // stream torn down between check and send
-          clearInterval(heartbeat);
-          releaseLease();
+          releaseStreamOnly();
         }
       }, deps.heartbeatIntervalMs ?? STREAM_HEARTBEAT_INTERVAL_MS);
       if (typeof heartbeat.unref === "function") heartbeat.unref();
-
-      const stop = (): void => {
-        clearInterval(heartbeat);
-        releaseLease();
-      };
-
-      (controller as unknown as { facetStop?: () => void }).facetStop = stop;
     },
     cancel() {
       // Client-initiated disconnect: tear down the stream and the

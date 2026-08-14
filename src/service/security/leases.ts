@@ -33,12 +33,12 @@ export interface GalleryLeaseManager {
   renew(leaseId: string): boolean;
   release(leaseId: string): void;
   /**
-   * Register a callback fired exactly once when the lease expires
-   * (timer-driven, NOT on caller-initiated `release`). Used to bind
-   * SSE stream lifetime to lease lifetime: the stream installs a hook
-   * here so the per-lease timer closes the stream when the lease
-   * times out — without it the stream kept its own idle reason forever
-   * and pinned the service idle path.
+   * Register a callback fired exactly once when the lease goes away —
+   * either the per-lease timer firing (`expire`) or a caller-initiated
+   * `release`. Used to bind SSE stream lifetime to lease lifetime: the
+   * stream installs a hook here so its close-controller teardown runs
+   * whichever path removes the lease. Without this the stream kept its
+   * own idle reason forever and pinned the service idle path.
    */
   onExpireNotify(leaseId: string, callback: () => void): void;
   list(): readonly GalleryLease[];
@@ -56,11 +56,12 @@ export function createLeaseManager(options: GalleryLeaseManagerOptions): Gallery
   const now = options.now ?? Date.now;
   const active = new Map<string, ActiveLease>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  // One-shot notifications registered per lease. Fired by `expire`
-  // (NOT by caller-initiated `release`). The stream handler installs
-  // its close-controller hook here so lease expiry closes the stream
-  // — without this binding the stream would outlast its lease and
-  // pin the idle controller forever.
+  // One-shot notifications registered per lease. Fired by both `expire`
+  // and `release` — from the stream's perspective a released lease and
+  // an expired lease are the same event ("this lease is gone"). The
+  // stream handler installs its close-controller hook here so lease
+  // expiry OR explicit release closes the stream — without this binding
+  // the stream would outlast its lease and pin the idle controller.
   const expireListeners = new Map<string, Array<() => void>>();
 
   function expire(leaseId: string): void {
@@ -127,15 +128,33 @@ export function createLeaseManager(options: GalleryLeaseManagerOptions): Gallery
       return true;
     },
     release(leaseId) {
+      const removed = active.get(leaseId);
+      if (!removed) return;
       const handle = timers.get(leaseId);
       if (handle !== undefined) {
         clearTimeout(handle);
         timers.delete(leaseId);
       }
       active.delete(leaseId);
-      // Caller-initiated release: drop any pending expiry listeners.
-      // (Stream teardown happens via the cancel() handler, not here.)
+      // A caller-initiated release and a timer-driven expiry are the
+      // same event from the stream's perspective — "this lease is
+      // gone". Fire the per-lease listeners so a stream bound to this
+      // lease tears itself down (releasing its idle reason + broadcaster
+      // slot) instead of waiting forever for a timer that was just
+      // cancelled. `active` is deleted before the listeners run, so a
+      // re-entrant `release`/`renew` from inside a listener no-ops and
+      // the lease stays un-resurrectable.
+      const listeners = expireListeners.get(leaseId);
       expireListeners.delete(leaseId);
+      if (listeners !== undefined) {
+        for (const cb of listeners) {
+          try {
+            cb();
+          } catch {
+            // notification handler errors must not break the release path
+          }
+        }
+      }
     },
     onExpireNotify(leaseId, callback) {
       const existing = expireListeners.get(leaseId);

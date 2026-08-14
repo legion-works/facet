@@ -189,7 +189,7 @@ describe("Must #4: lease expiry fires onExpireNotify", () => {
     mgr.clear();
   });
 
-  test("release() prevents the expiry callback from firing later", async () => {
+  test("release() fires the listener immediately and prevents the timer from firing later", async () => {
     let fired = 0;
     const mgr: GalleryLeaseManager = createLeaseManager({ leaseTtlMs: 30 });
     const lease = mgr.issue({ artifactId: "a-1", pid: 1 });
@@ -197,8 +197,12 @@ describe("Must #4: lease expiry fires onExpireNotify", () => {
       fired += 1;
     });
     mgr.release(lease.leaseId);
+    // A released lease and an expired lease are the same event from the
+    // stream's perspective: the listener fires exactly once, synchronously.
+    expect(fired).toBe(1);
     await new Promise((r) => setTimeout(r, 80));
-    expect(fired).toBe(0);
+    // The timer was cancelled — it must NOT fire again later.
+    expect(fired).toBe(1);
     mgr.clear();
   });
 });
