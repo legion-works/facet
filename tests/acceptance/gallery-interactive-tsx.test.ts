@@ -9,50 +9,44 @@ import { createQuietLogger } from "../../src/shared/logging/logger";
 import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
 import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
 
-const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
-
-test.skipIf(!liveGateEnabled)(
-  "gallery delivers interactive TSX execution and mounts component structure",
-  async () => {
-    const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-interactive-"));
-    const tier0Runner = createTier0RunnerForTests(0, {});
-    const service = await startFacetService({
-      dbPath: join(envDir, "facet.sqlite"),
-      installTokenPath: join(envDir, "install.token"),
-      promoteTokenPath: join(envDir, "promote.token"),
-      lockPath: join(envDir, "facet.lock"),
-      idleTimeoutMs: 30_000,
-      logger: createQuietLogger({ component: "gallery-tsx-interactive" }),
-      tier0Runner,
+test("gallery delivers interactive TSX execution and mounts component structure", async () => {
+  const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-interactive-"));
+  const tier0Runner = createTier0RunnerForTests(0, {});
+  const service = await startFacetService({
+    dbPath: join(envDir, "facet.sqlite"),
+    installTokenPath: join(envDir, "install.token"),
+    promoteTokenPath: join(envDir, "promote.token"),
+    lockPath: join(envDir, "facet.lock"),
+    idleTimeoutMs: 30_000,
+    logger: createQuietLogger({ component: "gallery-tsx-interactive" }),
+    tier0Runner,
+  });
+  const browser = galleryBrowser();
+  let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
+  try {
+    const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+    target = await browser.launch();
+    await navigateToArtifact(
+      target,
+      client,
+      "tsx",
+      readFileSync(join(import.meta.dir, "../../templates/tsx-interactive-counter.tsx"), "utf8"),
+      "interactive",
+    );
+    const artifactFrameWorld = await artifactWorld(target);
+    const rendered = (await target.session.send("Runtime.evaluate", {
+      contextId: artifactFrameWorld,
+      returnByValue: true,
+      expression: `({ heading: document.querySelector('h1')?.textContent ?? '', button: document.querySelector('button')?.textContent ?? '' })`,
+    })) as { result?: { value?: { heading: string; button: string } } };
+    expect(rendered.result?.value).toEqual({
+      heading: "Interactive counter",
+      button: "Increment",
     });
-    const browser = galleryBrowser();
-    let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
-    try {
-      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
-      target = await browser.launch();
-      await navigateToArtifact(
-        target,
-        client,
-        "tsx",
-        readFileSync(join(import.meta.dir, "../../templates/tsx-interactive-counter.tsx"), "utf8"),
-        "interactive",
-      );
-      const artifactFrameWorld = await artifactWorld(target);
-      const rendered = (await target.session.send("Runtime.evaluate", {
-        contextId: artifactFrameWorld,
-        returnByValue: true,
-        expression: `({ heading: document.querySelector('h1')?.textContent ?? '', button: document.querySelector('button')?.textContent ?? '' })`,
-      })) as { result?: { value?: { heading: string; button: string } } };
-      expect(rendered.result?.value).toEqual({
-        heading: "Interactive counter",
-        button: "Increment",
-      });
-    } finally {
-      await target?.close();
-      await service.stop();
-      tier0Runner.close?.();
-      rmSync(envDir, { recursive: true, force: true });
-    }
-  },
-  90_000,
-);
+  } finally {
+    await target?.close();
+    await service.stop();
+    tier0Runner.close?.();
+    rmSync(envDir, { recursive: true, force: true });
+  }
+}, 90_000);

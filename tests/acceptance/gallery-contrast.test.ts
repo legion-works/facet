@@ -9,37 +9,33 @@ import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
 
-const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
-
-test.skipIf(!liveGateEnabled)(
-  "gallery HTML cards keep dark surfaces and readable text",
-  async () => {
-    const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-html-theme-"));
-    const service = await startFacetService({
-      dbPath: join(envDir, "facet.sqlite"),
-      installTokenPath: join(envDir, "install.token"),
-      promoteTokenPath: join(envDir, "promote.token"),
-      lockPath: join(envDir, "facet.lock"),
-      idleTimeoutMs: 30_000,
-      logger: createQuietLogger({ component: "gallery-html-theme" }),
-      tier0Runner: stubTier0Runner,
-    });
-    const browser = galleryBrowser();
-    let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
-    try {
-      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
-      target = await browser.launch();
-      await navigateToArtifact(
-        target,
-        client,
-        "html",
-        readFileSync(join(import.meta.dir, "../../templates/html-release-ledger.html"), "utf8"),
-      );
-      const htmlWorld = await artifactWorld(target);
-      const colors = (await target.session.send("Runtime.evaluate", {
-        contextId: htmlWorld,
-        returnByValue: true,
-        expression: `(() => {
+test("gallery HTML cards keep dark surfaces and readable text", async () => {
+  const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-html-theme-"));
+  const service = await startFacetService({
+    dbPath: join(envDir, "facet.sqlite"),
+    installTokenPath: join(envDir, "install.token"),
+    promoteTokenPath: join(envDir, "promote.token"),
+    lockPath: join(envDir, "facet.lock"),
+    idleTimeoutMs: 30_000,
+    logger: createQuietLogger({ component: "gallery-html-theme" }),
+    tier0Runner: stubTier0Runner,
+  });
+  const browser = galleryBrowser();
+  let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
+  try {
+    const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+    target = await browser.launch();
+    await navigateToArtifact(
+      target,
+      client,
+      "html",
+      readFileSync(join(import.meta.dir, "../../templates/html-release-ledger.html"), "utf8"),
+    );
+    const htmlWorld = await artifactWorld(target);
+    const colors = (await target.session.send("Runtime.evaluate", {
+      contextId: htmlWorld,
+      returnByValue: true,
+      expression: `(() => {
           const parseColor = (value) => {
             const rgb = value.match(/^rgba?\\((\\d+), (\\d+), (\\d+)/);
             if (rgb) return rgb.slice(1).map(Number);
@@ -84,18 +80,16 @@ test.skipIf(!liveGateEnabled)(
             contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
           };
         })()`,
-      })) as {
-        result?: {
-          value?: { backgroundColor: string; color: string; background: number; contrast: number };
-        };
+    })) as {
+      result?: {
+        value?: { backgroundColor: string; color: string; background: number; contrast: number };
       };
-      expect(colors.result?.value?.background).toBeLessThan(0.2);
-      expect(colors.result?.value?.contrast).toBeGreaterThanOrEqual(4.5);
-    } finally {
-      await target?.close();
-      await service.stop();
-      rmSync(envDir, { recursive: true, force: true });
-    }
-  },
-  45_000,
-);
+    };
+    expect(colors.result?.value?.background).toBeLessThan(0.2);
+    expect(colors.result?.value?.contrast).toBeGreaterThanOrEqual(4.5);
+  } finally {
+    await target?.close();
+    await service.stop();
+    rmSync(envDir, { recursive: true, force: true });
+  }
+}, 45_000);

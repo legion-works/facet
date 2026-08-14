@@ -29,76 +29,73 @@ function galleryBrowser(): PuppeteerTier1Browser {
 }
 
 const browser = galleryBrowser();
-const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
 
-test.skipIf(!liveGateEnabled)(
-  "real gallery route mounts an ordinary same-origin frame and renders a canvas chart",
-  async () => {
-    const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-acceptance-"));
-    const service = await startFacetService({
-      dbPath: join(envDir, "facet.sqlite"),
-      installTokenPath: join(envDir, "install.token"),
-      promoteTokenPath: join(envDir, "promote.token"),
-      lockPath: join(envDir, "facet.lock"),
-      idleTimeoutMs: 30_000,
-      logger: createQuietLogger({ component: "gallery-acceptance" }),
-      tier0Runner: stubTier0Runner,
+test("real gallery route mounts an ordinary same-origin frame and renders a canvas chart", async () => {
+  const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-acceptance-"));
+  const service = await startFacetService({
+    dbPath: join(envDir, "facet.sqlite"),
+    installTokenPath: join(envDir, "install.token"),
+    promoteTokenPath: join(envDir, "promote.token"),
+    lockPath: join(envDir, "facet.lock"),
+    idleTimeoutMs: 30_000,
+    logger: createQuietLogger({ component: "gallery-acceptance" }),
+    tier0Runner: stubTier0Runner,
+  });
+  let target: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>> | undefined;
+  try {
+    const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+    const published = await publishArtifact(client, {
+      artifactType: "chart",
+      renderer: "canvas",
+      bytes: new TextEncoder().encode(
+        '{"mark":"bar","data":{"values":[{"x":"A","y":1}]},"encoding":{"x":{"field":"x","type":"nominal"},"y":{"field":"y","type":"quantitative"}}}',
+      ).buffer as ArrayBuffer,
+      slug: "gallery-render-acceptance",
     });
-    let target: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>> | undefined;
-    try {
-      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
-      const published = await publishArtifact(client, {
-        artifactType: "chart",
-        renderer: "canvas",
-        bytes: new TextEncoder().encode(
-          '{"mark":"bar","data":{"values":[{"x":"A","y":1}]},"encoding":{"x":{"field":"x","type":"nominal"},"y":{"field":"y","type":"quantitative"}}}',
-        ).buffer as ArrayBuffer,
-        slug: "gallery-render-acceptance",
-      });
-      const opened = await client.sendCommand({
-        command: "open",
-        requestId: crypto.randomUUID(),
-        artifactId: published.artifactId,
-        revisionSha: published.revisionSha,
-      });
-      if (!opened.ok || opened.data.command !== "open")
-        throw new Error("gallery open command failed");
+    const opened = await client.sendCommand({
+      command: "open",
+      requestId: crypto.randomUUID(),
+      artifactId: published.artifactId,
+      revisionSha: published.revisionSha,
+    });
+    if (!opened.ok || opened.data.command !== "open")
+      throw new Error("gallery open command failed");
 
-      target = await browser.launch();
-      const navResult = await target.session.send<{ errorText?: string }>("Page.navigate", {
-        url: opened.data.frameUrl,
-      });
-      // Surface a navigation error directly. Without this the failure arrives
-      // as "no iframe rendered", which reads as a renderer bug and sends the
-      // next reader into the gallery code instead of at the transport.
-      if (navResult.errorText !== undefined && navResult.errorText.length > 0) {
-        throw new Error(`gallery navigation failed: ${navResult.errorText}`);
-      }
-      const evaluation = await target.session.send<{
-        result?: {
-          value?: {
-            iframeCount: number;
-            status: string;
-            live: string;
-            revision: string;
-            frameSrc: string;
-          };
+    target = await browser.launch();
+    const navResult = await target.session.send<{ errorText?: string }>("Page.navigate", {
+      url: opened.data.frameUrl,
+    });
+    // Surface a navigation error directly. Without this the failure arrives
+    // as "no iframe rendered", which reads as a renderer bug and sends the
+    // next reader into the gallery code instead of at the transport.
+    if (navResult.errorText !== undefined && navResult.errorText.length > 0) {
+      throw new Error(`gallery navigation failed: ${navResult.errorText}`);
+    }
+    const evaluation = await target.session.send<{
+      result?: {
+        value?: {
+          iframeCount: number;
+          status: string;
+          live: string;
+          revision: string;
+          frameSrc: string;
         };
-      }>("Runtime.evaluate", {
-        // Without returnByValue the CDP result is an object HANDLE, so
-        // `result.value` is undefined no matter what the page resolved. The
-        // test then fails on every run and its diagnostic reports `undefined`
-        // for every field — it could not observe a working gallery, let alone
-        // a broken one. Both production probes (isolated-probe.ts,
-        // scripts/perf/gallery-stages.ts) pass it; this gate did not.
-        returnByValue: true,
-        awaitPromise: true,
-        // MUST stay below TIER1_CDP_CALL_WATCHDOG_MS (10s): the watchdog kills
-        // the CDP call, so an in-page deadline above it can never resolve and
-        // the test reports a transport wedge instead of the diagnostic it
-        // exists to collect — the same inversion that hid the render-barrier
-        // timeout. Strict ordering: in-page deadline < CDP watchdog < test budget.
-        expression: `new Promise((resolve) => {
+      };
+    }>("Runtime.evaluate", {
+      // Without returnByValue the CDP result is an object HANDLE, so
+      // `result.value` is undefined no matter what the page resolved. The
+      // test then fails on every run and its diagnostic reports `undefined`
+      // for every field — it could not observe a working gallery, let alone
+      // a broken one. Both production probes (isolated-probe.ts,
+      // scripts/perf/gallery-stages.ts) pass it; this gate did not.
+      returnByValue: true,
+      awaitPromise: true,
+      // MUST stay below TIER1_CDP_CALL_WATCHDOG_MS (10s): the watchdog kills
+      // the CDP call, so an in-page deadline above it can never resolve and
+      // the test reports a transport wedge instead of the diagnostic it
+      // exists to collect — the same inversion that hid the render-barrier
+      // timeout. Strict ordering: in-page deadline < CDP watchdog < test budget.
+      expression: `new Promise((resolve) => {
           const deadline = Date.now() + 7000;
           const inspect = () => {
             const iframe = document.querySelector('iframe');
@@ -123,50 +120,50 @@ test.skipIf(!liveGateEnabled)(
           };
           inspect();
         })`,
-      });
-      const result = evaluation.result?.value;
-      if (result?.status !== "displayed") {
-        console.error(
-          `gallery diagnostic: status=${result?.status} live=${result?.live} iframes=${result?.iframeCount} src=${result?.frameSrc}`,
-        );
-      }
-      expect(result?.iframeCount).toBe(1);
-      expect(result?.status).toBe("displayed");
-      expect(result?.live).toBe("live");
-      // The shell observes the frame's own src URL; both routing values
-      // prove the gallery selected the chart bundle and canvas backend.
-      expect(result?.frameSrc).toContain("type=chart");
-      expect(result?.frameSrc).toContain("renderer=canvas");
-      expect(result?.revision).toContain(published.revisionSha.slice(0, 7));
+    });
+    const result = evaluation.result?.value;
+    if (result?.status !== "displayed") {
+      console.error(
+        `gallery diagnostic: status=${result?.status} live=${result?.live} iframes=${result?.iframeCount} src=${result?.frameSrc}`,
+      );
+    }
+    expect(result?.iframeCount).toBe(1);
+    expect(result?.status).toBe("displayed");
+    expect(result?.live).toBe("live");
+    // The shell observes the frame's own src URL; both routing values
+    // prove the gallery selected the chart bundle and canvas backend.
+    expect(result?.frameSrc).toContain("type=chart");
+    expect(result?.frameSrc).toContain("renderer=canvas");
+    expect(result?.revision).toContain(published.revisionSha.slice(0, 7));
 
-      const nativeView = await target.session.send<{
-        result?: { value?: { transform: string } };
-      }>("Runtime.evaluate", {
-        returnByValue: true,
-        awaitPromise: false,
-        expression: `({
+    const nativeView = await target.session.send<{
+      result?: { value?: { transform: string } };
+    }>("Runtime.evaluate", {
+      returnByValue: true,
+      awaitPromise: false,
+      expression: `({
            transform: document.querySelector('iframe')?.style.transform ?? '',
          })`,
-      });
-      // The shell never CSS-transforms the iframe — the frame document handles zoom.
-      expect(nativeView.result?.value?.transform).toBe("");
+    });
+    // The shell never CSS-transforms the iframe — the frame document handles zoom.
+    expect(nativeView.result?.value?.transform).toBe("");
 
-      // Ordinary same-origin frame, not a sandboxed opaque one: no sandbox
-      // tokens, exactly one iframe, and the parent can read straight into the
-      // frame's own document (contentDocument is non-null and readable).
-      const frameContract = await target.session.send<{
-        result?: {
-          value?: {
-            iframeCount: number;
-            sandboxLength: number;
-            contentDocumentReadable: boolean;
-            canvasCount: number;
-          };
+    // Ordinary same-origin frame, not a sandboxed opaque one: no sandbox
+    // tokens, exactly one iframe, and the parent can read straight into the
+    // frame's own document (contentDocument is non-null and readable).
+    const frameContract = await target.session.send<{
+      result?: {
+        value?: {
+          iframeCount: number;
+          sandboxLength: number;
+          contentDocumentReadable: boolean;
+          canvasCount: number;
         };
-      }>("Runtime.evaluate", {
-        returnByValue: true,
-        awaitPromise: false,
-        expression: `(() => {
+      };
+    }>("Runtime.evaluate", {
+      returnByValue: true,
+      awaitPromise: false,
+      expression: `(() => {
            const iframes = document.querySelectorAll('iframe');
            const iframe = iframes[0];
            const contentDocument = iframe?.contentDocument ?? null;
@@ -177,21 +174,14 @@ test.skipIf(!liveGateEnabled)(
              canvasCount: contentDocument?.querySelectorAll('canvas').length ?? 0,
            };
          })()`,
-      });
-      expect(frameContract.result?.value?.iframeCount).toBe(1);
-      expect(frameContract.result?.value?.sandboxLength).toBe(0);
-      expect(frameContract.result?.value?.contentDocumentReadable).toBe(true);
-      expect(frameContract.result?.value?.canvasCount).toBeGreaterThan(0);
-    } finally {
-      await target?.close();
-      await service.stop();
-      rmSync(envDir, { recursive: true, force: true });
-    }
-  },
-  45_000,
-);
-
-if (!liveGateEnabled)
-  console.warn(
-    "SKIP gallery-render.test.ts: set FACET_LIVE_GALLERY=1 to run the live browser gate",
-  );
+    });
+    expect(frameContract.result?.value?.iframeCount).toBe(1);
+    expect(frameContract.result?.value?.sandboxLength).toBe(0);
+    expect(frameContract.result?.value?.contentDocumentReadable).toBe(true);
+    expect(frameContract.result?.value?.canvasCount).toBeGreaterThan(0);
+  } finally {
+    await target?.close();
+    await service.stop();
+    rmSync(envDir, { recursive: true, force: true });
+  }
+}, 45_000);
