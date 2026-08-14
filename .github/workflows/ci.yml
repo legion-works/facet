@@ -290,6 +290,7 @@ jobs:
           - gallery-static-tsx.test.ts
           - gallery-tsx-styles.test.ts
           - gallery-tsx-styles-templates.test.ts
+          - gallery-viewport-geometry.test.ts
           - gate-forgery.test.ts
           - harness-recovery.test.ts
           - html-differential.test.ts
@@ -382,6 +383,19 @@ jobs:
             coverage/
           if-no-files-found: warn
           retention-days: 7
+      # v4.6.2 — ea165f8d65b6e75b540449e92b4886f43607fa02
+      # The two-viewport geometry gate's ten PNGs are the visual proof
+      # behind every scrollWidth/scrollHeight/columnCount assertion —
+      # uploaded on both success and failure so a passing run still
+      # leaves the pixels an operator can spot-check.
+      - name: upload gallery geometry screenshots
+        if: always() && matrix.test == 'gallery-viewport-geometry.test.ts'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gallery-geometry-screenshots
+          path: test-results/gallery-geometry/**
+          if-no-files-found: warn
+          retention-days: 14
 
   coverage:
     needs: [unit, integration, acceptance-tier1]

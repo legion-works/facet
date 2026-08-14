@@ -3,6 +3,7 @@ import { parseHTML } from "linkedom";
 
 import { startGallery, type GalleryRuntime } from "../../src/gallery-web/app";
 import { countPageShim } from "../../src/gallery-web/frame/renderers/registry";
+import { EMPTY_VIEW_STATE } from "../../src/gallery-web/view-state";
 import {
   installFakeFrameApi,
   makeFakeRenderResult,
@@ -463,7 +464,7 @@ describe("gallery shell startup", () => {
         applyViewState: (state: any) => {
           appliedState = state;
         },
-        readViewState: () => appliedState ?? { zoom: 1, panX: 0, panY: 0 },
+        readViewState: () => appliedState ?? EMPTY_VIEW_STATE,
       }),
     });
     await startGallery(harness.runtime);

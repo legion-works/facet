@@ -4,6 +4,10 @@ dist/
 .facet-runtime/
 coverage/
 
+# Local test run output (JUnit XML, gallery-geometry screenshots). CI
+# uploads these as workflow artifacts; they never belong in history.
+test-results/
+
 # Local build context — never committed.
 .facet-build/
 

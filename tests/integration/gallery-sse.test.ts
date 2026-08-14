@@ -531,13 +531,7 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
       dom,
     });
     const nextFrame = frames[1]!;
-    // oxlint-disable-next-line no-underscore-dangle
-    nextFrame.contentWindow.__facetFrame = {
-      render: async (payload) => {
-        nextFrame.receivedPayloads.push(payload);
-        return fakeRenderResult();
-      },
-    };
+    installFakeFrameApi(nextFrame, { viewMode: "native", observed: fakeObservedCounts() });
 
     const result = await replaceArtifactFrame({
       current,
