@@ -1,49 +1,31 @@
-import { FROZEN_CSP_TEMPLATE } from "../../../shared/security/frozen-csp";
-import { TSX_ARTIFACT_FRAME_ATTRIBUTE, type TsxExecutionMode } from "../../../shared/tsx/execution";
+import type { TsxExecutionMode } from "../../../shared/tsx/execution";
 import type { Renderer } from "../../../shared/contracts/renderers";
-import htmlVendoredStyles from "../styles/html-vendored.css" with { type: "text" };
 import { renderHtml } from "./html";
-import {
-  FacetRenderError,
-  decodeArtifactBytes,
-  RENDER_ERROR_ATTRIBUTE,
-  RENDER_ERROR_ELEMENT,
-  type RenderContext,
-} from "./registry";
+import { appendRenderError, RENDER_ERROR_ATTRIBUTE, type RenderContext } from "./registry";
 
-function escapeScriptText(value: string): string {
-  return value.replace(/<\/script/gi, "<\\/script");
+export interface TsxModuleRuntime {
+  readonly createObjectURL: (blob: Blob) => string;
+  readonly importModule: (url: string) => Promise<unknown>;
+  readonly revokeObjectURL: (url: string) => void;
 }
 
-function nestedRuntimeErrorHandler(nonce: string): string {
-  const attribute = JSON.stringify(RENDER_ERROR_ATTRIBUTE);
-  const element = JSON.stringify(RENDER_ERROR_ELEMENT);
-  return (
-    `<script nonce="${nonce}">(function(){` +
-    `var report=function(event){var error=event&&('reason'in event?event.reason:event.error);` +
-    `var message=error&&error.message?error.message:event&&event.message?event.message:'interactive TSX runtime error';` +
-    `if(document.querySelector('['+${attribute}+'="true"]'))return;` +
-    `var marker=document.createElement(${element});marker.setAttribute(${attribute},'true');` +
-    `marker.textContent=String(message);document.body.appendChild(marker);};` +
-    `window.addEventListener('error',report,true);window.addEventListener('unhandledrejection',report,true);})();</script>`
-  );
+const browserTsxModuleRuntime: TsxModuleRuntime = {
+  createObjectURL: (blob) => URL.createObjectURL(blob),
+  importModule: async (url) => import(url),
+  revokeObjectURL: (url) => URL.revokeObjectURL(url),
+};
+
+let tsxModuleRuntime = browserTsxModuleRuntime;
+
+/** Test-only injection avoids relying on the host runtime's blob-module loader. */
+export function setTsxModuleRuntimeForTests(runtime: TsxModuleRuntime | undefined): void {
+  tsxModuleRuntime = runtime ?? browserTsxModuleRuntime;
 }
 
-export function buildInteractiveTsxSrcdoc(compiledBytes: Uint8Array, nonce: string): string {
-  const csp = FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce);
-  const compiled = escapeScriptText(decodeArtifactBytes(compiledBytes));
-  return (
-    "<!doctype html><html><head>" +
-    '<meta charset="utf-8">' +
-    `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
-    `<style>${htmlVendoredStyles.replace(/<\/style/gi, "<\\/style")}</style>` +
-    "</head><body>" +
-    '<main id="facet-tsx-mount" data-facet-renderer-root="true"></main>' +
-    // Frame-owned marker is visible diagnostics only; Tier 1 trusts CDP runtime exceptions.
-    nestedRuntimeErrorHandler(nonce) +
-    `<script type="module" nonce="${nonce}">${compiled}</script>` +
-    "</body></html>"
-  );
+function appendRuntimeError(container: HTMLElement, event: unknown): void {
+  if (container.querySelector(`[${RENDER_ERROR_ATTRIBUTE}="true"]`) !== null) return;
+  // This marker is diagnostics only; CDP Runtime.exceptionThrown remains the verifier authority.
+  appendRenderError(container, event);
 }
 
 export async function renderTsx(
@@ -57,24 +39,23 @@ export async function renderTsx(
     await renderHtml(ctx, bytes);
     return;
   }
-  if (ctx.nonce === undefined) {
-    throw new FacetRenderError(
-      "TSX interactive rendering requires a frame nonce",
-      "invalid_request",
-    );
+  const root = ctx.container.ownerDocument.createElement("main");
+  root.id = "facet-tsx-mount";
+  root.setAttribute("data-facet-renderer-root", "true");
+  ctx.container.replaceChildren(root);
+  const frameWindow = ctx.container.ownerDocument.defaultView;
+  const report = (event: Event): void => appendRuntimeError(ctx.container, event);
+  frameWindow?.addEventListener("error", report, true);
+  frameWindow?.addEventListener("unhandledrejection", report, true);
+  const moduleUrl = tsxModuleRuntime.createObjectURL(
+    new Blob([bytes], { type: "text/javascript" }),
+  );
+  try {
+    await tsxModuleRuntime.importModule(moduleUrl);
+  } catch (error) {
+    appendRuntimeError(ctx.container, error);
+    throw error;
+  } finally {
+    tsxModuleRuntime.revokeObjectURL(moduleUrl);
   }
-  const iframe = ctx.container.ownerDocument.createElement("iframe");
-  iframe.setAttribute(TSX_ARTIFACT_FRAME_ATTRIBUTE, "true");
-  iframe.setAttribute("sandbox", "allow-scripts");
-  iframe.setAttribute("referrerpolicy", "no-referrer");
-  iframe.setAttribute("allow", "");
-  // The nested frame must fill the artifact container and drop the UA
-  // default border, otherwise interactive TSX renders inside the
-  // 300×150 iframe placeholder instead of the same stage every other
-  // artifact type fills.
-  iframe.style.width = "100%";
-  iframe.style.height = "100%";
-  iframe.style.border = "0";
-  iframe.srcdoc = buildInteractiveTsxSrcdoc(bytes, ctx.nonce);
-  ctx.container.replaceChildren(iframe);
 }

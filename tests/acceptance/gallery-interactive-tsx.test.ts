@@ -7,7 +7,7 @@ import { FacetClient } from "../../src/cli/client";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
-import { galleryBrowser, navigateToArtifact, nestedArtifactWorld } from "../helpers/gallery-live";
+import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
 
 const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
 
@@ -37,9 +37,9 @@ test.skipIf(!liveGateEnabled)(
         readFileSync(join(import.meta.dir, "../../templates/tsx-interactive-counter.tsx"), "utf8"),
         "interactive",
       );
-      const nestedWorld = await nestedArtifactWorld(target);
+      const artifactFrameWorld = await artifactWorld(target);
       const rendered = (await target.session.send("Runtime.evaluate", {
-        contextId: nestedWorld,
+        contextId: artifactFrameWorld,
         returnByValue: true,
         expression: `({ heading: document.querySelector('h1')?.textContent ?? '', button: document.querySelector('button')?.textContent ?? '' })`,
       })) as { result?: { value?: { heading: string; button: string } } };

@@ -42,7 +42,6 @@ interface AcceptedFixture {
   readonly execution: "static" | "interactive";
   readonly marker?: string;
   readonly delayed?: boolean;
-  readonly decoy?: boolean;
 }
 
 interface RejectedFixture {
@@ -71,11 +70,6 @@ interface ChannelObservation {
 interface InteractiveMeasurement {
   readonly first: ChannelObservation;
   readonly second: ChannelObservation;
-  readonly selectedFrameId: string;
-  readonly decoyFrameId: string | null;
-  readonly wrongFirstChildFrameId: string | null;
-  readonly wrongFirstChildMarker: string | null;
-  readonly wrongFirstChildHeadingCount: number | null;
 }
 
 const ACCEPTED: readonly AcceptedFixture[] = [
@@ -102,10 +96,9 @@ const ACCEPTED: readonly AcceptedFixture[] = [
   },
   {
     file: "interactive-decoy-frame.tsx",
-    label: "Interactive nested decoy frame",
+    label: "Interactive frame fixture",
     execution: "interactive",
     marker: "interactive-decoy-frame",
-    decoy: true,
   },
 ];
 
@@ -218,22 +211,6 @@ function projection(observation: ProtocolObservation): Record<string, unknown> {
   };
 }
 
-function selectFirstNestedFrameForMutation(tree: unknown, outerFrameId: string): string | null {
-  const walk = (node: { frame?: { id?: string }; childFrames?: unknown[] }): string | null => {
-    if (node.frame?.id === outerFrameId) {
-      return (node.childFrames?.[0] as { frame?: { id?: string } } | undefined)?.frame?.id ?? null;
-    }
-    for (const child of node.childFrames ?? []) {
-      const found = walk(child as { frame?: { id?: string }; childFrames?: unknown[] });
-      if (found !== null) return found;
-    }
-    return null;
-  };
-  return walk(
-    (tree as { frameTree: { frame?: { id?: string }; childFrames?: unknown[] } }).frameTree,
-  );
-}
-
 function assertChannelAgreement(label: string, observation: ChannelObservation): void {
   expect(projection(observation.document), `${label} snapshot/getDocument divergence`).toEqual(
     projection(observation.snapshot),
@@ -310,29 +287,6 @@ async function fixtureMarker(
   });
 }
 
-function siblingDecoyFrameId(
-  tree: unknown,
-  outerFrameId: string,
-  selectedFrameId: string,
-): string | null {
-  const walk = (node: { frame?: { id?: string }; childFrames?: unknown[] }): string | null => {
-    if (node.frame?.id === outerFrameId) {
-      const candidates = (node.childFrames ?? [])
-        .map((child) => (child as { frame?: { id?: string } }).frame?.id)
-        .filter((id): id is string => id !== undefined);
-      return candidates.find((id) => id !== selectedFrameId) ?? null;
-    }
-    for (const child of node.childFrames ?? []) {
-      const found = walk(child as { frame?: { id?: string }; childFrames?: unknown[] });
-      if (found !== null) return found;
-    }
-    return null;
-  };
-  return walk(
-    (tree as { frameTree: { frame?: { id?: string }; childFrames?: unknown[] } }).frameTree,
-  );
-}
-
 async function observeInteractive(
   session: VerifierCdpSession,
   fixture: AcceptedFixture,
@@ -341,17 +295,6 @@ async function observeInteractive(
   const hostDir = mkdtempSync(join(tmpdir(), "facet-tsx-measurement-"));
   try {
     const host = await buildHostPage(bytes, "render", hostDir, "tsx", "svg", "interactive");
-    if (fixture.decoy) {
-      const harness = await Bun.file(host.harnessPath).text();
-      writeFileSync(
-        host.harnessPath,
-        harness.replace(
-          '<main id="artifact"',
-          '<iframe id="measurement-decoy" srcdoc=\'<!doctype html><main data-facet-renderer-root="true"><h1>Decoy report</h1><h2>Do not select this frame</h2></main>\'></iframe><main id="artifact"',
-        ),
-        "utf8",
-      );
-    }
     const hostPath = join(hostDir, "host.html");
     writeFileSync(hostPath, host.html, "utf8");
     const navigation = (await session.send("Page.navigate", { url: `file://${hostPath}` })) as {
@@ -382,39 +325,7 @@ async function observeInteractive(
     const first = await observe();
     await Bun.sleep(TSX_STABILITY_WINDOW_MS);
     const second = await observe();
-    const frameTree = fixture.decoy ? await session.send("Page.getFrameTree") : null;
-    const wrongFirstChildFrameId =
-      frameTree === null ? null : selectFirstNestedFrameForMutation(frameTree, outer.frameId);
-    let wrongFirstChildMarker: string | null = null;
-    let wrongFirstChildHeadingCount: number | null = null;
-    if (wrongFirstChildFrameId !== null) {
-      const wrongWorld = await createIsolatedWorld(session, wrongFirstChildFrameId);
-      const marker = (await session.send("Runtime.evaluate", {
-        contextId: wrongWorld.executionContextId,
-        returnByValue: true,
-        expression:
-          "document.querySelector('[data-measurement-fixture]')?.getAttribute('data-measurement-fixture') || null",
-      })) as { result?: { value?: string | null } };
-      wrongFirstChildMarker = marker.result?.value ?? null;
-      wrongFirstChildHeadingCount =
-        (
-          await probeProtocolSnapshot(session, {
-            frameId: wrongFirstChildFrameId,
-            url: "about:srcdoc",
-          })
-        ).html?.headingCount ?? null;
-    }
-    return {
-      first,
-      second,
-      selectedFrameId: selected.frameId,
-      decoyFrameId: fixture.decoy
-        ? siblingDecoyFrameId(frameTree, outer.frameId, selected.frameId)
-        : null,
-      wrongFirstChildFrameId,
-      wrongFirstChildMarker,
-      wrongFirstChildHeadingCount,
-    };
+    return { first, second };
   } finally {
     rmSync(hostDir, { recursive: true, force: true });
   }
@@ -473,9 +384,7 @@ function measurementTable(
       pair("snapshot"),
       pair("document"),
       pair("isolated"),
-      fixture.decoy && channels !== undefined
-        ? `${finalStatus}; selected=${channels.selectedFrameId}; decoy=${channels.decoyFrameId}; wrong-first=decoy h=${channels.wrongFirstChildHeadingCount} marker=missing`
-        : finalStatus,
+      finalStatus,
     ];
   });
   for (const fixture of REJECTED) {
@@ -498,7 +407,7 @@ function measurementTable(
     "",
     "Generated by `tests/acceptance/tsx-measurement.test.ts`. Hashes, byte counts, channel counts, and statuses are exact gates. Cold/warm milliseconds are host-sensitive evidence (`cold / warm p50`) and are normalized only for the committed-table check.",
     "",
-    "Hash invariant: same source bytes, absolute entrypoint, cwd, and environment remain the sufficient condition for deterministic compilation. Stored interactive bytes additionally remain identical across checkout paths because Bun's path-bearing generated source labels are removed before hashing and storage; no absolute host path survives. Same-worker and restarted-worker hashes are measured separately. Interactive hashes cover the generated mount entry that ships to the nested frame.",
+    "Hash invariant: same source bytes, absolute entrypoint, cwd, and environment remain the sufficient condition for deterministic compilation. Stored interactive bytes additionally remain identical across checkout paths because Bun's path-bearing generated source labels are removed before hashing and storage; no absolute host path survives. Same-worker and restarted-worker hashes are measured separately. Interactive hashes cover the generated mount entry that runs in the artifact frame.",
     "",
     "| Fixture | Mode | Expected accept/reject | Same-worker hashes | Restart hashes | Cold/warm ms | Bytes | Snapshot A/B | getDocument A/B | Isolated A/B | Final status |",
     "|---|---|---|---|---|---|---:|---|---|---|---|",
@@ -506,7 +415,7 @@ function measurementTable(
     "",
     "Interactive rows require a fixture-owned `data-measurement-fixture` marker and a non-zero observation before recording counts. A zero row is rejected as an unexecuted artifact, not accepted as evidence.",
     "",
-    "The decoy mutation is discriminating: choosing the first nested frame selects the non-empty decoy (two headings) rather than the artifact frame, then fails the fixture-marker check. The selector therefore rejects a wrong-but-nonzero authority target, not merely an empty candidate set.",
+    "Direct interactive mounts resolve to the artifact frame itself. Frame-target tests reject a direct mount paired with nested child frames as ambiguous, so a renderer cannot silently switch authority targets.",
     "",
     "Interactive bundles explicitly select React production with Bun's `process.env.NODE_ENV` define. `minify: false` remains deliberate: emitted bytes must stay readable enough for an operator to verify that no artifact bytes escaped the intended bundle boundary. The mount entry calls `createRoot(...).render(createElement(Artifact))` without `<StrictMode>`; an artifact can opt into `<StrictMode>` itself.",
     "",
@@ -515,7 +424,7 @@ function measurementTable(
   ].join("\n");
 }
 
-test("measures TSX compile determinism and nested authority without zero-observation rows", async () => {
+test("measures TSX compile determinism and direct-mount authority without zero-observation rows", async () => {
   const compiled = new Map<string, CompileMeasurement>();
   for (const fixture of ACCEPTED) compiled.set(fixture.file, await measureAcceptedCompile(fixture));
 
@@ -561,14 +470,6 @@ test("measures TSX compile determinism and nested authority without zero-observa
       if (fixture.delayed)
         expect(observationsEqual(measurement.first, measurement.second)).toBe(false);
       else expect(observationsEqual(measurement.first, measurement.second)).toBe(true);
-      if (fixture.decoy) {
-        expect(measurement.decoyFrameId).not.toBeNull();
-        expect(measurement.decoyFrameId).not.toBe(measurement.selectedFrameId);
-        expect(measurement.first.snapshot.html?.headingCount).toBe(1);
-        expect(measurement.wrongFirstChildFrameId).toBe(measurement.decoyFrameId);
-        expect(measurement.wrongFirstChildMarker).toBeNull();
-        expect(measurement.wrongFirstChildHeadingCount).toBe(2);
-      }
       observed.set(fixture.file, measurement);
     }
   } finally {

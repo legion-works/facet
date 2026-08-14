@@ -57,10 +57,35 @@ export const RENDER_ERROR_ELEMENT = "facet-error";
  * `data-facet-error` so every observation channel (page shim,
  * protocol probes) counts it the same way.
  */
-export function appendRenderError(container: HTMLElement, message: string): void {
-  const el = document.createElement(RENDER_ERROR_ELEMENT);
+function renderErrorMessage(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null) {
+    const event = value as {
+      readonly error?: unknown;
+      readonly message?: unknown;
+      readonly reason?: unknown;
+    };
+    for (const candidate of [event.reason, event.error, event.message]) {
+      if (candidate instanceof Error) return candidate.message;
+      if (typeof candidate === "string") return candidate;
+      if (
+        typeof candidate === "object" &&
+        candidate !== null &&
+        "message" in candidate &&
+        typeof candidate.message === "string"
+      ) {
+        return candidate.message;
+      }
+    }
+  }
+  return "interactive TSX runtime error";
+}
+
+export function appendRenderError(container: HTMLElement, value: unknown): void {
+  const el = container.ownerDocument.createElement(RENDER_ERROR_ELEMENT);
   el.setAttribute(RENDER_ERROR_ATTRIBUTE, "true");
-  el.textContent = message;
+  el.textContent = renderErrorMessage(value);
   container.appendChild(el);
 }
 

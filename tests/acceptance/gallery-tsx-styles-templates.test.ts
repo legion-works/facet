@@ -7,7 +7,7 @@ import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
-import { galleryBrowser, nestedArtifactWorld, type GalleryTarget } from "../helpers/gallery-live";
+import { artifactWorld, galleryBrowser, type GalleryTarget } from "../helpers/gallery-live";
 
 const INTERACTIVE_TEMPLATE = readFileSync(
   join(import.meta.dir, "../../templates/tsx-interactive-counter.tsx"),
@@ -104,7 +104,7 @@ test.skipIf(!liveGateEnabled)(
         "interactive",
         `gallery-tsx-styles-template-interactive-${Date.now()}`,
       );
-      const interactiveWorld = await nestedArtifactWorld(target);
+      const interactiveWorld = await artifactWorld(target);
       const interactiveProbe = (await target.session.send("Runtime.evaluate", {
         contextId: interactiveWorld,
         returnByValue: true,
@@ -150,7 +150,7 @@ test.skipIf(!liveGateEnabled)(
         "static",
         `gallery-tsx-styles-template-static-${Date.now()}`,
       );
-      const staticWorld = await nestedArtifactWorld(target);
+      const staticWorld = await artifactWorld(target);
       const staticProbe = (await target.session.send("Runtime.evaluate", {
         contextId: staticWorld,
         returnByValue: true,

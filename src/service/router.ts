@@ -444,10 +444,10 @@ export function buildRouter(deps: RouterDeps): {
           }
         }
         let vendoredStyles: string | undefined;
-        if (artifactType.data === "html") {
+        if (artifactType.data === "html" || artifactType.data === "tsx") {
           try {
             vendoredStyles = await Bun.file(
-              join(galleryRoot, "frame", "bootstrap", "html.css"),
+              join(galleryRoot, "frame", "bootstrap", `${artifactType.data}.css`),
             ).text();
           } catch {
             // The build step above should have produced the asset; if
@@ -455,7 +455,7 @@ export function buildRouter(deps: RouterDeps): {
             // rather than a raw exception dump. The body intentionally
             // omits the underlying error text so we don't leak paths,
             // syscall names, or errno values to the operator's browser.
-            return new Response("html frame stylesheet unavailable", {
+            return new Response("artifact frame stylesheet unavailable", {
               status: 500,
               headers: {
                 "content-type": "text/plain; charset=utf-8",

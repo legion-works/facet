@@ -106,10 +106,27 @@ function isMarkedArtifactFrame(node: ProtocolDomNode, backendNodeId: number): bo
   return false;
 }
 
+function hasDirectTsxMount(node: ProtocolDomNode): boolean {
+  const attributes = node.attributes ?? [];
+  for (let index = 0; index + 1 < attributes.length; index += 2) {
+    if (
+      node.nodeName === "MAIN" &&
+      attributes[index] === "id" &&
+      attributes[index + 1] === "facet-tsx-mount"
+    ) {
+      return true;
+    }
+  }
+  for (const child of [...(node.children ?? []), ...(node.shadowRoots ?? [])]) {
+    if (hasDirectTsxMount(child)) return true;
+  }
+  return false;
+}
+
 /**
- * Resolve the renderer-owned nested TSX frame under the outer harness child.
- * Frame order and `about:srcdoc` URLs are non-authoritative: the backend node
- * ties each frame ID to its iframe element in the outer document.
+ * Resolve the interactive TSX artifact document under the outer harness child.
+ * The direct mount has no child frame; nested frames are resolved from their
+ * CDP-owned iframe element rather than frame order or about:srcdoc URLs.
  */
 export async function resolveNestedArtifactFrame(
   session: VerifierCdpSession,
@@ -130,6 +147,12 @@ export async function resolveNestedArtifactFrame(
   const outerDocument = findContentDocument(document.root, outerOwner.backendNodeId);
   if (outerDocument === null) {
     throw new Error("verifier: outer child document unavailable for nested TSX resolution");
+  }
+  if (hasDirectTsxMount(outerDocument)) {
+    if (candidates.length === 0) return outerFrame;
+    throw new Error(
+      `verifier: direct TSX mount is ambiguous with ${candidates.length} nested frame(s)`,
+    );
   }
   const owned: ResolvedChildFrame[] = [];
   for (const candidate of candidates) {

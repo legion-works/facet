@@ -12,7 +12,7 @@ function srcdoc(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 }
 
-test("real browser selects the renderer-owned nested frame over sibling and host decoys", async () => {
+test("real browser resolves direct mounts and selects renderer-owned nested frames", async () => {
   const artifact = '<!doctype html><p id="artifact">renderer-owned document</p>';
   const outer = `<!doctype html><body>
     <main data-facet-renderer-root="true">outer-frame fake root</main>
@@ -23,10 +23,19 @@ test("real browser selects the renderer-owned nested frame over sibling and host
     <main data-facet-renderer-root="true">parent-host fake root</main>
     <iframe id="outer" srcdoc="${srcdoc(outer)}"></iframe>
   </body>`;
+  const direct = `<!doctype html><body>
+    <main id="facet-tsx-mount" data-facet-renderer-root="true">direct renderer-owned document</main>
+  </body>`;
+  const directHost = `<!doctype html><body>
+    <iframe id="outer" srcdoc="${srcdoc(direct)}"></iframe>
+  </body>`;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: () => new Response(host, { headers: { "content-type": "text/html" } }),
+    fetch: (request) =>
+      new Response(new URL(request.url).pathname === "/direct" ? directHost : host, {
+        headers: { "content-type": "text/html" },
+      }),
   });
   const launcher = resolveLauncher();
   const browser = new PuppeteerTier1Browser({
@@ -50,6 +59,19 @@ test("real browser selects the renderer-owned nested frame over sibling and host
       returnByValue: true,
     })) as { result?: { value?: string } };
     expect(rendered.result?.value).toContain("renderer-owned document");
+
+    await target.session.send("Page.navigate", { url: `http://127.0.0.1:${server.port}/direct` });
+    await Bun.sleep(100);
+    const directOuterFrame = await resolveSrcdocChildFrame(target.session);
+    const directArtifactFrame = await resolveNestedArtifactFrame(target.session, directOuterFrame);
+    expect(directArtifactFrame).toEqual(directOuterFrame);
+    const directIsolated = await createIsolatedWorld(target.session, directArtifactFrame.frameId);
+    const directRendered = (await target.session.send("Runtime.evaluate", {
+      expression: "document.body.textContent",
+      contextId: directIsolated.executionContextId,
+      returnByValue: true,
+    })) as { result?: { value?: string } };
+    expect(directRendered.result?.value).toContain("direct renderer-owned document");
   } finally {
     await target?.close();
     server.stop(true);
