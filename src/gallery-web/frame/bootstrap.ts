@@ -31,8 +31,7 @@ import {
   type RendererRegistry,
 } from "./renderers/registry";
 import { validateRenderer } from "./renderer-validation";
-import { applySvgViewBox, type SvgViewBox } from "./view-box";
-import { clampNativeSvgPan } from "../view-state";
+import type { SvgViewBox } from "./view-box";
 import { isTsxExecutionMode, type TsxExecutionMode } from "../../shared/tsx/execution";
 
 declare global {
@@ -152,15 +151,20 @@ function receiveViewState(value: unknown): void {
     viewModeReported = true;
     deliver({ type: "view-mode", mode: "native" });
   }
-  const width = renderedSvg.clientWidth;
-  const height = renderedSvg.clientHeight;
-  if (width <= 0 || height <= 0) return;
-  const clamped = clampNativeSvgPan(
-    { zoom: event.zoom, panX: event.panX, panY: event.panY },
-    { width, height },
-  );
-  const next = applySvgViewBox(originalViewBox, { width, height }, clamped);
-  renderedSvg.setAttribute("viewBox", `${next.minX} ${next.minY} ${next.width} ${next.height}`);
+  // Zoom resizes the ELEMENT; pan scrolls the CONTAINER. The old model
+  // kept the element fixed and moved the camera (viewBox) instead — the
+  // element then acted as an invisible window, so any pan cut the
+  // diagram off at the element's edge (operator-reported, screenshot:
+  // a sliver of diagram lost in a dark stage). Scrolling a naturally
+  // sized element cannot clip: overflow extends the scroll range.
+  const naturalWidth = originalViewBox.width;
+  if (naturalWidth <= 0) return;
+  renderedSvg.style.width = `${Math.ceil(naturalWidth * event.zoom)}px`;
+  renderedSvg.style.maxWidth = "none";
+  renderedSvg.style.height = "auto";
+  const scroller = container;
+  scroller.scrollLeft = Math.max(0, -event.panX);
+  scroller.scrollTop = Math.max(0, -event.panY);
 }
 
 export function startGalleryFrame(registry: RendererRegistry): void {
