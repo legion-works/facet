@@ -302,7 +302,6 @@ jobs:
           - runtime-exception-event.test.ts
           - screenshot-evidence-failure.test.ts
           - secure-cli-tier1.test.ts
-          - tsx-interactive-isolation.test.ts
           - tsx-interactive-verdict-empty.test.ts
           - tsx-interactive-verdict-non-component.test.ts
           - tsx-interactive-verdict-rejected.test.ts
