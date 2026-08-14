@@ -77,6 +77,34 @@ export async function renderMermaidInto(container: HTMLElement, source: string):
     document.getElementById(`d${id}`)?.remove();
   }
   await importSanitizedSvgText(container, svg, { marker: "graph" });
+  restoreNaturalSize(container.lastElementChild);
+}
+
+/**
+ * Mermaid stamps `width="100%"` + `style="max-width:<natural>px"` on its
+ * root, which SHRINKS a wide diagram to the container — a 10:1 flowchart
+ * fit-to-width renders as an unreadable strip (live-measured: 3791×377
+ * viewBox squeezed to 1248×124, 33% text scale). Readability wins: pin
+ * the root at its natural viewBox width and let the scrollable stage
+ * (both axes, top-left origin) reach the rest. viewBox-native zoom still
+ * applies on top — zoom mutates the viewBox, not these styles.
+ */
+function restoreNaturalSize(el: Element | null): void {
+  if (el === null || el.tagName.toLowerCase() !== "svg") return;
+  const viewBox = el.getAttribute("viewBox");
+  if (viewBox === null) return;
+  const parts = viewBox
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  const width = parts[2];
+  if (parts.length !== 4 || width === undefined || !Number.isFinite(width) || width <= 0) {
+    return;
+  }
+  const svg = el as SVGElement;
+  svg.style.width = `${Math.ceil(width)}px`;
+  svg.style.maxWidth = "none";
+  svg.style.height = "auto";
 }
 
 /** Render a standalone mermaid artifact (artifactType "mermaid"). */

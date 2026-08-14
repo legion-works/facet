@@ -12,7 +12,7 @@ import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/ga
 const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
 
 test.skipIf(!liveGateEnabled)(
-  "gallery fits a wide Mermaid diagram to the viewport from the top-left origin",
+  "gallery renders a wide Mermaid diagram at natural size, top-left, horizontally scrollable",
   async () => {
     const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-mermaid-fit-"));
     const service = await startFacetService({
@@ -91,10 +91,16 @@ test.skipIf(!liveGateEnabled)(
       expect(observed!.svgLeft).toBeLessThanOrEqual(
         observed!.viewportLeft + observed!.paddingLeft + 2,
       );
-      expect(observed!.svgWidth).toBeLessThanOrEqual(
-        observed!.viewportWidth - observed!.paddingLeft * 2 + 2,
+      // Natural size: the SVG is pinned at its viewBox width (readable
+      // labels), NOT shrunk to the viewport. A wide diagram therefore
+      // overflows and the stage must expose the overflow as scrollable
+      // width — the jail regression (fit-to-container squeeze) reads
+      // svgWidth ≈ viewportWidth and scrollWidth ≈ clientWidth, which
+      // this pair rejects.
+      expect(observed!.svgWidth).toBeGreaterThanOrEqual(
+        observed!.viewBoxRight - observed!.viewBoxLeft - 2,
       );
-      expect(observed!.viewportScrollWidth).toBeLessThanOrEqual(observed!.viewportWidth + 1);
+      expect(observed!.viewportScrollWidth).toBeGreaterThan(observed!.viewportWidth + 100);
       expect(observed!.contentLeft).toBeGreaterThanOrEqual(observed!.viewBoxLeft - 1);
       expect(observed!.contentRight).toBeLessThanOrEqual(observed!.viewBoxRight + 1);
     } finally {

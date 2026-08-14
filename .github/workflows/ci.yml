@@ -286,7 +286,7 @@ jobs:
           - gallery-refresh.test.ts
           - gallery-render.test.ts
           - gallery-geometry.test.ts
-          - gallery-mermaid-fit.test.ts
+          - gallery-mermaid-natural.test.ts
           - gallery-static-tsx.test.ts
           - gallery-tsx-styles.test.ts
           - gallery-tsx-styles-templates.test.ts
@@ -343,7 +343,7 @@ jobs:
         name: Tier 1 acceptance test
         run: |
           mkdir -p test-results
-          FACET_LIVE_GALLERY="${{ contains('gallery-contrast.test.ts,gallery-daisyui-library.test.ts,gallery-geometry.test.ts,gallery-html-scroll.test.ts,gallery-interactive-tsx.test.ts,gallery-mermaid-fit.test.ts,gallery-refresh.test.ts,gallery-static-tsx.test.ts,gallery-tsx-styles.test.ts,gallery-tsx-styles-templates.test.ts', matrix.test) && '1' || '' }}" bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
+          FACET_LIVE_GALLERY="${{ contains('gallery-contrast.test.ts,gallery-daisyui-library.test.ts,gallery-geometry.test.ts,gallery-html-scroll.test.ts,gallery-interactive-tsx.test.ts,gallery-mermaid-natural.test.ts,gallery-refresh.test.ts,gallery-static-tsx.test.ts,gallery-tsx-styles.test.ts,gallery-tsx-styles-templates.test.ts', matrix.test) && '1' || '' }}" bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
       - name: summarize Tier 1 acceptance
         if: always()
         shell: bash
