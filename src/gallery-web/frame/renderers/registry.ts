@@ -10,7 +10,7 @@ export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/art
 /**
  * Frame-side renderer registry — keyed by ArtifactType.
  *
- * Runs INSIDE the opaque-origin frame. Gallery and Tier 1 have paired
+ * Runs INSIDE the artifact frame. Gallery and Tier 1 have paired
  * type-specific entries that instantiate this registry with the SAME
  * renderer modules; the build-metafile parity gate turns red if those
  * module sets diverge. Artifact bytes are DATA: dispatch routes them to

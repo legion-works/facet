@@ -17,7 +17,7 @@
  * internal document to `template.content.ownerDocument` (a DIFFERENT
  * Document object) when HTMLTemplateElement exists, so that document
  * gets the bound methods too. The import-time default instance is
- * never trusted in a srcdoc bundle.
+ * never trusted in the verifier's inlined harness bundle.
  */
 
 import purifyFactory from "dompurify";

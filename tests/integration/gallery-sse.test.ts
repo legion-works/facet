@@ -1,5 +1,5 @@
 /**
- * Gallery shell + sandbox channel integration tests.
+ * Gallery shell integration tests.
  *
  * Every assertion here is structural — the test gate fails when the
  * shell drifts from the frozen security model. The shell builds its
@@ -7,15 +7,15 @@
  * `buildFrameAttributes`) so the assertions can
  * inspect the produced strings without a browser harness.
  *
- * DOM testing approach: pure-function-first. The channel lifecycle tests
- * use Bun's native `MessageChannel`; the hostname guard is a pure
+ * DOM testing approach: pure-function-first. The hostname guard is a pure
  * boolean; the swap tests execute the real async swap against a
- * recording FrameHost with REAL MessageChannels (the test plays the
- * frame side by posting on the frame-held port ends). The SSE test
- * runs a real service and drains the real stream.
+ * recording FrameHost with a fake iframe whose contentWindow.__facetFrame.render
+ * resolves/rejects/never-settles. The SSE test runs a real service and
+ * drains the real stream. The negative-source assertions scan production
+ * gallery-web files for banned tokens — proving the channel ceremony is absent.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,7 +35,6 @@ import {
   replaceArtifactFrame,
   swapToRevision,
 } from "../../src/gallery-web/app";
-import { createChannelPair, type ChannelPair } from "../../src/gallery-web/frame/channels";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
@@ -166,43 +165,6 @@ describe("gallery shell — frame document generation", () => {
   });
 });
 
-describe("gallery frame program (bootstrap source)", () => {
-  // The frame program is bundled into the srcdoc at build time; these
-  // assertions pin its trust-path shape at the source level (the live
-  // render path is proven by the Tier 1 acceptance gates, which bundle
-  // the SAME renderers).
-  const bootstrapPath = new URL("../../src/gallery-web/frame/bootstrap.ts", import.meta.url)
-    .pathname;
-
-  test("keeps the transitional channel bootstrap free of URL secrets", async () => {
-    const source = await Bun.file(bootstrapPath).text();
-    expect(source).toContain("facetHandshake");
-    expect(source).toContain("ports");
-    expect(source).not.toContain('frameParams.get("handshake")');
-    expect(source).not.toContain('frameParams.get("nonce")');
-    expect(source).not.toContain("history.replaceState(");
-    expect(source).not.toContain("data.nonce");
-    expect(source).toContain("event.source !== window.parent");
-    expect(source).toContain("handshakeComplete");
-  });
-
-  test("signals boot-ready and render-complete via the control port", async () => {
-    const source = await Bun.file(bootstrapPath).text();
-    expect(source).toContain("boot-ready");
-    expect(source).toContain("render-complete");
-    // Counts cross the control port ONLY after the dispatch settled.
-    const dispatchIdx = source.indexOf("dispatchRender(");
-    const completeIdx = source.indexOf('"render-complete"');
-    expect(dispatchIdx).toBeGreaterThanOrEqual(0);
-    expect(completeIdx).toBeGreaterThan(dispatchIdx);
-  });
-
-  test("closes the ingress port one-shot on artifact receipt", async () => {
-    const source = await Bun.file(bootstrapPath).text();
-    expect(source).toContain("ingress.close()");
-  });
-});
-
 describe("gallery shell — hostname guard (DNS-rebinding defense)", () => {
   test("isLoopbackHostname accepts only 127.0.0.1", () => {
     expect(isLoopbackHostname("127.0.0.1")).toBe(true);
@@ -221,55 +183,6 @@ describe("gallery shell — hostname guard (DNS-rebinding defense)", () => {
     expect(() => assertLoopbackHostname("127.0.0.1")).not.toThrow();
     expect(() => assertLoopbackHostname("localhost")).toThrow(/127\.0\.0\.1/);
     expect(() => assertLoopbackHostname("evil.test")).toThrow(/127\.0\.0\.1/);
-  });
-});
-
-describe("gallery shell — channel lifecycle (closure-held control, one-shot ingress)", () => {
-  let pair: ChannelPair;
-
-  afterEach(() => {
-    pair?.close();
-  });
-
-  beforeEach(() => {
-    pair = createChannelPair({ messageChannelCtor: MessageChannel });
-  });
-
-  test("source ingress port closes after first delivery", () => {
-    expect(pair.ingressOpen).toBe(true);
-    pair.deliverSource({ type: "test", bytes: new Uint8Array([1, 2, 3]) });
-    expect(pair.ingressOpen).toBe(false);
-    // Second call after closure is a no-op (does not throw).
-    expect(() => pair.deliverSource({ type: "test", bytes: new Uint8Array() })).not.toThrow();
-  });
-
-  test("control port stays open across many sends (closure-held, not one-shot)", () => {
-    expect(pair.controlOpen).toBe(true);
-    pair.sendControl({ type: "boot-ready" });
-    pair.sendControl({ type: "render-complete", observed: {} });
-    pair.sendControl({ type: "view-state", zoom: 1.5 });
-    expect(pair.controlOpen).toBe(true);
-  });
-
-  test("deliverSource sends the artifact over the wire (structured clone — not srcdoc)", async () => {
-    const capture: { received: unknown[] } = { received: [] };
-    pair.onIngressMessage = (event) => capture.received.push(event.data);
-    pair.deliverSource({ type: "artifact", bytes: ARTIFACT_SENTINEL });
-    // Bun's MessagePort delivery runs on a task (not a microtask). A
-    // short setTimeout(0) is enough to let the frame-side onmessage
-    // fire before the assertion runs.
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    expect(capture.received).toHaveLength(1);
-    // Sentinel traveled over the channel — NOT over srcdoc.
-    const payload = capture.received[0] as { type: string; bytes: string };
-    expect(payload.type).toBe("artifact");
-    expect(payload.bytes).toBe(ARTIFACT_SENTINEL);
-  });
-
-  test("control port closes only when explicitly closed (frame replacement)", () => {
-    expect(pair.controlOpen).toBe(true);
-    pair.closeControl();
-    expect(pair.controlOpen).toBe(false);
   });
 });
 
@@ -408,8 +321,6 @@ describe("gallery shell — no zod in frame bundle (boundary check stays clean)"
   // depth — a frame/<file>.ts accidentally `import { z } from "zod"`
   // would break the gate; this test catches it earlier at unit time).
   const FRAME_FILES = [
-    "../../src/gallery-web/frame/channels.ts",
-    "../../src/gallery-web/frame/bootstrap.ts",
     "../../src/gallery-web/frame/runtime.ts",
     "../../src/gallery-web/frame/renderers/registry.ts",
     "../../src/gallery-web/frame/renderers/markdown.ts",
@@ -1114,4 +1025,95 @@ describe("service write path — revision SSE emit", () => {
       }
     }
   }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// Negative source assertions — channel ceremony must be absent from gallery.
+//
+// Scan every production file under src/gallery-web/** (excluding tests and
+// src/validation/**) for banned tokens that belong exclusively to the removed
+// display-security ceremony. Each assertion proves that the deleted machinery
+// cannot re-enter through a stray import or copy-paste.
+//
+// Discriminator: each banned token is verified ABSENT from every gallery
+// production file (scan passes); temporarily reintroducing one token in a
+// gallery file makes the corresponding scan FAIL, proving it discriminates
+// rather than passing vacuously.
+// ---------------------------------------------------------------------------
+
+const GALLERY_PRODUCTION_GLOB = new URL("../../src/gallery-web", import.meta.url).pathname;
+
+async function collectGalleryProductionFiles(): Promise<string[]> {
+  const { readdirSync, statSync } = await import("node:fs");
+  const paths: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = `${dir}/${entry}`;
+      const stat = statSync(full);
+      if (stat.isDirectory()) {
+        walk(full);
+      } else if (full.endsWith(".ts") || full.endsWith(".tsx")) {
+        paths.push(full);
+      }
+    }
+  };
+  walk(GALLERY_PRODUCTION_GLOB);
+  return paths;
+}
+
+describe("gallery production source — channel ceremony absent (negative assertions)", () => {
+  // Each tuple: [token, human label]
+  const BANNED: ReadonlyArray<readonly [string, string]> = [
+    ["MessageChannel", "MessageChannel constructor (channel ceremony)"],
+    ["facetHandshake", "facetHandshake handshake key"],
+    ["handshakeNonce", "handshakeNonce (removed nonce window)"],
+    ["frameIngressPort", "frameIngressPort (removed port field)"],
+    ["frameControlPort", "frameControlPort (removed port field)"],
+    ["allow-scripts", "allow-scripts (removed sandbox attribute)"],
+    ["TSX_ARTIFACT_FRAME_ATTRIBUTE", "TSX_ARTIFACT_FRAME_ATTRIBUTE constant"],
+  ] as const;
+
+  // srcdoc: present in Tier 1 harness comments inside renderers copied
+  // into the frame bundle, but must NOT appear as a gallery ceremony
+  // primitive. The gallery frame document is always loaded via src=, never
+  // injected as srcdoc.
+  const BANNED_IN_FRAME_DIR: ReadonlyArray<readonly [string, string]> = [
+    ...BANNED,
+    ["srcdoc", "srcdoc (removed gallery frame injection)"],
+  ] as const;
+
+  test("collect gallery production files (sanity: at least 10 .ts files found)", async () => {
+    const allFiles = await collectGalleryProductionFiles();
+    expect(allFiles.length).toBeGreaterThanOrEqual(10);
+    // All paths must be under src/gallery-web
+    for (const f of allFiles) {
+      expect(f).toContain("/src/gallery-web/");
+    }
+  });
+
+  for (const [token, label] of BANNED_IN_FRAME_DIR) {
+    test(`gallery-web/frame/** has no ${label} reference`, async () => {
+      const files = (await collectGalleryProductionFiles()).filter((f) =>
+        f.includes("/src/gallery-web/frame/"),
+      );
+      expect(files.length).toBeGreaterThan(0);
+      for (const filePath of files) {
+        const source = await Bun.file(filePath).text();
+        expect(source).not.toContain(token);
+      }
+    });
+  }
+
+  for (const [token, label] of BANNED) {
+    test(`gallery-web/** outside frame/ has no ${label} reference`, async () => {
+      const files = (await collectGalleryProductionFiles()).filter(
+        (f) => !f.includes("/src/gallery-web/frame/"),
+      );
+      expect(files.length).toBeGreaterThan(0);
+      for (const filePath of files) {
+        const source = await Bun.file(filePath).text();
+        expect(source).not.toContain(token);
+      }
+    });
+  }
 });

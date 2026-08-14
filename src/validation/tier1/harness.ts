@@ -21,7 +21,7 @@
 import { build } from "bun";
 
 import { ARTIFACT_TYPES, type ArtifactType } from "../../gallery-web/frame/renderers/registry";
-import { freshFrameNonce } from "../../gallery-web/frame/channels";
+import { freshHarnessNonce } from "./nonce";
 import { frameBundlePlugins } from "../../shared/build/frame-bundle-plugins";
 import { FROZEN_CSP_TEMPLATE as HARNESS_CSP } from "../../shared/security/frozen-csp";
 
@@ -122,7 +122,7 @@ export async function buildHarnessSrcdoc(artifactType: string): Promise<{
   readonly bundleBytes: number;
 }> {
   const rendererType = parseArtifactType(artifactType);
-  const nonce = freshFrameNonce();
+  const nonce = freshHarnessNonce();
   const { code, styles, bytes } = await buildBootstrapBundle(rendererType);
   const escaped = code.replace(/<\/script/gi, "<\\/script");
   const csp = HARNESS_CSP.replace("<BOOTSTRAP_NONCE>", nonce);
