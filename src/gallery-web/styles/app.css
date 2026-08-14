@@ -116,13 +116,13 @@ body {
 
 /* ---- canvas · sunken stage ---- */
 
+/* The stage IS the window: the artifact frame fills every pixel between
+ * header and footer. No inset card, no centering, no size cap — the
+ * frame's own document scrolls its overflow (operator-ruled, twice). */
 #facet-canvas {
   position: relative;
   overflow: hidden;
   background: #101018;
-  display: grid;
-  place-items: center;
-  padding: 24px;
 }
 
 /* Double-buffer progress hairline — position carries the signal, so
@@ -221,10 +221,8 @@ body {
 }
 
 #facet-canvas iframe {
-  border: 1px solid #26262f;
-  border-radius: 10px;
+  border: 0;
   background: var(--facet-navy);
-  box-shadow: 0 6px 20px -6px rgba(0, 0, 0, 0.55);
   transform-origin: center center;
   transition:
     transform 120ms ease-out,
@@ -241,8 +239,9 @@ body {
 }
 
 #facet-canvas iframe.facet-ready {
-  width: min(100%, 1280px);
-  height: min(100%, 720px);
+  display: block;
+  width: 100%;
+  height: 100%;
   opacity: 1;
   transform: scale(var(--facet-zoom, 1));
 }
