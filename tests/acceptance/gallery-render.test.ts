@@ -105,12 +105,9 @@ test.skipIf(!liveGateEnabled)(
             const status = document.querySelector('#facet-status-line')?.textContent ?? '';
             const live = document.querySelector('#facet-live')?.dataset.state ?? '';
             const revision = document.querySelector('#facet-revision')?.textContent ?? '';
-            // contentDocument is null for an opaque-origin sandboxed frame, by
-            // design — the shell cannot read into the artifact and neither can
-            // this gate. Observe the SHELL's own state instead: the frame src
-            // carries the routed artifact type, and the status line reaches
-            // 'displayed' only after the frame reports render-complete over
-            // the control port.
+            // Observe the SHELL's own state: the frame src carries the
+            // routed artifact type, and the status line reaches 'displayed'
+            // only after the frame's direct render promise resolves.
             if ((status === 'displayed' && live === 'live') || status === 'error' || Date.now() >= deadline) {
               const frameSrc = iframe?.getAttribute('src') ?? '';
               resolve({

@@ -130,7 +130,7 @@ function nonDegenerateViewBox(svg: Element): boolean {
   return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
 }
 
-/** Page-world self-report emitted with `render-complete`. UNTRUSTED by design. */
+/** Page-world self-report the frame's direct render promise resolves with. UNTRUSTED by design. */
 export function countPageShim(): PageShimCounts {
   const markedCandidates = safeSelectorElements(RENDERER_ROOT_SELECTOR);
   const candidateSet = new Set(markedCandidates);

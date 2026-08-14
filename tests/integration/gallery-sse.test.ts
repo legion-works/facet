@@ -38,6 +38,7 @@ import {
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
+import { installFakeFrameApi, makeFakeRenderResult } from "../helpers/fake-frame";
 
 const RUNTIME_URL = "/gallery/frame/runtime/markdown.js";
 
@@ -432,12 +433,12 @@ function createRecordingHost(): RecordingHost {
   return { host, calls, badges, mounted };
 }
 
-type FakeRenderScript = (payload: unknown) => Promise<unknown>;
-
 interface FakeFrameElement {
   setAttribute(name: string, value: string): void;
   addEventListener(type: string, listener: () => void): void;
-  readonly contentWindow: { __facetFrame?: { readonly render?: FakeRenderScript } };
+  readonly contentWindow: {
+    __facetFrame?: { readonly render?: (payload: unknown) => Promise<unknown> };
+  };
   readonly receivedPayloads: unknown[];
   autoLoad: boolean;
 }
@@ -459,7 +460,9 @@ function createFakeFrameDom(scripts: Array<(frame: FakeFrameElement) => void> = 
   const stubDocument = {
     createElement(_tag: string): FakeFrameElement {
       const listeners = new Map<string, (() => void)[]>();
-      const contentWindow: { __facetFrame?: { readonly render?: FakeRenderScript } } = {};
+      const contentWindow: {
+        __facetFrame?: { readonly render?: (payload: unknown) => Promise<unknown> };
+      } = {};
       const frame: FakeFrameElement = {
         setAttribute(): void {},
         addEventListener(type, listener) {
@@ -476,13 +479,7 @@ function createFakeFrameDom(scripts: Array<(frame: FakeFrameElement) => void> = 
       if (script !== undefined) {
         script(frame);
       } else {
-        // oxlint-disable-next-line no-underscore-dangle
-        frame.contentWindow.__facetFrame = {
-          render: async (payload: unknown) => {
-            frame.receivedPayloads.push(payload);
-            return fakeRenderResult();
-          },
-        };
+        installFakeFrameApi(frame, { viewMode: "native", observed: fakeObservedCounts() });
       }
       if (frame.autoLoad) {
         queueMicrotask(() => {
@@ -498,29 +495,25 @@ function createFakeFrameDom(scripts: Array<(frame: FakeFrameElement) => void> = 
   };
 }
 
+function fakeObservedCounts(errorCount = 0) {
+  return {
+    rendererRootSvgCount: 1,
+    graphCount: 1,
+    mermaidNodeCount: 0,
+    visibleSvgCount: 1,
+    opaqueRegionCount: 0,
+    externalImageCount: 0,
+    errorCount,
+  };
+}
+
 function fakeRenderResult(
   options: {
     readonly viewMode?: "native" | "css";
     readonly errorCount?: number;
   } = {},
 ) {
-  let applied: { zoom: number; panX: number; panY: number } | null = null;
-  return {
-    observed: {
-      rendererRootSvgCount: 1,
-      graphCount: 1,
-      mermaidNodeCount: 0,
-      visibleSvgCount: 1,
-      opaqueRegionCount: 0,
-      externalImageCount: 0,
-      errorCount: options.errorCount ?? 0,
-    },
-    viewMode: options.viewMode ?? "native",
-    applyViewState: (state: { zoom: number; panX: number; panY: number }): void => {
-      applied = { ...state };
-    },
-    readViewState: () => applied ?? { zoom: 1, panX: 0, panY: 0 },
-  };
+  return makeFakeRenderResult(options.viewMode ?? "native", fakeObservedCounts(options.errorCount));
 }
 
 describe("gallery shell — real swap execution (direct frame promises)", () => {

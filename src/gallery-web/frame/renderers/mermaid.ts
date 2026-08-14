@@ -59,7 +59,7 @@ let renderCounter = 0;
 /**
  * Render one mermaid diagram source into the container. Awaits
  * `mermaid.render()` completion BEFORE the SVG crosses the sanitized
- * import path — render-complete semantics depend on this barrier.
+ * import path — the direct render promise depends on this barrier.
  */
 export async function renderMermaidInto(container: HTMLElement, source: string): Promise<void> {
   ensureMermaidInitialized();

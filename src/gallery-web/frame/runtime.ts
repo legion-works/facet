@@ -14,18 +14,19 @@ import {
   isFrameViewState,
   isUint8Array,
   parseViewBox,
+  type FrameRenderPayload,
   type FrameViewState,
 } from "./frame-payload";
 import type { SvgViewBox } from "./view-box";
-import { clampZoom, zoomAtPoint } from "../view-state";
-export interface FrameRenderPayload {
-  readonly artifactType: string;
-  readonly renderer: string;
-  readonly bytes: Uint8Array | string;
-  readonly execution?: TsxExecutionMode;
-}
+import {
+  clampZoom,
+  EMPTY_VIEW_STATE,
+  nextViewStateForKey,
+  normalizeViewState,
+  zoomAtPoint,
+} from "../view-state";
 
-export type { FrameViewState };
+export type { FrameRenderPayload, FrameViewState };
 
 export interface RenderResult {
   readonly observed: PageShimCounts;
@@ -111,7 +112,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
 
       const svg = renderedSvg(container);
       const viewMode = svg === null ? "css" : "native";
-      let viewState: FrameViewState = { zoom: 1, panX: 0, panY: 0 };
+      let viewState: FrameViewState = { ...EMPTY_VIEW_STATE };
       const applyViewState = (state: FrameViewState): void => {
         if (!isFrameViewState(state)) {
           throw new FacetRenderError("view state is invalid", "invalid_request");
@@ -148,17 +149,13 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
     (event) => {
       event.preventDefault();
       const rect = container.getBoundingClientRect();
-      const state = currentRenderResult?.readViewState() ?? { zoom: 1, panX: 0, panY: 0 };
+      const state = currentRenderResult?.readViewState() ?? EMPTY_VIEW_STATE;
       const factor = Math.exp(-event.deltaY * 0.001);
       const nextZoom = clampZoom(state.zoom * factor);
       const cursorX = event.clientX - rect.left;
       const cursorY = event.clientY - rect.top;
       const next = zoomAtPoint(state, nextZoom, cursorX, cursorY);
-      currentRenderResult?.applyViewState({
-        zoom: next.zoom,
-        panX: next.panX ?? 0,
-        panY: next.panY ?? 0,
-      });
+      currentRenderResult?.applyViewState(normalizeViewState(next));
     },
     { passive: false },
   );
@@ -172,11 +169,11 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
     drag = { x: event.clientX, y: event.clientY };
-    const state = currentRenderResult?.readViewState() ?? { zoom: 1, panX: 0, panY: 0 };
+    const state = normalizeViewState(currentRenderResult?.readViewState() ?? EMPTY_VIEW_STATE);
     currentRenderResult?.applyViewState({
       ...state,
-      panX: (state.panX ?? 0) + dx,
-      panY: (state.panY ?? 0) + dy,
+      panX: state.panX + dx,
+      panY: state.panY + dy,
     });
   });
   const endDrag = (event: PointerEvent): void => {
@@ -186,50 +183,22 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   };
   container.addEventListener("pointerup", endDrag);
   container.addEventListener("pointercancel", endDrag);
+  // Frame-side listener: this is the frame's own document, distinct
+  // from the shell's (app.ts keydown listener attaches to the parent
+  // document). Keyboard focus can legitimately sit in either realm, so
+  // both listeners stay; both route through `nextViewStateForKey` so
+  // the key-to-state mapping has one tested home instead of two.
   document.addEventListener("keydown", (event) => {
     const result = currentRenderResult;
     if (!result) return;
-    const state = result.readViewState();
-    const rect = container.getBoundingClientRect();
-
-    if (event.key === "+" || event.key === "=") {
-      event.preventDefault();
-      const factor = Math.exp(100 * 0.001);
-      const next = zoomAtPoint(
-        state,
-        clampZoom(state.zoom * factor),
-        rect.width / 2,
-        rect.height / 2,
-      );
-      result.applyViewState({ zoom: next.zoom, panX: next.panX ?? 0, panY: next.panY ?? 0 });
-    } else if (event.key === "-") {
-      event.preventDefault();
-      const factor = Math.exp(-100 * 0.001);
-      const next = zoomAtPoint(
-        state,
-        clampZoom(state.zoom * factor),
-        rect.width / 2,
-        rect.height / 2,
-      );
-      result.applyViewState({ zoom: next.zoom, panX: next.panX ?? 0, panY: next.panY ?? 0 });
-    } else if (event.key === "0") {
-      event.preventDefault();
-      result.applyViewState({ zoom: 1, panX: 0, panY: 0 });
-    } else if (
-      event.key === "ArrowLeft" ||
-      event.key === "ArrowRight" ||
-      event.key === "ArrowUp" ||
-      event.key === "ArrowDown"
-    ) {
-      event.preventDefault();
-      const amount = event.shiftKey ? 50 : 10;
-      const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
-      const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
-      result.applyViewState({
-        ...state,
-        panX: (state.panX ?? 0) + dx,
-        panY: (state.panY ?? 0) + dy,
-      });
-    }
+    const next = nextViewStateForKey(
+      result.readViewState(),
+      event.key,
+      event.shiftKey,
+      container.getBoundingClientRect(),
+    );
+    if (next === null) return;
+    event.preventDefault();
+    result.applyViewState(normalizeViewState(next));
   });
 }

@@ -50,7 +50,7 @@ function directMountSession(withNestedFrame: boolean): VerifierCdpSession {
                           {
                             nodeName: "IFRAME",
                             backendNodeId: 20,
-                            attributes: ["data-facet-tsx-frame", "true"],
+                            attributes: ["data-nested-frame", "true"],
                           },
                         ]
                       : []),

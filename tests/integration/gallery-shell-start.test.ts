@@ -3,6 +3,11 @@ import { parseHTML } from "linkedom";
 
 import { startGallery, type GalleryRuntime } from "../../src/gallery-web/app";
 import { countPageShim } from "../../src/gallery-web/frame/renderers/registry";
+import {
+  installFakeFrameApi,
+  makeFakeRenderResult,
+  type FakeRenderResultShape,
+} from "../helpers/fake-frame";
 
 type Listener = (event: Record<string, unknown>) => void;
 
@@ -88,33 +93,11 @@ function pageShimObserved(body: string): ReturnType<typeof countPageShim> {
 
 type PageShimCounts = ReturnType<typeof countPageShim>;
 
-interface FakeRenderResultShape {
-  readonly observed: PageShimCounts;
-  readonly viewMode: "native" | "css";
-  readonly applyViewState: (state: { zoom: number; panX: number; panY: number }) => void;
-  readonly readViewState: () => { zoom: number; panX: number; panY: number };
-}
-
-function makeRenderResult(
-  viewMode: "native" | "css",
-  observed: PageShimCounts,
-): FakeRenderResultShape {
-  let applied: { zoom: number; panX: number; panY: number } | null = null;
-  return {
-    observed,
-    viewMode,
-    applyViewState: (state) => {
-      applied = { ...state };
-    },
-    readViewState: () => applied ?? { zoom: 1, panX: 0, panY: 0 },
-  };
-}
-
 interface FakeFrameConfig {
   readonly viewMode: "native" | "css";
   readonly observed: PageShimCounts;
   /** Override the render promise (default: resolve immediately). */
-  readonly render?: (payload: unknown) => Promise<FakeRenderResultShape>;
+  readonly render?: (payload: unknown) => Promise<FakeRenderResultShape<PageShimCounts>>;
   /** Disable the auto `load` event fired on append (timeout-path tests). */
   readonly autoLoad?: boolean;
 }
@@ -128,14 +111,7 @@ class FakeIframe extends FakeElement {
 
   install(config: FakeFrameConfig): void {
     if (config.autoLoad === false) this.autoLoadOnAppend = false;
-    // oxlint-disable-next-line no-underscore-dangle
-    this.contentWindow.__facetFrame = {
-      render: async (payload: unknown) => {
-        this.receivedPayloads.push(payload);
-        if (config.render !== undefined) return config.render(payload);
-        return makeRenderResult(config.viewMode, config.observed);
-      },
-    };
+    installFakeFrameApi(this, config);
   }
 }
 
@@ -519,7 +495,8 @@ describe("gallery shell startup", () => {
       observed: harness.defaultObserved,
       render: () =>
         new Promise((resolve) => {
-          releaseFirstRender = () => resolve(makeRenderResult("native", harness.defaultObserved));
+          releaseFirstRender = () =>
+            resolve(makeFakeRenderResult("native", harness.defaultObserved));
         }),
     });
     harness.pendingFrameConfigs.push({

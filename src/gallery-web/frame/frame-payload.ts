@@ -5,7 +5,22 @@
  * module exists to prevent.
  */
 
+import type { TsxExecutionMode } from "../../shared/tsx/execution";
 import type { SvgViewBox } from "./view-box";
+
+/**
+ * Payload the shell sends to the frame's direct render API. Bytes are
+ * always Uint8Array by the time this crosses that boundary — the
+ * service delivers bytes, so a string payload here is a bug to
+ * surface, not a form to accept. One definition; both the frame
+ * runtime and the shell import it instead of re-declaring.
+ */
+export interface FrameRenderPayload {
+  readonly artifactType: string;
+  readonly renderer: string;
+  readonly bytes: Uint8Array;
+  readonly execution?: TsxExecutionMode;
+}
 
 export interface FrameViewState {
   readonly zoom: number;

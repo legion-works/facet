@@ -243,7 +243,6 @@ body {
   width: 100%;
   height: 100%;
   opacity: 1;
-  transform: scale(var(--facet-zoom, 1));
 }
 
 /* ---- footer · connection left, controls right ---- */

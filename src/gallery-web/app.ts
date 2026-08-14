@@ -28,7 +28,16 @@ import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
 import type { VerdictObserved } from "../shared/contracts/validation";
 import type { ObservedCountKey } from "../shared/contracts/observed-counts";
-import { clampZoom, resetViewState, zoomAtPoint, type ViewState } from "./view-state";
+import {
+  clampZoom,
+  EMPTY_VIEW_STATE,
+  nextViewStateForKey,
+  normalizeViewState,
+  resetViewState,
+  zoomAtPoint,
+  type ViewState,
+} from "./view-state";
+import type { FrameRenderPayload } from "./frame/frame-payload";
 import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 
 // Re-exports — the gate test + sibling modules import these from `app`
@@ -247,8 +256,7 @@ export type { ViewState } from "./view-state";
 /**
  * Page-shim counts the frame reports after a render settles. The
  * direct render promise resolves with these; the shell treats any
- * non-zero error count as a failed render (parity with the channel
- * path's `render-complete` gate).
+ * non-zero error count as a failed render.
  */
 type FrameObserved = Pick<VerdictObserved, ObservedCountKey | "html" | "errorCount">;
 
@@ -270,12 +278,7 @@ export interface FrameElementHandle {
   readonly raw: unknown;
 }
 
-export interface FrameRenderPayload {
-  readonly artifactType: string;
-  readonly renderer: string;
-  readonly bytes: Uint8Array;
-  readonly execution?: TsxExecutionMode;
-}
+export type { FrameRenderPayload };
 
 /**
  * Shell-side handle over the frame's direct `RenderResult`. The frame
@@ -421,12 +424,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
         observed: frameResult.observed,
         viewMode: frameResult.viewMode,
         readViewState: () => ({ ...frameResult.readViewState() }),
-        applyViewState: (state) =>
-          frameResult.applyViewState({
-            zoom: state.zoom,
-            panX: state.panX ?? 0,
-            panY: state.panY ?? 0,
-          }),
+        applyViewState: (state) => frameResult.applyViewState(normalizeViewState(state)),
       };
       renderResult = handle;
       return handle;
@@ -963,7 +961,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       },
       current,
       event,
-      current.renderResult?.readViewState() ?? { zoom: 1, panX: 0, panY: 0 },
+      current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
     )
       .then(({ frame, result, verdict }) => {
         current = frame;
@@ -1016,43 +1014,24 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   window.addEventListener("beforeunload", shutdown, { once: true });
 
   const canvasRect = (): DOMRect => canvas.getBoundingClientRect();
+  // Shell-side listener: keyboard focus can legitimately sit in the
+  // parent document (e.g. the user tabbed to a control) rather than
+  // inside the frame, so this listener stays alongside the frame's
+  // own (frame/runtime.ts) rather than being the only one. Both route
+  // through `nextViewStateForKey` so the key-to-state mapping has one
+  // tested home.
   document.addEventListener("keydown", (event) => {
     const result = current.renderResult;
     if (!result) return;
-    const state = result.readViewState();
-    const rect = canvasRect();
-
-    if (event.key === "+" || event.key === "=") {
-      event.preventDefault();
-      const factor = Math.exp(100 * 0.001);
-      result.applyViewState(
-        zoomAtPoint(state, clampZoom(state.zoom * factor), rect.width / 2, rect.height / 2),
-      );
-    } else if (event.key === "-") {
-      event.preventDefault();
-      const factor = Math.exp(-100 * 0.001);
-      result.applyViewState(
-        zoomAtPoint(state, clampZoom(state.zoom * factor), rect.width / 2, rect.height / 2),
-      );
-    } else if (event.key === "0") {
-      event.preventDefault();
-      result.applyViewState(resetViewState(state));
-    } else if (
-      event.key === "ArrowLeft" ||
-      event.key === "ArrowRight" ||
-      event.key === "ArrowUp" ||
-      event.key === "ArrowDown"
-    ) {
-      event.preventDefault();
-      const amount = event.shiftKey ? 50 : 10;
-      const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
-      const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
-      result.applyViewState({
-        ...state,
-        panX: (state.panX ?? 0) + dx,
-        panY: (state.panY ?? 0) + dy,
-      });
-    }
+    const next = nextViewStateForKey(
+      result.readViewState(),
+      event.key,
+      event.shiftKey,
+      canvasRect(),
+    );
+    if (next === null) return;
+    event.preventDefault();
+    result.applyViewState(next);
   });
   for (const [id, delta] of [
     ["facet-zoom-in", 0.1],
@@ -1064,7 +1043,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       const state = result.readViewState();
       const rect = canvasRect();
       result.applyViewState(
-        zoomAtPoint(state, state.zoom + delta, rect.width / 2, rect.height / 2),
+        zoomAtPoint(state, clampZoom(state.zoom + delta), rect.width / 2, rect.height / 2),
       );
     });
   }
