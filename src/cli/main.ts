@@ -41,7 +41,7 @@ import { buildInstantiateRequest } from "./commands/instantiate";
 import { buildReadBackRequest } from "./commands/read-back";
 import { buildStatusRequest } from "./commands/status";
 import { collectFacetStatus } from "./commands/status";
-import { computeFacetPaths } from "../shared/config/paths";
+import { computeFacetPaths, legacyXdgEvidenceRoot } from "../shared/config/paths";
 import { readInstallToken, readLiveMetadata } from "./service-metadata";
 import { generateRequestId } from "../shared/util/time";
 import { buildPublishRequest, resolveSourceBytes } from "./commands/publish";
@@ -251,9 +251,9 @@ export async function runCli(
     parsed.verb === "status" &&
     parsed.args["artifact-id"] === undefined
   ) {
-    const paths = computeFacetPaths(
-      io.env.FACET_HOME === undefined ? {} : { facetHome: io.env.FACET_HOME },
-    );
+    const pathsEnv = io.env.FACET_HOME === undefined ? {} : { facetHome: io.env.FACET_HOME };
+    const paths = computeFacetPaths(pathsEnv);
+    const legacyEvidenceRoot = legacyXdgEvidenceRoot(pathsEnv);
     try {
       let spawnedPid: number | null = null;
       let resolved: { baseUrl: string; installToken: string } | null = null;
@@ -275,7 +275,10 @@ export async function runCli(
         writeEnvelope(io, parsed, response);
         return { code: EXIT_CODES.OK, spawnedPid };
       }
-      const data = { command: "status" as const, ...collectFacetStatus(paths) };
+      const data = {
+        command: "status" as const,
+        ...collectFacetStatus(paths, undefined, legacyEvidenceRoot),
+      };
       writeEnvelope(io, parsed, okEnvelope(generateRequestId(), data));
       return { code: EXIT_CODES.OK, spawnedPid };
     } catch (error) {

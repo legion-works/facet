@@ -8,6 +8,7 @@ import { generateRequestId } from "../../shared/util/time";
 import type { StatusRequest } from "../../shared/contracts/commands/requests";
 import { FACET_SCHEMA_VERSION } from "../../shared/contracts/envelope";
 import type { FacetRuntimePaths } from "../../shared/config/paths";
+import { evidenceBytesAcross, resolveEvidenceReadRoots } from "../../shared/config/evidence-read";
 import { readLiveMetadata } from "../service-metadata";
 
 export interface FacetStatusOptions {
@@ -71,9 +72,13 @@ function processMemory(pid: number): { rssBytes: number | null; pssBytes: number
 export function collectFacetStatus(
   paths: FacetRuntimePaths,
   options: FacetStatusOptions = {},
+  legacyEvidenceRoot: string | null = null,
 ): FacetStatus {
   const metadata = readLiveMetadata(paths);
   const memory = metadata === null ? null : processMemory(metadata.pid);
+  const evidenceBytes = evidenceBytesAcross(
+    resolveEvidenceReadRoots(paths.evidence, legacyEvidenceRoot),
+  );
   return {
     state: metadata === null ? "dormant" : "active",
     process:
@@ -86,7 +91,7 @@ export function collectFacetStatus(
             pssBytes: memory?.pssBytes ?? null,
           },
     dbBytes: directoryBytes(paths.database),
-    evidenceBytes: directoryBytes(paths.evidence),
+    evidenceBytes,
     activeLeases: options.activeLeases ?? 0,
     activeJobs: options.activeJobs ?? 0,
     browserJobs: options.browserJobs ?? 0,

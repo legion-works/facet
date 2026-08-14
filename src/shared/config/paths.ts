@@ -58,3 +58,20 @@ export function computeFacetPaths(env: FacetPathEnvironment = {}): FacetRuntimeP
     metadata: join(configHome, "facet", "metadata.json"),
   };
 }
+
+/**
+ * Legacy evidence root for XDG-default installs predating explicit
+ * evidence-root threading. Before the parent CLI passed its evidence root
+ * to the service child, the child derived its paths from
+ * `FACET_HOME = <dataHome>/facet` (see `spawnChild`) and wrote evidence to
+ * `<dataHome>/facet/evidence`, while the parent read
+ * `<stateHome>/facet/evidence`. Returns that child-derived root in XDG mode
+ * so readers can tolerate the divergence; returns null when `FACET_HOME` is
+ * set (that mode never diverged — parent and child always agreed).
+ */
+export function legacyXdgEvidenceRoot(env: FacetPathEnvironment = {}): string | null {
+  const facetHome = env.facetHome ?? process.env.FACET_HOME;
+  if (facetHome) return null;
+  const dataHome = env.xdgDataHome ?? process.env.XDG_DATA_HOME ?? FALLBACK_XDG_DATA;
+  return join(dataHome, "facet", "evidence");
+}

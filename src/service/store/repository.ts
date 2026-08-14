@@ -98,6 +98,12 @@ interface RepositoryOptions {
    * never write evidence files).
    */
   readonly evidenceRoot?: string;
+  /**
+   * Legacy evidence root (pre explicit-threading child-derived root). Read
+   * only — never written by retention. The export path consults it as a
+   * tolerant fallback for old evidence.
+   */
+  readonly legacyEvidenceRoot?: string;
 }
 
 interface ListArtifactsInput {
@@ -191,6 +197,10 @@ export class ArtifactRepository {
 
   getEvidenceRoot(): string | undefined {
     return this.options.evidenceRoot;
+  }
+
+  getLegacyEvidenceRoot(): string | undefined {
+    return this.options.legacyEvidenceRoot;
   }
 
   createProject(input: ProjectInput): Project {

@@ -98,6 +98,45 @@ const DEFAULT_POLL_INTERVAL_MS = 25;
 const inflight = new Map<string, Promise<ResolvedService>>();
 
 /**
+ * Build the service child's argv. Extracted from `spawnChild` so the
+ * parent/child path-agreement contract is unit-testable without a real
+ * spawn: every per-path override the parent passes on the command line
+ * (db, tokens, lock, evidence) must be present and equal the parent's
+ * `paths` so a future change to `computeFacetPaths` cannot desync them.
+ */
+export function buildServiceSpawnArgs(
+  paths: FacetRuntimePaths,
+  options: {
+    readonly entrypoint: string;
+    readonly tier0RunnerPath: string;
+    readonly tier1RunnerPath: string;
+    readonly idleTimeoutMs?: number;
+  },
+): string[] {
+  const args = [
+    options.entrypoint,
+    "--db-path",
+    paths.database,
+    "--install-token-path",
+    paths.token.replace(/promote\.token$/, "install.token"),
+    "--promote-token-path",
+    paths.token,
+    "--lock-path",
+    paths.lock,
+    "--evidence-path",
+    paths.evidence,
+    "--tier0-runner-path",
+    options.tier0RunnerPath,
+    "--tier1-runner-path",
+    options.tier1RunnerPath,
+  ];
+  if (options.idleTimeoutMs !== undefined) {
+    args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
+  }
+  return args;
+}
+
+/**
  * Spawn the service as a detached child. The child inherits
  * `FACET_HOME` so its paths match the parent's; the parent passes
  * the same paths on the command line so a future change to
@@ -125,27 +164,15 @@ function spawnChild(
   // recompute paths from FACET_HOME; this keeps parent + child
   // identical even when an operator sets XDG_* vars.
   const tier1RunnerPath = options.tier1RunnerPath ?? resolveDefaultTier1RunnerPath();
-  const args = [
+  const args = buildServiceSpawnArgs(paths, {
     entrypoint,
-    "--db-path",
-    paths.database,
-    "--install-token-path",
-    paths.token.replace(/promote\.token$/, "install.token"),
-    "--promote-token-path",
-    paths.token,
-    "--lock-path",
-    paths.lock,
-    "--tier0-runner-path",
     tier0RunnerPath,
-    "--tier1-runner-path",
     tier1RunnerPath,
-  ];
+    ...(options.idleTimeoutMs !== undefined ? { idleTimeoutMs: options.idleTimeoutMs } : {}),
+  });
   const insecureBoot =
     ["1", "2", "3"].includes(options.env.FACET_INSECURE ?? "") ||
     options.env.FACET_INSECURE_AUTO === "1";
-  if (options.idleTimeoutMs !== undefined) {
-    args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
-  }
   const stderr = insecureBoot ? "inherit" : "ignore";
   onSpawn?.(args, stderr);
   return spawn(bunPath, args, {
