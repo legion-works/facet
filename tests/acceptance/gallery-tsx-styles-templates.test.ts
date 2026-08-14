@@ -7,7 +7,7 @@ import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
-import { galleryBrowser, nestedArtifactWorld, type GalleryTarget } from "../helpers/gallery-live";
+import { artifactWorld, galleryBrowser, type GalleryTarget } from "../helpers/gallery-live";
 
 const INTERACTIVE_TEMPLATE = readFileSync(
   join(import.meta.dir, "../../templates/tsx-interactive-counter.tsx"),
@@ -17,8 +17,6 @@ const STATUS_TEMPLATE = readFileSync(
   join(import.meta.dir, "../../templates/tsx-status-report.tsx"),
   "utf8",
 );
-
-const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
 
 async function publishAndOpen(
   client: FacetClient,
@@ -76,39 +74,37 @@ async function publishAndOpen(
   });
 }
 
-test.skipIf(!liveGateEnabled)(
-  "TSX starters reach the vendored HTML style vocabulary",
-  async () => {
-    const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-styles-template-"));
-    const tier0Runner = createTier0RunnerForTests(0, {});
-    const service = await startFacetService({
-      dbPath: join(envDir, "facet.sqlite"),
-      installTokenPath: join(envDir, "install.token"),
-      promoteTokenPath: join(envDir, "promote.token"),
-      lockPath: join(envDir, "facet.lock"),
-      idleTimeoutMs: 30_000,
-      logger: createQuietLogger({ component: "gallery-tsx-styles-template" }),
-      tier0Runner,
-    });
-    const browser = galleryBrowser();
-    let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
-    try {
-      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+test("TSX starters reach the vendored HTML style vocabulary", async () => {
+  const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-styles-template-"));
+  const tier0Runner = createTier0RunnerForTests(0, {});
+  const service = await startFacetService({
+    dbPath: join(envDir, "facet.sqlite"),
+    installTokenPath: join(envDir, "install.token"),
+    promoteTokenPath: join(envDir, "promote.token"),
+    lockPath: join(envDir, "facet.lock"),
+    idleTimeoutMs: 30_000,
+    logger: createQuietLogger({ component: "gallery-tsx-styles-template" }),
+    tier0Runner,
+  });
+  const browser = galleryBrowser();
+  let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
+  try {
+    const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
 
-      target = await browser.launch();
-      await publishAndOpen(
-        client,
-        target,
-        "tsx",
-        INTERACTIVE_TEMPLATE,
-        "interactive",
-        `gallery-tsx-styles-template-interactive-${Date.now()}`,
-      );
-      const interactiveWorld = await nestedArtifactWorld(target);
-      const interactiveProbe = (await target.session.send("Runtime.evaluate", {
-        contextId: interactiveWorld,
-        returnByValue: true,
-        expression: `(() => {
+    target = await browser.launch();
+    await publishAndOpen(
+      client,
+      target,
+      "tsx",
+      INTERACTIVE_TEMPLATE,
+      "interactive",
+      `gallery-tsx-styles-template-interactive-${Date.now()}`,
+    );
+    const interactiveWorld = await artifactWorld(target);
+    const interactiveProbe = (await target.session.send("Runtime.evaluate", {
+      contextId: interactiveWorld,
+      returnByValue: true,
+      expression: `(() => {
           const button = document.querySelector('button');
           const heading = document.querySelector('h1');
           if (button === null || heading === null) {
@@ -121,40 +117,40 @@ test.skipIf(!liveGateEnabled)(
             headingColor: getComputedStyle(heading).color,
           };
         })()`,
-      })) as {
-        result?: {
-          value?: {
-            buttonBackground: string;
-            buttonBorderRadius: string;
-            buttonPaddingLeft: string;
-            headingColor: string;
-          };
+    })) as {
+      result?: {
+        value?: {
+          buttonBackground: string;
+          buttonBorderRadius: string;
+          buttonPaddingLeft: string;
+          headingColor: string;
         };
       };
-      const interactive = interactiveProbe.result?.value;
-      expect(interactive).toBeDefined();
-      // Without the vocabulary pass, the button is a UA-default <button>
-      // — transparent, square corners, and the 6px UA default padding.
-      // A restart against the vendored daisyUI/Tailwind vocabulary
-      // shows non-transparent background, non-zero border-radius, and
-      // padding-left that exceeds the UA default.
-      expect(interactive?.buttonBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
-      expect(interactive?.buttonBorderRadius).not.toBe("0px");
-      expect(interactive?.buttonPaddingLeft).not.toBe("6px");
+    };
+    const interactive = interactiveProbe.result?.value;
+    expect(interactive).toBeDefined();
+    // Without the vocabulary pass, the button is a UA-default <button>
+    // — transparent, square corners, and the 6px UA default padding.
+    // A restart against the vendored daisyUI/Tailwind vocabulary
+    // shows non-transparent background, non-zero border-radius, and
+    // padding-left that exceeds the UA default.
+    expect(interactive?.buttonBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
+    expect(interactive?.buttonBorderRadius).not.toBe("0px");
+    expect(interactive?.buttonPaddingLeft).not.toBe("6px");
 
-      await publishAndOpen(
-        client,
-        target,
-        "tsx",
-        STATUS_TEMPLATE,
-        "static",
-        `gallery-tsx-styles-template-static-${Date.now()}`,
-      );
-      const staticWorld = await nestedArtifactWorld(target);
-      const staticProbe = (await target.session.send("Runtime.evaluate", {
-        contextId: staticWorld,
-        returnByValue: true,
-        expression: `(() => {
+    await publishAndOpen(
+      client,
+      target,
+      "tsx",
+      STATUS_TEMPLATE,
+      "static",
+      `gallery-tsx-styles-template-static-${Date.now()}`,
+    );
+    const staticWorld = await artifactWorld(target);
+    const staticProbe = (await target.session.send("Runtime.evaluate", {
+      contextId: staticWorld,
+      returnByValue: true,
+      expression: `(() => {
           const heading = document.querySelector('h1');
           if (heading === null) throw new Error('static TSX starter structure missing');
           return {
@@ -162,27 +158,17 @@ test.skipIf(!liveGateEnabled)(
             headingColor: getComputedStyle(heading).color,
           };
         })()`,
-      })) as { result?: { value?: { headingFontWeight: string; headingColor: string } } };
-      const staticValue = staticProbe.result?.value;
-      expect(staticValue).toBeDefined();
-      // UA default <h1> is 400 weight and black. The vocabulary-backed
-      // template renders with a styled font-weight + Legion color.
-      expect(Number.parseInt(staticValue?.headingFontWeight ?? "0", 10)).toBeGreaterThanOrEqual(
-        500,
-      );
-      expect(staticValue?.headingColor).not.toBe("rgb(0, 0, 0)");
-    } finally {
-      await target?.close();
-      await service.stop();
-      tier0Runner.close?.();
-      rmSync(envDir, { recursive: true, force: true });
-    }
-  },
-  90_000,
-);
-
-if (!liveGateEnabled) {
-  console.warn(
-    "SKIP gallery-tsx-styles-templates.test.ts: set FACET_LIVE_GALLERY=1 to run the live browser gate",
-  );
-}
+    })) as { result?: { value?: { headingFontWeight: string; headingColor: string } } };
+    const staticValue = staticProbe.result?.value;
+    expect(staticValue).toBeDefined();
+    // UA default <h1> is 400 weight and black. The vocabulary-backed
+    // template renders with a styled font-weight + Legion color.
+    expect(Number.parseInt(staticValue?.headingFontWeight ?? "0", 10)).toBeGreaterThanOrEqual(500);
+    expect(staticValue?.headingColor).not.toBe("rgb(0, 0, 0)");
+  } finally {
+    await target?.close();
+    await service.stop();
+    tier0Runner.close?.();
+    rmSync(envDir, { recursive: true, force: true });
+  }
+}, 90_000);

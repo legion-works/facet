@@ -5,7 +5,7 @@
  * + status line, zoom/reset/fullscreen controls, the iframe canvas,
  * a terse error badge. ONE active-artifact view (no sidebar, no list).
  * The shell transforms the iframe ELEMENT for zoom/pan; fine pan/zoom
- * commands to the artifact cross ONLY the private control port.
+ * lands on the frame's render-result view-state handle (same-origin call).
  *
  * Pure helpers live in sibling modules (`frame-html.ts`, `swap.ts`,
  * `frame/bootstrap.ts`) so the security invariants are testable
@@ -16,51 +16,37 @@
  * code runs — DNS-rebinding defense at the trust boundary, not after.
  *
  * Swap model (double-buffered HMR): the new frame is built OFF-SCREEN,
- * the shell waits for its `boot-ready`, transfers the artifact bytes
- * ONCE over the one-shot ingress, waits for `render-complete`, and
- * only then swaps visibility, applies the preserved view state, closes
- * the old control port, and removes the old frame. A failed new frame
- * keeps the last-good frame visible and surfaces an error badge.
+ * the shell awaits the iframe `load` event, calls the frame's direct
+ * `__facetFrame.render(payload)` promise, and only then swaps
+ * visibility, transfers the preserved view state, and removes the old
+ * frame last. A failed new frame keeps the last-good frame visible and
+ * surfaces an error badge.
  */
 
-import {
-  assertLoopbackHostname,
-  buildFrameAttributes,
-  newFrameNonce,
-  type FrameAttributes,
-} from "./frame-html";
-import { createChannelPair } from "./frame/channels";
+import { assertLoopbackHostname, buildFrameAttributes, type FrameAttributes } from "./frame-html";
 import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
-import type { HtmlStructureCounts, VerdictObserved } from "../shared/contracts/validation";
+import type { VerdictObserved } from "../shared/contracts/validation";
+import type { ObservedCountKey } from "../shared/contracts/observed-counts";
 import {
-  HTML_OBSERVED_COUNT_KEYS,
-  OBSERVED_COUNT_KEYS,
-  type ObservedCountKey,
-} from "../shared/contracts/observed-counts";
-import {
-  clampCssPan,
-  clampNativeSvgPan,
   clampZoom,
+  EMPTY_VIEW_STATE,
+  nextViewStateForKey,
+  normalizeViewState,
   resetViewState,
-  validateViewIntent,
-  validateViewMode,
   zoomAtPoint,
-  type ViewIntent,
-  type ViewMode,
   type ViewState,
 } from "./view-state";
+import type { FrameRenderPayload } from "./frame/frame-payload";
 import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
 export {
-  FROZEN_CSP_TEMPLATE,
   assertLoopbackHostname,
   buildFrameAttributes,
   buildFrameDocument,
   isLoopbackHostname,
-  newFrameNonce,
   type FrameAttributes,
 } from "./frame-html";
 export { planSwap, type SwapPlanStep } from "./swap";
@@ -261,81 +247,25 @@ export const SHELL_EXPORTS = [
  */
 export interface ShellDom {
   readonly document: Document;
-  readonly MessageChannel: new () => { port1: MessagePort; port2: MessagePort };
   readonly hostname: string;
-  readonly window: { postMessage?: unknown };
 }
 
 /** View state the shell preserves across a swap. */
-export type { ViewIntent, ViewState } from "./view-state";
+export type { ViewState } from "./view-state";
 
 /**
- * Control-port events the frame emits to the shell. The frame's
- * page-shim counts ride `render-complete.observed`.
+ * Page-shim counts the frame reports after a render settles. The
+ * direct render promise resolves with these; the shell treats any
+ * non-zero error count as a failed render.
  */
 type FrameObserved = Pick<VerdictObserved, ObservedCountKey | "html" | "errorCount">;
-
-export interface FrameControlEvent {
-  readonly type: string;
-  readonly mode?: string;
-  readonly observed?: FrameObserved;
-}
-
-function finite(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function validateFiniteCounts<Key extends string>(
-  value: Record<string, unknown>,
-  keys: readonly Key[],
-): Record<Key, number> | null {
-  const counts = Object.fromEntries(keys.map((key) => [key, value[key]]));
-  return Object.values(counts).every(finite) ? (counts as Record<Key, number>) : null;
-}
-
-function validateHtmlObserved(value: unknown): HtmlStructureCounts | null {
-  if (value === null || typeof value !== "object") return null;
-  const html = value as Record<string, unknown>;
-  if (Object.keys(html).length !== HTML_OBSERVED_COUNT_KEYS.length) return null;
-  return validateFiniteCounts(html, HTML_OBSERVED_COUNT_KEYS) as HtmlStructureCounts | null;
-}
-
-function validateObserved(value: unknown): FrameObserved | null {
-  if (value === null || typeof value !== "object") return null;
-  const observed = value as Record<string, unknown>;
-  const allowedKeyCount = OBSERVED_COUNT_KEYS.length + 1 + (observed.html === undefined ? 0 : 1);
-  if (Object.keys(observed).length !== allowedKeyCount) return null;
-  const counts = validateFiniteCounts(observed, OBSERVED_COUNT_KEYS);
-  if (counts === null || !finite(observed.errorCount)) return null;
-  if (observed.html === undefined) return { ...counts, errorCount: observed.errorCount };
-  const html = validateHtmlObserved(observed.html);
-  return html === null ? null : { ...counts, errorCount: observed.errorCount, html };
-}
-
-function validateFrameControlEvent(value: unknown): FrameControlEvent | null {
-  if (value === null || typeof value !== "object") return null;
-  const event = value as Record<string, unknown>;
-  if (typeof event.type !== "string" || "kind" in event) return null;
-  if (event.type === "view-intent") return validateViewIntent(event);
-  if (event.type === "view-mode") {
-    const mode = validateViewMode(event);
-    return mode === null ? null : { type: "view-mode", mode };
-  }
-  if (event.type === "boot-ready")
-    return Object.keys(event).length === 1 ? { type: event.type } : null;
-  if (event.type !== "render-complete" || Object.keys(event).length !== 2) return null;
-  const observed = validateObserved(event.observed);
-  return observed === null ? null : { type: event.type, observed };
-}
 
 export interface CreateArtifactFrameOptions {
   readonly artifactType: string;
   /** Legacy direct callers omit this; revision source fetches always make it explicit. */
   readonly renderer?: string;
-  readonly bootstrapUrl: string;
   readonly frameUrl?: string;
   readonly dom: ShellDom;
-  readonly nonce?: string;
 }
 
 /**
@@ -348,35 +278,52 @@ export interface FrameElementHandle {
   readonly raw: unknown;
 }
 
+export type { FrameRenderPayload };
+
+/**
+ * Shell-side handle over the frame's direct `RenderResult`. The frame
+ * promise resolves with these after the render settles; the handle
+ * keeps the view-state surface callable for the frame's lifetime.
+ */
+export interface FrameRenderResultHandle {
+  /** Post-settlement page-shim counts reported by the frame's render. */
+  readonly observed: FrameObserved;
+  /** The view mode the render selected (native SVG vs shell CSS fallback). */
+  readonly viewMode: "native" | "css";
+  /** The frame's last-applied view state (its own zoom/pan). */
+  readonly readViewState: () => ViewState;
+  /** Apply the shell's preserved view state inside the frame (same-origin). */
+  readonly applyViewState: (state: ViewState) => void;
+}
+
 export interface CreatedArtifactFrame {
   readonly frameId: string;
-  /** CSP nonce carried by the frame document and its nested TSX srcdoc. */
-  readonly nonce: string;
-  /** Separate secret that authenticates the shell → frame port transfer. */
-  readonly handshakeNonce: string;
   readonly attrs: FrameAttributes;
-  /** Caller transfers these into the iframe via postMessage. */
-  readonly frameIngressPort: MessagePort;
-  readonly frameControlPort: MessagePort;
-  /** Shell-side control surface. */
-  readonly deliverSource: (payload: unknown) => void;
-  readonly sendControl: (payload: unknown) => void;
-  readonly closeControl: () => void;
-  /** Control-port RECEIVE path (frame → shell). Returns an unsubscribe. */
-  readonly onControlEvent: (handler: (event: FrameControlEvent) => void) => () => void;
-  /**
-   * Resolve with the next control event of the given type, or null on
-   * timeout. This is the async boot-ready / render-complete wait.
-   */
-  readonly awaitControlEvent: (
-    type: string,
-    timeoutMs: number,
-  ) => Promise<FrameControlEvent | null>;
   /**
    * Element wired with the attributes above. The caller mounts it via
    * a FrameHost. Kept abstract so the test gate can stub.
    */
   readonly element: FrameElementHandle;
+  /**
+   * Resolve true once the iframe `load` event has fired (the runtime
+   * module executed and installed `__facetFrame`), or false on
+   * timeout. The listener is armed at creation, BEFORE any mount — a
+   * detached iframe never loads, so arming inside a mount callback
+   * would deadlock on an event that can only fire after mount.
+   */
+  readonly awaitLoad: (timeoutMs: number) => Promise<boolean>;
+  /**
+   * Invoke the frame's direct render API with the exact revision
+   * payload. Resolves with a handle over the frame-side RenderResult,
+   * or rejects on timeout / missing API / frame-side render failure.
+   * Only meaningful after `awaitLoad` resolved.
+   */
+  readonly render: (
+    payload: FrameRenderPayload,
+    timeoutMs: number,
+  ) => Promise<FrameRenderResultHandle>;
+  /** Handle from the last successful render (null before the first). */
+  readonly renderResult: FrameRenderResultHandle | null;
 }
 
 /**
@@ -391,95 +338,99 @@ export interface FrameHost {
   setVisibility(frameId: string, visible: boolean): void;
   /** Remove the frame element from the document. */
   unmount(frameId: string): void;
-  /** Apply the preserved view state transform to the frame element. */
-  applyViewState(frameId: string, viewState: ViewState): void;
   /** Terse error badge — failed swaps keep the last-good frame. */
   showErrorBadge(message: string): void;
 }
 
 /**
- * Create a fresh artifact frame: build the loopback document URL, mint a per-frame
- * nonce, open two MessageChannels, hold port1 of each. The returned
- * `frameIngressPort` + `frameControlPort` MUST be transferred into the
- * frame via `frame.contentWindow.postMessage({facetHandshake: "ports",
- * handshakeNonce}, targetOrigin, ports)` AFTER the iframe's `load` event fires.
+ * Create a fresh artifact frame: build the loopback document URL and
+ * an ordinary same-origin iframe element. The load listener is armed
+ * HERE (before any mount); the frame's direct render API is invoked
+ * through the returned `render` handle once `awaitLoad` resolves.
  */
 export function createArtifactFrame(options: CreateArtifactFrameOptions): CreatedArtifactFrame {
   const dom = options.dom;
   // DNS-rebinding guard — fires BEFORE the iframe is appended or any
   // capability code runs.
   assertLoopbackHostname(dom.hostname);
-  const nonce = options.nonce ?? newFrameNonce();
-  const handshakeNonce = newFrameNonce();
   const frameUrl = new URL(options.frameUrl ?? "/gallery/frame", `http://${dom.hostname}`);
-  frameUrl.searchParams.set("nonce", nonce);
-  frameUrl.searchParams.set("handshake", handshakeNonce);
   frameUrl.searchParams.set("type", options.artifactType);
   frameUrl.searchParams.set("renderer", options.renderer ?? "svg");
   const attrs = buildFrameAttributes(frameUrl.toString());
-  const channels = createChannelPair({ messageChannelCtor: dom.MessageChannel });
   const element = dom.document.createElement("iframe");
-  element.setAttribute("sandbox", attrs.sandbox);
   element.setAttribute("referrerpolicy", attrs.referrerpolicy);
   element.setAttribute("allow", attrs.allow);
   element.setAttribute("title", attrs.title);
   element.setAttribute("src", attrs.src);
   const frameId = `frame-${crypto.randomUUID()}`;
+  const raw = element as HTMLIFrameElement;
 
-  // Control-port RECEIVE path. MessagePort.onmessage setter form with
-  // a handler registry: one port listener, many subscribers.
-  const controlHandlers = new Set<(event: FrameControlEvent) => void>();
-  // oxlint-disable-next-line unicorn/prefer-add-event-listener
-  channels.controlPort.onmessage = (event: MessageEvent) => {
-    const data = validateFrameControlEvent(event.data);
-    if (data === null) return;
-    // Spread snapshots the handler set so a handler that unsubscribes
-    // itself mid-dispatch does not skip the remaining peers.
-    // oxlint-disable-next-line unicorn/no-useless-spread
-    for (const handler of [...controlHandlers]) handler(data);
-  };
+  let loaded = false;
+  const loadWaiters: ((isLoaded: boolean) => void)[] = [];
+  // Armed BEFORE any mount: the load event can only fire once the
+  // element is in the document, and rendering before the runtime
+  // bundle executes would race the __facetFrame install (the old
+  // boot flake reborn).
+  raw.addEventListener(
+    "load",
+    () => {
+      loaded = true;
+      for (const waiter of loadWaiters) waiter(true);
+      loadWaiters.length = 0;
+    },
+    { once: true },
+  );
+
+  let renderResult: FrameRenderResultHandle | null = null;
 
   return {
     frameId,
-    nonce,
-    handshakeNonce,
     attrs,
-    frameIngressPort: channels.frameIngressPort,
-    frameControlPort: channels.frameControlPort,
-    deliverSource: channels.deliverSource,
-    sendControl: channels.sendControl,
-    closeControl: channels.closeControl,
-    onControlEvent(handler) {
-      controlHandlers.add(handler);
-      return () => {
-        controlHandlers.delete(handler);
-      };
-    },
-    awaitControlEvent(type, timeoutMs) {
-      return new Promise<FrameControlEvent | null>((resolve) => {
-        let unsubscribe: (() => void) | null = null;
-        const timer = setTimeout(() => {
-          unsubscribe?.();
-          resolve(null);
-        }, timeoutMs);
-        unsubscribe = ((handler: (event: FrameControlEvent) => void) => {
-          controlHandlers.add(handler);
-          return () => {
-            controlHandlers.delete(handler);
-          };
-        })((event) => {
-          if (event.type !== type) return;
-          clearTimeout(timer);
-          unsubscribe?.();
-          resolve(event);
-        });
-      });
-    },
     element: {
       setAttribute(name: string, value: string): void {
         element.setAttribute(name, value);
       },
       raw: element,
+    },
+    awaitLoad(timeoutMs) {
+      if (loaded) return Promise.resolve(true);
+      return new Promise<boolean>((resolve) => {
+        const waiter = (isLoaded: boolean): void => {
+          clearTimeout(timer);
+          resolve(isLoaded);
+        };
+        const timer = setTimeout(() => {
+          const index = loadWaiters.indexOf(waiter);
+          if (index >= 0) loadWaiters.splice(index, 1);
+          resolve(false);
+        }, timeoutMs);
+        loadWaiters.push(waiter);
+      });
+    },
+    async render(payload, timeoutMs) {
+      // oxlint-disable-next-line no-underscore-dangle
+      const api = raw.contentWindow?.__facetFrame;
+      if (api === null || api === undefined || typeof api.render !== "function") {
+        throw new Error("frame render API unavailable");
+      }
+      // The frame-side promise is the render authority; the timer only
+      // bounds a never-settling render (a dead runtime bundle).
+      const frameResult = await withTimeout(
+        Promise.resolve(api.render(payload)),
+        timeoutMs,
+        "frame render timed out",
+      );
+      const handle: FrameRenderResultHandle = {
+        observed: frameResult.observed,
+        viewMode: frameResult.viewMode,
+        readViewState: () => ({ ...frameResult.readViewState() }),
+        applyViewState: (state) => frameResult.applyViewState(normalizeViewState(state)),
+      };
+      renderResult = handle;
+      return handle;
+    },
+    get renderResult(): FrameRenderResultHandle | null {
+      return renderResult;
     },
   };
 }
@@ -490,9 +441,9 @@ export interface ReplaceArtifactFrameOptions {
   readonly dom: ShellDom;
   readonly host: FrameHost;
   readonly viewState: ViewState;
-  /** Artifact payload transferred to the new frame exactly once. */
-  readonly source?: unknown;
-  /** Per-barrier wait window (boot-ready, then render-complete). */
+  /** Artifact payload rendered by the new frame exactly once. */
+  readonly source?: FrameRenderPayload;
+  /** Per-barrier wait window (load, then render). */
   readonly readyTimeoutMs?: number;
   readonly onProgress?: (state: "ready" | "complete") => void;
 }
@@ -504,28 +455,31 @@ export interface ReplaceArtifactFrameResult {
 
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
 
-function observedErrorCount(event: FrameControlEvent): number {
-  const count = event.observed?.errorCount;
-  return typeof count === "number" ? count : 0;
-}
-
-function viewStateMessage(state: ViewState): {
-  readonly type: "view-state";
-  readonly zoom: number;
-  readonly panX: number;
-  readonly panY: number;
-} {
-  return { type: "view-state", zoom: state.zoom, panX: state.panX ?? 0, panY: state.panY ?? 0 };
+/** Bound an already-started promise with a wall-clock timeout. */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /**
  * Execute a double-buffered HMR swap against the real DOM. Ordering
- * invariant: the new frame is built off-screen, reaches boot-ready +
- * render-complete, and only THEN swaps in — the old frame is removed
- * last. View state is preserved across the swap. If the new frame
- * fails to reach a clean render-complete within the wait window, the
- * old frame stays visible with an error badge and the failed new
- * frame's channels + element are torn down.
+ * invariant: the new frame is built off-screen, loads, renders through
+ * the direct frame API, and only THEN swaps in — the old frame is
+ * removed last. View state is preserved across the swap. If the new
+ * frame fails to load or render within the wait window, the old frame
+ * stays visible with an error badge and the failed new frame's element
+ * is torn down.
  */
 export async function replaceArtifactFrame(
   options: ReplaceArtifactFrameOptions,
@@ -539,16 +493,13 @@ export async function replaceArtifactFrame(
     viewState,
   });
   const executed: SwapPlanStep["name"][] = [];
-  // The plan's step list executes against the real DOM through these
-  // runners; the async boot-ready/render-complete barrier runs between
-  // `open-new-control` and `new-frame-ready`.
+  let renderResult: FrameRenderResultHandle | null = null;
   const runners: Record<SwapPlanStep["name"], () => void> = {
     "build-new": () => host.mountOffScreen(next.frameId, next.element.raw),
-    "open-new-control": () => {
-      // The control channel opens at frame creation and stays open
-      // across the swap; nothing to do here.
+    "load-new": () => {
+      // Awaited below; this step records the barrier passed.
     },
-    "new-frame-ready": () => {
+    "render-new": () => {
       // Awaited below; this step records the barrier passed.
     },
     swap: () => {
@@ -556,43 +507,54 @@ export async function replaceArtifactFrame(
       host.setVisibility(current.frameId, false);
     },
     "apply-view-state": () => {
-      next.sendControl(viewStateMessage(viewState));
-      host.applyViewState(next.frameId, viewState);
+      renderResult!.applyViewState(viewState);
     },
-    "close-old-control": () => current.closeControl(),
-    "remove-old": () => host.unmount(current.frameId),
+    "remove-old": () => {
+      host.unmount(current.frameId);
+    },
   };
   const runStep = (step: SwapPlanStep): void => {
     runners[step.name]();
     executed.push(step.name);
   };
 
-  // build-new + open-new-control run BEFORE the barrier: the iframe
-  // must be mounted off-screen to load and boot.
-  for (const step of plan.slice(0, 2)) runStep(step);
+  // build-new + load-new run before the render barrier: the iframe
+  // must be mounted off-screen to load. The load listener was armed at
+  // frame creation, so the detached-iframe deadlock cannot occur.
+  runStep(plan[0]!);
+  runStep(plan[1]!);
+  const loaded = await next.awaitLoad(readyTimeoutMs);
 
-  // Async boot-ready WAIT before the swap.
-  const bootReady = await next.awaitControlEvent("boot-ready", readyTimeoutMs);
-  let renderComplete: FrameControlEvent | null = null;
-  if (bootReady !== null) {
-    options.onProgress?.("ready");
-    if (options.source !== undefined) next.deliverSource(options.source);
-    renderComplete = await next.awaitControlEvent("render-complete", readyTimeoutMs);
+  runStep(plan[2]!);
+  if (loaded) {
+    try {
+      if (options.source !== undefined) {
+        const result = await next.render(options.source, readyTimeoutMs);
+        if (result.observed.errorCount === 0) renderResult = result;
+      }
+    } catch {
+      renderResult = null;
+    }
   }
-  const ready =
-    bootReady !== null && renderComplete !== null && observedErrorCount(renderComplete) === 0;
 
-  if (!ready) {
+  if (renderResult === null) {
     // Failed new frame: keep the last-good frame visible, surface the
-    // badge, and tear the failed frame down (channels + element).
+    // badge, and tear the failed frame's element down.
     host.showErrorBadge("new revision failed to render; keeping last good revision");
-    next.closeControl();
     host.unmount(next.frameId);
     return { executedSteps: executed, failedNewFrameReady: true };
   }
 
-  // new-frame-ready → … → remove-old: the rest of the plan, in order.
-  for (const step of plan.slice(2)) runStep(step);
+  // Render succeeded: swap → apply-view-state → remove-old, in order.
+  // The viewState passed in options is the caller's preserved state
+  // (read from the current frame before the swap started).
+  options.onProgress?.("ready");
+  // Yield one microtask so the 80% progress state flushes before the
+  // swap applies — the swap steps below are synchronous, and a caller
+  // (or the perf instrumentation) that keys on the bar width must be
+  // able to observe the barrier passing.
+  await Promise.resolve();
+  for (const step of plan.slice(3)) runStep(step);
   options.onProgress?.("complete");
   return { executedSteps: executed, failedNewFrameReady: false };
 }
@@ -608,18 +570,11 @@ export interface RevisionFetchResult {
 export interface SwapToRevisionDeps {
   readonly dom: ShellDom;
   readonly host: FrameHost;
-  readonly bootstrapUrl: string;
   readonly frameUrl?: string;
   /** Fetch the exact revision bytes the SSE event named. */
   readonly fetchRevision: (artifactId: string, revisionSha: string) => Promise<RevisionFetchResult>;
   readonly readyTimeoutMs?: number;
   readonly onProgress?: (state: "ready" | "complete") => void;
-  /**
-   * Called with the fresh frame BEFORE the swap runs — production
-   * uses it to transfer the port ends into the iframe once the load
-   * event fires; tests use it to play the frame side.
-   */
-  readonly onFrameCreated?: (frame: CreatedArtifactFrame) => void;
 }
 
 export interface RevisionEvent {
@@ -629,11 +584,11 @@ export interface RevisionEvent {
 
 /**
  * publish→visible, one revision at a time: fetch the exact revision
- * the committed event named, build a FRESH opaque frame for it, and
+ * the committed event named, build a fresh frame for it, and
  * run the double-buffered swap. The returned frame becomes `current`
- * for the next revision. Bytes cross the ingress exactly once; every
- * revision gets its own nonce, srcdoc, and channels — no artifact-JS
- * carryover between revisions.
+ * for the next revision. Bytes enter the frame exactly once through
+ * the direct render call; every revision gets its own document — no
+ * artifact-JS carryover between revisions.
  */
 export async function swapToRevision(
   deps: SwapToRevisionDeps,
@@ -649,11 +604,9 @@ export async function swapToRevision(
   const next = createArtifactFrame({
     artifactType: revision.artifactType,
     renderer: revision.renderer,
-    bootstrapUrl: deps.bootstrapUrl,
     dom: deps.dom,
     ...(deps.frameUrl === undefined ? {} : { frameUrl: deps.frameUrl }),
   });
-  deps.onFrameCreated?.(next);
   const result = await replaceArtifactFrame({
     current,
     next,
@@ -842,30 +795,52 @@ function setSwapBar(
   }
 }
 
-function armFrameLoad(
-  frame: CreatedArtifactFrame,
-  mount: (frame: CreatedArtifactFrame) => void,
-): Promise<FrameControlEvent | null> {
-  const element = frame.element.raw as HTMLIFrameElement;
-  return new Promise((resolve) => {
-    element.addEventListener(
-      "load",
-      () => {
-        element.contentWindow?.postMessage(
-          { facetHandshake: "ports", nonce: frame.handshakeNonce },
-          "*",
-          [frame.frameIngressPort, frame.frameControlPort],
-        );
-        void frame.awaitControlEvent("boot-ready", DEFAULT_READY_TIMEOUT_MS).then(resolve);
-      },
-      { once: true },
-    );
-    // Mount AFTER the listener is armed: a detached iframe never loads, so
-    // mounting inside the load handler deadlocks on an event that can only
-    // fire once mounted. The swap path (`planSwap` build-new) orders it the
-    // same way.
-    mount(frame);
-  });
+export interface SerializedSwapQueue<T> {
+  /** Latest-wins enqueue: an in-flight swap absorbs newer events; intermediates are skipped. */
+  readonly enqueue: (event: T) => void;
+  /** Resolve when no swap is in flight and nothing is queued. */
+  readonly settle: () => Promise<void>;
+}
+
+/**
+ * Serialize revision swaps: at most one swap runs at a time; a commit
+ * that lands mid-swap is queued latest-wins. Two concurrent swaps
+ * would leave two visible frames and a leaked document realm.
+ */
+export function createSerializedSwapQueue<T>(
+  run: (event: T) => Promise<void>,
+): SerializedSwapQueue<T> {
+  let inFlight: Promise<void> | null = null;
+  let pending: T | null = null;
+  let tail: Promise<void> = Promise.resolve();
+
+  const drain = async (): Promise<void> => {
+    while (pending !== null) {
+      const event = pending;
+      pending = null;
+      inFlight = run(event);
+      try {
+        await inFlight;
+      } catch {
+        // swapToRevision failures are handled by the caller's run
+        // wrapper; a throw here must not strand a queued revision.
+      } finally {
+        inFlight = null;
+      }
+    }
+  };
+
+  return {
+    enqueue(event: T): void {
+      pending = event;
+      if (inFlight === null) {
+        tail = drain().catch(() => undefined);
+      }
+    },
+    settle(): Promise<void> {
+      return tail;
+    },
+  };
 }
 
 export interface GalleryRuntime {
@@ -873,16 +848,15 @@ export interface GalleryRuntime {
   readonly document: Document;
   readonly history: History;
   readonly HTMLElement: typeof HTMLElement;
-  readonly MessageChannel: typeof MessageChannel;
   readonly fetch: typeof fetch;
 }
 
 function browserGalleryRuntime(): GalleryRuntime {
-  return { window, document, history, HTMLElement, MessageChannel, fetch };
+  return { window, document, history, HTMLElement, fetch };
 }
 
 export async function startGallery(runtime = browserGalleryRuntime()): Promise<void> {
-  const { window, document, history, HTMLElement, MessageChannel, fetch } = runtime;
+  const { window, document, history, HTMLElement, fetch } = runtime;
   const updateGalleryStatus = (status: string): void => setGalleryStatus(document, status);
   const updateGalleryError = (message: string): void => setGalleryError(document, message);
   const updateGalleryVerdict = (verdict: Verdict | null): void =>
@@ -925,13 +899,9 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   if (revision !== null) revision.textContent = handoff.revisionSha.slice(0, 12);
   updateGalleryStatus("idle");
   updateLiveState("connecting");
-  const bootstrapUrl = `${baseUrl}/gallery/frame/bootstrap.js`;
   const frameUrl = `${baseUrl}/gallery/frame`;
   const canvas = document.getElementById("facet-canvas");
   if (!(canvas instanceof HTMLElement)) throw new Error("Gallery canvas is missing");
-  const viewState: ViewState = { zoom: 1, panX: 0, panY: 0 };
-  const viewModes = new Map<string, ViewMode>();
-  let activeFrameId: string | null = null;
   const host: FrameHost = {
     mountOffScreen(frameId, element) {
       const iframe = element as HTMLIFrameElement;
@@ -946,112 +916,85 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     setVisibility(frameId, visible) {
       const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`);
       if (iframe !== null) iframe.style.visibility = visible ? "visible" : "hidden";
-      if (visible) {
-        activeFrameId = frameId;
-        canvas.dataset.viewMode = viewModes.get(frameId) ?? "css";
-      }
     },
     unmount(frameId) {
       canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`)?.remove();
     },
-    applyViewState(frameId, state) {
-      const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${frameId}"]`);
-      if (iframe === null) return;
-      iframe.style.transform =
-        viewModes.get(frameId) === "native"
-          ? ""
-          : `translate(${state.panX ?? 0}px, ${state.panY ?? 0}px) scale(${state.zoom})`;
-    },
     showErrorBadge: updateGalleryError,
   };
-  const dom: ShellDom = { document, MessageChannel, hostname: window.location.hostname, window };
+  const dom: ShellDom = { document, hostname: window.location.hostname };
   const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
   let current = createArtifactFrame({
     artifactType: source.artifactType,
     renderer: source.renderer,
-    bootstrapUrl,
     frameUrl,
     dom,
   });
-  const bindFrameMode = (frame: CreatedArtifactFrame): void => {
-    frame.onControlEvent((event) => {
-      const mode = validateViewMode(event);
-      if (mode === null) return;
-      viewModes.set(frame.frameId, mode);
-      if (activeFrameId === frame.frameId) canvas.dataset.viewMode = mode;
-      host.applyViewState(frame.frameId, viewState);
-    });
-  };
-  bindFrameMode(current);
-  const boot = await armFrameLoad(current, (frame) =>
-    host.mountOffScreen(frame.frameId, frame.element.raw),
+  host.mountOffScreen(current.frameId, current.element.raw);
+  const loaded = await current.awaitLoad(DEFAULT_READY_TIMEOUT_MS);
+  if (!loaded) throw new Error("Gallery frame failed to load");
+  const initialResult = await current.render(
+    {
+      artifactType: source.artifactType,
+      renderer: source.renderer,
+      bytes: source.bytes,
+      ...(source.execution === undefined ? {} : { execution: source.execution }),
+    },
+    DEFAULT_READY_TIMEOUT_MS,
   );
-  if (boot === null) throw new Error("Gallery frame failed to boot");
-  current.deliverSource({
-    artifactType: source.artifactType,
-    renderer: source.renderer,
-    bytes: source.bytes,
-    ...(source.execution === undefined ? {} : { execution: source.execution }),
-  });
-  const initialEvent = await current.awaitControlEvent("render-complete", DEFAULT_READY_TIMEOUT_MS);
-  if (initialEvent === null || observedErrorCount(initialEvent) !== 0)
+  if (initialResult.observed.errorCount !== 0) {
     throw new Error("Gallery artifact failed to render");
+  }
   host.setVisibility(current.frameId, true);
-  current.sendControl(viewStateMessage(viewState));
-  host.applyViewState(current.frameId, viewState);
   updateGalleryVerdict(source.verdict ?? null);
   updateGalleryStatus("displayed");
   updateLiveState("live");
+  const swaps = createSerializedSwapQueue<RevisionEvent>((event) =>
+    swapToRevision(
+      {
+        dom,
+        host,
+        frameUrl,
+        fetchRevision: (_artifactId, revisionSha) =>
+          fetchGallerySource(baseUrl, handoff, revisionSha, fetch),
+        onProgress: updateSwapBar,
+      },
+      current,
+      event,
+      current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
+    )
+      .then(({ frame, result, verdict }) => {
+        current = frame;
+        if (!result.failedNewFrameReady) {
+          if (revision !== null) revision.textContent = event.revisionSha.slice(0, 12);
+          updateGalleryVerdict(verdict);
+          updateGalleryStatus("displayed");
+          updateSwapBar("complete");
+        } else {
+          updateSwapBar("failed");
+          updateGalleryVerdict(null);
+          updateGalleryStatus("displayed");
+        }
+      })
+      .catch((error: unknown) => {
+        updateSwapBar("failed");
+        updateGalleryStatus("displayed");
+        updateGalleryError(error instanceof Error ? error.message : String(error));
+      }),
+  );
   const stream = connectRevisionStream({
     baseUrl,
     bearer: handoff.authorization.replace(/^Bearer\s+/i, ""),
     leaseId: handoff.lease.leaseId,
     artifactId: handoff.artifactId,
     hostname: window.location.hostname,
+    fetchImpl: fetch,
     onState: updateLiveState,
     onCommit: (event) => {
       updateGalleryStatus("swapping");
       updateSwapBar("start");
       updateGalleryVerdict(null);
-      void swapToRevision(
-        {
-          dom,
-          host,
-          bootstrapUrl,
-          frameUrl,
-          fetchRevision: (_artifactId, revisionSha) =>
-            fetchGallerySource(baseUrl, handoff, revisionSha, fetch),
-          onFrameCreated: (next) => {
-            bindFrameMode(next);
-            bindFrameIntents(next);
-            void armFrameLoad(next, (frame) =>
-              host.mountOffScreen(frame.frameId, frame.element.raw),
-            );
-          },
-          onProgress: updateSwapBar,
-        },
-        current,
-        event,
-        viewState,
-      )
-        .then(({ frame, result, verdict }) => {
-          current = frame;
-          if (!result.failedNewFrameReady) {
-            if (revision !== null) revision.textContent = event.revisionSha.slice(0, 12);
-            updateGalleryVerdict(verdict);
-            updateGalleryStatus("displayed");
-            updateSwapBar("complete");
-          } else {
-            updateSwapBar("failed");
-            updateGalleryVerdict(null);
-            updateGalleryStatus("displayed");
-          }
-        })
-        .catch((error: unknown) => {
-          updateSwapBar("failed");
-          updateGalleryStatus("displayed");
-          updateGalleryError(error instanceof Error ? error.message : String(error));
-        });
+      swaps.enqueue(event);
     },
     onClose: () => {
       updateLiveState("idle");
@@ -1070,139 +1013,44 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   };
   window.addEventListener("beforeunload", shutdown, { once: true });
 
-  const applyIntent = (intent: ViewIntent): void => {
-    if (intent.mode === "pan") {
-      viewState.panX = (viewState.panX ?? 0) + intent.dx;
-      viewState.panY = (viewState.panY ?? 0) + intent.dy;
-    } else {
-      const factor = Math.exp(-intent.deltaY * 0.001);
-      Object.assign(
-        viewState,
-        zoomAtPoint(viewState, clampZoom(viewState.zoom * factor), intent.cursorX, intent.cursorY),
-      );
-    }
-    const iframe = canvas.querySelector<HTMLIFrameElement>(`[data-frame-id="${current.frameId}"]`);
-    if (iframe !== null) {
-      const rect = canvasRect();
-      Object.assign(
-        viewState,
-        viewModes.get(current.frameId) === "native"
-          ? clampNativeSvgPan(viewState, { width: iframe.clientWidth, height: iframe.clientHeight })
-          : clampCssPan(
-              viewState,
-              { width: rect.width, height: rect.height },
-              { width: iframe.offsetWidth, height: iframe.offsetHeight },
-            ),
-      );
-    }
-    current.sendControl(viewStateMessage(viewState));
-    host.applyViewState(current.frameId, viewState);
-  };
-  const forwardCanvasIntent = (intent: ViewIntent): void => applyIntent(intent);
-  const bindFrameIntents = (frame: CreatedArtifactFrame): void => {
-    frame.onControlEvent((event) => {
-      const intent = validateViewIntent(event);
-      if (intent !== null) forwardCanvasIntent(intent);
-    });
-  };
-  bindFrameIntents(current);
   const canvasRect = (): DOMRect => canvas.getBoundingClientRect();
-  canvas.addEventListener(
-    "wheel",
-    (event) => {
-      event.preventDefault();
-      const rect = canvasRect();
-      forwardCanvasIntent({
-        type: "view-intent",
-        mode: "zoom",
-        deltaY: event.deltaY,
-        cursorX: event.clientX - rect.left,
-        cursorY: event.clientY - rect.top,
-        rect: { w: rect.width, h: rect.height },
-      });
-    },
-    { passive: false },
-  );
-  let drag: { x: number; y: number } | null = null;
-  canvas.addEventListener("pointerdown", (event) => {
-    drag = { x: event.clientX, y: event.clientY };
-    canvas.setPointerCapture(event.pointerId);
-    canvas.style.cursor = "grabbing";
-  });
-  canvas.addEventListener("pointermove", (event) => {
-    if (drag === null) return;
-    const dx = event.clientX - drag.x;
-    const dy = event.clientY - drag.y;
-    drag = { x: event.clientX, y: event.clientY };
-    forwardCanvasIntent({ type: "view-intent", mode: "pan", dx, dy });
-  });
-  const endDrag = (event: PointerEvent): void => {
-    drag = null;
-    canvas.releasePointerCapture(event.pointerId);
-    canvas.style.cursor = "grab";
-  };
-  canvas.addEventListener("pointerup", endDrag);
-  canvas.addEventListener("pointercancel", endDrag);
-  canvas.style.cursor = "grab";
+  // Shell-side listener: keyboard focus can legitimately sit in the
+  // parent document (e.g. the user tabbed to a control) rather than
+  // inside the frame, so this listener stays alongside the frame's
+  // own (frame/runtime.ts) rather than being the only one. Both route
+  // through `nextViewStateForKey` so the key-to-state mapping has one
+  // tested home.
   document.addEventListener("keydown", (event) => {
-    if (event.key === "+" || event.key === "=") {
-      event.preventDefault();
-      const rect = canvasRect();
-      applyIntent({
-        type: "view-intent",
-        mode: "zoom",
-        deltaY: -100,
-        cursorX: rect.width / 2,
-        cursorY: rect.height / 2,
-        rect: { w: rect.width, h: rect.height },
-      });
-    } else if (event.key === "-") {
-      event.preventDefault();
-      const rect = canvasRect();
-      applyIntent({
-        type: "view-intent",
-        mode: "zoom",
-        deltaY: 100,
-        cursorX: rect.width / 2,
-        cursorY: rect.height / 2,
-        rect: { w: rect.width, h: rect.height },
-      });
-    } else if (event.key === "0") {
-      event.preventDefault();
-      Object.assign(viewState, resetViewState(viewState));
-      current.sendControl(viewStateMessage(viewState));
-      host.applyViewState(current.frameId, viewState);
-    } else if (
-      event.key === "ArrowLeft" ||
-      event.key === "ArrowRight" ||
-      event.key === "ArrowUp" ||
-      event.key === "ArrowDown"
-    ) {
-      event.preventDefault();
-      const amount = event.shiftKey ? 50 : 10;
-      const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
-      const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
-      applyIntent({ type: "view-intent", mode: "pan", dx, dy });
-    }
+    const result = current.renderResult;
+    if (!result) return;
+    const next = nextViewStateForKey(
+      result.readViewState(),
+      event.key,
+      event.shiftKey,
+      canvasRect(),
+    );
+    if (next === null) return;
+    event.preventDefault();
+    result.applyViewState(next);
   });
   for (const [id, delta] of [
     ["facet-zoom-in", 0.1],
     ["facet-zoom-out", -0.1],
   ] as const) {
     document.getElementById(id)?.addEventListener("click", () => {
+      const result = current.renderResult;
+      if (!result) return;
+      const state = result.readViewState();
       const rect = canvasRect();
-      Object.assign(
-        viewState,
-        zoomAtPoint(viewState, viewState.zoom + delta, rect.width / 2, rect.height / 2),
+      result.applyViewState(
+        zoomAtPoint(state, clampZoom(state.zoom + delta), rect.width / 2, rect.height / 2),
       );
-      current.sendControl(viewStateMessage(viewState));
-      host.applyViewState(current.frameId, viewState);
     });
   }
   document.getElementById("facet-zoom-reset")?.addEventListener("click", () => {
-    Object.assign(viewState, resetViewState(viewState));
-    current.sendControl(viewStateMessage(viewState));
-    host.applyViewState(current.frameId, viewState);
+    const result = current.renderResult;
+    if (!result) return;
+    result.applyViewState(resetViewState(result.readViewState()));
   });
   document
     .getElementById("facet-fullscreen")

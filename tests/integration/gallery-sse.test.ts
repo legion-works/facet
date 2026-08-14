@@ -1,73 +1,53 @@
 /**
- * Gallery shell + sandbox channel integration tests.
+ * Gallery shell integration tests.
  *
  * Every assertion here is structural — the test gate fails when the
  * shell drifts from the frozen security model. The shell builds its
  * frame document and frame attributes via pure helpers (`buildFrameDocument`,
- * `buildFrameAttributes`, `FROZEN_CSP_TEMPLATE`) so the assertions can
+ * `buildFrameAttributes`) so the assertions can
  * inspect the produced strings without a browser harness.
  *
- * DOM testing approach: pure-function-first. The channel lifecycle tests
- * use Bun's native `MessageChannel`; the hostname guard is a pure
+ * DOM testing approach: pure-function-first. The hostname guard is a pure
  * boolean; the swap tests execute the real async swap against a
- * recording FrameHost with REAL MessageChannels (the test plays the
- * frame side by posting on the frame-held port ends). The SSE test
- * runs a real service and drains the real stream.
+ * recording FrameHost with a fake iframe whose contentWindow.__facetFrame.render
+ * resolves/rejects/never-settles. The SSE test runs a real service and
+ * drains the real stream. The negative-source assertions scan production
+ * gallery-web files for banned tokens — proving the channel ceremony is absent.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  FROZEN_CSP_TEMPLATE,
+  type FrameHost,
   SHELL_EXPORTS,
+  type ShellDom,
+  type SwapPlanStep,
   assertLoopbackHostname,
   buildFrameAttributes,
   buildFrameDocument,
   createArtifactFrame,
+  createSerializedSwapQueue,
   isLoopbackHostname,
   planSwap,
   replaceArtifactFrame,
   swapToRevision,
-  type CreatedArtifactFrame,
-  type FrameControlEvent,
-  type FrameHost,
-  type ShellDom,
-  type SwapPlanStep,
-  type ViewState,
 } from "../../src/gallery-web/app";
-import { createChannelPair, type ChannelPair } from "../../src/gallery-web/frame/channels";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
-import { HARNESS_CSP, buildHarnessSrcdoc } from "../../src/validation/tier1/harness";
-import { FROZEN_CSP_LITERAL, parseCspDirectives } from "../helpers/frozen-csp-literal";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
+import { installFakeFrameApi, makeFakeRenderResult } from "../helpers/fake-frame";
 
-const NONCE = "facet-nonce-abcd1234";
-const BOOTSTRAP_URL = "/gallery/frame/bootstrap.js";
+const RUNTIME_URL = "/gallery/frame/runtime/markdown.js";
 
 const ARTIFACT_SENTINEL = "FACET_SENTINEL_ARTIFACT_BYTES_ZZZ_9999";
 
-const CSP_BEFORE_EXTERNAL_IMAGES =
-  "default-src 'none'; script-src 'nonce-<BOOTSTRAP_NONCE>'; style-src 'unsafe-inline'; " +
-  "img-src data:; font-src data:; worker-src 'none'; connect-src 'none'; object-src 'none'; " +
-  "base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'";
-
-function cspDirectives(csp: string): ReadonlyMap<string, string> {
-  return new Map(parseCspDirectives(csp));
-}
-
-function buildFreshNonce(): string {
-  return "n-" + crypto.randomUUID().replace(/-/g, "");
-}
-
 describe("gallery shell — CSP + frame-document invariants", () => {
-  test("buildFrameAttributes: sandbox is EXACTLY 'allow-scripts' (not allow-same-origin)", () => {
+  test("buildFrameAttributes: ordinary same-origin frames carry no sandbox", () => {
     const attrs = buildFrameAttributes();
-    expect(attrs.sandbox).toBe("allow-scripts");
-    expect(attrs.sandbox).not.toContain("allow-same-origin");
+    expect("sandbox" in attrs).toBe(false);
   });
 
   test("buildFrameAttributes: referrerpolicy is no-referrer", () => {
@@ -84,95 +64,8 @@ describe("gallery shell — CSP + frame-document invariants", () => {
   test("buildFrameAttributes: shell-controlled CSS transform is the zoom surface (not inside-frame script)", () => {
     const attrs = buildFrameAttributes();
     // The shell applies transforms to the iframe ELEMENT. The frame's
-    // own scripts must not run zoom handlers — opaque origin + frozen
-    // CSP forbids it anyway.
+    // own scripts do not own shell transforms.
     expect(attrs.allow).toBe("");
-  });
-});
-
-describe("gallery shell — FROZEN CSP", () => {
-  test("frozen CSP widens only img-src while every verdict-protecting directive stays exact", () => {
-    const previous = cspDirectives(CSP_BEFORE_EXTERNAL_IMAGES);
-    const next = cspDirectives(FROZEN_CSP_TEMPLATE);
-
-    expect(FROZEN_CSP_TEMPLATE).toBe(FROZEN_CSP_LITERAL);
-    expect(next.get("img-src")).toBe("data: https:");
-    expect(next.get("script-src")).toBe("'nonce-<BOOTSTRAP_NONCE>'");
-    expect(next.get("script-src")).not.toContain("'unsafe-inline'");
-    expect(next.get("connect-src")).toBe("'none'");
-    expect(next.get("object-src")).toBe("'none'");
-    expect(next.get("frame-src")).toBe("'none'");
-    expect(next.get("base-uri")).toBe("'none'");
-    expect(next.get("form-action")).toBe("'none'");
-    expect(next.get("worker-src")).toBe("'none'");
-    expect(next.get("media-src")).toBe("'none'");
-    expect(next.get("default-src")).toBe("'none'");
-    expect(next.get("font-src")).toBe("data:");
-    expect([...next].filter(([name]) => name !== "img-src")).toEqual(
-      [...previous].filter(([name]) => name !== "img-src"),
-    );
-  });
-
-  test("frozen CSP is byte-identical to the pinned literal, including frame-src", () => {
-    expect(FROZEN_CSP_TEMPLATE).toBe(FROZEN_CSP_LITERAL);
-    expect(parseCspDirectives(FROZEN_CSP_TEMPLATE)).toEqual(parseCspDirectives(FROZEN_CSP_LITERAL));
-    expect(parseCspDirectives(FROZEN_CSP_LITERAL).map(([name]) => name)).toEqual([
-      "default-src",
-      "script-src",
-      "style-src",
-      "img-src",
-      "font-src",
-      "worker-src",
-      "connect-src",
-      "object-src",
-      "base-uri",
-      "form-action",
-      "frame-src",
-      "media-src",
-    ]);
-    expect(cspDirectives(FROZEN_CSP_LITERAL).get("frame-src")).toBe("'none'");
-  });
-
-  test("frozen CSP gallery and Tier 1 harness emit the pinned literal", async () => {
-    const harness = await buildHarnessSrcdoc("html");
-    const harnessCsp = harness.srcdoc.match(
-      /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/,
-    )?.[1];
-    const renderedLiteral = FROZEN_CSP_LITERAL.replace("<BOOTSTRAP_NONCE>", harness.nonce);
-
-    expect(HARNESS_CSP).toBe(FROZEN_CSP_LITERAL);
-    expect(harnessCsp).toBe(renderedLiteral);
-    expect(parseCspDirectives(harnessCsp ?? "")).toEqual(parseCspDirectives(renderedLiteral));
-  });
-
-  test("template includes script-src nonce, no 'unsafe-inline'", () => {
-    expect(FROZEN_CSP_TEMPLATE).toContain("script-src 'nonce-");
-    expect(FROZEN_CSP_TEMPLATE).not.toContain("script-src 'unsafe-inline'");
-    expect(FROZEN_CSP_TEMPLATE).not.toContain("script-src *");
-  });
-
-  test("template denies same-origin (no allow-same-origin in CSP), workers, connect", () => {
-    expect(FROZEN_CSP_TEMPLATE).toContain("worker-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("connect-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("default-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("object-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("base-uri 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("form-action 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("frame-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("media-src 'none'");
-  });
-
-  test("style-src 'unsafe-inline' is REQUIRED (Mermaid inline SVG) — and only that", () => {
-    expect(FROZEN_CSP_TEMPLATE).toContain("style-src 'unsafe-inline'");
-  });
-
-  test("rendered CSP substitutes the per-frame nonce into script-src", () => {
-    const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: BOOTSTRAP_URL,
-    });
-    expect(document).not.toContain("Content-Security-Policy");
-    expect(document).not.toContain(`script-src 'nonce-${NONCE}'`);
   });
 });
 
@@ -222,102 +115,54 @@ describe("gallery shell — verdict status styling", () => {
 });
 
 describe("gallery shell — frame document generation", () => {
-  test("document contains charset, artifact mount, and no CSP meta", () => {
+  test("document contains external styles, artifact mount, and no CSP meta", () => {
     const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: BOOTSTRAP_URL,
+      artifactType: "markdown",
+      runtimeUrl: RUNTIME_URL,
     });
     const charsetIdx = document.indexOf('<meta charset="utf-8">');
     expect(charsetIdx).toBeGreaterThanOrEqual(0);
     expect(document).toContain('<main id="artifact"></main>');
     expect(document).not.toContain("Content-Security-Policy");
+    expect(document).toContain('<link rel="stylesheet" href="/gallery/frame/frame.css">');
+    expect(document).not.toMatch(/<style[\s>]/i);
   });
 
-  test("document references the trusted module bootstrap under the per-frame nonce", () => {
+  test("document references one ordinary external runtime module without a nonce", () => {
     const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: BOOTSTRAP_URL,
+      artifactType: "markdown",
+      runtimeUrl: RUNTIME_URL,
     });
-    // `type="module"` keeps Vega's top-level `function addEventListener`
-    // out of the global scope (a classic script would hoist it into
-    // `window.addEventListener` and break the frame's own listener).
-    expect(document).toContain(`<script type="module" nonce="${NONCE}" src="${BOOTSTRAP_URL}">`);
-    expect(document).toContain(`src="${BOOTSTRAP_URL}"`);
+    expect(document).toContain(`<script type="module" src="${RUNTIME_URL}">`);
+    expect(document).not.toContain("nonce=");
     expect(document).toContain("</script>");
   });
 
   test("document NEVER carries artifact source bytes (publish sentinel — must be absent)", () => {
-    // The frame document is generated ONLY from the nonce + the built
-    // trusted bootstrap. If a future change ever interpolates
+    // The frame document is generated only from the built runtime URL.
+    // If a future change ever interpolates
     // artifact bytes into the document (the most dangerous regression in
     // this whole surface), this assertion fires.
     const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: BOOTSTRAP_URL,
+      artifactType: "markdown",
+      runtimeUrl: RUNTIME_URL,
     });
     expect(document).not.toContain(ARTIFACT_SENTINEL);
-    // Defensive: exactly ONE <script tag in the document — the trusted bootstrap.
+    // Defensive: exactly ONE <script tag in the document — the trusted runtime.
     // Any future regression that injects a second script would let
     // artifact bytes (or a hostile inline script) execute under the
-    // per-frame nonce.
+    // external runtime module.
     expect(document.match(/<script/gi)?.length ?? 0).toBe(1);
   });
 
-  test("frame document escapes bootstrap URL attributes", () => {
+  test("frame document escapes runtime URL attributes", () => {
     const tricky = "https://example.test/bootstrap.js?a=1&b=2";
     const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: tricky,
+      artifactType: "markdown",
+      runtimeUrl: tricky,
     });
     expect(document).toContain("https://example.test/bootstrap.js?a=1&amp;b=2");
     expect(document.match(/<\/script>/g)?.length ?? 0).toBe(1);
-  });
-});
-
-describe("gallery frame program (bootstrap source)", () => {
-  // The frame program is bundled into the srcdoc at build time; these
-  // assertions pin its trust-path shape at the source level (the live
-  // render path is proven by the Tier 1 acceptance gates, which bundle
-  // the SAME renderers).
-  const bootstrapPath = new URL("../../src/gallery-web/frame/bootstrap.ts", import.meta.url)
-    .pathname;
-
-  test("verifies the handshake secret against its own frame-document url", async () => {
-    const source = await Bun.file(bootstrapPath).text();
-    expect(source).toContain("facetHandshake");
-    expect(source).toContain("ports");
-    // The handshake secret is read from the frame document's URL, NOT the script tag:
-    // `document.currentScript` is always null in a module script, so the
-    // tag read silently yielded "" and no handshake ever matched.
-    expect(source).toContain('frameParams.get("handshake")');
-    expect(source).not.toContain('getAttribute("nonce")');
-    // The handshake still gates on an exact secret match.
-    expect(source).toContain("data.nonce !== handshakeNonce");
-    expect(source).toContain("event.source !== window.parent");
-    expect(source).toContain("handshakeComplete");
-    const stripIndex = source.indexOf("history.replaceState(");
-    const rendererIndex = source.indexOf("dispatchRender(");
-    expect(stripIndex).toBeGreaterThanOrEqual(0);
-    expect(stripIndex).toBeLessThan(rendererIndex);
-    expect(source).toContain(
-      'throw new Error("bootstrap: history.replaceState is required to remove the handshake secret")',
-    );
-  });
-
-  test("signals boot-ready and render-complete via the control port", async () => {
-    const source = await Bun.file(bootstrapPath).text();
-    expect(source).toContain("boot-ready");
-    expect(source).toContain("render-complete");
-    // Counts cross the control port ONLY after the dispatch settled.
-    const dispatchIdx = source.indexOf("dispatchRender(");
-    const completeIdx = source.indexOf('"render-complete"');
-    expect(dispatchIdx).toBeGreaterThanOrEqual(0);
-    expect(completeIdx).toBeGreaterThan(dispatchIdx);
-  });
-
-  test("closes the ingress port one-shot on artifact receipt", async () => {
-    const source = await Bun.file(bootstrapPath).text();
-    expect(source).toContain("ingress.close()");
   });
 });
 
@@ -342,55 +187,6 @@ describe("gallery shell — hostname guard (DNS-rebinding defense)", () => {
   });
 });
 
-describe("gallery shell — channel lifecycle (closure-held control, one-shot ingress)", () => {
-  let pair: ChannelPair;
-
-  afterEach(() => {
-    pair?.close();
-  });
-
-  beforeEach(() => {
-    pair = createChannelPair({ messageChannelCtor: MessageChannel });
-  });
-
-  test("source ingress port closes after first delivery", () => {
-    expect(pair.ingressOpen).toBe(true);
-    pair.deliverSource({ type: "test", bytes: new Uint8Array([1, 2, 3]) });
-    expect(pair.ingressOpen).toBe(false);
-    // Second call after closure is a no-op (does not throw).
-    expect(() => pair.deliverSource({ type: "test", bytes: new Uint8Array() })).not.toThrow();
-  });
-
-  test("control port stays open across many sends (closure-held, not one-shot)", () => {
-    expect(pair.controlOpen).toBe(true);
-    pair.sendControl({ type: "boot-ready" });
-    pair.sendControl({ type: "render-complete", observed: {} });
-    pair.sendControl({ type: "view-state", zoom: 1.5 });
-    expect(pair.controlOpen).toBe(true);
-  });
-
-  test("deliverSource sends the artifact over the wire (structured clone — not srcdoc)", async () => {
-    const capture: { received: unknown[] } = { received: [] };
-    pair.onIngressMessage = (event) => capture.received.push(event.data);
-    pair.deliverSource({ type: "artifact", bytes: ARTIFACT_SENTINEL });
-    // Bun's MessagePort delivery runs on a task (not a microtask). A
-    // short setTimeout(0) is enough to let the frame-side onmessage
-    // fire before the assertion runs.
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    expect(capture.received).toHaveLength(1);
-    // Sentinel traveled over the channel — NOT over srcdoc.
-    const payload = capture.received[0] as { type: string; bytes: string };
-    expect(payload.type).toBe("artifact");
-    expect(payload.bytes).toBe(ARTIFACT_SENTINEL);
-  });
-
-  test("control port closes only when explicitly closed (frame replacement)", () => {
-    expect(pair.controlOpen).toBe(true);
-    pair.closeControl();
-    expect(pair.controlOpen).toBe(false);
-  });
-});
-
 const runSwapPlan = (
   currentFrameId: string,
   nextFrameId: string,
@@ -408,13 +204,16 @@ const runSwapPlan = (
 };
 
 describe("gallery shell — double-buffered HMR swap ordering", () => {
-  test("new frame reaches ready BEFORE old frame is removed (ordering)", () => {
+  test("new frame renders BEFORE old frame is removed (ordering)", () => {
     const log = runSwapPlan("frame-old", "frame-new", { zoom: 1.0 });
-    const readyIdx = log.indexOf("new-frame-ready");
-    const removeIdx = log.indexOf("remove-old");
-    expect(readyIdx).toBeGreaterThanOrEqual(0);
-    expect(removeIdx).toBeGreaterThanOrEqual(0);
-    expect(readyIdx).toBeLessThan(removeIdx);
+    expect(log).toEqual([
+      "build-new",
+      "load-new",
+      "render-new",
+      "swap",
+      "apply-view-state",
+      "remove-old",
+    ]);
   });
 
   test("view state (zoom/pan) is preserved across the swap", () => {
@@ -443,40 +242,40 @@ describe("gallery shell — double-buffered HMR swap ordering", () => {
     });
     for (const step of plan) step.run();
     expect(ids.has("frame-B")).toBe(true);
-    // The plan only targets the new frame for source delivery — frame-A
-    // is touched only by `close-old-control` and `remove-old`.
+    // The plan only targets the new frame before swap — frame-A is
+    // touched only by `remove-old`.
     const sourceTouches = plan.filter(
-      (s) => s.name === "build-new" || s.name === "open-new-control",
+      (s) => s.name === "build-new" || s.name === "load-new" || s.name === "render-new",
     );
     for (const step of sourceTouches) {
       expect(step.frameId).not.toBe("frame-A");
     }
   });
 
-  test("old control port closes during swap; new control port stays open", () => {
-    const opened: string[] = [];
-    const closed: string[] = [];
+  test("new frame load and render target the replacement frame", () => {
+    const loaded: string[] = [];
+    const rendered: string[] = [];
     const plan = planSwap({
       currentFrameId: "frame-old",
       nextFrameId: "frame-new",
       viewState: { zoom: 1 },
       onStep: (step) => {
-        if (step.name === "open-new-control" && "frameId" in step) opened.push(step.frameId);
-        if (step.name === "close-old-control" && "frameId" in step) closed.push(step.frameId);
+        if (step.name === "load-new" && "frameId" in step) loaded.push(step.frameId);
+        if (step.name === "render-new" && "frameId" in step) rendered.push(step.frameId);
       },
     });
     for (const step of plan) step.run();
-    expect(opened).toEqual(["frame-new"]);
-    expect(closed).toEqual(["frame-old"]);
+    expect(loaded).toEqual(["frame-new"]);
+    expect(rendered).toEqual(["frame-new"]);
   });
 
-  test("failed new-frame ready keeps the old frame visible (error path)", () => {
+  test("failed new render keeps the old frame visible (error path)", () => {
     let removed = false;
     const plan = planSwap({
       currentFrameId: "frame-old",
       nextFrameId: "frame-new",
       viewState: { zoom: 1 },
-      failNewFrameReady: true,
+      failNewRender: true,
       onStep: (step) => {
         if (step.name === "remove-old") removed = true;
       },
@@ -493,7 +292,8 @@ describe("gallery shell — double-buffered HMR swap ordering", () => {
     });
     const names = plan.map((s) => s.name);
     expect(names).toContain("build-new");
-    expect(names).toContain("new-frame-ready");
+    expect(names).toContain("load-new");
+    expect(names).toContain("render-new");
     expect(names).toContain("swap");
     expect(names).toContain("apply-view-state");
     expect(names).toContain("remove-old");
@@ -522,8 +322,7 @@ describe("gallery shell — no zod in frame bundle (boundary check stays clean)"
   // depth — a frame/<file>.ts accidentally `import { z } from "zod"`
   // would break the gate; this test catches it earlier at unit time).
   const FRAME_FILES = [
-    "../../src/gallery-web/frame/channels.ts",
-    "../../src/gallery-web/frame/bootstrap.ts",
+    "../../src/gallery-web/frame/runtime.ts",
     "../../src/gallery-web/frame/renderers/registry.ts",
     "../../src/gallery-web/frame/renderers/markdown.ts",
     "../../src/gallery-web/frame/renderers/mermaid.ts",
@@ -541,9 +340,9 @@ describe("gallery shell — no zod in frame bundle (boundary check stays clean)"
 });
 
 describe("gallery shell — frame attributes type contract", () => {
-  test("FrameAttributes shape matches what createArtifactFrame will set on the element", () => {
+  test("FrameAttributes shape matches ordinary frame element attributes", () => {
     const attrs = buildFrameAttributes();
-    expect(typeof attrs.sandbox).toBe("string");
+    expect("sandbox" in attrs).toBe(false);
     expect(typeof attrs.referrerpolicy).toBe("string");
     expect(typeof attrs.allow).toBe("string");
     expect(typeof attrs.title).toBe("string");
@@ -571,11 +370,10 @@ describe("gallery shell — frame attributes type contract", () => {
     });
     const KNOWN: ReadonlyArray<SwapPlanStep["name"]> = [
       "build-new",
-      "open-new-control",
-      "new-frame-ready",
+      "load-new",
+      "render-new",
       "swap",
       "apply-view-state",
-      "close-old-control",
       "remove-old",
     ];
     for (const step of plan) {
@@ -584,30 +382,20 @@ describe("gallery shell — frame attributes type contract", () => {
   });
 });
 
-describe("gallery shell — per-frame nonce freshness", () => {
-  test("each frame document carries its own fresh script nonce", () => {
-    const a = buildFrameDocument({
-      nonce: buildFreshNonce(),
-      bootstrapUrl: BOOTSTRAP_URL,
-    });
-    const b = buildFrameDocument({
-      nonce: buildFreshNonce(),
-      bootstrapUrl: BOOTSTRAP_URL,
-    });
-    expect(a).not.toBe(b);
-    const nonceA = a.match(/nonce="([^"]+)"/)?.[1];
-    const nonceB = b.match(/nonce="([^"]+)"/)?.[1];
-    expect(nonceA).toBeDefined();
-    expect(nonceB).toBeDefined();
-    expect(nonceA).not.toBe(nonceB);
+describe("gallery shell — ordinary frame document", () => {
+  test("frame document stays source-byte free without nonce or handshake parameters", () => {
+    const document = buildFrameDocument({ artifactType: "markdown", runtimeUrl: RUNTIME_URL });
+    expect(document).not.toContain("nonce=");
+    expect(document).not.toContain("handshake=");
+    expect(document).not.toContain(ARTIFACT_SENTINEL);
   });
 });
 
 // ---------------------------------------------------------------------------
 // Swap execution — the REAL async swap against a recording FrameHost.
-// The test plays the frame side: it posts boot-ready / render-complete
-// on the frame-held control port end and consumes the ingress payload,
-// exactly like the bundled bootstrap does in a real iframe.
+// The test plays the frame side by installing a fake iframe whose
+// contentWindow.__facetFrame.render resolves/rejects/never-settles,
+// exactly like the bundled runtime does in a real iframe.
 // ---------------------------------------------------------------------------
 
 interface HostCall {
@@ -619,14 +407,12 @@ interface RecordingHost {
   readonly host: FrameHost;
   readonly calls: HostCall[];
   readonly badges: string[];
-  readonly viewStates: Map<string, ViewState>;
   readonly mounted: Set<string>;
 }
 
 function createRecordingHost(): RecordingHost {
   const calls: HostCall[] = [];
   const badges: string[] = [];
-  const viewStates = new Map<string, ViewState>();
   const mounted = new Set<string>();
   const host: FrameHost = {
     mountOffScreen(frameId) {
@@ -640,94 +426,112 @@ function createRecordingHost(): RecordingHost {
       calls.push({ op: "unmount", frameId });
       mounted.delete(frameId);
     },
-    applyViewState(frameId, viewState) {
-      calls.push({ op: "apply-view-state", frameId });
-      viewStates.set(frameId, viewState);
-    },
     showErrorBadge(message) {
       badges.push(message);
     },
   };
-  return { host, calls, badges, viewStates, mounted };
+  return { host, calls, badges, mounted };
 }
 
-function createStubDom(): ShellDom {
-  const stubDocument = {
-    createElement(_tag: string): { setAttribute(name: string, value: string): void } {
-      return { setAttribute: () => {} };
-    },
+interface FakeFrameElement {
+  setAttribute(name: string, value: string): void;
+  addEventListener(type: string, listener: () => void): void;
+  readonly contentWindow: {
+    __facetFrame?: { readonly render?: (payload: unknown) => Promise<unknown> };
   };
-  return {
-    document: stubDocument as unknown as Document,
-    MessageChannel,
-    hostname: "127.0.0.1",
-    window: {},
-  };
-}
-
-interface SimulatedFrameOptions {
-  readonly errorCount?: number;
-  readonly omitBootReady?: boolean;
-  readonly omitRenderComplete?: boolean;
+  readonly receivedPayloads: unknown[];
+  autoLoad: boolean;
 }
 
 /**
- * Post a control event on a frame-held MessagePort. MessagePort's
- * `postMessage` takes a transfer list as its second argument, not a
- * `targetOrigin` — the oxlint rule targets `window.postMessage`, so
- * the rule is disabled at this helper.
+ * A stub DOM whose createElement returns fake iframes. Each fake frame
+ * auto-installs a resolving `__facetFrame.render` (capturing payloads)
+ * and auto-fires its `load` event on a microtask after creation
+ * (matching a real mounted iframe), unless `autoLoad` is disabled.
+ * `scripts` — consumed in creation order — override the default for
+ * frames created inside async flows the test cannot reach (e.g. the
+ * swap's next frame).
  */
-function postFrameControl(frame: CreatedArtifactFrame, event: unknown): void {
-  // oxlint-disable-next-line unicorn/require-post-message-target-origin
-  frame.frameControlPort.postMessage(event);
-}
-
-/** Play the frame side of the protocol against a CreatedArtifactFrame. */
-function simulateFrameSide(
-  frame: CreatedArtifactFrame,
-  received: unknown[],
-  options: SimulatedFrameOptions = {},
-): void {
-  if (options.omitBootReady !== true) {
-    postFrameControl(frame, { type: "boot-ready" });
-  }
-  // oxlint-disable-next-line unicorn/prefer-add-event-listener
-  frame.frameIngressPort.onmessage = (event: MessageEvent) => {
-    received.push(event.data);
-    if (options.omitRenderComplete === true) return;
-    postFrameControl(frame, {
-      type: "render-complete",
-      observed: {
-        rendererRootSvgCount: 1,
-        graphCount: 1,
-        mermaidNodeCount: 0,
-        visibleSvgCount: 1,
-        opaqueRegionCount: 0,
-        externalImageCount: 0,
-        errorCount: options.errorCount ?? 0,
-      },
-    });
+function createFakeFrameDom(scripts: Array<(frame: FakeFrameElement) => void> = []): {
+  dom: ShellDom;
+  frames: FakeFrameElement[];
+} {
+  const frames: FakeFrameElement[] = [];
+  const stubDocument = {
+    createElement(_tag: string): FakeFrameElement {
+      const listeners = new Map<string, (() => void)[]>();
+      const contentWindow: {
+        __facetFrame?: { readonly render?: (payload: unknown) => Promise<unknown> };
+      } = {};
+      const frame: FakeFrameElement = {
+        setAttribute(): void {},
+        addEventListener(type, listener) {
+          const pending = listeners.get(type) ?? [];
+          pending.push(listener);
+          listeners.set(type, pending);
+        },
+        contentWindow,
+        receivedPayloads: [],
+        autoLoad: true,
+      };
+      frames.push(frame);
+      const script = scripts.shift();
+      if (script !== undefined) {
+        script(frame);
+      } else {
+        installFakeFrameApi(frame, { viewMode: "native", observed: fakeObservedCounts() });
+      }
+      if (frame.autoLoad) {
+        queueMicrotask(() => {
+          if (frame.autoLoad) for (const listener of listeners.get("load") ?? []) listener();
+        });
+      }
+      return frame;
+    },
+  };
+  return {
+    dom: { document: stubDocument as unknown as Document, hostname: "127.0.0.1" },
+    frames,
   };
 }
 
-describe("gallery shell — real swap execution (double-buffered HMR)", () => {
-  const SOURCE = { artifactType: "markdown", bytes: new Uint8Array([1, 2, 3]) };
+function fakeObservedCounts(errorCount = 0) {
+  return {
+    rendererRootSvgCount: 1,
+    graphCount: 1,
+    mermaidNodeCount: 0,
+    visibleSvgCount: 1,
+    opaqueRegionCount: 0,
+    externalImageCount: 0,
+    errorCount,
+  };
+}
+
+function fakeRenderResult(
+  options: {
+    readonly viewMode?: "native" | "css";
+    readonly errorCount?: number;
+  } = {},
+) {
+  return makeFakeRenderResult(options.viewMode ?? "native", fakeObservedCounts(options.errorCount));
+}
+
+describe("gallery shell — real swap execution (direct frame promises)", () => {
+  const SOURCE = { artifactType: "markdown", renderer: "svg", bytes: new Uint8Array([1, 2, 3]) };
 
   test("seamless swap: new frame renders BEFORE the old frame is removed", async () => {
-    const dom = createStubDom();
+    const { dom, frames } = createFakeFrameDom();
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
-    const received: unknown[] = [];
-    simulateFrameSide(next, received);
+    const nextFrame = frames[1]!;
+    installFakeFrameApi(nextFrame, { viewMode: "native", observed: fakeObservedCounts() });
 
     const result = await replaceArtifactFrame({
       current,
@@ -742,11 +546,10 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     expect(result.failedNewFrameReady).toBe(false);
     expect(result.executedSteps).toEqual([
       "build-new",
-      "open-new-control",
-      "new-frame-ready",
+      "load-new",
+      "render-new",
       "swap",
       "apply-view-state",
-      "close-old-control",
       "remove-old",
     ]);
     const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
@@ -760,29 +563,28 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     expect(showNew).toBeGreaterThan(mountNew);
     expect(hideOld).toBeGreaterThan(showNew);
     expect(removeOld).toBe(ops.length - 1);
-    // Bytes crossed the ingress exactly once.
-    expect(received).toEqual([SOURCE]);
-    // Old control channel is dead; the frame is gone from the host.
-    current.sendControl({ type: "probe" });
+    // The exact revision payload reached the frame's render exactly once.
+    expect(nextFrame.receivedPayloads).toEqual([SOURCE]);
+    // Frame owns its view mode; the host is not notified.
     expect(recording.mounted.has(current.frameId)).toBe(false);
     expect(recording.mounted.has(next.frameId)).toBe(true);
-    next.closeControl();
   });
 
   test("view state (zoom) is preserved across the swap", async () => {
-    const dom = createStubDom();
+    const { dom, frames } = createFakeFrameDom();
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
-    simulateFrameSide(next, []);
+    // oxlint-disable-next-line no-underscore-dangle
+    frames[1]!.contentWindow.__facetFrame = {
+      render: async () => fakeRenderResult(),
+    };
 
     const result = await replaceArtifactFrame({
       current,
@@ -795,45 +597,52 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     });
 
     expect(result.failedNewFrameReady).toBe(false);
-    expect(recording.viewStates.get(next.frameId)).toEqual({ zoom: 1.75 });
-    next.closeControl();
+    // Frame's own render result reflects the applied view state.
+    expect(next.renderResult?.readViewState()).toEqual({
+      zoom: 1.75,
+      panX: 0,
+      panY: 0,
+    });
   });
 
-  test("every revision gets a FRESH opaque frame — no artifact-JS carryover", async () => {
-    const dom = createStubDom();
+  test("every revision gets a fresh ordinary frame — no artifact-JS carryover", async () => {
+    const { dom, frames } = createFakeFrameDom();
     const recording = createRecordingHost();
     const first = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const second = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
-    // Fresh nonce + fresh loopback URL per frame — an old bootstrap cannot
-    // survive into a new CSP window, and no source bytes ride the document.
-    expect(first.nonce).not.toBe(second.nonce);
-    expect(first.handshakeNonce).not.toBe(first.nonce);
-    expect(second.handshakeNonce).not.toBe(second.nonce);
-    expect(first.handshakeNonce).not.toBe(second.handshakeNonce);
-    expect(first.attrs.src).not.toBe(second.attrs.src);
-    expect(first.attrs.src).toContain(encodeURIComponent(first.nonce));
-    expect(second.attrs.src).toContain(encodeURIComponent(second.nonce));
-    expect(first.attrs.src).toContain(encodeURIComponent(first.handshakeNonce));
-    expect(second.attrs.src).toContain(encodeURIComponent(second.handshakeNonce));
+    // Source bytes remain off the document URL across frame replacements.
+    expect(first.attrs.src).toBe(second.attrs.src);
+    expect(first.attrs.src).toContain("type=markdown");
+    expect(second.attrs.src).toContain("type=markdown");
+    expect(first.attrs.src).not.toContain("nonce=");
+    expect(second.attrs.src).not.toContain("handshake=");
     expect(first.attrs.src).not.toContain(ARTIFACT_SENTINEL);
     expect(second.attrs.src).not.toContain(ARTIFACT_SENTINEL);
 
-    // Two consecutive swaps: rev1 → rev2. The second swap's frame is
-    // distinct and receives ITS bytes once; the first frame's ingress
-    // is already closed (one-shot) and its control dies at replacement.
-    const receivedFirst: unknown[] = [];
-    simulateFrameSide(first, receivedFirst);
+    const firstHandle = frames[0]!;
+    const secondHandle = frames[1]!;
+    // oxlint-disable-next-line no-underscore-dangle
+    firstHandle.contentWindow.__facetFrame = {
+      render: async (payload) => {
+        firstHandle.receivedPayloads.push(payload);
+        return fakeRenderResult();
+      },
+    };
+    // oxlint-disable-next-line no-underscore-dangle
+    secondHandle.contentWindow.__facetFrame = {
+      render: async (payload) => {
+        secondHandle.receivedPayloads.push(payload);
+        return fakeRenderResult();
+      },
+    };
     const seed = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const swapOne = await replaceArtifactFrame({
@@ -842,48 +651,46 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
       dom,
       host: recording.host,
       viewState: { zoom: 1 },
-      source: { artifactType: "markdown", bytes: new Uint8Array([1]) },
+      source: { artifactType: "markdown", renderer: "svg", bytes: new Uint8Array([1]) },
       readyTimeoutMs: 2_000,
     });
     expect(swapOne.failedNewFrameReady).toBe(false);
 
-    const receivedSecond: unknown[] = [];
-    simulateFrameSide(second, receivedSecond);
     const swapTwo = await replaceArtifactFrame({
       current: first,
       next: second,
       dom,
       host: recording.host,
       viewState: { zoom: 1 },
-      source: { artifactType: "markdown", bytes: new Uint8Array([2]) },
+      source: { artifactType: "markdown", renderer: "svg", bytes: new Uint8Array([2]) },
       readyTimeoutMs: 2_000,
     });
     expect(swapTwo.failedNewFrameReady).toBe(false);
-    expect(receivedFirst).toHaveLength(1);
-    expect(receivedSecond).toHaveLength(1);
-    expect((receivedSecond[0] as { bytes: Uint8Array }).bytes).toEqual(new Uint8Array([2]));
-    // Replay attempt on the spent ingress is a no-op (one-shot).
-    first.deliverSource({ artifactType: "markdown", bytes: new Uint8Array([9, 9]) });
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    expect(receivedFirst).toHaveLength(1);
-    second.closeControl();
+    expect(firstHandle.receivedPayloads).toHaveLength(1);
+    expect(secondHandle.receivedPayloads).toHaveLength(1);
+    expect((secondHandle.receivedPayloads[0] as { bytes: Uint8Array }).bytes).toEqual(
+      new Uint8Array([2]),
+    );
   });
 
   test("failed new render keeps the last-good frame + error badge", async () => {
-    const dom = createStubDom();
+    const { dom, frames } = createFakeFrameDom();
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
-    // The frame boots but its render reports errors.
-    simulateFrameSide(next, [], { errorCount: 1 });
+    // The frame loads but its render rejects.
+    // oxlint-disable-next-line no-underscore-dangle
+    frames[1]!.contentWindow.__facetFrame = {
+      render: async () => {
+        throw new Error("render exploded");
+      },
+    };
 
     const result = await replaceArtifactFrame({
       current,
@@ -896,32 +703,96 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     });
 
     expect(result.failedNewFrameReady).toBe(true);
-    expect(result.executedSteps).toEqual(["build-new", "open-new-control"]);
+    expect(result.executedSteps).toEqual(["build-new", "load-new", "render-new"]);
     // Old frame untouched: no hide, no unmount.
     const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
     expect(ops).not.toContain(`unmount:${current.frameId}`);
     expect(ops).not.toContain(`hide:${current.frameId}`);
-    // Failed new frame torn down (channels + element) and badged.
+    // Failed new frame torn down and badged.
     expect(ops).toContain(`unmount:${next.frameId}`);
     expect(recording.badges).toHaveLength(1);
     expect(recording.badges[0]).toContain("keeping last good revision");
   });
 
-  test("new frame that never boots keeps the last-good frame (timeout path)", async () => {
-    const dom = createStubDom();
+  test("render with observed errors keeps the last-good frame + error badge", async () => {
+    const { dom, frames } = createFakeFrameDom();
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
-    // No boot-ready at all.
-    simulateFrameSide(next, [], { omitBootReady: true, omitRenderComplete: true });
+    // oxlint-disable-next-line no-underscore-dangle
+    frames[1]!.contentWindow.__facetFrame = {
+      render: async () => fakeRenderResult({ errorCount: 1 }),
+    };
+
+    const result = await replaceArtifactFrame({
+      current,
+      next,
+      dom,
+      host: recording.host,
+      viewState: { zoom: 1 },
+      source: SOURCE,
+      readyTimeoutMs: 2_000,
+    });
+
+    expect(result.failedNewFrameReady).toBe(true);
+    expect(recording.badges).toHaveLength(1);
+    const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
+    expect(ops).not.toContain(`unmount:${current.frameId}`);
+    expect(ops).not.toContain(`hide:${current.frameId}`);
+  });
+
+  test("new frame that never loads keeps the last-good frame (load timeout path)", async () => {
+    const { dom, frames } = createFakeFrameDom();
+    const recording = createRecordingHost();
+    const current = createArtifactFrame({
+      artifactType: "markdown",
+      dom,
+    });
+    const next = createArtifactFrame({
+      artifactType: "markdown",
+      dom,
+    });
+    // No load event at all.
+    frames[1]!.autoLoad = false;
+
+    const result = await replaceArtifactFrame({
+      current,
+      next,
+      dom,
+      host: recording.host,
+      viewState: { zoom: 1 },
+      source: SOURCE,
+      readyTimeoutMs: 50,
+    });
+
+    expect(result.failedNewFrameReady).toBe(true);
+    const ops = recording.calls.map((call) => `${call.op}:${call.frameId}`);
+    expect(ops).not.toContain(`unmount:${current.frameId}`);
+    expect(recording.badges).toHaveLength(1);
+  });
+
+  test("new frame whose render never settles keeps the last-good frame (render timeout path)", async () => {
+    const { dom, frames } = createFakeFrameDom();
+    const recording = createRecordingHost();
+    const current = createArtifactFrame({
+      artifactType: "markdown",
+      dom,
+    });
+    const next = createArtifactFrame({
+      artifactType: "markdown",
+      dom,
+    });
+    // The frame loads, but its render promise never settles.
+    // oxlint-disable-next-line no-underscore-dangle
+    frames[1]!.contentWindow.__facetFrame = {
+      render: () => new Promise<never>(() => {}),
+    };
 
     const result = await replaceArtifactFrame({
       current,
@@ -940,27 +811,25 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
   });
 
   test("swapToRevision fetches the exact revision and swaps to a fresh frame", async () => {
-    const dom = createStubDom();
+    const { dom, frames } = createFakeFrameDom();
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const fetched: { artifactId: string; revisionSha: string }[] = [];
     const bytes = new Uint8Array([7, 7, 7]);
-    const received: unknown[] = [];
+    // The swap's NEXT frame is created inside swapToRevision; the fake
+    // DOM installs its default resolving render at creation.
 
     const { frame, result } = await swapToRevision(
       {
         dom,
         host: recording.host,
-        bootstrapUrl: BOOTSTRAP_URL,
         fetchRevision: async (artifactId, revisionSha) => {
           fetched.push({ artifactId, revisionSha });
           return { artifactType: "markdown", renderer: "svg", bytes };
         },
-        onFrameCreated: (next) => simulateFrameSide(next, received),
         readyTimeoutMs: 2_000,
       },
       current,
@@ -971,79 +840,45 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     expect(fetched).toEqual([{ artifactId: "art-1", revisionSha: "sha-1" }]);
     expect(result.failedNewFrameReady).toBe(false);
     expect(frame).not.toBe(current);
-    expect(received).toEqual([{ artifactType: "markdown", renderer: "svg", bytes }]);
-    expect(recording.viewStates.get(frame.frameId)).toEqual({ zoom: 2 });
+    expect(frames[1]!.receivedPayloads).toEqual([
+      { artifactType: "markdown", renderer: "svg", bytes },
+    ]);
+    // View state is preserved through the frame's own render result, not the host.
+    expect(frame.renderResult?.readViewState()).toEqual({ zoom: 2, panX: 0, panY: 0 });
     expect(recording.mounted.has(current.frameId)).toBe(false);
-    frame.closeControl();
   });
 });
 
-describe("gallery shell — control-port RECEIVE path", () => {
-  test("onControlEvent receives frame→shell events posted on the frame-held end", async () => {
-    const dom = createStubDom();
-    const frame = createArtifactFrame({
-      artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
-      dom,
+describe("gallery shell — serialized revision swaps", () => {
+  test("two rapid commits serialize: latest wins, no concurrent swaps, no orphan", async () => {
+    const started: string[] = [];
+    const done: string[] = [];
+    let releaseSlow: (() => void) | null = null;
+    const slowGate = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
     });
-    const events: FrameControlEvent[] = [];
-    const unsubscribe = frame.onControlEvent((event) => events.push(event));
-    postFrameControl(frame, { type: "boot-ready" });
-    postFrameControl(frame, {
-      type: "render-complete",
-      observed: {
-        rendererRootSvgCount: 2,
-        graphCount: 2,
-        mermaidNodeCount: 40,
-        visibleSvgCount: 2,
-        opaqueRegionCount: 0,
-        externalImageCount: 0,
-        errorCount: 0,
-      },
+    let concurrent = 0;
+    let peak = 0;
+    const queue = createSerializedSwapQueue<string>(async (event) => {
+      started.push(event);
+      concurrent += 1;
+      peak = Math.max(peak, concurrent);
+      if (event === "slow") await slowGate;
+      done.push(event);
+      concurrent -= 1;
     });
-    await new Promise<void>((resolve) => setTimeout(resolve, 20));
-    expect(events.map((event) => event.type)).toEqual(["boot-ready", "render-complete"]);
-    expect(events[1]?.observed?.rendererRootSvgCount).toBe(2);
-    unsubscribe();
-    frame.closeControl();
-  });
 
-  test("awaitControlEvent resolves on the matching type and times out to null", async () => {
-    const dom = createStubDom();
-    const frame = createArtifactFrame({
-      artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
-      dom,
-    });
-    const pending = frame.awaitControlEvent("boot-ready", 1_000);
-    postFrameControl(frame, { type: "boot-ready" });
-    expect(await pending).toMatchObject({ type: "boot-ready" });
-    // No render-complete coming — the wait must bound itself.
-    expect(await frame.awaitControlEvent("render-complete", 50)).toBeNull();
-    frame.closeControl();
-  });
+    queue.enqueue("slow");
+    queue.enqueue("first-intermediate");
+    queue.enqueue("newest");
+    // The first swap is in flight; intermediates collapse into the newest.
+    expect(started).toEqual(["slow"]);
+    releaseSlow!();
+    await queue.settle();
 
-  test("drops ambiguous and malformed control events before dispatch", async () => {
-    const frame = createArtifactFrame({
-      artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
-      dom: createStubDom(),
-    });
-    const events: FrameControlEvent[] = [];
-    const unsubscribe = frame.onControlEvent((event) => events.push(event));
-
-    postFrameControl(frame, { type: "boot-ready", kind: "view-mode" });
-    postFrameControl(frame, {
-      type: "render-complete",
-      observed: { rendererRootSvgCount: Number.POSITIVE_INFINITY },
-    });
-    postFrameControl(frame, { type: "unknown" });
-    postFrameControl(frame, { type: "view-mode", mode: "native" });
-    await new Promise<void>((resolve) => setTimeout(resolve, 20));
-
-    expect(events).toEqual([{ type: "view-mode", mode: "native" }]);
-    unsubscribe();
-    frame.closeControl();
+    expect(started).toEqual(["slow", "newest"]);
+    expect(done).toEqual(["slow", "newest"]);
+    expect(peak).toBe(1);
   });
 });
 
@@ -1177,4 +1012,95 @@ describe("service write path — revision SSE emit", () => {
       }
     }
   }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// Negative source assertions — channel ceremony must be absent from gallery.
+//
+// Scan every production file under src/gallery-web/** (excluding tests and
+// src/validation/**) for banned tokens that belong exclusively to the removed
+// display-security ceremony. Each assertion proves that the deleted machinery
+// cannot re-enter through a stray import or copy-paste.
+//
+// Discriminator: each banned token is verified ABSENT from every gallery
+// production file (scan passes); temporarily reintroducing one token in a
+// gallery file makes the corresponding scan FAIL, proving it discriminates
+// rather than passing vacuously.
+// ---------------------------------------------------------------------------
+
+const GALLERY_PRODUCTION_GLOB = new URL("../../src/gallery-web", import.meta.url).pathname;
+
+async function collectGalleryProductionFiles(): Promise<string[]> {
+  const { readdirSync, statSync } = await import("node:fs");
+  const paths: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = `${dir}/${entry}`;
+      const stat = statSync(full);
+      if (stat.isDirectory()) {
+        walk(full);
+      } else if (full.endsWith(".ts") || full.endsWith(".tsx")) {
+        paths.push(full);
+      }
+    }
+  };
+  walk(GALLERY_PRODUCTION_GLOB);
+  return paths;
+}
+
+describe("gallery production source — channel ceremony absent (negative assertions)", () => {
+  // Each tuple: [token, human label]
+  const BANNED: ReadonlyArray<readonly [string, string]> = [
+    ["MessageChannel", "MessageChannel constructor (channel ceremony)"],
+    ["facetHandshake", "facetHandshake handshake key"],
+    ["handshakeNonce", "handshakeNonce (removed nonce window)"],
+    ["frameIngressPort", "frameIngressPort (removed port field)"],
+    ["frameControlPort", "frameControlPort (removed port field)"],
+    ["allow-scripts", "allow-scripts (removed sandbox attribute)"],
+    ["TSX_ARTIFACT_FRAME_ATTRIBUTE", "TSX_ARTIFACT_FRAME_ATTRIBUTE constant"],
+  ] as const;
+
+  // srcdoc: present in Tier 1 harness comments inside renderers copied
+  // into the frame bundle, but must NOT appear as a gallery ceremony
+  // primitive. The gallery frame document is always loaded via src=, never
+  // injected as srcdoc.
+  const BANNED_IN_FRAME_DIR: ReadonlyArray<readonly [string, string]> = [
+    ...BANNED,
+    ["srcdoc", "srcdoc (removed gallery frame injection)"],
+  ] as const;
+
+  test("collect gallery production files (sanity: at least 10 .ts files found)", async () => {
+    const allFiles = await collectGalleryProductionFiles();
+    expect(allFiles.length).toBeGreaterThanOrEqual(10);
+    // All paths must be under src/gallery-web
+    for (const f of allFiles) {
+      expect(f).toContain("/src/gallery-web/");
+    }
+  });
+
+  for (const [token, label] of BANNED_IN_FRAME_DIR) {
+    test(`gallery-web/frame/** has no ${label} reference`, async () => {
+      const files = (await collectGalleryProductionFiles()).filter((f) =>
+        f.includes("/src/gallery-web/frame/"),
+      );
+      expect(files.length).toBeGreaterThan(0);
+      for (const filePath of files) {
+        const source = await Bun.file(filePath).text();
+        expect(source).not.toContain(token);
+      }
+    });
+  }
+
+  for (const [token, label] of BANNED) {
+    test(`gallery-web/** outside frame/ has no ${label} reference`, async () => {
+      const files = (await collectGalleryProductionFiles()).filter(
+        (f) => !f.includes("/src/gallery-web/frame/"),
+      );
+      expect(files.length).toBeGreaterThan(0);
+      for (const filePath of files) {
+        const source = await Bun.file(filePath).text();
+        expect(source).not.toContain(token);
+      }
+    });
+  }
 });

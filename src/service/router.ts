@@ -49,7 +49,8 @@ import {
   type RequestMeta,
 } from "./router-guards";
 import type { FacetLogger } from "../shared/logging/logger";
-import { buildFrameDocument, FROZEN_CSP_TEMPLATE } from "../gallery-web/frame-html";
+import { buildFrameDocument } from "../gallery-web/frame-html";
+import { ARTIFACT_TYPES } from "../shared/contracts/artifact-types";
 import { ArtifactTypeSchema } from "../shared/contracts/artifact";
 import { latestStoredVerdict } from "./stored-verdict";
 
@@ -60,7 +61,7 @@ const ROUTE_FRAME = "/gallery/frame";
 const ROUTE_BOOTSTRAP = "/api/v1/gallery/bootstrap";
 const ROUTE_RELEASE = "/api/v1/gallery/release";
 const ROUTE_SOURCE = "/api/v1/gallery/source";
-const FRAME_BOOTSTRAP_PREFIX = `${ROUTE_FRAME}/bootstrap/`;
+const FRAME_RUNTIME_PREFIX = `${ROUTE_FRAME}/runtime/`;
 const FRAME_CHUNK_PREFIX = `${ROUTE_FRAME}/chunks/`;
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
 
@@ -69,10 +70,12 @@ function traceTier1Transport(stage: string): void {
   process.stderr.write(`[tier1-transport] ${stage}\n`);
 }
 
-function isFrameScriptPath(path: string): boolean {
+function isFrameAssetPath(path: string): boolean {
   return (
-    (path.startsWith(FRAME_BOOTSTRAP_PREFIX) || path.startsWith(FRAME_CHUNK_PREFIX)) &&
-    path.endsWith(".js")
+    ((path.startsWith(FRAME_RUNTIME_PREFIX) || path.startsWith(FRAME_CHUNK_PREFIX)) &&
+      path.endsWith(".js")) ||
+    path === `${ROUTE_FRAME}/frame.css` ||
+    path === `${ROUTE_FRAME}/artifact.css`
   );
 }
 
@@ -311,21 +314,25 @@ export function buildRouter(deps: RouterDeps): {
     { readonly artifactId: string; readonly revisionSha: string; readonly leaseId: string }
   >();
   const galleryRoot = join(import.meta.dir, "../../dist/gallery");
+  // style-src allows 'unsafe-inline' because mermaid injects its theme
+  // as a <style> element into the rendered SVG (operator-ruled posture
+  // for this local-only tool); script-src stays 'self' blob: — no
+  // script relaxation.
   const galleryCsp =
-    "default-src 'self'; " +
-    "script-src 'self'; " +
-    "style-src 'self'; " +
-    "connect-src 'self'; " +
-    "img-src 'self' data:; " +
-    "font-src 'self' data:; " +
-    "frame-src 'self'; " +
-    "object-src 'none'; " +
-    "base-uri 'none'; " +
-    "form-action 'none'";
+    "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: https:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
   let galleryBuild: Promise<void> | null = null;
 
   const ensureGalleryBuild = async (): Promise<void> => {
-    if (await Bun.file(join(galleryRoot, "index.html")).exists()) return;
+    const requiredAssets = [
+      join(galleryRoot, "index.html"),
+      join(galleryRoot, "frame", "frame.css"),
+      join(galleryRoot, "frame", "artifact.css"),
+      ...ARTIFACT_TYPES.map((artifactType) =>
+        join(galleryRoot, "frame", "runtime", `${artifactType}.js`),
+      ),
+    ];
+    if ((await Promise.all(requiredAssets.map((asset) => Bun.file(asset).exists()))).every(Boolean))
+      return;
     galleryBuild ??= (async () => {
       const process = Bun.spawn(["bun", "scripts/build-gallery.ts"], {
         cwd: join(import.meta.dir, "../.."),
@@ -389,7 +396,7 @@ export function buildRouter(deps: RouterDeps): {
     async fetch(req: Request): Promise<Response> {
       const url = new URL(req.url);
       const path = url.pathname;
-      if (isFrameScriptPath(path) && req.method.toUpperCase() === "GET") {
+      if (isFrameAssetPath(path) && req.method.toUpperCase() === "GET") {
         try {
           await ensureGalleryBuild();
         } catch (error) {
@@ -398,21 +405,9 @@ export function buildRouter(deps: RouterDeps): {
             headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
           });
         }
-        return serveGalleryFile(path.replace(/^\/gallery\//, ""), undefined, {
-          "access-control-allow-origin": "*",
-        });
+        return serveGalleryFile(path.replace(/^\/gallery\//, ""));
       }
       if (path === ROUTE_FRAME && req.method.toUpperCase() === "GET") {
-        const nonce = url.searchParams.get("nonce");
-        if (nonce === null || !/^[a-f0-9]{32}$/.test(nonce)) {
-          return new Response("Invalid frame nonce", {
-            status: 400,
-            headers: {
-              "cache-control": "no-store",
-              "content-type": "text/plain; charset=utf-8",
-            },
-          });
-        }
         const artifactType = ArtifactTypeSchema.safeParse(url.searchParams.get("type"));
         if (!artifactType.success) {
           return new Response("Invalid frame artifact type", {
@@ -423,58 +418,27 @@ export function buildRouter(deps: RouterDeps): {
             },
           });
         }
-        // The html frame route is the ONE gallery route that needs
-        // the bundled stylesheet — the other types self-heal because
-        // their frame route already calls `ensureGalleryBuild()`.
-        // Without this build, a fresh clone (or a `rm -rf dist/`
-        // followed by a restart) hits a 500 with a raw stack trace as
-        // the response body, which is an information-disclosure
-        // defect on its own.
-        if (artifactType.data === "html") {
-          try {
-            await ensureGalleryBuild();
-          } catch (error) {
-            return new Response(error instanceof Error ? error.message : "Gallery build failed", {
-              status: 500,
-              headers: {
-                "content-type": "text/plain; charset=utf-8",
-                "cache-control": "no-store",
-              },
-            });
-          }
-        }
-        let vendoredStyles: string | undefined;
-        if (artifactType.data === "html") {
-          try {
-            vendoredStyles = await Bun.file(
-              join(galleryRoot, "frame", "bootstrap", "html.css"),
-            ).text();
-          } catch {
-            // The build step above should have produced the asset; if
-            // it is still missing, return a typed plain-text 500
-            // rather than a raw exception dump. The body intentionally
-            // omits the underlying error text so we don't leak paths,
-            // syscall names, or errno values to the operator's browser.
-            return new Response("html frame stylesheet unavailable", {
-              status: 500,
-              headers: {
-                "content-type": "text/plain; charset=utf-8",
-                "cache-control": "no-store",
-              },
-            });
-          }
+        try {
+          await ensureGalleryBuild();
+        } catch (error) {
+          return new Response(error instanceof Error ? error.message : "Gallery build failed", {
+            status: 500,
+            headers: {
+              "content-type": "text/plain; charset=utf-8",
+              "cache-control": "no-store",
+            },
+          });
         }
         return new Response(
           buildFrameDocument({
-            nonce,
-            bootstrapUrl: `${FRAME_BOOTSTRAP_PREFIX}${artifactType.data}.js`,
-            ...(vendoredStyles === undefined ? {} : { vendoredStyles }),
+            artifactType: artifactType.data,
+            runtimeUrl: `${FRAME_RUNTIME_PREFIX}${artifactType.data}.js`,
           }),
           {
             status: 200,
             headers: {
               "cache-control": "no-store",
-              "content-security-policy": FROZEN_CSP_TEMPLATE.replace("<BOOTSTRAP_NONCE>", nonce),
+              "content-security-policy": galleryCsp,
               "content-type": "text/html; charset=utf-8",
             },
           },
@@ -487,11 +451,7 @@ export function buildRouter(deps: RouterDeps): {
         return galleryResponse(path);
       }
       if (req.method.toUpperCase() === "GET" && path !== "/") {
-        const rootAssetResponse = await serveGalleryFile(
-          path.replace(/^\//, ""),
-          undefined,
-          isFrameScriptPath(path) ? { "access-control-allow-origin": "*" } : {},
-        );
+        const rootAssetResponse = await serveGalleryFile(path.replace(/^\//, ""), undefined, {});
         if (rootAssetResponse.status !== 404) return rootAssetResponse;
       }
       if (path === ROUTE_BOOTSTRAP && req.method.toUpperCase() === "POST") {

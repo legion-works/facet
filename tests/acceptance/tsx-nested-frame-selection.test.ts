@@ -12,21 +12,20 @@ function srcdoc(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 }
 
-test("real browser selects the renderer-owned nested frame over sibling and host decoys", async () => {
-  const artifact = '<!doctype html><p id="artifact">renderer-owned document</p>';
-  const outer = `<!doctype html><body>
-    <main data-facet-renderer-root="true">outer-frame fake root</main>
-    <iframe id="sibling-decoy" srcdoc="${srcdoc("<!doctype html><p>decoy</p>")}"></iframe>
-    <iframe id="artifact-frame" data-facet-tsx-frame="true" srcdoc="${srcdoc(artifact)}"></iframe>
+test("real browser resolves direct TSX mounts to the artifact frame", async () => {
+  const direct = `<!doctype html><body>
+    <main id="facet-tsx-mount" data-facet-renderer-root="true">direct renderer-owned document</main>
   </body>`;
-  const host = `<!doctype html><body>
-    <main data-facet-renderer-root="true">parent-host fake root</main>
-    <iframe id="outer" srcdoc="${srcdoc(outer)}"></iframe>
+  const directHost = `<!doctype html><body>
+    <iframe id="outer" srcdoc="${srcdoc(direct)}"></iframe>
   </body>`;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: () => new Response(host, { headers: { "content-type": "text/html" } }),
+    fetch: () =>
+      new Response(directHost, {
+        headers: { "content-type": "text/html" },
+      }),
   });
   const launcher = resolveLauncher();
   const browser = new PuppeteerTier1Browser({
@@ -41,15 +40,14 @@ test("real browser selects the renderer-owned nested frame over sibling and host
 
     const outerFrame = await resolveSrcdocChildFrame(target.session);
     const artifactFrame = await resolveNestedArtifactFrame(target.session, outerFrame);
-    expect(artifactFrame.frameId).not.toBe(outerFrame.frameId);
-    expect(artifactFrame.url).toBe("about:srcdoc");
+    expect(artifactFrame).toEqual(outerFrame);
     const isolated = await createIsolatedWorld(target.session, artifactFrame.frameId);
     const rendered = (await target.session.send("Runtime.evaluate", {
       expression: "document.body.textContent",
       contextId: isolated.executionContextId,
       returnByValue: true,
     })) as { result?: { value?: string } };
-    expect(rendered.result?.value).toContain("renderer-owned document");
+    expect(rendered.result?.value).toContain("direct renderer-owned document");
   } finally {
     await target?.close();
     server.stop(true);

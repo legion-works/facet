@@ -1,5 +1,6 @@
-import { startGalleryFrame } from "../bootstrap";
+import { installGalleryFrameApi } from "../runtime";
 import { renderTsx } from "../renderers/tsx";
 import { createRendererRegistry } from "../renderers/registry";
 
-startGalleryFrame(createRendererRegistry([["tsx", renderTsx]]));
+const registry = createRendererRegistry([["tsx", renderTsx]]);
+installGalleryFrameApi(registry);

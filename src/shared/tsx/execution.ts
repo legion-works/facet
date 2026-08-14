@@ -24,9 +24,6 @@
 export const TSX_EXECUTION_MODES = ["static", "interactive"] as const;
 export type TsxExecutionMode = (typeof TSX_EXECUTION_MODES)[number];
 
-/** Marker on the nested iframe that owns an interactive TSX artifact document. */
-export const TSX_ARTIFACT_FRAME_ATTRIBUTE = "data-facet-tsx-frame";
-
 export function isTsxExecutionMode(value: unknown): value is TsxExecutionMode {
   return typeof value === "string" && TSX_EXECUTION_MODES.includes(value as TsxExecutionMode);
 }

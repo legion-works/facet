@@ -48,16 +48,17 @@ non-allowlisted imports. Capability errors use `tsx_capability_fetch`,
 `tsx_capability_require`, or `tsx_capability_global_alias`; imports report
 `tsx_import_denied`. This AST policy is early feedback, not the enforcement
 boundary: aliases and indirect JavaScript forms are deliberately not exhaustively
-modeled. The nested frame, CSP, and netns runtime controls make denied
+modeled. The frame document's CSP and netns runtime controls make denied
 capabilities unreachable.
 
 ## Execution boundary
 
-Interactive bundles run in a nested opaque-origin `srcdoc` frame. The frozen
-CSP is defined in `src/shared/security/frozen-csp.ts`: `default-src 'none'`,
-nonce-only scripts, inline styles, `img-src data: https:`, `font-src data:`,
-and denied workers, connections, objects, base URLs, forms, frames, and media.
-The artifact code has no host port or service capability.
+Interactive bundles mount directly in the artifact's own gallery frame: the
+compiled bundle imports as a `blob:` module in that frame document, with no
+nested iframe. The frame is served under an ordinary restrictive CSP (`self`,
+plus `blob:` for the compiled module import) — not the frozen Tier 1
+verification CSP, which remains a validation-only concern. The artifact code
+has no host port or service capability.
 
 ## Storage and export
 

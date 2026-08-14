@@ -67,7 +67,7 @@ A screenshot is evidence of pixels. It is not evidence that the page's own repor
 
 - **CLI contract** — `create`, `publish`, `list`, `read-back`, `status`, `open`, `promote`, `instantiate`, `pin`, and `export` (source/render with a mandatory sidecar).
 - **Artifact types** — Markdown, Mermaid, SVG, Vega-Lite chart specs, and static HTML. Chart data must be inline; external `data.url` forms are rejected. HTML is script-free, has no `<style>` block or `style=` attribute, and styles from a vendored Tailwind/daisyUI vocabulary ([reference](docs/reference/html.md)).
-- **Gallery** — an offline-built shell with opaque-origin frames, frozen CSP, zoom controls, evidence channels, and revision SSE.
+- **Gallery** — an offline-built shell with a direct-frame render API, a restrictive per-artifact CSP, zoom controls, and revision SSE.
 - **Validation** — a 5 MiB source cap, up to 64 Mermaid blocks and 10,000 Mermaid nodes, and a 1 MiB SVG cap with 16 roots. Tier 1 uses pinned `chrome-headless-shell` `151.0.7922.77`.
 - **Templates** — eleven checked-in starting points in [`templates/`](templates/), documented in [`templates/README.md`](templates/README.md).
 

@@ -1,5 +1,6 @@
-import { startGalleryFrame } from "../bootstrap";
+import { installGalleryFrameApi } from "../runtime";
 import { renderChart } from "../renderers/chart";
 import { createRendererRegistry } from "../renderers/registry";
 
-startGalleryFrame(createRendererRegistry([["chart", renderChart]]));
+const registry = createRendererRegistry([["chart", renderChart]]);
+installGalleryFrameApi(registry);

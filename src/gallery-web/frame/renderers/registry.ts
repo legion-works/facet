@@ -10,7 +10,7 @@ export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/art
 /**
  * Frame-side renderer registry — keyed by ArtifactType.
  *
- * Runs INSIDE the opaque-origin frame. Gallery and Tier 1 have paired
+ * Runs INSIDE the artifact frame. Gallery and Tier 1 have paired
  * type-specific entries that instantiate this registry with the SAME
  * renderer modules; the build-metafile parity gate turns red if those
  * module sets diverge. Artifact bytes are DATA: dispatch routes them to
@@ -57,10 +57,35 @@ export const RENDER_ERROR_ELEMENT = "facet-error";
  * `data-facet-error` so every observation channel (page shim,
  * protocol probes) counts it the same way.
  */
-export function appendRenderError(container: HTMLElement, message: string): void {
-  const el = document.createElement(RENDER_ERROR_ELEMENT);
+function renderErrorMessage(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value !== null) {
+    const event = value as {
+      readonly error?: unknown;
+      readonly message?: unknown;
+      readonly reason?: unknown;
+    };
+    for (const candidate of [event.reason, event.error, event.message]) {
+      if (candidate instanceof Error) return candidate.message;
+      if (typeof candidate === "string") return candidate;
+      if (
+        typeof candidate === "object" &&
+        candidate !== null &&
+        "message" in candidate &&
+        typeof candidate.message === "string"
+      ) {
+        return candidate.message;
+      }
+    }
+  }
+  return "interactive TSX runtime error";
+}
+
+export function appendRenderError(container: HTMLElement, value: unknown): void {
+  const el = container.ownerDocument.createElement(RENDER_ERROR_ELEMENT);
   el.setAttribute(RENDER_ERROR_ATTRIBUTE, "true");
-  el.textContent = message;
+  el.textContent = renderErrorMessage(value);
   container.appendChild(el);
 }
 
@@ -105,7 +130,7 @@ function nonDegenerateViewBox(svg: Element): boolean {
   return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
 }
 
-/** Page-world self-report emitted with `render-complete`. UNTRUSTED by design. */
+/** Page-world self-report the frame's direct render promise resolves with. UNTRUSTED by design. */
 export function countPageShim(): PageShimCounts {
   const markedCandidates = safeSelectorElements(RENDERER_ROOT_SELECTOR);
   const candidateSet = new Set(markedCandidates);

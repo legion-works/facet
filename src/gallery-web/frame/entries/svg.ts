@@ -1,5 +1,6 @@
-import { startGalleryFrame } from "../bootstrap";
+import { installGalleryFrameApi } from "../runtime";
 import { createRendererRegistry } from "../renderers/registry";
 import { renderSvgDocument } from "../renderers/svg";
 
-startGalleryFrame(createRendererRegistry([["svg", renderSvgDocument]]));
+const registry = createRendererRegistry([["svg", renderSvgDocument]]);
+installGalleryFrameApi(registry);

@@ -283,6 +283,7 @@ jobs:
           - gallery-daisyui-library.test.ts
           - gallery-html-scroll.test.ts
           - gallery-interactive-tsx.test.ts
+          - gallery-markdown-mermaid-labels.test.ts
           - gallery-refresh.test.ts
           - gallery-render.test.ts
           - gallery-geometry.test.ts
@@ -290,6 +291,7 @@ jobs:
           - gallery-static-tsx.test.ts
           - gallery-tsx-styles.test.ts
           - gallery-tsx-styles-templates.test.ts
+          - gallery-viewport-geometry.test.ts
           - gate-forgery.test.ts
           - harness-recovery.test.ts
           - html-differential.test.ts
@@ -298,11 +300,9 @@ jobs:
           - html-tier1-status.test.ts
           - insecure-sandbox.test.ts
           - markdown-mermaid-labels.test.ts
-          - nested-frame-denials.test.ts
           - runtime-exception-event.test.ts
           - screenshot-evidence-failure.test.ts
           - secure-cli-tier1.test.ts
-          - tsx-interactive-isolation.test.ts
           - tsx-interactive-verdict-empty.test.ts
           - tsx-interactive-verdict-non-component.test.ts
           - tsx-interactive-verdict-rejected.test.ts
@@ -343,7 +343,7 @@ jobs:
         name: Tier 1 acceptance test
         run: |
           mkdir -p test-results
-          FACET_LIVE_GALLERY="${{ contains('gallery-contrast.test.ts,gallery-daisyui-library.test.ts,gallery-geometry.test.ts,gallery-html-scroll.test.ts,gallery-interactive-tsx.test.ts,gallery-mermaid-natural.test.ts,gallery-refresh.test.ts,gallery-static-tsx.test.ts,gallery-tsx-styles.test.ts,gallery-tsx-styles-templates.test.ts', matrix.test) && '1' || '' }}" bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
+          bun test "tests/acceptance/${{ matrix.test }}" --coverage --coverage-reporter=lcov --reporter=junit --reporter-outfile="test-results/acceptance-${{ matrix.test }}.xml"
       - name: summarize Tier 1 acceptance
         if: always()
         shell: bash
@@ -384,6 +384,19 @@ jobs:
             coverage/
           if-no-files-found: warn
           retention-days: 7
+      # v4.6.2 — ea165f8d65b6e75b540449e92b4886f43607fa02
+      # The two-viewport geometry gate's ten PNGs are the visual proof
+      # behind every scrollWidth/scrollHeight/columnCount assertion —
+      # uploaded on both success and failure so a passing run still
+      # leaves the pixels an operator can spot-check.
+      - name: upload gallery geometry screenshots
+        if: always() && matrix.test == 'gallery-viewport-geometry.test.ts'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: gallery-geometry-screenshots
+          path: test-results/gallery-geometry/**
+          if-no-files-found: warn
+          retention-days: 14
 
   coverage:
     needs: [unit, integration, acceptance-tier1]

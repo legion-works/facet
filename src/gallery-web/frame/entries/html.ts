@@ -1,6 +1,6 @@
-import { startGalleryFrame } from "../bootstrap";
-import "../styles/html-vendored.css";
+import { installGalleryFrameApi } from "../runtime";
 import { renderHtml } from "../renderers/html";
 import { createRendererRegistry } from "../renderers/registry";
 
-startGalleryFrame(createRendererRegistry([["html", renderHtml]]));
+const registry = createRendererRegistry([["html", renderHtml]]);
+installGalleryFrameApi(registry);

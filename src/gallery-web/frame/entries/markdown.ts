@@ -1,5 +1,6 @@
-import { startGalleryFrame } from "../bootstrap";
+import { installGalleryFrameApi } from "../runtime";
 import { renderMarkdown } from "../renderers/markdown";
 import { createRendererRegistry } from "../renderers/registry";
 
-startGalleryFrame(createRendererRegistry([["markdown", renderMarkdown]]));
+const registry = createRendererRegistry([["markdown", renderMarkdown]]);
+installGalleryFrameApi(registry);

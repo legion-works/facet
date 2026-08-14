@@ -1,0 +1,76 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: #c8d3f5;
+  font:
+    14px/1.55 ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+#artifact {
+  box-sizing: border-box;
+  height: 100%;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+}
+
+#artifact > svg {
+  display: block;
+  width: fit-content;
+  max-height: none;
+  height: auto;
+}
+
+#artifact > canvas,
+#artifact > iframe {
+  display: block;
+}
+
+#artifact a {
+  color: #82aaff;
+}
+
+#artifact code,
+#artifact pre {
+  color: #c3e88d;
+  background: #1e2030;
+  border-radius: 4px;
+}
+
+#artifact code {
+  padding: 1px 4px;
+}
+
+#artifact pre {
+  padding: 10px;
+  overflow: auto;
+}
+
+#artifact table {
+  border-collapse: collapse;
+}
+
+#artifact th,
+#artifact td {
+  padding: 4px 8px;
+  border: 1px solid #2f334d;
+}
+
+#artifact blockquote {
+  margin: 0 0 0 8px;
+  padding-left: 12px;
+  color: #a9b8e8;
+  border-left: 3px solid #444a73;
+}
+
+#artifact hr {
+  border: 0;
+  border-top: 1px solid #2f334d;
+}

@@ -9,37 +9,33 @@ import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
 
-const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
-
-test.skipIf(!liveGateEnabled)(
-  "gallery renders a wide Mermaid diagram at natural size, top-left, horizontally scrollable",
-  async () => {
-    const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-mermaid-fit-"));
-    const service = await startFacetService({
-      dbPath: join(envDir, "facet.sqlite"),
-      installTokenPath: join(envDir, "install.token"),
-      promoteTokenPath: join(envDir, "promote.token"),
-      lockPath: join(envDir, "facet.lock"),
-      idleTimeoutMs: 30_000,
-      logger: createQuietLogger({ component: "gallery-mermaid-fit" }),
-      tier0Runner: stubTier0Runner,
-    });
-    const browser = galleryBrowser();
-    let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
-    try {
-      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
-      target = await browser.launch();
-      await navigateToArtifact(
-        target,
-        client,
-        "mermaid",
-        readFileSync(join(import.meta.dir, "../../templates/service-topology.mmd"), "utf8"),
-      );
-      const world = await artifactWorld(target);
-      const geometry = (await target.session.send("Runtime.evaluate", {
-        contextId: world,
-        returnByValue: true,
-        expression: `(() => {
+test("gallery renders a wide Mermaid diagram at natural size, top-left, horizontally scrollable", async () => {
+  const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-mermaid-fit-"));
+  const service = await startFacetService({
+    dbPath: join(envDir, "facet.sqlite"),
+    installTokenPath: join(envDir, "install.token"),
+    promoteTokenPath: join(envDir, "promote.token"),
+    lockPath: join(envDir, "facet.lock"),
+    idleTimeoutMs: 30_000,
+    logger: createQuietLogger({ component: "gallery-mermaid-fit" }),
+    tier0Runner: stubTier0Runner,
+  });
+  const browser = galleryBrowser();
+  let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
+  try {
+    const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+    target = await browser.launch();
+    await navigateToArtifact(
+      target,
+      client,
+      "mermaid",
+      readFileSync(join(import.meta.dir, "../../templates/service-topology.mmd"), "utf8"),
+    );
+    const world = await artifactWorld(target);
+    const geometry = (await target.session.send("Runtime.evaluate", {
+      contextId: world,
+      returnByValue: true,
+      expression: `(() => {
           const viewport = document.getElementById('artifact');
           const svg = viewport?.querySelector(':scope > svg');
           if (viewport === null || !(svg instanceof SVGSVGElement)) throw new Error('Mermaid SVG missing');
@@ -48,6 +44,10 @@ test.skipIf(!liveGateEnabled)(
           const style = getComputedStyle(viewport);
           const viewBox = svg.viewBox.baseVal;
           const content = svg.getBBox();
+          const node = svg.querySelector('.node rect, .node polygon, .node circle, .node ellipse');
+          const nodeFill = node === null ? null : getComputedStyle(node).fill;
+          const label = svg.querySelector('.node .label');
+          const labelText = label === null ? null : (label.textContent ?? '').trim();
           return {
             paddingTop: Number.parseFloat(style.paddingTop),
             paddingLeft: Number.parseFloat(style.paddingLeft),
@@ -62,52 +62,66 @@ test.skipIf(!liveGateEnabled)(
             viewBoxRight: viewBox.x + viewBox.width,
             contentLeft: content.x,
             contentRight: content.x + content.width,
+            nodeFill,
+            labelText,
           };
         })()`,
-      })) as {
-        result?: {
-          value?: {
-            paddingTop: number;
-            paddingLeft: number;
-            viewportTop: number;
-            viewportLeft: number;
-            viewportWidth: number;
-            viewportScrollWidth: number;
-            svgTop: number;
-            svgLeft: number;
-            svgWidth: number;
-            viewBoxLeft: number;
-            viewBoxRight: number;
-            contentLeft: number;
-            contentRight: number;
-          };
+    })) as {
+      result?: {
+        value?: {
+          paddingTop: number;
+          paddingLeft: number;
+          viewportTop: number;
+          viewportLeft: number;
+          viewportWidth: number;
+          viewportScrollWidth: number;
+          svgTop: number;
+          svgLeft: number;
+          svgWidth: number;
+          viewBoxLeft: number;
+          viewBoxRight: number;
+          contentLeft: number;
+          contentRight: number;
+          nodeFill: string | null;
+          labelText: string | null;
         };
       };
-      const observed = geometry.result?.value;
-      expect(observed).toBeDefined();
-      expect(observed!.svgTop).toBeLessThanOrEqual(
-        observed!.viewportTop + observed!.paddingTop + 2,
-      );
-      expect(observed!.svgLeft).toBeLessThanOrEqual(
-        observed!.viewportLeft + observed!.paddingLeft + 2,
-      );
-      // Natural size: the SVG is pinned at its viewBox width (readable
-      // labels), NOT shrunk to the viewport. A wide diagram therefore
-      // overflows and the stage must expose the overflow as scrollable
-      // width — the jail regression (fit-to-container squeeze) reads
-      // svgWidth ≈ viewportWidth and scrollWidth ≈ clientWidth, which
-      // this pair rejects.
-      expect(observed!.svgWidth).toBeGreaterThanOrEqual(
-        observed!.viewBoxRight - observed!.viewBoxLeft - 2,
-      );
-      expect(observed!.viewportScrollWidth).toBeGreaterThan(observed!.viewportWidth + 100);
-      expect(observed!.contentLeft).toBeGreaterThanOrEqual(observed!.viewBoxLeft - 1);
-      expect(observed!.contentRight).toBeLessThanOrEqual(observed!.viewBoxRight + 1);
-    } finally {
-      await target?.close();
-      await service.stop();
-      rmSync(envDir, { recursive: true, force: true });
-    }
-  },
-  45_000,
-);
+    };
+    const observed = geometry.result?.value;
+    expect(observed).toBeDefined();
+    expect(observed!.svgTop).toBeLessThanOrEqual(observed!.viewportTop + observed!.paddingTop + 2);
+    expect(observed!.svgLeft).toBeLessThanOrEqual(
+      observed!.viewportLeft + observed!.paddingLeft + 2,
+    );
+    // Natural size: the SVG is pinned at its viewBox width (readable
+    // labels), NOT shrunk to the viewport. A wide diagram therefore
+    // overflows and the stage must expose the overflow as scrollable
+    // width — the jail regression (fit-to-container squeeze) reads
+    // svgWidth ≈ viewportWidth and scrollWidth ≈ clientWidth, which
+    // this pair rejects.
+    expect(observed!.svgWidth).toBeGreaterThanOrEqual(
+      observed!.viewBoxRight - observed!.viewBoxLeft - 2,
+    );
+    expect(observed!.viewportScrollWidth).toBeGreaterThan(observed!.viewportWidth + 100);
+    expect(observed!.contentLeft).toBeGreaterThanOrEqual(observed!.viewBoxLeft - 1);
+    expect(observed!.contentRight).toBeLessThanOrEqual(observed!.viewBoxRight + 1);
+    // Style-effectiveness discriminator: the frame CSP must allow mermaid's
+    // injected <style> element to take effect. A blocked style-src leaves
+    // the node's rendered shape at the SVG default black fill (verified live:
+    // rgb(0, 0, 0) under `style-src 'self'`, the class-driven theme color under
+    // the fixed policy) even though geometry and counts look correct — the
+    // regression this pair exists to catch. Label text stays populated and
+    // colored via mermaid's per-node inline `style="fill:...!important"`
+    // attribute regardless of policy (inline attribute styles aren't gated by
+    // `style-src`), so the second assertion is a content-presence guard
+    // rather than an independent CSP discriminator for this fixture.
+    expect(observed!.nodeFill).not.toBeNull();
+    expect(observed!.nodeFill).not.toBe("rgb(0, 0, 0)");
+    expect(observed!.labelText).not.toBeNull();
+    expect(observed!.labelText).not.toBe("");
+  } finally {
+    await target?.close();
+    await service.stop();
+    rmSync(envDir, { recursive: true, force: true });
+  }
+}, 45_000);

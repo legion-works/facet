@@ -5,7 +5,7 @@
  * completion, then imports the result through the ONE sanitized-SVG
  * import path (`svg.ts`). Mermaid's strict/sandbox levels add a
  * whole-SVG DOMPurify pass on top — redundant here, and broken in the
- * srcdoc bundle: the shim DOMPurify's SVG-input `_initDocument` path
+ * verifier's inlined harness bundle: the shim DOMPurify's SVG-input `_initDocument` path
  * resolves `body` to null and returns `""` for every diagram. "loose"
  * skips that pass (`!isLooseSecurityLevel` guard in mermaid's render),
  * so `importSanitizedSvgText` is the SOLE outer-SVG sanitizer — script,
@@ -59,7 +59,7 @@ let renderCounter = 0;
 /**
  * Render one mermaid diagram source into the container. Awaits
  * `mermaid.render()` completion BEFORE the SVG crosses the sanitized
- * import path — render-complete semantics depend on this barrier.
+ * import path — the direct render promise depends on this barrier.
  */
 export async function renderMermaidInto(container: HTMLElement, source: string): Promise<void> {
   ensureMermaidInitialized();

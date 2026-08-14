@@ -1,0 +1,18 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "Bar chart with inline data, rendered to canvas for the geometry gate",
+  "data": {
+    "values": [
+      { "category": "A", "value": 24 },
+      { "category": "B", "value": 61 },
+      { "category": "C", "value": 38 },
+      { "category": "D", "value": 74 },
+      { "category": "E", "value": 52 }
+    ]
+  },
+  "mark": "bar",
+  "encoding": {
+    "x": { "field": "category", "type": "nominal" },
+    "y": { "field": "value", "type": "quantitative" }
+  }
+}

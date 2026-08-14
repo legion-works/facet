@@ -7,46 +7,42 @@ import { FacetClient } from "../../src/cli/client";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
-import { galleryBrowser, navigateToArtifact, nestedArtifactWorld } from "../helpers/gallery-live";
+import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
 
-const liveGateEnabled = process.env.FACET_LIVE_GALLERY === "1";
-
-test.skipIf(!liveGateEnabled)(
-  "gallery interactive TSX renders daisyUI variants outside the documented recommendations",
-  async () => {
-    const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-styles-"));
-    const tier0Runner = createTier0RunnerForTests(0, {});
-    const service = await startFacetService({
-      dbPath: join(envDir, "facet.sqlite"),
-      installTokenPath: join(envDir, "install.token"),
-      promoteTokenPath: join(envDir, "promote.token"),
-      lockPath: join(envDir, "facet.lock"),
-      idleTimeoutMs: 30_000,
-      logger: createQuietLogger({ component: "gallery-tsx-styles" }),
-      tier0Runner,
-    });
-    const browser = galleryBrowser();
-    let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
-    try {
-      const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
-      target = await browser.launch();
-      await navigateToArtifact(
-        target,
-        client,
-        "tsx",
-        [
-          'import React from "react";',
-          "export default function StyledCounter(){",
-          '  return <section className="alert"><span className="badge badge-success">ready</span><button className="btn">Plain</button><button className="btn btn-primary">Increment</button></section>;',
-          "}",
-        ].join("\n"),
-        "interactive",
-      );
-      const nestedWorld = await nestedArtifactWorld(target);
-      const styles = (await target.session.send("Runtime.evaluate", {
-        contextId: nestedWorld,
-        returnByValue: true,
-        expression: `(() => {
+test("gallery interactive TSX renders daisyUI variants outside the documented recommendations", async () => {
+  const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-tsx-styles-"));
+  const tier0Runner = createTier0RunnerForTests(0, {});
+  const service = await startFacetService({
+    dbPath: join(envDir, "facet.sqlite"),
+    installTokenPath: join(envDir, "install.token"),
+    promoteTokenPath: join(envDir, "promote.token"),
+    lockPath: join(envDir, "facet.lock"),
+    idleTimeoutMs: 30_000,
+    logger: createQuietLogger({ component: "gallery-tsx-styles" }),
+    tier0Runner,
+  });
+  const browser = galleryBrowser();
+  let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
+  try {
+    const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+    target = await browser.launch();
+    await navigateToArtifact(
+      target,
+      client,
+      "tsx",
+      [
+        'import React from "react";',
+        "export default function StyledCounter(){",
+        '  return <section className="alert"><span className="badge badge-success">ready</span><button className="btn">Plain</button><button className="btn btn-primary">Increment</button></section>;',
+        "}",
+      ].join("\n"),
+      "interactive",
+    );
+    const artifactFrameWorld = await artifactWorld(target);
+    const styles = (await target.session.send("Runtime.evaluate", {
+      contextId: artifactFrameWorld,
+      returnByValue: true,
+      expression: `(() => {
           const alert = document.querySelector('.alert');
           const buttons = document.querySelectorAll('.btn');
           const badge = document.querySelector('.badge-success');
@@ -58,27 +54,25 @@ test.skipIf(!liveGateEnabled)(
             successBadgeBackground: getComputedStyle(badge).backgroundColor,
           };
         })()`,
-      })) as {
-        result?: {
-          value?: {
-            alertBackground: string;
-            plainButtonBackground: string;
-            primaryButtonBackground: string;
-            successBadgeBackground: string;
-          };
+    })) as {
+      result?: {
+        value?: {
+          alertBackground: string;
+          plainButtonBackground: string;
+          primaryButtonBackground: string;
+          successBadgeBackground: string;
         };
       };
-      expect(styles.result?.value?.alertBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
-      expect(styles.result?.value?.primaryButtonBackground).not.toBe(
-        styles.result?.value?.plainButtonBackground,
-      );
-      expect(styles.result?.value?.successBadgeBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
-    } finally {
-      await target?.close();
-      await service.stop();
-      tier0Runner.close?.();
-      rmSync(envDir, { recursive: true, force: true });
-    }
-  },
-  90_000,
-);
+    };
+    expect(styles.result?.value?.alertBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
+    expect(styles.result?.value?.primaryButtonBackground).not.toBe(
+      styles.result?.value?.plainButtonBackground,
+    );
+    expect(styles.result?.value?.successBadgeBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
+  } finally {
+    await target?.close();
+    await service.stop();
+    tier0Runner.close?.();
+    rmSync(envDir, { recursive: true, force: true });
+  }
+}, 90_000);

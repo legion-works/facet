@@ -1,12 +1,12 @@
 import { expect } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 import { FacetClient, publishArtifact } from "../../src/cli/client";
 import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
+import type { Renderer } from "../../src/shared/contracts/renderers";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
-import {
-  createIsolatedWorld,
-  resolveNestedArtifactFrame,
-} from "../../src/validation/tier1/frame-target";
+import { createIsolatedWorld } from "../../src/validation/tier1/frame-target";
 import { resolveLauncher } from "../../src/validation/tier1/launcher";
 
 export type GalleryTarget = Awaited<ReturnType<PuppeteerTier1Browser["launch"]>>;
@@ -24,12 +24,14 @@ export async function navigateToArtifact(
   artifactType: ArtifactType,
   bytes: string,
   execution?: "static" | "interactive",
+  options?: { readonly renderer?: Renderer; readonly slug?: string },
 ): Promise<void> {
   const published = await publishArtifact(client, {
     artifactType,
     bytes: new TextEncoder().encode(bytes).buffer as ArrayBuffer,
-    slug: `gallery-geometry-${artifactType}`,
+    slug: options?.slug ?? `gallery-geometry-${artifactType}`,
     ...(execution === undefined ? {} : { execution }),
+    ...(options?.renderer === undefined ? {} : { renderer: options.renderer }),
   });
   const opened = await client.sendCommand({
     command: "open",
@@ -39,6 +41,16 @@ export async function navigateToArtifact(
   });
   if (!opened.ok || opened.data.command !== "open") throw new Error("gallery open command failed");
   await target.session.send("Page.enable");
+  // Every bootstrap token mints a fresh `#bootstrap=<token>` fragment on
+  // the SAME gallery pathname. Navigating straight from one gallery
+  // fragment to another is a same-document navigation (`Page.
+  // navigatedWithinDocument`, not `Page.frameNavigated`) when a caller
+  // reuses one browser session across several `navigateToArtifact`
+  // calls (the geometry gate's one-launch-per-file budget does exactly
+  // this) — the frameNavigated listener below would then wait forever.
+  // Forcing an intermediate `about:blank` guarantees the destination
+  // navigation is always a fresh cross-document load.
+  await target.session.send("Page.navigate", { url: "about:blank" });
   const destination = new URL(opened.data.frameUrl);
   let settleNavigation: (() => void) | undefined;
   const navigationReady = new Promise<void>((resolve, reject) => {
@@ -120,12 +132,6 @@ export async function artifactWorld(target: GalleryTarget): Promise<number> {
   return (await createIsolatedWorld(target.session, artifact.frameId)).executionContextId;
 }
 
-export async function nestedArtifactWorld(target: GalleryTarget): Promise<number> {
-  const outer = await artifactFrame(target);
-  const nested = await resolveNestedArtifactFrame(target.session, outer);
-  return (await createIsolatedWorld(target.session, nested.frameId)).executionContextId;
-}
-
 export async function artifactBlockRects(
   target: GalleryTarget,
 ): Promise<readonly { top: number; bottom: number; left: number }[]> {
@@ -141,4 +147,129 @@ export async function artifactBlockRects(
     result?: { value?: readonly { top: number; bottom: number; left: number }[] };
   };
   return markdown.result?.value ?? [];
+}
+
+/**
+ * Emulate a fixed device viewport via CDP (the same mechanism the
+ * Tier 1 verifier uses in `configureTier1Viewport` — see
+ * `src/validation/tier1/runner.ts`). One override per case keeps every
+ * geometry assertion tied to a deterministic, non-default-window size
+ * instead of whatever headless Chrome's default happens to be.
+ */
+export async function setGalleryViewport(
+  target: GalleryTarget,
+  width: number,
+  height: number,
+): Promise<void> {
+  await target.session.send("Emulation.setDeviceMetricsOverride", {
+    width,
+    height,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+}
+
+export interface ArtifactGeometry {
+  readonly scrollWidth: number;
+  readonly scrollHeight: number;
+  readonly clientWidth: number;
+  readonly clientHeight: number;
+  readonly frameScrollLeft: number;
+  readonly frameScrollTop: number;
+  readonly iframeWidth: number;
+  readonly iframeHeight: number;
+  readonly columnCount: number | null;
+  readonly canvasCount: number;
+  /** Bounding box of the artifact's rendered root (first child of `#artifact`) — the zoom-in size probe. */
+  readonly rootWidth: number;
+  readonly rootHeight: number;
+}
+
+/**
+ * Read the artifact's overflow geometry from inside its isolated
+ * world (the `#artifact` scroll container the frame runtime owns —
+ * see `installGalleryFrameApi` in `src/gallery-web/frame/runtime.ts`),
+ * plus the shell-owned iframe's own box from the top document. The
+ * pairing is the point: a squeeze regression collapses the artifact's
+ * scrollWidth/Height toward the iframe's clientWidth/Height, while a
+ * correctly-natural-sized artifact overflows it.
+ */
+export async function readArtifactGeometry(target: GalleryTarget): Promise<ArtifactGeometry> {
+  const world = await artifactWorld(target);
+  const inner = (await target.session.send("Runtime.evaluate", {
+    contextId: world,
+    returnByValue: true,
+    expression: `(() => {
+      const viewport = document.getElementById('artifact');
+      const grid = document.querySelector('[data-facet-grid]');
+      const columnCount = grid === null
+        ? null
+        : getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
+      const rootRect = viewport?.firstElementChild?.getBoundingClientRect();
+      return {
+        scrollWidth: viewport?.scrollWidth ?? 0,
+        scrollHeight: viewport?.scrollHeight ?? 0,
+        clientWidth: viewport?.clientWidth ?? 0,
+        clientHeight: viewport?.clientHeight ?? 0,
+        frameScrollLeft: viewport?.scrollLeft ?? 0,
+        frameScrollTop: viewport?.scrollTop ?? 0,
+        columnCount,
+        canvasCount: document.querySelectorAll('canvas').length,
+        rootWidth: rootRect?.width ?? 0,
+        rootHeight: rootRect?.height ?? 0,
+      };
+    })()`,
+  })) as {
+    result?: {
+      value?: {
+        scrollWidth: number;
+        scrollHeight: number;
+        clientWidth: number;
+        clientHeight: number;
+        frameScrollLeft: number;
+        frameScrollTop: number;
+        columnCount: number | null;
+        canvasCount: number;
+        rootWidth: number;
+        rootHeight: number;
+      };
+    };
+  };
+  const innerValue = inner.result?.value;
+  if (innerValue === undefined) throw new Error("gallery geometry: artifact world read failed");
+  const outer = (await target.session.send("Runtime.evaluate", {
+    returnByValue: true,
+    expression: `(() => {
+      const rect = document.querySelector('iframe')?.getBoundingClientRect();
+      return { iframeWidth: rect?.width ?? 0, iframeHeight: rect?.height ?? 0 };
+    })()`,
+  })) as { result?: { value?: { iframeWidth: number; iframeHeight: number } } };
+  const outerValue = outer.result?.value;
+  if (outerValue === undefined) throw new Error("gallery geometry: iframe rect read failed");
+  return { ...innerValue, ...outerValue };
+}
+
+/** Click a shell toolbar control (`#facet-zoom-in`, `#facet-zoom-reset`, ...) in the top document. */
+export async function clickGalleryControl(target: GalleryTarget, elementId: string): Promise<void> {
+  await target.session.send("Runtime.evaluate", {
+    expression: `document.getElementById(${JSON.stringify(elementId)})?.click()`,
+  });
+}
+
+/**
+ * Capture a full-page PNG of the top document and write it to disk,
+ * creating parent directories as needed. Mirrors the capture shape
+ * `captureScreenshotWithFallback` uses in the Tier 1 runner, without
+ * the oversized-payload fallback path — geometry-gate screenshots are
+ * bounded by the fixed 1280x720 / 1920x1080 viewports.
+ */
+export async function captureGalleryScreenshot(target: GalleryTarget, path: string): Promise<void> {
+  const shot = (await target.session.send("Page.captureScreenshot", {
+    format: "png",
+  })) as { data?: string };
+  if (typeof shot.data !== "string" || shot.data.length === 0) {
+    throw new Error(`gallery geometry: screenshot capture returned no data for ${path}`);
+  }
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, Buffer.from(shot.data, "base64"));
 }

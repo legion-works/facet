@@ -1,6 +1,7 @@
+import type { ViewportSize } from "./frame/view-box";
+
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 8;
-const MIN_VISIBLE_PX = 48;
 
 export interface ViewState {
   zoom: number;
@@ -8,88 +9,21 @@ export interface ViewState {
   panY?: number;
 }
 
-export interface ViewportSize {
-  readonly width: number;
-  readonly height: number;
-}
-
-export type ViewMode = "native" | "css";
-
-export type ViewIntent =
-  | {
-      readonly type: "view-intent";
-      readonly mode: "zoom";
-      readonly deltaY: number;
-      readonly cursorX: number;
-      readonly cursorY: number;
-      readonly rect: { readonly w: number; readonly h: number };
-    }
-  | {
-      readonly type: "view-intent";
-      readonly mode: "pan";
-      readonly dx: number;
-      readonly dy: number;
-    };
-
 export function clampZoom(zoom: number): number {
   if (!Number.isFinite(zoom)) return 1;
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
 }
 
+/** Canonical zero state — the one home for the `{ zoom: 1, panX: 0, panY: 0 }` literal. */
+export const EMPTY_VIEW_STATE: Required<ViewState> = { zoom: 1, panX: 0, panY: 0 };
+
 export function resetViewState(_state: ViewState): ViewState {
-  return { zoom: 1, panX: 0, panY: 0 };
+  return { ...EMPTY_VIEW_STATE };
 }
 
-function clampPanAxis(
-  pan: number,
-  content: number,
-  viewport: number,
-  zoom: number,
-  offset: number,
-): number {
-  if (!Number.isFinite(pan) || content <= 0 || viewport <= 0) return 0;
-  const visible = Math.min(MIN_VISIBLE_PX, viewport);
-  const scaled = content * zoom;
-  return Math.max(visible - offset - scaled, Math.min(viewport - visible - offset, pan));
-}
-
-/**
- * Clamp shell-transformed frames to retain 48px of the artifact. The frame
- * begins centered in the grid, while its inline transform origin stays top-left.
- */
-export function clampCssPan(
-  state: ViewState,
-  viewport: ViewportSize,
-  artifact: ViewportSize,
-): ViewState {
-  const zoom = clampZoom(state.zoom);
-  return {
-    zoom,
-    panX: clampPanAxis(
-      state.panX ?? 0,
-      artifact.width,
-      viewport.width,
-      zoom,
-      (viewport.width - artifact.width) / 2,
-    ),
-    panY: clampPanAxis(
-      state.panY ?? 0,
-      artifact.height,
-      viewport.height,
-      zoom,
-      (viewport.height - artifact.height) / 2,
-    ),
-  };
-}
-
-/** Clamp native SVG viewBox translation to retain 48px of the source image. */
-export function clampNativeSvgPan(state: ViewState, viewport: ViewportSize): ViewState {
-  const zoom = clampZoom(state.zoom);
-  return {
-    zoom,
-    panX: clampPanAxis(state.panX ?? 0, viewport.width, viewport.width, zoom, 0),
-    panY: clampPanAxis(state.panY ?? 0, viewport.height, viewport.height, zoom, 0),
-  };
+/** Fill the optional pan fields so callers stop open-coding `?? 0`. */
+export function normalizeViewState(state: ViewState): Required<ViewState> {
+  return { zoom: state.zoom, panX: state.panX ?? 0, panY: state.panY ?? 0 };
 }
 
 export function zoomAtPoint(
@@ -109,54 +43,51 @@ export function zoomAtPoint(
   };
 }
 
-function finite(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
+const ZOOM_KEY_FACTOR = Math.exp(100 * 0.001);
+const PAN_STEP_PX = 10;
+const PAN_STEP_PX_SHIFT = 50;
 
-export function validateViewIntent(value: unknown): ViewIntent | null {
-  if (value === null || typeof value !== "object") return null;
-  const event = value as Record<string, unknown>;
-  if (event.type !== "view-intent") return null;
-  if (event.mode === "pan") {
-    if (
-      !finite(event.dx) ||
-      !finite(event.dy) ||
-      Math.abs(event.dx) > 2_000 ||
-      Math.abs(event.dy) > 2_000
-    )
-      return null;
-    return { type: "view-intent", mode: "pan", dx: event.dx, dy: event.dy };
+/**
+ * Map a keydown event to the resulting view state, or null if the key
+ * isn't one of the bound zoom/pan/reset keys. Pure — no DOM access —
+ * so both the shell (parent document) and the frame (iframe document)
+ * keydown listeners can share one tested key-to-state mapping instead
+ * of maintaining parallel copies.
+ */
+export function nextViewStateForKey(
+  state: ViewState,
+  key: string,
+  shiftKey: boolean,
+  rect: ViewportSize,
+): ViewState | null {
+  if (key === "+" || key === "=") {
+    return zoomAtPoint(
+      state,
+      clampZoom(state.zoom * ZOOM_KEY_FACTOR),
+      rect.width / 2,
+      rect.height / 2,
+    );
   }
-  if (event.mode !== "zoom" || !finite(event.deltaY) || Math.abs(event.deltaY) > 1_000) return null;
-  const rect = event.rect;
-  if (rect === null || typeof rect !== "object") return null;
-  const dimensions = rect as Record<string, unknown>;
-  if (
-    !finite(event.cursorX) ||
-    !finite(event.cursorY) ||
-    !finite(dimensions.w) ||
-    !finite(dimensions.h) ||
-    dimensions.w <= 0 ||
-    dimensions.h <= 0 ||
-    dimensions.w > 100_000 ||
-    dimensions.h > 100_000
-  )
-    return null;
-  return {
-    type: "view-intent",
-    mode: "zoom",
-    deltaY: event.deltaY,
-    cursorX: event.cursorX,
-    cursorY: event.cursorY,
-    rect: { w: dimensions.w, h: dimensions.h },
-  };
-}
-
-export function validateViewMode(value: unknown): ViewMode | null {
-  if (value === null || typeof value !== "object") return null;
-  const event = value as Record<string, unknown>;
-  if (event.type !== "view-mode") return null;
-  if (event.mode !== "native" && event.mode !== "css") return null;
-  if (Object.keys(event).length !== 2) return null;
-  return event.mode;
+  if (key === "-") {
+    return zoomAtPoint(
+      state,
+      clampZoom(state.zoom / ZOOM_KEY_FACTOR),
+      rect.width / 2,
+      rect.height / 2,
+    );
+  }
+  if (key === "0") {
+    return resetViewState(state);
+  }
+  if (key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown") {
+    const amount = shiftKey ? PAN_STEP_PX_SHIFT : PAN_STEP_PX;
+    const dx = key === "ArrowLeft" ? -amount : key === "ArrowRight" ? amount : 0;
+    const dy = key === "ArrowUp" ? -amount : key === "ArrowDown" ? amount : 0;
+    return {
+      ...state,
+      panX: (state.panX ?? 0) + dx,
+      panY: (state.panY ?? 0) + dy,
+    };
+  }
+  return null;
 }

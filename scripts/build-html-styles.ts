@@ -7,7 +7,7 @@ import { HTML_TAILWIND_BUILD_CLASSES } from "../src/shared/html/style-vocabulary
 
 const REPO_ROOT = import.meta.dir.replace(/\/scripts$/, "");
 const SOURCE_PATH = join(REPO_ROOT, "src/gallery-web/frame/styles/html-source.css");
-const OUTPUT_PATH = join(REPO_ROOT, "src/gallery-web/frame/styles/html-vendored.css");
+const OUTPUT_PATH = join(REPO_ROOT, "src/gallery-web/frame/styles/artifact.css");
 const STYLES_DIR = join(REPO_ROOT, "src/gallery-web/frame/styles");
 const TAILWIND_CLI = join(REPO_ROOT, "node_modules/@tailwindcss/cli/dist/index.mjs");
 
@@ -44,11 +44,11 @@ async function main(): Promise<void> {
   if (process.argv.includes("--check")) {
     const directory = await mkdtemp(join(STYLES_DIR, ".facet-html-styles-check-"));
     try {
-      const candidate = join(directory, "html-vendored.css");
+      const candidate = join(directory, "artifact.css");
       await buildStyles(candidate);
       const [actual, expected] = await Promise.all([readFile(candidate), readFile(OUTPUT_PATH)]);
       if (!actual.equals(expected))
-        throw new Error("html-vendored.css is stale; run bun scripts/build-html-styles.ts");
+        throw new Error("artifact.css is stale; run bun scripts/build-html-styles.ts");
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
