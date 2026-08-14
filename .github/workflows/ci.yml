@@ -283,6 +283,7 @@ jobs:
           - gallery-daisyui-library.test.ts
           - gallery-html-scroll.test.ts
           - gallery-interactive-tsx.test.ts
+          - gallery-markdown-mermaid-labels.test.ts
           - gallery-refresh.test.ts
           - gallery-render.test.ts
           - gallery-geometry.test.ts

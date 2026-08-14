@@ -25,15 +25,31 @@ const OUT_DIR = join(REPO_ROOT, "dist", "gallery");
 const FRAME_ENTRY_DIR = join(REPO_ROOT, "src", "gallery-web", "frame", "entries");
 const FRAME_STYLE_DIR = join(REPO_ROOT, "src", "gallery-web", "frame", "styles");
 
-async function buildEntry(entry: string, name: string, splitting = false): Promise<void> {
+/**
+ * All frame entries build in ONE `Bun.build` call, not one call per
+ * artifact type. Splitting still applies (plain markdown must not pay
+ * Mermaid's multi-megabyte load + parse cost when it has no fence),
+ * but a shared dependency — Mermaid, reached from BOTH the `mermaid`
+ * and `markdown` entries — now gets ONE tree-shaking pass and ONE set
+ * of lazy diagram-type chunks instead of two independently rebuilt,
+ * NOT-byte-identical copies. Two separate `Bun.build` invocations per
+ * entry produced two divergent tree-shakes of Mermaid's lazy-loaded
+ * flowchart renderer; the copy reached through `markdown`'s dynamic
+ * `import("./mermaid")` silently dropped every flowchart label while
+ * the copy reached through `mermaid`'s own top-level entry did not
+ * (`nodes 6 · errors 0 · ok` either way — no gate saw it). One shared
+ * build graph means one shared chunk, so there is nothing left to
+ * diverge.
+ */
+async function buildFrameEntries(entries: string[]): Promise<void> {
   const result = await Bun.build({
-    entrypoints: [entry],
+    entrypoints: entries,
     outdir: OUT_DIR,
     target: "browser",
     minify: false,
-    splitting,
+    splitting: true,
     naming: {
-      entry: name,
+      entry: "frame/runtime/[name].[ext]",
       chunk: "frame/chunks/[name]-[hash].[ext]",
       asset: "frame/assets/[name].[ext]",
     },
@@ -41,7 +57,7 @@ async function buildEntry(entry: string, name: string, splitting = false): Promi
   });
   if (!result.success) {
     const messages = result.logs.map((log) => log.message).join("\n");
-    throw new Error(`Build failed for ${entry}:\n${messages}`);
+    throw new Error(`Frame entry build failed:\n${messages}`);
   }
 }
 
@@ -54,13 +70,9 @@ async function main(): Promise<void> {
   rmSync(join(OUT_DIR, "frame", "assets"), { recursive: true, force: true });
   rmSync(join(OUT_DIR, "frame", "frame.css"), { force: true });
   rmSync(join(OUT_DIR, "frame", "artifact.css"), { force: true });
-  for (const artifactType of ARTIFACT_TYPES) {
-    await buildEntry(
-      join(FRAME_ENTRY_DIR, `${artifactType}.ts`),
-      `frame/runtime/${artifactType}.[ext]`,
-      true,
-    );
-  }
+  await buildFrameEntries(
+    ARTIFACT_TYPES.map((artifactType) => join(FRAME_ENTRY_DIR, `${artifactType}.ts`)),
+  );
   mkdirSync(join(OUT_DIR, "frame"), { recursive: true });
   copyFileSync(join(FRAME_STYLE_DIR, "frame.css"), join(OUT_DIR, "frame", "frame.css"));
   copyFileSync(join(FRAME_STYLE_DIR, "artifact.css"), join(OUT_DIR, "frame", "artifact.css"));
