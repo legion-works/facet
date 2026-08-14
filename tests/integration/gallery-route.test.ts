@@ -8,8 +8,6 @@ import { FacetClient, publishArtifact } from "../../src/cli/client";
 import { CommandResultSchema } from "../../src/shared/contracts/commands";
 import { generateRequestId } from "../../src/shared/util/time";
 import { createQuietLogger } from "../../src/shared/logging/logger";
-import { FROZEN_CSP_TEMPLATE } from "../../src/gallery-web/frame-html";
-import { FROZEN_CSP_LITERAL } from "../helpers/frozen-csp-literal";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
@@ -104,9 +102,9 @@ describe("GET /gallery", () => {
     // path that never leaves the root, which passes for the wrong reason.
     const realFileOutsideRoot = "../../../../node_modules/marked/lib/marked.esm.js";
     const escapes = [
-      `/gallery/frame/bootstrap/${realFileOutsideRoot}`,
+      `/gallery/frame/runtime/${realFileOutsideRoot}`,
       `/gallery/frame/chunks/${realFileOutsideRoot}`,
-      "/gallery/frame/bootstrap/..%2f..%2f..%2f..%2fnode_modules%2fmarked%2flib%2fmarked.esm.js",
+      "/gallery/frame/runtime/..%2f..%2f..%2f..%2fnode_modules%2fmarked%2flib%2fmarked.esm.js",
       "/gallery/frame/chunks/%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fnode_modules%2fmarked%2flib%2fmarked.esm.js",
     ];
     for (const escape of escapes) {
@@ -118,12 +116,12 @@ describe("GET /gallery", () => {
     // A legitimate bundle still serves, so the guard is not just refusing
     // everything — a 404-for-all guard would pass the assertions above while
     // breaking the gallery entirely.
-    const legit = await fetch(`${service.url}/gallery/frame/bootstrap/svg.js`);
+    const legit = await fetch(`${service.url}/gallery/frame/runtime/svg.js`);
     expect(legit.status).toBe(200);
     expect((await legit.text()).length).toBeGreaterThan(0);
   });
 
-  test("serves a nonce-bound frame document and CORS-enabled module bootstrap", async () => {
+  test("serves an ordinary same-origin frame document without source bytes", async () => {
     const testEnvDir = mkdtempSync(join(tmpdir(), "facet-gallery-frame-"));
     envDir = testEnvDir;
     service = await startFacetService({
@@ -135,41 +133,51 @@ describe("GET /gallery", () => {
       logger: createQuietLogger({ component: "gallery-frame-test" }),
       tier0Runner: stubTier0Runner,
     });
-    const nonce = "0123456789abcdef0123456789abcdef";
-    const frame = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=markdown`);
+    const frame = await fetch(`${service.url}/gallery/frame?type=markdown`);
     const document = await frame.text();
     expect(frame.status).toBe(200);
     const frameCsp = frame.headers.get("content-security-policy");
-    expect(frameCsp).toBe(FROZEN_CSP_LITERAL.replace("<BOOTSTRAP_NONCE>", nonce));
-    expect(frameCsp).toContain("frame-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toBe(FROZEN_CSP_LITERAL);
+    expect(frameCsp).toBe(
+      "default-src 'self'; script-src 'self' blob:; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+    );
+    expect(document).toContain('<link rel="stylesheet" href="/gallery/frame/frame.css">');
     expect(document).toContain(
-      `<script type="module" nonce="${nonce}" src="/gallery/frame/bootstrap/markdown.js">`,
+      '<script type="module" src="/gallery/frame/runtime/markdown.js"></script>',
     );
     expect(document).not.toContain("FACET_SENTINEL_ARTIFACT_BYTES");
     expect(document.match(/<script/gi)?.length ?? 0).toBe(1);
+    expect(document).not.toContain("nonce=");
+    expect(document).not.toContain("handshake=");
+    expect(document).not.toContain("Content-Security-Policy");
+    expect(document).not.toMatch(/<style[\s>]/i);
 
-    const invalid = await fetch(`${service.url}/gallery/frame?nonce=bad%0d%0aX-Evil%3A%20yes`);
-    expect(invalid.status).toBe(400);
-    const htmlFrame = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=html`);
+    const htmlFrame = await fetch(`${service.url}/gallery/frame?type=html`);
     expect(htmlFrame.status).toBe(200);
-    expect(await htmlFrame.text()).toContain(
-      `<script type="module" nonce="${nonce}" src="/gallery/frame/bootstrap/html.js">`,
+    const htmlDocument = await htmlFrame.text();
+    expect(htmlDocument.match(/href="\/gallery\/frame\/artifact\.css"/g)?.length ?? 0).toBe(1);
+    expect(htmlDocument).toContain(
+      '<script type="module" src="/gallery/frame/runtime/html.js"></script>',
     );
-    const invalidType = await fetch(`${service.url}/gallery/frame?nonce=${nonce}&type=pdf`);
+    const tsxFrame = await fetch(`${service.url}/gallery/frame?type=tsx`);
+    expect(tsxFrame.status).toBe(200);
+    const tsxDocument = await tsxFrame.text();
+    expect(tsxDocument.match(/href="\/gallery\/frame\/artifact\.css"/g)?.length ?? 0).toBe(1);
+    expect(tsxDocument).toContain(
+      '<script type="module" src="/gallery/frame/runtime/tsx.js"></script>',
+    );
+    expect(document).not.toContain("artifact.css");
+    const invalidType = await fetch(`${service.url}/gallery/frame?type=pdf`);
     expect(invalidType.status).toBe(400);
 
-    const bootstrap = await fetch(`${service.url}/gallery/frame/bootstrap/markdown.js`, {
-      headers: { origin: "null" },
-    });
-    expect(bootstrap.status).toBe(200);
-    expect(bootstrap.headers.get("access-control-allow-origin")).toBe("*");
-    const bootstrapSource = await bootstrap.text();
-    const chunkPath = bootstrapSource.match(/["'](\.\.\/chunks\/[^"']+\.js)["']/)?.[1];
+    const runtime = await fetch(`${service.url}/gallery/frame/runtime/markdown.js`);
+    expect(runtime.status).toBe(200);
+    expect(runtime.headers.get("access-control-allow-origin")).toBeNull();
+    const runtimeSource = await runtime.text();
+    const chunkPath = runtimeSource.match(/["'](\.\.\/chunks\/[^"']+\.js)["']/)?.[1];
     expect(chunkPath).toBeDefined();
-    const chunk = await fetch(new URL(chunkPath!, bootstrap.url), { headers: { origin: "null" } });
+    const chunk = await fetch(new URL(chunkPath!, runtime.url));
     expect(chunk.status).toBe(200);
-    expect(chunk.headers.get("access-control-allow-origin")).toBe("*");
+    expect(chunk.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   test("serves source only through the matching live gallery lease", async () => {

@@ -4,7 +4,7 @@
  * Every assertion here is structural — the test gate fails when the
  * shell drifts from the frozen security model. The shell builds its
  * frame document and frame attributes via pure helpers (`buildFrameDocument`,
- * `buildFrameAttributes`, `FROZEN_CSP_TEMPLATE`) so the assertions can
+ * `buildFrameAttributes`) so the assertions can
  * inspect the produced strings without a browser harness.
  *
  * DOM testing approach: pure-function-first. The channel lifecycle tests
@@ -21,7 +21,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  FROZEN_CSP_TEMPLATE,
   SHELL_EXPORTS,
   assertLoopbackHostname,
   buildFrameAttributes,
@@ -41,33 +40,16 @@ import {
 import { createChannelPair, type ChannelPair } from "../../src/gallery-web/frame/channels";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
-import { HARNESS_CSP, buildHarnessSrcdoc } from "../../src/validation/tier1/harness";
-import { FROZEN_CSP_LITERAL, parseCspDirectives } from "../helpers/frozen-csp-literal";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 
-const NONCE = "facet-nonce-abcd1234";
-const BOOTSTRAP_URL = "/gallery/frame/bootstrap.js";
+const RUNTIME_URL = "/gallery/frame/runtime/markdown.js";
 
 const ARTIFACT_SENTINEL = "FACET_SENTINEL_ARTIFACT_BYTES_ZZZ_9999";
 
-const CSP_BEFORE_EXTERNAL_IMAGES =
-  "default-src 'none'; script-src 'nonce-<BOOTSTRAP_NONCE>'; style-src 'unsafe-inline'; " +
-  "img-src data:; font-src data:; worker-src 'none'; connect-src 'none'; object-src 'none'; " +
-  "base-uri 'none'; form-action 'none'; frame-src 'none'; media-src 'none'";
-
-function cspDirectives(csp: string): ReadonlyMap<string, string> {
-  return new Map(parseCspDirectives(csp));
-}
-
-function buildFreshNonce(): string {
-  return "n-" + crypto.randomUUID().replace(/-/g, "");
-}
-
 describe("gallery shell — CSP + frame-document invariants", () => {
-  test("buildFrameAttributes: sandbox is EXACTLY 'allow-scripts' (not allow-same-origin)", () => {
+  test("buildFrameAttributes: ordinary same-origin frames carry no sandbox", () => {
     const attrs = buildFrameAttributes();
-    expect(attrs.sandbox).toBe("allow-scripts");
-    expect(attrs.sandbox).not.toContain("allow-same-origin");
+    expect("sandbox" in attrs).toBe(false);
   });
 
   test("buildFrameAttributes: referrerpolicy is no-referrer", () => {
@@ -84,95 +66,8 @@ describe("gallery shell — CSP + frame-document invariants", () => {
   test("buildFrameAttributes: shell-controlled CSS transform is the zoom surface (not inside-frame script)", () => {
     const attrs = buildFrameAttributes();
     // The shell applies transforms to the iframe ELEMENT. The frame's
-    // own scripts must not run zoom handlers — opaque origin + frozen
-    // CSP forbids it anyway.
+    // own scripts do not own shell transforms.
     expect(attrs.allow).toBe("");
-  });
-});
-
-describe("gallery shell — FROZEN CSP", () => {
-  test("frozen CSP widens only img-src while every verdict-protecting directive stays exact", () => {
-    const previous = cspDirectives(CSP_BEFORE_EXTERNAL_IMAGES);
-    const next = cspDirectives(FROZEN_CSP_TEMPLATE);
-
-    expect(FROZEN_CSP_TEMPLATE).toBe(FROZEN_CSP_LITERAL);
-    expect(next.get("img-src")).toBe("data: https:");
-    expect(next.get("script-src")).toBe("'nonce-<BOOTSTRAP_NONCE>'");
-    expect(next.get("script-src")).not.toContain("'unsafe-inline'");
-    expect(next.get("connect-src")).toBe("'none'");
-    expect(next.get("object-src")).toBe("'none'");
-    expect(next.get("frame-src")).toBe("'none'");
-    expect(next.get("base-uri")).toBe("'none'");
-    expect(next.get("form-action")).toBe("'none'");
-    expect(next.get("worker-src")).toBe("'none'");
-    expect(next.get("media-src")).toBe("'none'");
-    expect(next.get("default-src")).toBe("'none'");
-    expect(next.get("font-src")).toBe("data:");
-    expect([...next].filter(([name]) => name !== "img-src")).toEqual(
-      [...previous].filter(([name]) => name !== "img-src"),
-    );
-  });
-
-  test("frozen CSP is byte-identical to the pinned literal, including frame-src", () => {
-    expect(FROZEN_CSP_TEMPLATE).toBe(FROZEN_CSP_LITERAL);
-    expect(parseCspDirectives(FROZEN_CSP_TEMPLATE)).toEqual(parseCspDirectives(FROZEN_CSP_LITERAL));
-    expect(parseCspDirectives(FROZEN_CSP_LITERAL).map(([name]) => name)).toEqual([
-      "default-src",
-      "script-src",
-      "style-src",
-      "img-src",
-      "font-src",
-      "worker-src",
-      "connect-src",
-      "object-src",
-      "base-uri",
-      "form-action",
-      "frame-src",
-      "media-src",
-    ]);
-    expect(cspDirectives(FROZEN_CSP_LITERAL).get("frame-src")).toBe("'none'");
-  });
-
-  test("frozen CSP gallery and Tier 1 harness emit the pinned literal", async () => {
-    const harness = await buildHarnessSrcdoc("html");
-    const harnessCsp = harness.srcdoc.match(
-      /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/,
-    )?.[1];
-    const renderedLiteral = FROZEN_CSP_LITERAL.replace("<BOOTSTRAP_NONCE>", harness.nonce);
-
-    expect(HARNESS_CSP).toBe(FROZEN_CSP_LITERAL);
-    expect(harnessCsp).toBe(renderedLiteral);
-    expect(parseCspDirectives(harnessCsp ?? "")).toEqual(parseCspDirectives(renderedLiteral));
-  });
-
-  test("template includes script-src nonce, no 'unsafe-inline'", () => {
-    expect(FROZEN_CSP_TEMPLATE).toContain("script-src 'nonce-");
-    expect(FROZEN_CSP_TEMPLATE).not.toContain("script-src 'unsafe-inline'");
-    expect(FROZEN_CSP_TEMPLATE).not.toContain("script-src *");
-  });
-
-  test("template denies same-origin (no allow-same-origin in CSP), workers, connect", () => {
-    expect(FROZEN_CSP_TEMPLATE).toContain("worker-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("connect-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("default-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("object-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("base-uri 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("form-action 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("frame-src 'none'");
-    expect(FROZEN_CSP_TEMPLATE).toContain("media-src 'none'");
-  });
-
-  test("style-src 'unsafe-inline' is REQUIRED (Mermaid inline SVG) — and only that", () => {
-    expect(FROZEN_CSP_TEMPLATE).toContain("style-src 'unsafe-inline'");
-  });
-
-  test("rendered CSP substitutes the per-frame nonce into script-src", () => {
-    const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: BOOTSTRAP_URL,
-    });
-    expect(document).not.toContain("Content-Security-Policy");
-    expect(document).not.toContain(`script-src 'nonce-${NONCE}'`);
   });
 });
 
@@ -222,52 +117,51 @@ describe("gallery shell — verdict status styling", () => {
 });
 
 describe("gallery shell — frame document generation", () => {
-  test("document contains charset, artifact mount, and no CSP meta", () => {
+  test("document contains external styles, artifact mount, and no CSP meta", () => {
     const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: BOOTSTRAP_URL,
+      artifactType: "markdown",
+      runtimeUrl: RUNTIME_URL,
     });
     const charsetIdx = document.indexOf('<meta charset="utf-8">');
     expect(charsetIdx).toBeGreaterThanOrEqual(0);
     expect(document).toContain('<main id="artifact"></main>');
     expect(document).not.toContain("Content-Security-Policy");
+    expect(document).toContain('<link rel="stylesheet" href="/gallery/frame/frame.css">');
+    expect(document).not.toMatch(/<style[\s>]/i);
   });
 
-  test("document references the trusted module bootstrap under the per-frame nonce", () => {
+  test("document references one ordinary external runtime module without a nonce", () => {
     const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: BOOTSTRAP_URL,
+      artifactType: "markdown",
+      runtimeUrl: RUNTIME_URL,
     });
-    // `type="module"` keeps Vega's top-level `function addEventListener`
-    // out of the global scope (a classic script would hoist it into
-    // `window.addEventListener` and break the frame's own listener).
-    expect(document).toContain(`<script type="module" nonce="${NONCE}" src="${BOOTSTRAP_URL}">`);
-    expect(document).toContain(`src="${BOOTSTRAP_URL}"`);
+    expect(document).toContain(`<script type="module" src="${RUNTIME_URL}">`);
+    expect(document).not.toContain("nonce=");
     expect(document).toContain("</script>");
   });
 
   test("document NEVER carries artifact source bytes (publish sentinel — must be absent)", () => {
-    // The frame document is generated ONLY from the nonce + the built
-    // trusted bootstrap. If a future change ever interpolates
+    // The frame document is generated only from the built runtime URL.
+    // If a future change ever interpolates
     // artifact bytes into the document (the most dangerous regression in
     // this whole surface), this assertion fires.
     const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: BOOTSTRAP_URL,
+      artifactType: "markdown",
+      runtimeUrl: RUNTIME_URL,
     });
     expect(document).not.toContain(ARTIFACT_SENTINEL);
-    // Defensive: exactly ONE <script tag in the document — the trusted bootstrap.
+    // Defensive: exactly ONE <script tag in the document — the trusted runtime.
     // Any future regression that injects a second script would let
     // artifact bytes (or a hostile inline script) execute under the
-    // per-frame nonce.
+    // external runtime module.
     expect(document.match(/<script/gi)?.length ?? 0).toBe(1);
   });
 
-  test("frame document escapes bootstrap URL attributes", () => {
+  test("frame document escapes runtime URL attributes", () => {
     const tricky = "https://example.test/bootstrap.js?a=1&b=2";
     const document = buildFrameDocument({
-      nonce: NONCE,
-      bootstrapUrl: tricky,
+      artifactType: "markdown",
+      runtimeUrl: tricky,
     });
     expect(document).toContain("https://example.test/bootstrap.js?a=1&amp;b=2");
     expect(document.match(/<\/script>/g)?.length ?? 0).toBe(1);
@@ -282,26 +176,16 @@ describe("gallery frame program (bootstrap source)", () => {
   const bootstrapPath = new URL("../../src/gallery-web/frame/bootstrap.ts", import.meta.url)
     .pathname;
 
-  test("verifies the handshake secret against its own frame-document url", async () => {
+  test("keeps the transitional channel bootstrap free of URL secrets", async () => {
     const source = await Bun.file(bootstrapPath).text();
     expect(source).toContain("facetHandshake");
     expect(source).toContain("ports");
-    // The handshake secret is read from the frame document's URL, NOT the script tag:
-    // `document.currentScript` is always null in a module script, so the
-    // tag read silently yielded "" and no handshake ever matched.
-    expect(source).toContain('frameParams.get("handshake")');
-    expect(source).not.toContain('getAttribute("nonce")');
-    // The handshake still gates on an exact secret match.
-    expect(source).toContain("data.nonce !== handshakeNonce");
+    expect(source).not.toContain('frameParams.get("handshake")');
+    expect(source).not.toContain('frameParams.get("nonce")');
+    expect(source).not.toContain("history.replaceState(");
+    expect(source).not.toContain("data.nonce");
     expect(source).toContain("event.source !== window.parent");
     expect(source).toContain("handshakeComplete");
-    const stripIndex = source.indexOf("history.replaceState(");
-    const rendererIndex = source.indexOf("dispatchRender(");
-    expect(stripIndex).toBeGreaterThanOrEqual(0);
-    expect(stripIndex).toBeLessThan(rendererIndex);
-    expect(source).toContain(
-      'throw new Error("bootstrap: history.replaceState is required to remove the handshake secret")',
-    );
   });
 
   test("signals boot-ready and render-complete via the control port", async () => {
@@ -546,9 +430,9 @@ describe("gallery shell — no zod in frame bundle (boundary check stays clean)"
 });
 
 describe("gallery shell — frame attributes type contract", () => {
-  test("FrameAttributes shape matches what createArtifactFrame will set on the element", () => {
+  test("FrameAttributes shape matches ordinary frame element attributes", () => {
     const attrs = buildFrameAttributes();
-    expect(typeof attrs.sandbox).toBe("string");
+    expect("sandbox" in attrs).toBe(false);
     expect(typeof attrs.referrerpolicy).toBe("string");
     expect(typeof attrs.allow).toBe("string");
     expect(typeof attrs.title).toBe("string");
@@ -588,22 +472,12 @@ describe("gallery shell — frame attributes type contract", () => {
   });
 });
 
-describe("gallery shell — per-frame nonce freshness", () => {
-  test("each frame document carries its own fresh script nonce", () => {
-    const a = buildFrameDocument({
-      nonce: buildFreshNonce(),
-      bootstrapUrl: BOOTSTRAP_URL,
-    });
-    const b = buildFrameDocument({
-      nonce: buildFreshNonce(),
-      bootstrapUrl: BOOTSTRAP_URL,
-    });
-    expect(a).not.toBe(b);
-    const nonceA = a.match(/nonce="([^"]+)"/)?.[1];
-    const nonceB = b.match(/nonce="([^"]+)"/)?.[1];
-    expect(nonceA).toBeDefined();
-    expect(nonceB).toBeDefined();
-    expect(nonceA).not.toBe(nonceB);
+describe("gallery shell — ordinary frame document", () => {
+  test("frame document stays source-byte free without nonce or handshake parameters", () => {
+    const document = buildFrameDocument({ artifactType: "markdown", runtimeUrl: RUNTIME_URL });
+    expect(document).not.toContain("nonce=");
+    expect(document).not.toContain("handshake=");
+    expect(document).not.toContain(ARTIFACT_SENTINEL);
   });
 });
 
@@ -665,7 +539,6 @@ function createStubDom(): ShellDom {
     document: stubDocument as unknown as Document,
     MessageChannel,
     hostname: "127.0.0.1",
-    window: {},
   };
 }
 
@@ -722,12 +595,10 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const received: unknown[] = [];
@@ -777,12 +648,10 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     simulateFrameSide(next, []);
@@ -802,30 +671,23 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     next.closeControl();
   });
 
-  test("every revision gets a FRESH opaque frame — no artifact-JS carryover", async () => {
+  test("every revision gets a fresh ordinary frame — no artifact-JS carryover", async () => {
     const dom = createStubDom();
     const recording = createRecordingHost();
     const first = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const second = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
-    // Fresh nonce + fresh loopback URL per frame — an old bootstrap cannot
-    // survive into a new CSP window, and no source bytes ride the document.
-    expect(first.nonce).not.toBe(second.nonce);
-    expect(first.handshakeNonce).not.toBe(first.nonce);
-    expect(second.handshakeNonce).not.toBe(second.nonce);
-    expect(first.handshakeNonce).not.toBe(second.handshakeNonce);
-    expect(first.attrs.src).not.toBe(second.attrs.src);
-    expect(first.attrs.src).toContain(encodeURIComponent(first.nonce));
-    expect(second.attrs.src).toContain(encodeURIComponent(second.nonce));
-    expect(first.attrs.src).toContain(encodeURIComponent(first.handshakeNonce));
-    expect(second.attrs.src).toContain(encodeURIComponent(second.handshakeNonce));
+    // Source bytes remain off the document URL across frame replacements.
+    expect(first.attrs.src).toBe(second.attrs.src);
+    expect(first.attrs.src).toContain("type=markdown");
+    expect(second.attrs.src).toContain("type=markdown");
+    expect(first.attrs.src).not.toContain("nonce=");
+    expect(second.attrs.src).not.toContain("handshake=");
     expect(first.attrs.src).not.toContain(ARTIFACT_SENTINEL);
     expect(second.attrs.src).not.toContain(ARTIFACT_SENTINEL);
 
@@ -836,7 +698,6 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     simulateFrameSide(first, receivedFirst);
     const seed = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const swapOne = await replaceArtifactFrame({
@@ -877,12 +738,10 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     // The frame boots but its render reports errors.
@@ -915,12 +774,10 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     // No boot-ready at all.
@@ -947,7 +804,6 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const fetched: { artifactId: string; revisionSha: string }[] = [];
@@ -958,7 +814,6 @@ describe("gallery shell — real swap execution (double-buffered HMR)", () => {
       {
         dom,
         host: recording.host,
-        bootstrapUrl: BOOTSTRAP_URL,
         fetchRevision: async (artifactId, revisionSha) => {
           fetched.push({ artifactId, revisionSha });
           return { artifactType: "markdown", renderer: "svg", bytes };
@@ -986,7 +841,6 @@ describe("gallery shell — control-port RECEIVE path", () => {
     const dom = createStubDom();
     const frame = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const events: FrameControlEvent[] = [];
@@ -1015,7 +869,6 @@ describe("gallery shell — control-port RECEIVE path", () => {
     const dom = createStubDom();
     const frame = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom,
     });
     const pending = frame.awaitControlEvent("boot-ready", 1_000);
@@ -1029,7 +882,6 @@ describe("gallery shell — control-port RECEIVE path", () => {
   test("drops ambiguous and malformed control events before dispatch", async () => {
     const frame = createArtifactFrame({
       artifactType: "markdown",
-      bootstrapUrl: BOOTSTRAP_URL,
       dom: createStubDom(),
     });
     const events: FrameControlEvent[] = [];

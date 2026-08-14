@@ -8,8 +8,7 @@
  * become executable.
  *
  * Lifecycle:
- *   1. Read the per-frame CSP nonce and channel secret from the frame URL.
- *   2. Verify the `ports` channel secret, wire the transferred ports.
+ *   1. Receive the transitional `ports` channel and wire the transferred ports.
  *   3. Emit `boot-ready` on the control port.
  *   4. Receive the artifact on the ingress port (one-shot), close it.
  *   5. Dispatch through the renderer registry; await render-complete
@@ -42,7 +41,6 @@ declare global {
 
 interface HandshakeData {
   readonly facetHandshake?: string;
-  readonly nonce?: string;
 }
 
 interface ArtifactPayload {
@@ -57,23 +55,6 @@ if (containerElement === null) {
   throw new Error("bootstrap: #artifact container missing");
 }
 const container: HTMLElement = containerElement;
-
-// Nested srcdoc documents inherit both this CSP and the parent URL as their
-// fallback base. The CSP nonce cannot authenticate ports; remove the distinct
-// channel secret before renderer dispatch creates a nested document.
-const frameParams = new URLSearchParams(location.search);
-const nonce = frameParams.get("nonce") ?? "";
-const handshakeNonce = frameParams.get("handshake") ?? "";
-frameParams.delete("handshake");
-if (typeof history.replaceState !== "function") {
-  throw new Error("bootstrap: history.replaceState is required to remove the handshake secret");
-}
-const strippedSearch = frameParams.toString();
-history.replaceState(
-  null,
-  "",
-  `${location.pathname}${strippedSearch.length === 0 ? "" : `?${strippedSearch}`}${location.hash}`,
-);
 
 let controlPost: ((event: unknown) => void) | null = null;
 let handshakeComplete = false;
@@ -173,7 +154,7 @@ export function startGalleryFrame(registry: RendererRegistry): void {
     (event: MessageEvent) => {
       if (handshakeComplete || event.source !== window.parent) return;
       const data = event.data as HandshakeData | null;
-      if (data === null || data.facetHandshake !== "ports" || data.nonce !== handshakeNonce) return;
+      if (data === null || data.facetHandshake !== "ports") return;
       const ports = event.ports;
       if (ports.length !== 2) return;
       const ingress = ports[0];
@@ -242,7 +223,7 @@ export function startGalleryFrame(registry: RendererRegistry): void {
           }
           await dispatchRender(
             registry,
-            { container, nonce },
+            { container },
             {
               artifactType: payload.artifactType,
               renderer,

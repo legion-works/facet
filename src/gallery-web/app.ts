@@ -23,12 +23,7 @@
  * keeps the last-good frame visible and surfaces an error badge.
  */
 
-import {
-  assertLoopbackHostname,
-  buildFrameAttributes,
-  newFrameNonce,
-  type FrameAttributes,
-} from "./frame-html";
+import { assertLoopbackHostname, buildFrameAttributes, type FrameAttributes } from "./frame-html";
 import { createChannelPair } from "./frame/channels";
 import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
@@ -55,12 +50,10 @@ import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
 export {
-  FROZEN_CSP_TEMPLATE,
   assertLoopbackHostname,
   buildFrameAttributes,
   buildFrameDocument,
   isLoopbackHostname,
-  newFrameNonce,
   type FrameAttributes,
 } from "./frame-html";
 export { planSwap, type SwapPlanStep } from "./swap";
@@ -263,7 +256,6 @@ export interface ShellDom {
   readonly document: Document;
   readonly MessageChannel: new () => { port1: MessagePort; port2: MessagePort };
   readonly hostname: string;
-  readonly window: { postMessage?: unknown };
 }
 
 /** View state the shell preserves across a swap. */
@@ -332,10 +324,8 @@ export interface CreateArtifactFrameOptions {
   readonly artifactType: string;
   /** Legacy direct callers omit this; revision source fetches always make it explicit. */
   readonly renderer?: string;
-  readonly bootstrapUrl: string;
   readonly frameUrl?: string;
   readonly dom: ShellDom;
-  readonly nonce?: string;
 }
 
 /**
@@ -350,10 +340,6 @@ export interface FrameElementHandle {
 
 export interface CreatedArtifactFrame {
   readonly frameId: string;
-  /** CSP nonce carried by the frame document and its nested TSX srcdoc. */
-  readonly nonce: string;
-  /** Separate secret that authenticates the shell → frame port transfer. */
-  readonly handshakeNonce: string;
   readonly attrs: FrameAttributes;
   /** Caller transfers these into the iframe via postMessage. */
   readonly frameIngressPort: MessagePort;
@@ -398,28 +384,22 @@ export interface FrameHost {
 }
 
 /**
- * Create a fresh artifact frame: build the loopback document URL, mint a per-frame
- * nonce, open two MessageChannels, hold port1 of each. The returned
+ * Create a fresh artifact frame: build the loopback document URL, open two
+ * MessageChannels, hold port1 of each. The returned
  * `frameIngressPort` + `frameControlPort` MUST be transferred into the
- * frame via `frame.contentWindow.postMessage({facetHandshake: "ports",
- * handshakeNonce}, targetOrigin, ports)` AFTER the iframe's `load` event fires.
+ * frame after the iframe's `load` event fires.
  */
 export function createArtifactFrame(options: CreateArtifactFrameOptions): CreatedArtifactFrame {
   const dom = options.dom;
   // DNS-rebinding guard — fires BEFORE the iframe is appended or any
   // capability code runs.
   assertLoopbackHostname(dom.hostname);
-  const nonce = options.nonce ?? newFrameNonce();
-  const handshakeNonce = newFrameNonce();
   const frameUrl = new URL(options.frameUrl ?? "/gallery/frame", `http://${dom.hostname}`);
-  frameUrl.searchParams.set("nonce", nonce);
-  frameUrl.searchParams.set("handshake", handshakeNonce);
   frameUrl.searchParams.set("type", options.artifactType);
   frameUrl.searchParams.set("renderer", options.renderer ?? "svg");
   const attrs = buildFrameAttributes(frameUrl.toString());
   const channels = createChannelPair({ messageChannelCtor: dom.MessageChannel });
   const element = dom.document.createElement("iframe");
-  element.setAttribute("sandbox", attrs.sandbox);
   element.setAttribute("referrerpolicy", attrs.referrerpolicy);
   element.setAttribute("allow", attrs.allow);
   element.setAttribute("title", attrs.title);
@@ -441,8 +421,6 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
 
   return {
     frameId,
-    nonce,
-    handshakeNonce,
     attrs,
     frameIngressPort: channels.frameIngressPort,
     frameControlPort: channels.frameControlPort,
@@ -610,7 +588,6 @@ export interface RevisionFetchResult {
 export interface SwapToRevisionDeps {
   readonly dom: ShellDom;
   readonly host: FrameHost;
-  readonly bootstrapUrl: string;
   readonly frameUrl?: string;
   /** Fetch the exact revision bytes the SSE event named. */
   readonly fetchRevision: (artifactId: string, revisionSha: string) => Promise<RevisionFetchResult>;
@@ -631,10 +608,10 @@ export interface RevisionEvent {
 
 /**
  * publish→visible, one revision at a time: fetch the exact revision
- * the committed event named, build a FRESH opaque frame for it, and
+ * the committed event named, build a fresh frame for it, and
  * run the double-buffered swap. The returned frame becomes `current`
  * for the next revision. Bytes cross the ingress exactly once; every
- * revision gets its own nonce, srcdoc, and channels — no artifact-JS
+ * revision gets its own document and channels — no artifact-JS
  * carryover between revisions.
  */
 export async function swapToRevision(
@@ -651,7 +628,6 @@ export async function swapToRevision(
   const next = createArtifactFrame({
     artifactType: revision.artifactType,
     renderer: revision.renderer,
-    bootstrapUrl: deps.bootstrapUrl,
     dom: deps.dom,
     ...(deps.frameUrl === undefined ? {} : { frameUrl: deps.frameUrl }),
   });
@@ -853,11 +829,10 @@ function armFrameLoad(
     element.addEventListener(
       "load",
       () => {
-        element.contentWindow?.postMessage(
-          { facetHandshake: "ports", nonce: frame.handshakeNonce },
-          "*",
-          [frame.frameIngressPort, frame.frameControlPort],
-        );
+        element.contentWindow?.postMessage({ facetHandshake: "ports" }, "*", [
+          frame.frameIngressPort,
+          frame.frameControlPort,
+        ]);
         void frame.awaitControlEvent("boot-ready", DEFAULT_READY_TIMEOUT_MS).then(resolve);
       },
       { once: true },
@@ -927,7 +902,6 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   if (revision !== null) revision.textContent = handoff.revisionSha.slice(0, 12);
   updateGalleryStatus("idle");
   updateLiveState("connecting");
-  const bootstrapUrl = `${baseUrl}/gallery/frame/bootstrap.js`;
   const frameUrl = `${baseUrl}/gallery/frame`;
   const canvas = document.getElementById("facet-canvas");
   if (!(canvas instanceof HTMLElement)) throw new Error("Gallery canvas is missing");
@@ -966,12 +940,11 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     },
     showErrorBadge: updateGalleryError,
   };
-  const dom: ShellDom = { document, MessageChannel, hostname: window.location.hostname, window };
+  const dom: ShellDom = { document, MessageChannel, hostname: window.location.hostname };
   const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
   let current = createArtifactFrame({
     artifactType: source.artifactType,
     renderer: source.renderer,
-    bootstrapUrl,
     frameUrl,
     dom,
   });
@@ -1019,7 +992,6 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         {
           dom,
           host,
-          bootstrapUrl,
           frameUrl,
           fetchRevision: (_artifactId, revisionSha) =>
             fetchGallerySource(baseUrl, handoff, revisionSha, fetch),
