@@ -138,7 +138,7 @@ describe("GET /gallery", () => {
     expect(frame.status).toBe(200);
     const frameCsp = frame.headers.get("content-security-policy");
     expect(frameCsp).toBe(
-      "default-src 'self'; script-src 'self' blob:; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+      "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: https:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
     );
     expect(document).toContain('<link rel="stylesheet" href="/gallery/frame/frame.css">');
     expect(document).toContain(

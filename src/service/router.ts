@@ -314,8 +314,12 @@ export function buildRouter(deps: RouterDeps): {
     { readonly artifactId: string; readonly revisionSha: string; readonly leaseId: string }
   >();
   const galleryRoot = join(import.meta.dir, "../../dist/gallery");
+  // style-src allows 'unsafe-inline' because mermaid injects its theme
+  // as a <style> element into the rendered SVG (operator-ruled posture
+  // for this local-only tool); script-src stays 'self' blob: — no
+  // script relaxation.
   const galleryCsp =
-    "default-src 'self'; script-src 'self' blob:; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
+    "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: https:; font-src 'self' data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'";
   let galleryBuild: Promise<void> | null = null;
 
   const ensureGalleryBuild = async (): Promise<void> => {

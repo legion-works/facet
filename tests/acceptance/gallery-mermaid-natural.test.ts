@@ -44,6 +44,10 @@ test("gallery renders a wide Mermaid diagram at natural size, top-left, horizont
           const style = getComputedStyle(viewport);
           const viewBox = svg.viewBox.baseVal;
           const content = svg.getBBox();
+          const node = svg.querySelector('.node rect, .node polygon, .node circle, .node ellipse');
+          const nodeFill = node === null ? null : getComputedStyle(node).fill;
+          const label = svg.querySelector('.node .label');
+          const labelText = label === null ? null : (label.textContent ?? '').trim();
           return {
             paddingTop: Number.parseFloat(style.paddingTop),
             paddingLeft: Number.parseFloat(style.paddingLeft),
@@ -58,6 +62,8 @@ test("gallery renders a wide Mermaid diagram at natural size, top-left, horizont
             viewBoxRight: viewBox.x + viewBox.width,
             contentLeft: content.x,
             contentRight: content.x + content.width,
+            nodeFill,
+            labelText,
           };
         })()`,
     })) as {
@@ -76,6 +82,8 @@ test("gallery renders a wide Mermaid diagram at natural size, top-left, horizont
           viewBoxRight: number;
           contentLeft: number;
           contentRight: number;
+          nodeFill: string | null;
+          labelText: string | null;
         };
       };
     };
@@ -97,6 +105,20 @@ test("gallery renders a wide Mermaid diagram at natural size, top-left, horizont
     expect(observed!.viewportScrollWidth).toBeGreaterThan(observed!.viewportWidth + 100);
     expect(observed!.contentLeft).toBeGreaterThanOrEqual(observed!.viewBoxLeft - 1);
     expect(observed!.contentRight).toBeLessThanOrEqual(observed!.viewBoxRight + 1);
+    // Style-effectiveness discriminator: the frame CSP must allow mermaid's
+    // injected <style> element to take effect. A blocked style-src leaves
+    // the node's rendered shape at the SVG default black fill (verified live:
+    // rgb(0, 0, 0) under `style-src 'self'`, the class-driven theme color under
+    // the fixed policy) even though geometry and counts look correct — the
+    // regression this pair exists to catch. Label text stays populated and
+    // colored via mermaid's per-node inline `style="fill:...!important"`
+    // attribute regardless of policy (inline attribute styles aren't gated by
+    // `style-src`), so the second assertion is a content-presence guard
+    // rather than an independent CSP discriminator for this fixture.
+    expect(observed!.nodeFill).not.toBeNull();
+    expect(observed!.nodeFill).not.toBe("rgb(0, 0, 0)");
+    expect(observed!.labelText).not.toBeNull();
+    expect(observed!.labelText).not.toBe("");
   } finally {
     await target?.close();
     await service.stop();
