@@ -65,6 +65,7 @@ export interface StartServiceOptions {
   readonly installTokenPath?: string;
   readonly promoteTokenPath?: string;
   readonly lockPath?: string;
+  readonly evidencePath?: string;
   readonly idleTimeoutMs?: number;
   readonly leaseTtlMs?: number;
   readonly heartbeatIntervalMs?: number;
@@ -109,6 +110,15 @@ export async function startFacetService(
     options.installTokenPath ?? paths.token.replace(/promote\.token$/, "install.token");
   const promoteTokenPath = options.promoteTokenPath ?? paths.token;
   const lockPath = options.lockPath ?? paths.lock;
+  const evidenceRoot = options.evidencePath ?? paths.evidence;
+  // When the parent CLI threaded an explicit evidence root, the child's own
+  // FACET_HOME-derived root (`paths.evidence`) is the legacy child-derived
+  // root from pre-threading installs. Retain it as a READ-ONLY fallback so
+  // old evidence stays reachable; new evidence always lands in evidenceRoot.
+  const legacyEvidenceRoot =
+    options.evidencePath !== undefined && options.evidencePath !== paths.evidence
+      ? paths.evidence
+      : undefined;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const leaseTtlMs = options.leaseTtlMs ?? LEASE_TTL_MS;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? STREAM_HEARTBEAT_INTERVAL_MS;
@@ -122,7 +132,7 @@ export async function startFacetService(
   // service writes land there. Idempotent and best-effort — the
   // directory may already exist (e.g. from a prior run) in which case
   // ensureEvidenceRoot rechmods to enforce the secret-bearing layout.
-  ensureEvidenceRoot(paths.evidence);
+  ensureEvidenceRoot(evidenceRoot);
 
   // 1. Lock FIRST. port=0 because the kernel-assigned port is not yet
   //    known. A second cold start that races this one will be refused
@@ -198,7 +208,8 @@ export async function startFacetService(
       // Evidence retention runs inside the write path; the root must
       // match the Tier 1 runner's screenshot/console destination so
       // the cleanup unlink lands on the same path the runner wrote.
-      evidenceRoot: paths.evidence,
+      evidenceRoot,
+      ...(legacyEvidenceRoot !== undefined ? { legacyEvidenceRoot } : {}),
     });
 
     // 3. Install token (atomic create under lock). The token store uses

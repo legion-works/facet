@@ -245,7 +245,11 @@ function tier1Failure(input: Tier1Input, artifactId: string, error: unknown): Ti
   });
 }
 
-function tier1InputForRevision(revision: Revision, tier0Run: RenderRun): Tier1Input {
+function tier1InputForRevision(
+  revision: Revision,
+  tier0Run: RenderRun,
+  evidenceDir: string | undefined,
+): Tier1Input {
   const compiledPath = tier0Run.compiledPath ?? null;
   const source =
     revision.artifactType === "tsx" && compiledPath !== null
@@ -260,6 +264,11 @@ function tier1InputForRevision(revision: Revision, tier0Run: RenderRun): Tier1In
     ...(revision.artifactType === "tsx" ? { execution: revision.execution ?? "static" } : {}),
     launcherVersion: TIER1_PINNED_VERSION,
     networkNamespace: "facet-tier1-egress-isolated",
+    // Thread the canonical evidence root through to the Tier 1 runner so
+    // its screenshot/console evidence lands in the SAME root the service
+    // (and the parent CLI) agreed on — otherwise the runner falls back to
+    // `computeFacetPaths().evidence` and re-introduces the XDG divergence.
+    ...(evidenceDir !== undefined ? { evidenceDir } : {}),
   });
 }
 
@@ -513,7 +522,11 @@ export async function dispatch(
             details: { revisionId: revision.id },
           });
         }
-        const tier1Input = tier1InputForRevision(revision, tier0Run);
+        const tier1Input = tier1InputForRevision(
+          revision,
+          tier0Run,
+          deps.repository.getEvidenceRoot(),
+        );
         const tier1Result =
           revision.artifactType === "tsx" && tier0Run.compiledPath === null
             ? tier1Failure(

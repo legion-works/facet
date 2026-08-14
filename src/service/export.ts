@@ -71,6 +71,11 @@ function evidenceUnavailable(artifact: Artifact, revision: Revision, cause?: unk
   });
 }
 
+// Legacy evidence roots whose tolerant read has already been reported.
+// The service is long-lived, so the migration warning fires at most once
+// per process per legacy root.
+const loggedLegacyEvidenceRoots = new Set<string>();
+
 function resolveEvidencePath(
   repository: ArtifactRepository,
   screenshotPath: string,
@@ -79,22 +84,41 @@ function resolveEvidencePath(
 ): string {
   const evidenceRoot = repository.getEvidenceRoot();
   if (evidenceRoot === undefined) throw evidenceUnavailable(artifact, revision);
-  try {
-    const resolvedRoot = realpathSync(evidenceRoot);
-    const resolvedCandidate = realpathSync(screenshotPath);
-    const relativeCandidate = relative(resolvedRoot, resolvedCandidate);
-    if (
-      relativeCandidate.length === 0 ||
-      isAbsolute(relativeCandidate) ||
-      relativeCandidate === ".." ||
-      relativeCandidate.startsWith("../")
-    ) {
-      throw new Error("Screenshot evidence is outside the evidence root");
-    }
-    return resolvedCandidate;
-  } catch (cause) {
-    throw evidenceUnavailable(artifact, revision, cause);
+  // The stored screenshot path is absolute, so the read root is decided per
+  // path, not by "is the canonical root empty": try the canonical root first,
+  // then the legacy child-derived root (pre explicit-threading installs wrote
+  // evidence there). The legacy root is read-only — never written.
+  const roots: Array<{ root: string; legacy: boolean }> = [{ root: evidenceRoot, legacy: false }];
+  const legacyRoot = repository.getLegacyEvidenceRoot();
+  if (legacyRoot !== undefined && legacyRoot !== evidenceRoot) {
+    roots.push({ root: legacyRoot, legacy: true });
   }
+  for (const { root, legacy } of roots) {
+    try {
+      const resolvedRoot = realpathSync(root);
+      const resolvedCandidate = realpathSync(screenshotPath);
+      const relativeCandidate = relative(resolvedRoot, resolvedCandidate);
+      if (
+        relativeCandidate.length === 0 ||
+        isAbsolute(relativeCandidate) ||
+        relativeCandidate === ".." ||
+        relativeCandidate.startsWith("../")
+      ) {
+        // Not under this root — try the next (legacy) root.
+        continue;
+      }
+      if (legacy && !loggedLegacyEvidenceRoots.has(root)) {
+        loggedLegacyEvidenceRoots.add(root);
+        console.warn(
+          `facet: reading legacy evidence root ${root} (tolerant read; new evidence is written to ${evidenceRoot})`,
+        );
+      }
+      return resolvedCandidate;
+    } catch {
+      // root missing or candidate unresolvable — try the next root
+    }
+  }
+  throw evidenceUnavailable(artifact, revision);
 }
 
 export function exportStoredSource(input: {

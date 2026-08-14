@@ -9,6 +9,7 @@
  *   --install-token-path <p>    override install token path
  *   --promote-token-path <p>    override promote token path
  *   --lock-path <p>             override lock path
+ *   --evidence-path <p>         override evidence root (parent/child agreement)
  *   --idle-timeout-ms <n>       override idle window (default 30s)
  *   --tier0-runner-path <p>     path to a module exporting `runTier0`;
  *                                the service uses a dynamic import on
@@ -41,6 +42,7 @@ interface MutableArgs {
   installTokenPath?: string;
   promoteTokenPath?: string;
   lockPath?: string;
+  evidencePath?: string;
   idleTimeoutMs?: number;
   tier0RunnerPath?: string;
   tier1RunnerPath?: string;
@@ -51,6 +53,7 @@ interface ParsedArgs {
   readonly installTokenPath?: string;
   readonly promoteTokenPath?: string;
   readonly lockPath?: string;
+  readonly evidencePath?: string;
   readonly idleTimeoutMs?: number;
   readonly tier0RunnerPath?: string;
   readonly tier1RunnerPath?: string;
@@ -82,6 +85,12 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       const value = argv[i + 1];
       if (value !== undefined) {
         out.lockPath = value;
+        i += 1;
+      }
+    } else if (arg === "--evidence-path") {
+      const value = argv[i + 1];
+      if (value !== undefined) {
+        out.evidencePath = value;
         i += 1;
       }
     } else if (arg === "--idle-timeout-ms") {
@@ -265,6 +274,7 @@ async function main(): Promise<void> {
       ...(args.installTokenPath !== undefined ? { installTokenPath: args.installTokenPath } : {}),
       ...(args.promoteTokenPath !== undefined ? { promoteTokenPath: args.promoteTokenPath } : {}),
       ...(args.lockPath !== undefined ? { lockPath: args.lockPath } : {}),
+      ...(args.evidencePath !== undefined ? { evidencePath: args.evidencePath } : {}),
       ...(args.idleTimeoutMs !== undefined ? { idleTimeoutMs: args.idleTimeoutMs } : {}),
       tier0Runner: configuredTier0Runner,
       tier1Runner,
