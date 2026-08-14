@@ -75,8 +75,9 @@ under the per-frame nonce. A custom `data:` font ships in the bundle as
 ## TSX execution policy
 
 TSX is executable artifact code, so interactive bundles run only inside the
-artifact's gallery frame, under that frame's own restrictive CSP (`self`,
-plus `blob:` for the compiled module import) — a display-time policy,
+artifact's gallery frame, under that frame's own restrictive CSP (`self`, plus `blob:` for the
+compiled module import, plus inline styles for renderer-injected theme
+blocks) — a display-time policy,
 separate from the frozen nonce-only CSP the Tier 1 verifier enforces during
 validation. Tier 0 rejects direct capability use for typed author feedback,
 but the compilation-time runtime boundary is authoritative: netns blocks
