@@ -201,6 +201,36 @@ test("gallery artifact geometry holds at 1280x720 and 1920x1080", async () => {
         );
       }
     }
+
+    // Edge-clipping discriminator: a genuinely tiny stage where the
+    // diagram overflows BOTH axes. This is the case a plain,
+    // `unsafe` `center` gets wrong — it centers the flex line at a
+    // NEGATIVE start offset, so the content's left/top edge sits
+    // before the container's own origin with no way to scroll
+    // backward far enough to reach it (scrollLeft/scrollTop cannot go
+    // negative). `safe center` falls back to start alignment instead,
+    // so the root's edges stay at or after the container's origin at
+    // the default (unscrolled) position — reachable by scrolling
+    // forward, never permanently clipped. A prior review caught this
+    // exact gap: the CASES above never drove content to overflow both
+    // axes against a stage SMALLER than the content, so a mutation to
+    // plain `center` stayed green under them.
+    await setGalleryViewport(target, 300, 150);
+    await navigateToArtifact(
+      target,
+      client,
+      "mermaid",
+      readFileSync(join(import.meta.dir, "../../templates/service-topology.mmd"), "utf8"),
+      undefined,
+      { slug: "viewport-geometry-edge-clip-probe" },
+    );
+    const clipped = await readArtifactGeometry(target);
+    expect(clipped.scrollWidth).toBeGreaterThan(clipped.clientWidth);
+    expect(clipped.scrollHeight).toBeGreaterThan(clipped.clientHeight);
+    expect(clipped.frameScrollLeft).toBe(0);
+    expect(clipped.frameScrollTop).toBe(0);
+    expect(clipped.rootLeft).toBeGreaterThanOrEqual(0);
+    expect(clipped.rootTop).toBeGreaterThanOrEqual(0);
   } finally {
     await target?.close();
     await service.stop();

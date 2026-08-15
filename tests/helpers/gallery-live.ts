@@ -186,6 +186,8 @@ export interface ArtifactGeometry {
   /** Root's offset from the `#artifact` viewport's own left/right edges — the centering-gutter probe. */
   readonly rootLeft: number;
   readonly rootRight: number;
+  /** Root's offset from the `#artifact` viewport's own top edge — the edge-clipping probe (negative means unreachable via forward-only scroll). */
+  readonly rootTop: number;
 }
 
 /**
@@ -212,6 +214,7 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
       const viewportRect = viewport?.getBoundingClientRect();
       const rootLeft = rootRect && viewportRect ? rootRect.left - viewportRect.left : 0;
       const rootRight = rootRect && viewportRect ? viewportRect.right - rootRect.right : 0;
+      const rootTop = rootRect && viewportRect ? rootRect.top - viewportRect.top : 0;
       return {
         scrollWidth: viewport?.scrollWidth ?? 0,
         scrollHeight: viewport?.scrollHeight ?? 0,
@@ -225,6 +228,7 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
         rootHeight: rootRect?.height ?? 0,
         rootLeft,
         rootRight,
+        rootTop,
       };
     })()`,
   })) as {
@@ -242,6 +246,7 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
         rootHeight: number;
         rootLeft: number;
         rootRight: number;
+        rootTop: number;
       };
     };
   };
