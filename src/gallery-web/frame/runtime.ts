@@ -109,12 +109,75 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
 
   let currentRenderResult: RenderResult | null = null;
   let gestureMode: GestureMode = "native";
+  let drag: { x: number; y: number } | null = null;
+
+  const onWheel = (event: WheelEvent): void => {
+    event.preventDefault();
+    const rect = container.getBoundingClientRect();
+    const state = currentRenderResult?.readViewState() ?? EMPTY_VIEW_STATE;
+    const factor = Math.exp(-event.deltaY * 0.001);
+    const nextZoom = clampZoom(state.zoom * factor);
+    const cursorX = event.clientX - rect.left;
+    const cursorY = event.clientY - rect.top;
+    const next = zoomAtPoint(state, nextZoom, cursorX, cursorY);
+    currentRenderResult?.applyViewState(normalizeViewState(next));
+  };
+  const onPointerDown = (event: PointerEvent): void => {
+    drag = { x: event.clientX, y: event.clientY };
+    container.setPointerCapture(event.pointerId);
+    container.style.cursor = "grabbing";
+  };
+  const onPointerMove = (event: PointerEvent): void => {
+    if (drag === null) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    drag = { x: event.clientX, y: event.clientY };
+    const state = normalizeViewState(currentRenderResult?.readViewState() ?? EMPTY_VIEW_STATE);
+    currentRenderResult?.applyViewState({
+      ...state,
+      panX: state.panX + dx,
+      panY: state.panY + dy,
+    });
+  };
+  const onPointerEnd = (event: PointerEvent): void => {
+    drag = null;
+    container.releasePointerCapture(event.pointerId);
+    container.style.cursor = "auto";
+  };
+
+  // Gesture listeners exist on the DOM only while panzoom mode is
+  // active — native mode is not "listeners that no-op", it is zero
+  // listeners, so nothing on the frame document can intercept scroll,
+  // click, or text selection.
+  let gesturesInstalled = false;
+  const installGestureListeners = (): void => {
+    if (gesturesInstalled) return;
+    gesturesInstalled = true;
+    container.addEventListener("wheel", onWheel, { passive: false });
+    container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("pointermove", onPointerMove);
+    container.addEventListener("pointerup", onPointerEnd);
+    container.addEventListener("pointercancel", onPointerEnd);
+  };
+  const removeGestureListeners = (): void => {
+    if (!gesturesInstalled) return;
+    gesturesInstalled = false;
+    container.removeEventListener("wheel", onWheel);
+    container.removeEventListener("pointerdown", onPointerDown);
+    container.removeEventListener("pointermove", onPointerMove);
+    container.removeEventListener("pointerup", onPointerEnd);
+    container.removeEventListener("pointercancel", onPointerEnd);
+  };
+
   const setGestureMode = (mode: GestureMode): void => {
     if (!isGestureMode(mode)) {
       throw new FacetRenderError("gesture mode is invalid", "invalid_request");
     }
     gestureMode = mode;
-    if (mode !== "panzoom") {
+    if (mode === "panzoom") {
+      installGestureListeners();
+    } else {
+      removeGestureListeners();
       drag = null;
       container.style.cursor = "auto";
     }
@@ -179,48 +242,6 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   };
   Reflect.set(window, "__facetFrame", api);
 
-  let drag: { x: number; y: number } | null = null;
-  container.addEventListener(
-    "wheel",
-    (event) => {
-      if (gestureMode !== "panzoom") return;
-      event.preventDefault();
-      const rect = container.getBoundingClientRect();
-      const state = currentRenderResult?.readViewState() ?? EMPTY_VIEW_STATE;
-      const factor = Math.exp(-event.deltaY * 0.001);
-      const nextZoom = clampZoom(state.zoom * factor);
-      const cursorX = event.clientX - rect.left;
-      const cursorY = event.clientY - rect.top;
-      const next = zoomAtPoint(state, nextZoom, cursorX, cursorY);
-      currentRenderResult?.applyViewState(normalizeViewState(next));
-    },
-    { passive: false },
-  );
-  container.addEventListener("pointerdown", (event) => {
-    if (gestureMode !== "panzoom") return;
-    drag = { x: event.clientX, y: event.clientY };
-    container.setPointerCapture(event.pointerId);
-    container.style.cursor = "grabbing";
-  });
-  container.addEventListener("pointermove", (event) => {
-    if (drag === null) return;
-    const dx = event.clientX - drag.x;
-    const dy = event.clientY - drag.y;
-    drag = { x: event.clientX, y: event.clientY };
-    const state = normalizeViewState(currentRenderResult?.readViewState() ?? EMPTY_VIEW_STATE);
-    currentRenderResult?.applyViewState({
-      ...state,
-      panX: state.panX + dx,
-      panY: state.panY + dy,
-    });
-  });
-  const endDrag = (event: PointerEvent): void => {
-    drag = null;
-    container.releasePointerCapture(event.pointerId);
-    container.style.cursor = "auto";
-  };
-  container.addEventListener("pointerup", endDrag);
-  container.addEventListener("pointercancel", endDrag);
   // Frame-side listener: this is the frame's own document, distinct
   // from the shell's (app.ts keydown listener attaches to the parent
   // document). Keyboard focus can legitimately sit in either realm, so

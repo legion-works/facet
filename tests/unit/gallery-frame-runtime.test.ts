@@ -108,3 +108,82 @@ test("setGestureMode toggles the frame between native and panzoom, independent o
   result.setGestureMode(result.defaultGestureMode);
   expect(result.gestureMode()).toBe("native");
 });
+
+const GESTURE_LISTENER_TYPES = [
+  "wheel",
+  "pointerdown",
+  "pointermove",
+  "pointerup",
+  "pointercancel",
+] as const;
+
+/** Spy on one element's own addEventListener/removeEventListener — an own-property override shadows the prototype method, so this only observes calls against THIS element instance. */
+function spyOnListeners(element: Element): { added: string[]; removed: string[] } {
+  const added: string[] = [];
+  const removed: string[] = [];
+  const originalAdd = element.addEventListener.bind(element);
+  const originalRemove = element.removeEventListener.bind(element);
+  Object.defineProperty(element, "addEventListener", {
+    value: (type: string, ...rest: unknown[]) => {
+      added.push(type);
+      // oxlint-disable-next-line no-explicit-any
+      return (originalAdd as any)(type, ...rest);
+    },
+    configurable: true,
+  });
+  Object.defineProperty(element, "removeEventListener", {
+    value: (type: string, ...rest: unknown[]) => {
+      removed.push(type);
+      // oxlint-disable-next-line no-explicit-any
+      return (originalRemove as any)(type, ...rest);
+    },
+    configurable: true,
+  });
+  return { added, removed };
+}
+
+// MUST-1 fix proof: native mode is not a listener that no-ops, it is
+// the complete absence of the wheel/pointer listeners on the DOM —
+// the shell-review mutation that replaced setGestureMode's install/
+// remove with a no-op left this test failing (added stayed empty on
+// panzoom entry, removed stayed empty on the way back to native).
+test("gesture listeners are installed only in panzoom mode and fully removed in native mode", async () => {
+  const shim = parseHTML("<!DOCTYPE html><html><body><main id='artifact'></main></body></html>");
+  Object.defineProperty(shim.document, "implementation", { value: fakeImpl, configurable: true });
+  globals["document"] = shim.document;
+  globals["window"] = shim.window;
+  const container = shim.document.getElementById("artifact")!;
+  const spy = spyOnListeners(container);
+
+  installGalleryFrameApi(createRendererRegistry([["markdown", async () => {}]]));
+  const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
+  const result = await api.render({
+    artifactType: "markdown",
+    renderer: "svg",
+    bytes: new Uint8Array([1]),
+  });
+
+  // A fresh document artifact render defaults to native — zero gesture
+  // listeners on the container, by construction not by early return.
+  expect(result.gestureMode()).toBe("native");
+  for (const type of GESTURE_LISTENER_TYPES) {
+    expect(spy.added).not.toContain(type);
+  }
+
+  result.setGestureMode("panzoom");
+  for (const type of GESTURE_LISTENER_TYPES) {
+    expect(spy.added.filter((entry) => entry === type)).toHaveLength(1);
+  }
+
+  result.setGestureMode("native");
+  for (const type of GESTURE_LISTENER_TYPES) {
+    expect(spy.removed.filter((entry) => entry === type)).toHaveLength(1);
+  }
+
+  // Re-entering panzoom re-installs exactly once more (no leaked
+  // duplicate listener from a missed removal).
+  result.setGestureMode("panzoom");
+  for (const type of GESTURE_LISTENER_TYPES) {
+    expect(spy.added.filter((entry) => entry === type)).toHaveLength(2);
+  }
+});
