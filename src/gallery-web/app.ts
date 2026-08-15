@@ -37,7 +37,7 @@ import {
   zoomAtPoint,
   type ViewState,
 } from "./view-state";
-import type { FrameRenderPayload } from "./frame/frame-payload";
+import type { FrameRenderPayload, GestureMode } from "./frame/frame-payload";
 import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 
 // Re-exports — the gate test + sibling modules import these from `app`
@@ -294,6 +294,12 @@ export interface FrameRenderResultHandle {
   readonly readViewState: () => ViewState;
   /** Apply the shell's preserved view state inside the frame (same-origin). */
   readonly applyViewState: (state: ViewState) => void;
+  /** Gesture mode this render started in — standalone diagrams default to `panzoom`, documents to `native`. */
+  readonly defaultGestureMode: GestureMode;
+  /** The frame's current wheel/drag gesture mode. */
+  readonly gestureMode: () => GestureMode;
+  /** Switch the frame between native scroll/select and wheel-zoom/drag-pan. */
+  readonly setGestureMode: (mode: GestureMode) => void;
 }
 
 export interface CreatedArtifactFrame {
@@ -425,6 +431,9 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
         viewMode: frameResult.viewMode,
         readViewState: () => ({ ...frameResult.readViewState() }),
         applyViewState: (state) => frameResult.applyViewState(normalizeViewState(state)),
+        defaultGestureMode: frameResult.defaultGestureMode,
+        gestureMode: () => frameResult.gestureMode(),
+        setGestureMode: (mode) => frameResult.setGestureMode(mode),
       };
       renderResult = handle;
       return handle;
@@ -965,6 +974,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     )
       .then(({ frame, result, verdict }) => {
         current = frame;
+        syncPanZoomToggle();
         if (!result.failedNewFrameReady) {
           if (revision !== null) revision.textContent = event.revisionSha.slice(0, 12);
           updateGalleryVerdict(verdict);
@@ -1031,6 +1041,10 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     );
     if (next === null) return;
     event.preventDefault();
+    if (event.key === "0") {
+      result.setGestureMode(result.defaultGestureMode);
+      syncPanZoomToggle();
+    }
     result.applyViewState(next);
   });
   for (const [id, delta] of [
@@ -1047,11 +1061,27 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       );
     });
   }
+  const panZoomToggle = document.getElementById("facet-panzoom-toggle");
+  /** Reflect the frame's actual gesture mode on the toolbar toggle — called after every render/swap so a fresh diagram's default-on panzoom shows latched without a click. */
+  const syncPanZoomToggle = (): void => {
+    if (panZoomToggle === null) return;
+    const active = current.renderResult?.gestureMode() === "panzoom";
+    panZoomToggle.setAttribute("aria-pressed", active ? "true" : "false");
+  };
+  panZoomToggle?.addEventListener("click", () => {
+    const result = current.renderResult;
+    if (!result) return;
+    result.setGestureMode(result.gestureMode() === "panzoom" ? "native" : "panzoom");
+    syncPanZoomToggle();
+  });
   document.getElementById("facet-zoom-reset")?.addEventListener("click", () => {
     const result = current.renderResult;
     if (!result) return;
+    result.setGestureMode(result.defaultGestureMode);
     result.applyViewState(resetViewState(result.readViewState()));
+    syncPanZoomToggle();
   });
+  syncPanZoomToggle();
   document
     .getElementById("facet-fullscreen")
     ?.addEventListener("click", () => void canvas.requestFullscreen());

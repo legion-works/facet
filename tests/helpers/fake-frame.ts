@@ -13,19 +13,26 @@ export interface FakeViewState {
   readonly panY: number;
 }
 
+export type FakeGestureMode = "native" | "panzoom";
+
 export interface FakeRenderResultShape<TObserved = Record<string, number>> {
   readonly observed: TObserved;
   readonly viewMode: "native" | "css";
   readonly applyViewState: (state: FakeViewState) => void;
   readonly readViewState: () => FakeViewState;
+  readonly defaultGestureMode: FakeGestureMode;
+  readonly gestureMode: () => FakeGestureMode;
+  readonly setGestureMode: (mode: FakeGestureMode) => void;
 }
 
 /** Build a fake `RenderResult` that tracks the last applied view state, like the real frame. */
 export function makeFakeRenderResult<TObserved>(
   viewMode: "native" | "css",
   observed: TObserved,
+  defaultGestureMode: FakeGestureMode = "native",
 ): FakeRenderResultShape<TObserved> {
   let applied: FakeViewState | null = null;
+  let mode: FakeGestureMode = defaultGestureMode;
   return {
     observed,
     viewMode,
@@ -33,6 +40,11 @@ export function makeFakeRenderResult<TObserved>(
       applied = { ...state };
     },
     readViewState: () => applied ?? { zoom: 1, panX: 0, panY: 0 },
+    defaultGestureMode,
+    gestureMode: () => mode,
+    setGestureMode: (next) => {
+      mode = next;
+    },
   };
 }
 

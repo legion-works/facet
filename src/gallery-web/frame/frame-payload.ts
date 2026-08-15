@@ -28,6 +28,22 @@ export interface FrameViewState {
   readonly panY: number;
 }
 
+/**
+ * Whether the frame's wheel/drag gesture listeners are live. `native`
+ * leaves wheel/pointer events untouched (document scroll, text
+ * selection); `panzoom` installs wheel-zoom-at-cursor and drag-pan and
+ * suppresses the rendered root's own pointer events so a drag can't
+ * also select text or click through. Standalone diagram artifacts
+ * (mermaid/svg/chart) default to `panzoom`; documents default to
+ * `native` with a shell toolbar toggle — see `installGalleryFrameApi`.
+ */
+export const GESTURE_MODES = ["native", "panzoom"] as const;
+export type GestureMode = (typeof GESTURE_MODES)[number];
+
+export function isGestureMode(value: unknown): value is GestureMode {
+  return typeof value === "string" && (GESTURE_MODES as readonly string[]).includes(value);
+}
+
 /** Cross-realm-safe — frame payloads arrive via postMessage from other realms. */
 export function isUint8Array(value: unknown): value is Uint8Array {
   return Object.prototype.toString.call(value) === "[object Uint8Array]";

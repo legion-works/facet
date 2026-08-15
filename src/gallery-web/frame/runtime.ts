@@ -12,10 +12,12 @@ import {
 import {
   decodePayloadBytes,
   isFrameViewState,
+  isGestureMode,
   isUint8Array,
   parseViewBox,
   type FrameRenderPayload,
   type FrameViewState,
+  type GestureMode,
 } from "./frame-payload";
 import type { SvgViewBox } from "./view-box";
 import {
@@ -26,14 +28,21 @@ import {
   zoomAtPoint,
 } from "../view-state";
 
-export type { FrameRenderPayload, FrameViewState };
+export type { FrameRenderPayload, FrameViewState, GestureMode };
 
 export interface RenderResult {
   readonly observed: PageShimCounts;
   readonly viewMode: "native" | "css";
   readonly applyViewState: (state: FrameViewState) => void;
   readonly readViewState: () => FrameViewState;
+  /** Gesture mode a fresh render started in — restored by reset. */
+  readonly defaultGestureMode: GestureMode;
+  readonly gestureMode: () => GestureMode;
+  readonly setGestureMode: (mode: GestureMode) => void;
 }
+
+/** Artifact types where the whole document IS one diagram — wheel/drag gestures are the natural interaction with no competing text-selection or click behavior to protect. */
+const STANDALONE_DIAGRAM_TYPES = new Set(["mermaid", "svg", "chart"]);
 
 export interface GalleryFrameApi {
   render(payload: FrameRenderPayload): Promise<RenderResult>;
@@ -99,12 +108,32 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   container.style.boxSizing = "border-box";
 
   let currentRenderResult: RenderResult | null = null;
+  let gestureMode: GestureMode = "native";
+  const setGestureMode = (mode: GestureMode): void => {
+    if (!isGestureMode(mode)) {
+      throw new FacetRenderError("gesture mode is invalid", "invalid_request");
+    }
+    gestureMode = mode;
+    if (mode !== "panzoom") {
+      drag = null;
+      container.style.cursor = "auto";
+    }
+    // Suppress the artifact's own pointer interaction while dragging
+    // pans it — events fall through the (now pointer-events:none) root
+    // to the container, which is what pointerdown/move/up listen on.
+    const root = container.firstElementChild;
+    if (root instanceof HTMLElement) {
+      root.style.pointerEvents = mode === "panzoom" ? "none" : "";
+    }
+  };
+
   const api: GalleryFrameApi = {
     async render(payload: FrameRenderPayload): Promise<RenderResult> {
       if (rendered) throw new FacetRenderError("frame already rendered", "invalid_request");
       rendered = true;
+      const validated = validatePayload(payload);
       try {
-        await dispatchRender(registry, { container }, validatePayload(payload));
+        await dispatchRender(registry, { container }, validated);
       } catch (error) {
         appendRenderError(container, error instanceof Error ? error.message : String(error));
         throw error;
@@ -132,11 +161,18 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
         container.scrollLeft = Math.max(0, -state.panX);
         container.scrollTop = Math.max(0, -state.panY);
       };
+      const defaultGestureMode: GestureMode = STANDALONE_DIAGRAM_TYPES.has(validated.artifactType)
+        ? "panzoom"
+        : "native";
+      setGestureMode(defaultGestureMode);
       currentRenderResult = {
         observed: countPageShim(),
         viewMode,
         applyViewState,
         readViewState: () => ({ ...viewState }),
+        defaultGestureMode,
+        gestureMode: () => gestureMode,
+        setGestureMode,
       };
       return currentRenderResult;
     },
@@ -147,6 +183,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   container.addEventListener(
     "wheel",
     (event) => {
+      if (gestureMode !== "panzoom") return;
       event.preventDefault();
       const rect = container.getBoundingClientRect();
       const state = currentRenderResult?.readViewState() ?? EMPTY_VIEW_STATE;
@@ -160,6 +197,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
     { passive: false },
   );
   container.addEventListener("pointerdown", (event) => {
+    if (gestureMode !== "panzoom") return;
     drag = { x: event.clientX, y: event.clientY };
     container.setPointerCapture(event.pointerId);
     container.style.cursor = "grabbing";
@@ -199,6 +237,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
     );
     if (next === null) return;
     event.preventDefault();
+    if (event.key === "0") result.setGestureMode(result.defaultGestureMode);
     result.applyViewState(normalizeViewState(next));
   });
 }

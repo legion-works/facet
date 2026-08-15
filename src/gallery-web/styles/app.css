@@ -312,6 +312,14 @@ body {
   transform: scale(0.98);
 }
 
+/* Latched state for the pan/zoom mode toggle — the only toolbar
+   button with persistent on/off state rather than a momentary action. */
+#facet-controls button[aria-pressed="true"] {
+  background: var(--facet-cyan);
+  color: var(--facet-navy-2);
+  border-color: var(--facet-cyan);
+}
+
 /* Display-layer failure chip — an event, not a verdict, so it takes
    the outline treatment (only `tampered` ever fills). */
 #facet-error {

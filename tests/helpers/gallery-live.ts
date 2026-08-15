@@ -257,6 +257,53 @@ export async function clickGalleryControl(target: GalleryTarget, elementId: stri
 }
 
 /**
+ * Dispatch a trusted CDP mouse-wheel event at the center of the
+ * top-level iframe (the same coordinate space `Input.dispatchMouseEvent`
+ * targets across frame boundaries). Unlike a synthetic
+ * `new WheelEvent()` dispatched from JS, this is a real OS-level wheel
+ * event: it both fires the frame's `wheel` listener AND performs
+ * whatever native scroll/zoom the browser would do on an untouched
+ * page — the two things the gesture-mode regression test needs to
+ * distinguish (does OUR listener act, does the BROWSER'S own default
+ * still happen).
+ */
+export async function dispatchGalleryWheel(
+  target: GalleryTarget,
+  deltaY: number,
+  options?: { readonly ctrlKey?: boolean },
+): Promise<void> {
+  const rect = (await target.session.send("Runtime.evaluate", {
+    returnByValue: true,
+    expression: `(() => {
+      const box = document.querySelector('iframe')?.getBoundingClientRect();
+      return { x: (box?.left ?? 0) + (box?.width ?? 0) / 2, y: (box?.top ?? 0) + (box?.height ?? 0) / 2 };
+    })()`,
+  })) as { result?: { value?: { x: number; y: number } } };
+  const point = rect.result?.value;
+  if (point === undefined) throw new Error("gallery wheel: iframe rect read failed");
+  // A wheel dispatch without a preceding hover hit-tests against
+  // whatever CDP last considered "under the cursor" (often nothing),
+  // and silently no-ops instead of scrolling the artifact.
+  await target.session.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: point.x,
+    y: point.y,
+  });
+  await target.session.send("Input.dispatchMouseEvent", {
+    type: "mouseWheel",
+    x: point.x,
+    y: point.y,
+    deltaX: 0,
+    deltaY,
+    // CDP modifier bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8.
+    modifiers: options?.ctrlKey === true ? 2 : 0,
+  });
+  // The scroll (and any listener reaction) lands on the next rendered
+  // frame, not synchronously with the CDP call's resolution.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+
+/**
  * Capture a full-page PNG of the top document and write it to disk,
  * creating parent directories as needed. Mirrors the capture shape
  * `captureScreenshotWithFallback` uses in the Tier 1 runner, without

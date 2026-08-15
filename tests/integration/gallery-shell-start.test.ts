@@ -465,6 +465,9 @@ describe("gallery shell startup", () => {
           appliedState = state;
         },
         readViewState: () => appliedState ?? EMPTY_VIEW_STATE,
+        defaultGestureMode: "native",
+        gestureMode: () => "native",
+        setGestureMode: () => {},
       }),
     });
     await startGallery(harness.runtime);
