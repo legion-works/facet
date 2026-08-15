@@ -21,16 +21,49 @@ body {
   overflow: auto;
 }
 
+/*
+ * Standalone diagrams (mermaid/svg/chart) center on both axes when
+ * the rendered root fits the stage. `safe` is load-bearing: it falls
+ * back to start-aligned scrolling the moment the root overflows, so
+ * zoomed-in or naturally oversized content stays 100% reachable by
+ * scroll instead of clipping unreachable off-screen (the regression
+ * a plain `center` reintroduces).
+ */
+#artifact[data-facet-artifact-type="mermaid"],
+#artifact[data-facet-artifact-type="svg"],
+#artifact[data-facet-artifact-type="chart"] {
+  display: flex;
+  justify-content: safe center;
+  align-items: safe center;
+}
+
+/*
+ * Markdown reads top-down (no vertical centering) but should not
+ * stretch to an unreadable line length at wide viewports: cap the
+ * column at a ~92ch measure and center it horizontally. Below that
+ * measure the calc() collapses to the original 16px padding, so
+ * narrow viewports are unaffected.
+ */
+#artifact[data-facet-artifact-type="markdown"] {
+  padding-inline: max(16px, calc((100% - 92ch) / 2));
+}
+
 #artifact > svg {
   display: block;
   width: fit-content;
   max-height: none;
   height: auto;
+  /* Flex items shrink by default (min-width: auto); without this a
+     wide diagram would squeeze toward the flex container's width
+     instead of overflowing it — the exact jail regression `safe
+     center` above is meant to prevent. */
+  flex-shrink: 0;
 }
 
 #artifact > canvas,
 #artifact > iframe {
   display: block;
+  flex-shrink: 0;
 }
 
 #artifact a {

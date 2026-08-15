@@ -122,7 +122,7 @@ describe("gallery shell — frame document generation", () => {
     });
     const charsetIdx = document.indexOf('<meta charset="utf-8">');
     expect(charsetIdx).toBeGreaterThanOrEqual(0);
-    expect(document).toContain('<main id="artifact"></main>');
+    expect(document).toContain('<main id="artifact" data-facet-artifact-type="markdown"></main>');
     expect(document).not.toContain("Content-Security-Policy");
     expect(document).toContain('<link rel="stylesheet" href="/gallery/frame/frame.css">');
     expect(document).not.toMatch(/<style[\s>]/i);

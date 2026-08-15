@@ -80,8 +80,28 @@ const CASES: readonly GeometryCase[] = [
     key: "long-report",
     artifactType: "markdown",
     fixture: "long-report.md",
-    assert: (geometry) => {
+    assert: (geometry, width) => {
       expect(geometry.scrollHeight).toBeGreaterThan(geometry.clientHeight);
+      // Readable-measure contract: the document column is capped at
+      // ~92ch regardless of how wide the viewport gets — a wide-open
+      // 1920px stage must not stretch markdown to an unreadable line
+      // length.
+      if (width === 1920) {
+        expect(geometry.rootWidth).toBeLessThanOrEqual(1000);
+      }
+    },
+  },
+  {
+    key: "small-diagram",
+    artifactType: "mermaid",
+    fixture: "small-diagram.mmd",
+    assert: (geometry) => {
+      // Centering contract: a diagram small enough to fit the stage
+      // sits centered on both axes — equal left/right gutters. `safe
+      // center` is the mechanism; this assertion is what would fail if
+      // it silently regressed to a plain, unsafe `center`.
+      expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 2);
+      expect(Math.abs(geometry.rootLeft - geometry.rootRight)).toBeLessThanOrEqual(2);
     },
   },
   {

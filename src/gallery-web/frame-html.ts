@@ -42,7 +42,7 @@ export function buildFrameDocument(options: { artifactType: string; runtimeUrl: 
       ? `<link rel="stylesheet" href="/gallery/frame/artifact.css">`
       : "") +
     "</head><body>" +
-    `<main id="artifact"></main>` +
+    `<main id="artifact" data-facet-artifact-type="${artifactType}"></main>` +
     `<script type="module" src="${escapedRuntimeUrl}"></script>` +
     "</body></html>"
   );

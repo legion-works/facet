@@ -9,7 +9,7 @@ import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
 
-test("gallery renders a wide Mermaid diagram at natural size, top-left, horizontally scrollable", async () => {
+test("gallery renders a wide Mermaid diagram at natural size, horizontally scrollable, vertically centered when it fits", async () => {
   const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-mermaid-fit-"));
   const service = await startFacetService({
     dbPath: join(envDir, "facet.sqlite"),
@@ -53,11 +53,14 @@ test("gallery renders a wide Mermaid diagram at natural size, top-left, horizont
             paddingLeft: Number.parseFloat(style.paddingLeft),
             viewportTop: viewportRect.top,
             viewportLeft: viewportRect.left,
+            viewportHeight: viewport.clientHeight,
             viewportWidth: viewport.clientWidth,
             viewportScrollWidth: viewport.scrollWidth,
+            viewportScrollHeight: viewport.scrollHeight,
             svgTop: svgRect.top,
             svgLeft: svgRect.left,
             svgWidth: svgRect.width,
+            svgHeight: svgRect.height,
             viewBoxLeft: viewBox.x,
             viewBoxRight: viewBox.x + viewBox.width,
             contentLeft: content.x,
@@ -73,11 +76,14 @@ test("gallery renders a wide Mermaid diagram at natural size, top-left, horizont
           paddingLeft: number;
           viewportTop: number;
           viewportLeft: number;
+          viewportHeight: number;
           viewportWidth: number;
           viewportScrollWidth: number;
+          viewportScrollHeight: number;
           svgTop: number;
           svgLeft: number;
           svgWidth: number;
+          svgHeight: number;
           viewBoxLeft: number;
           viewBoxRight: number;
           contentLeft: number;
@@ -89,10 +95,25 @@ test("gallery renders a wide Mermaid diagram at natural size, top-left, horizont
     };
     const observed = geometry.result?.value;
     expect(observed).toBeDefined();
-    expect(observed!.svgTop).toBeLessThanOrEqual(observed!.viewportTop + observed!.paddingTop + 2);
+    // Horizontal axis overflows (asserted below) so `safe center` falls
+    // back to start alignment — the diagram stays pinned to the left,
+    // exactly like before this UX pass.
     expect(observed!.svgLeft).toBeLessThanOrEqual(
       observed!.viewportLeft + observed!.paddingLeft + 2,
     );
+    // Vertical axis fits the stage, so the new centering contract
+    // applies: the diagram sits vertically centered rather than
+    // pinned to the top (the top-pinned assertion this replaced was
+    // the pre-centering contract).
+    if (observed!.viewportScrollHeight <= observed!.viewportHeight + 2) {
+      const expectedTop =
+        observed!.viewportTop + (observed!.viewportHeight - observed!.svgHeight) / 2;
+      expect(Math.abs(observed!.svgTop - expectedTop)).toBeLessThanOrEqual(2);
+    } else {
+      expect(observed!.svgTop).toBeLessThanOrEqual(
+        observed!.viewportTop + observed!.paddingTop + 2,
+      );
+    }
     // Natural size: the SVG is pinned at its viewBox width (readable
     // labels), NOT shrunk to the viewport. A wide diagram therefore
     // overflows and the stage must expose the overflow as scrollable

@@ -183,6 +183,9 @@ export interface ArtifactGeometry {
   /** Bounding box of the artifact's rendered root (first child of `#artifact`) — the zoom-in size probe. */
   readonly rootWidth: number;
   readonly rootHeight: number;
+  /** Root's offset from the `#artifact` viewport's own left/right edges — the centering-gutter probe. */
+  readonly rootLeft: number;
+  readonly rootRight: number;
 }
 
 /**
@@ -206,6 +209,9 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
         ? null
         : getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
       const rootRect = viewport?.firstElementChild?.getBoundingClientRect();
+      const viewportRect = viewport?.getBoundingClientRect();
+      const rootLeft = rootRect && viewportRect ? rootRect.left - viewportRect.left : 0;
+      const rootRight = rootRect && viewportRect ? viewportRect.right - rootRect.right : 0;
       return {
         scrollWidth: viewport?.scrollWidth ?? 0,
         scrollHeight: viewport?.scrollHeight ?? 0,
@@ -217,6 +223,8 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
         canvasCount: document.querySelectorAll('canvas').length,
         rootWidth: rootRect?.width ?? 0,
         rootHeight: rootRect?.height ?? 0,
+        rootLeft,
+        rootRight,
       };
     })()`,
   })) as {
@@ -232,6 +240,8 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
         canvasCount: number;
         rootWidth: number;
         rootHeight: number;
+        rootLeft: number;
+        rootRight: number;
       };
     };
   };
