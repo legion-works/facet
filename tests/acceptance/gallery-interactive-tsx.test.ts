@@ -43,6 +43,34 @@ test("gallery delivers interactive TSX execution and mounts component structure"
       heading: "Interactive counter",
       button: "Increment",
     });
+
+    // The original operator complaint: gesture handling must never eat
+    // an artifact's own click events. TSX documents default to native
+    // gesture mode (no listener at all), so the toggle stays unlatched
+    // and a click on the component's own button reaches React.
+    const toggleState = (await target.session.send("Runtime.evaluate", {
+      returnByValue: true,
+      expression: `document.getElementById('facet-panzoom-toggle')?.getAttribute('aria-pressed')`,
+    })) as { result?: { value?: string } };
+    expect(toggleState.result?.value).toBe("false");
+
+    const before = (await target.session.send("Runtime.evaluate", {
+      contextId: artifactFrameWorld,
+      returnByValue: true,
+      expression: `document.querySelector('p')?.textContent ?? ''`,
+    })) as { result?: { value?: string } };
+    expect(before.result?.value).toBe("Button presses: 0");
+
+    await target.session.send("Runtime.evaluate", {
+      contextId: artifactFrameWorld,
+      expression: `document.querySelector('button')?.click()`,
+    });
+    const after = (await target.session.send("Runtime.evaluate", {
+      contextId: artifactFrameWorld,
+      returnByValue: true,
+      expression: `document.querySelector('p')?.textContent ?? ''`,
+    })) as { result?: { value?: string } };
+    expect(after.result?.value).toBe("Button presses: 1");
   } finally {
     await target?.close();
     await service.stop();

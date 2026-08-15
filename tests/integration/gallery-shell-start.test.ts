@@ -25,8 +25,15 @@ class FakeElement {
   private tier: FakeElement | null = null;
   private bar: FakeElement | null = null;
 
+  private readonly attributes: Record<string, string> = {};
+
   setAttribute(name: string, value: string): void {
     if (name === "data-frame-id") this.dataset["frameId"] = value;
+    this.attributes[name] = value;
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes[name] ?? null;
   }
 
   addEventListener(type: string, listener: Listener): void {
@@ -155,6 +162,7 @@ function createRuntime(
     "facet-zoom-in",
     "facet-zoom-out",
     "facet-zoom-reset",
+    "facet-panzoom-toggle",
     "facet-fullscreen",
   ])
     elements.set(id, new FakeElement());
@@ -484,6 +492,58 @@ describe("gallery shell startup", () => {
     // The frame document should receive the view state directly
     expect(appliedState).not.toBeNull();
     expect(appliedState.zoom).toBeGreaterThan(1);
+  });
+
+  // Review-reddened: a no-op click handler (`result.setGestureMode(result.gestureMode())`)
+  // left every other gallery test green because nothing else exercises
+  // the toolbar toggle. This asserts the actual flip, not just that a
+  // click was received.
+  test("the pan/zoom toolbar toggle flips the frame's gesture mode both ways, and reset restores the default", async () => {
+    const harness = createRuntime();
+    // A mutable holder, not a bare `let` — TS narrows a closed-over
+    // union-typed `let` to its last-seen literal across opaque calls
+    // like `toggle.emit(...)`, which would make later `.toBe("panzoom")`
+    // assertions a type error even though the runtime value does change.
+    const gesture: { mode: "native" | "panzoom" } = { mode: "native" };
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: async () => ({
+        observed: harness.defaultObserved,
+        viewMode: "native",
+        applyViewState: () => {},
+        readViewState: () => EMPTY_VIEW_STATE,
+        defaultGestureMode: "native",
+        gestureMode: () => gesture.mode,
+        setGestureMode: (mode: "native" | "panzoom") => {
+          gesture.mode = mode;
+        },
+      }),
+    });
+    await startGallery(harness.runtime);
+    await Promise.resolve();
+
+    const toggle = harness.elements.get("facet-panzoom-toggle")!;
+    // A markdown/html artifact's fresh render defaults to native — the
+    // toggle starts unlatched.
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(gesture.mode).toBe("native");
+
+    toggle.emit("click");
+    expect(gesture.mode).toBe("panzoom");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+
+    toggle.emit("click");
+    expect(gesture.mode).toBe("native");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+    // Reset exits pan/zoom mode back to the artifact's default and
+    // un-latches the toggle.
+    toggle.emit("click");
+    expect(gesture.mode).toBe("panzoom");
+    harness.elements.get("facet-zoom-reset")?.emit("click");
+    expect(gesture.mode).toBe("native");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
   });
 
   test("two rapid revision commits serialize: newest revision wins, exactly one frame at settle", async () => {
