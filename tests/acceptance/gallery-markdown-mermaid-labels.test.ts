@@ -24,6 +24,11 @@ import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/ga
 const markdownSource = [
   "# Status",
   "",
+  ...Array.from(
+    { length: 18 },
+    (_, index) => `Operational context ${index + 1}: document scroll remains native.`,
+  ),
+  "",
   "```mermaid",
   "flowchart TD",
   "  Start[Start] --> Middle[Middle step]",
@@ -36,9 +41,14 @@ const markdownSource = [
   "  Alice->>Bob: Hello Bob",
   "  Bob-->>Alice: Hello Alice",
   "```",
+  "",
+  ...Array.from(
+    { length: 18 },
+    (_, index) => `Release note ${index + 1}: diagrams remain locally navigable.`,
+  ),
 ].join("\n");
 
-test("gallery keeps every Mermaid flowchart label inside a markdown fence", async () => {
+test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagram's pan/zoom", async () => {
   const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-markdown-mermaid-labels-"));
   const service = await startFacetService({
     dbPath: join(envDir, "facet.sqlite"),
@@ -76,6 +86,156 @@ test("gallery keeps every Mermaid flowchart label inside a markdown fence", asyn
     );
     // Sequence diagram — the control; stayed correct even at the broken commit.
     expect(diagrams?.[1]?.labels.length).toBeGreaterThan(0);
+
+    const iframePoint = async (): Promise<{ x: number; y: number }> => {
+      const outer = (await target!.session.send("Runtime.evaluate", {
+        returnByValue: true,
+        expression: `(() => {
+          const rect = document.querySelector('iframe')?.getBoundingClientRect();
+          return { left: rect?.left ?? 0, top: rect?.top ?? 0 };
+        })()`,
+      })) as { result?: { value?: { left: number; top: number } } };
+      const inner = (await target!.session.send("Runtime.evaluate", {
+        contextId: world,
+        returnByValue: true,
+        expression: `(() => {
+          const svg = document.querySelectorAll('[data-facet-renderer-graph="true"]')[0];
+          if (!(svg instanceof SVGSVGElement)) throw new Error('first Mermaid diagram missing');
+          const rect = svg.getBoundingClientRect();
+          return { x: rect.left + Math.min(40, rect.width / 2), y: rect.top + Math.min(40, rect.height / 2) };
+        })()`,
+      })) as { result?: { value?: { x: number; y: number } } };
+      const frame = outer.result?.value;
+      const diagram = inner.result?.value;
+      if (frame === undefined || diagram === undefined)
+        throw new Error("diagram point unavailable");
+      return { x: frame.left + diagram.x, y: frame.top + diagram.y };
+    };
+
+    const readRegionState = async (): Promise<{
+      scrollTop: number;
+      firstWidth: number;
+      secondWidth: number;
+      regionWidth: number;
+      regionHeight: number;
+      regionOverflowX: string;
+      tagged: boolean;
+    }> => {
+      const evaluated = (await target!.session.send("Runtime.evaluate", {
+        contextId: world,
+        returnByValue: true,
+        expression: `(() => {
+          const viewport = document.getElementById('artifact');
+          const diagrams = Array.from(document.querySelectorAll('[data-facet-renderer-graph="true"]'));
+          const first = diagrams[0];
+          const second = diagrams[1];
+          if (!(first instanceof SVGSVGElement) || !(second instanceof SVGSVGElement) || viewport === null) {
+            throw new Error('Markdown Mermaid diagrams missing');
+          }
+          const region = first.closest('[data-facet-diagram-region]') ?? first.parentElement;
+          if (!(region instanceof HTMLElement)) throw new Error('diagram region missing');
+          const rect = region.getBoundingClientRect();
+          return {
+            scrollTop: viewport.scrollTop,
+            firstWidth: first.getBoundingClientRect().width,
+            secondWidth: second.getBoundingClientRect().width,
+            regionWidth: rect.width,
+            regionHeight: rect.height,
+            regionOverflowX: getComputedStyle(region).overflowX,
+            tagged: region.hasAttribute('data-facet-diagram-region'),
+          };
+        })()`,
+      })) as {
+        result?: {
+          value?: {
+            scrollTop: number;
+            firstWidth: number;
+            secondWidth: number;
+            regionWidth: number;
+            regionHeight: number;
+            regionOverflowX: string;
+            tagged: boolean;
+          };
+        };
+      };
+      const value = evaluated.result?.value;
+      if (value === undefined) throw new Error("diagram state unavailable");
+      return value;
+    };
+
+    await target.session.send("Runtime.evaluate", {
+      contextId: world,
+      expression: `document.getElementById('artifact').scrollTop = 0`,
+    });
+    const beforeNativeWheel = await readRegionState();
+    const initialPoint = await iframePoint();
+    await target.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...initialPoint });
+    await target.session.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      ...initialPoint,
+      deltaX: 0,
+      deltaY: 400,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const afterNativeWheel = await readRegionState();
+    expect(afterNativeWheel.scrollTop).toBeGreaterThan(beforeNativeWheel.scrollTop);
+    expect(afterNativeWheel.firstWidth).toBeCloseTo(beforeNativeWheel.firstWidth, 1);
+
+    await target.session.send("Runtime.evaluate", {
+      contextId: world,
+      expression: `document.getElementById('artifact').scrollTop = 300`,
+    });
+    const beforeEngagedWheel = await readRegionState();
+    const engagedPoint = await iframePoint();
+    await target.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...engagedPoint });
+    await target.session.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      ...engagedPoint,
+      button: "left",
+      clickCount: 1,
+    });
+    await target.session.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      ...engagedPoint,
+      button: "left",
+      clickCount: 1,
+    });
+    await target.session.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      ...engagedPoint,
+      deltaX: 0,
+      deltaY: -400,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const afterEngagedWheel = await readRegionState();
+    expect(afterEngagedWheel.firstWidth).toBeGreaterThan(beforeEngagedWheel.firstWidth + 10);
+    expect(afterEngagedWheel.scrollTop).toBeCloseTo(beforeEngagedWheel.scrollTop, 0);
+    expect(afterEngagedWheel.secondWidth).toBeCloseTo(beforeEngagedWheel.secondWidth, 1);
+    expect(afterEngagedWheel.regionWidth).toBeCloseTo(beforeEngagedWheel.regionWidth, 1);
+    expect(afterEngagedWheel.regionHeight).toBeCloseTo(beforeEngagedWheel.regionHeight, 1);
+    expect(afterEngagedWheel.regionOverflowX).toBe("hidden");
+    expect(afterEngagedWheel.tagged).toBeTrue();
+
+    await target.session.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Escape",
+      code: "Escape",
+    });
+    const beforeDisengagedWheel = await readRegionState();
+    const disengagedPoint = await iframePoint();
+    await target.session.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      ...disengagedPoint,
+    });
+    await target.session.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      ...disengagedPoint,
+      deltaX: 0,
+      deltaY: 400,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const afterDisengagedWheel = await readRegionState();
+    expect(afterDisengagedWheel.scrollTop).toBeGreaterThan(beforeDisengagedWheel.scrollTop);
   } finally {
     await target?.close();
     await service.stop();

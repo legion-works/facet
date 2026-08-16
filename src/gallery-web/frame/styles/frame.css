@@ -94,6 +94,22 @@ body {
   flex-shrink: 0;
 }
 
+#artifact [data-facet-diagram-region] {
+  display: block;
+  overflow: hidden;
+  outline: 1px solid transparent;
+  outline-offset: 2px;
+}
+
+#artifact [data-facet-diagram-region][data-facet-diagram-engaged="true"] {
+  outline-color: #82aaff;
+}
+
+#artifact [data-facet-diagram-region] > svg {
+  display: block;
+  max-width: none;
+}
+
 #artifact a {
   color: #82aaff;
 }

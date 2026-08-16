@@ -302,6 +302,8 @@ export interface FrameRenderResultHandle {
   readonly gestureMode: () => GestureMode;
   /** Switch the frame between native scroll/select and wheel-zoom/drag-pan. */
   readonly setGestureMode: (mode: GestureMode) => void;
+  /** Restore every embedded diagram region to its natural size and idle state. */
+  readonly resetDiagramRegions: () => void;
 }
 
 export interface CreatedArtifactFrame {
@@ -436,6 +438,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
         defaultGestureMode: frameResult.defaultGestureMode,
         gestureMode: () => frameResult.gestureMode(),
         setGestureMode: (mode) => frameResult.setGestureMode(mode),
+        resetDiagramRegions: () => frameResult.resetDiagramRegions(),
       };
       renderResult = handle;
       return handle;
@@ -1126,6 +1129,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     if (!result) return;
     result.setGestureMode(result.defaultGestureMode);
     result.applyViewState(resetViewState(result.readViewState()));
+    result.resetDiagramRegions();
     syncPanZoomToggle();
     syncZoomButtons();
   });

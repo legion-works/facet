@@ -70,12 +70,11 @@ export async function renderMarkdown(ctx: RenderContext, bytes: Uint8Array): Pro
     const source = code.textContent ?? "";
     const pre = code.parentElement;
     if (pre === null) continue;
-    // Render into a scratch holder so the SVG lands where the <pre>
-    // was, then move it into the template fragment.
-    const scratch = document.createElement("div");
-    await renderMermaidInto!(scratch, source);
-    const svg = scratch.firstElementChild;
-    if (svg !== null) pre.replaceWith(svg);
+    const region = document.createElement("div");
+    region.setAttribute("data-facet-diagram-region", "true");
+    region.tabIndex = 0;
+    await renderMermaidInto!(region, source);
+    if (region.firstElementChild !== null) pre.replaceWith(region);
     else pre.remove();
   }
   ctx.container.appendChild(template.content);

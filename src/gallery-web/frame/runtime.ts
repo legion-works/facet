@@ -39,10 +39,31 @@ export interface RenderResult {
   readonly defaultGestureMode: GestureMode;
   readonly gestureMode: () => GestureMode;
   readonly setGestureMode: (mode: GestureMode) => void;
+  readonly resetDiagramRegions: () => void;
 }
 
 /** Artifact types where the whole document IS one diagram — wheel/drag gestures are the natural interaction with no competing text-selection or click behavior to protect. */
 const STANDALONE_DIAGRAM_TYPES = new Set(["mermaid", "svg", "chart"]);
+const DIAGRAM_REGION_SELECTOR = "[data-facet-diagram-region]";
+
+export type DiagramRegionEngagementState = "idle" | "armed" | "engaged";
+export type DiagramRegionEngagementEvent = "pointerenter" | "pointerleave" | "activate" | "dismiss";
+
+export function nextDiagramRegionEngagement(
+  state: DiagramRegionEngagementState,
+  event: DiagramRegionEngagementEvent,
+): DiagramRegionEngagementState {
+  if (event === "dismiss") return "idle";
+  if (event === "pointerenter") return state === "idle" ? "armed" : state;
+  if (event === "pointerleave") return state === "armed" ? "idle" : state;
+  return state === "armed" ? "engaged" : state;
+}
+
+interface DiagramRegionGestures {
+  readonly setEnabled: (enabled: boolean) => void;
+  readonly dismiss: () => boolean;
+  readonly reset: () => void;
+}
 
 export interface GalleryFrameApi {
   render(payload: FrameRenderPayload): Promise<RenderResult>;
@@ -91,6 +112,124 @@ function renderedSvg(
   return { svg: root as SVGSVGElement, viewBox };
 }
 
+function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGestures {
+  const regions = Array.from(container.querySelectorAll<HTMLElement>(DIAGRAM_REGION_SELECTOR));
+  let enabled = false;
+  const controls = regions.flatMap((region) => {
+    const svg = region.querySelector<SVGSVGElement>(":scope > svg");
+    if (svg === null) return [];
+    const rect = svg.getBoundingClientRect();
+    const naturalWidth = rect.width;
+    const naturalHeight = rect.height;
+    if (naturalWidth <= 0 || naturalHeight <= 0) return [];
+    region.style.width = `${Math.ceil(naturalWidth)}px`;
+    region.style.height = `${Math.ceil(naturalHeight)}px`;
+    region.style.overflow = "hidden";
+    let state: DiagramRegionEngagementState = "idle";
+    let zoom = 1;
+    let drag: { x: number; y: number; pointerId: number } | null = null;
+    const syncEngagement = (): void => {
+      if (state === "engaged") region.setAttribute("data-facet-diagram-engaged", "true");
+      else region.removeAttribute("data-facet-diagram-engaged");
+    };
+    const transition = (event: DiagramRegionEngagementEvent): void => {
+      state = nextDiagramRegionEngagement(state, event);
+      syncEngagement();
+    };
+    const eventRegion = (event: Event): HTMLElement | null => {
+      const target = event.target;
+      return target instanceof Element
+        ? target.closest<HTMLElement>(DIAGRAM_REGION_SELECTOR)
+        : null;
+    };
+    region.addEventListener("pointerenter", () => {
+      if (enabled) transition("pointerenter");
+    });
+    region.addEventListener("pointerleave", () => {
+      if (enabled) transition("pointerleave");
+    });
+    region.addEventListener("pointerdown", (event) => {
+      if (!enabled || eventRegion(event) !== region) return;
+      transition("activate");
+      if (state !== "engaged") return;
+      region.focus({ preventScroll: true });
+      drag = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+      region.setPointerCapture(event.pointerId);
+      region.style.cursor = "grabbing";
+      event.preventDefault();
+    });
+    region.addEventListener("pointermove", (event) => {
+      if (drag === null || event.pointerId !== drag.pointerId || eventRegion(event) !== region)
+        return;
+      region.scrollLeft = Math.max(0, region.scrollLeft - (event.clientX - drag.x));
+      region.scrollTop = Math.max(0, region.scrollTop - (event.clientY - drag.y));
+      drag = { ...drag, x: event.clientX, y: event.clientY };
+      event.preventDefault();
+    });
+    const endDrag = (event: PointerEvent): void => {
+      if (drag === null || event.pointerId !== drag.pointerId) return;
+      drag = null;
+      if (region.hasPointerCapture(event.pointerId)) region.releasePointerCapture(event.pointerId);
+      region.style.cursor = "";
+    };
+    region.addEventListener("pointerup", endDrag);
+    region.addEventListener("pointercancel", endDrag);
+    region.addEventListener(
+      "wheel",
+      (event) => {
+        if (!enabled || state !== "engaged" || eventRegion(event) !== region) return;
+        event.preventDefault();
+        const nextZoom = clampZoom(zoom * Math.exp(-event.deltaY * 0.001));
+        const regionRect = region.getBoundingClientRect();
+        const cursorX = event.clientX - regionRect.left;
+        const cursorY = event.clientY - regionRect.top;
+        const scale = nextZoom / zoom;
+        zoom = nextZoom;
+        svg.style.width = `${Math.ceil(naturalWidth * zoom)}px`;
+        svg.style.maxWidth = "none";
+        svg.style.height = "auto";
+        region.scrollLeft = Math.max(0, (region.scrollLeft + cursorX) * scale - cursorX);
+        region.scrollTop = Math.max(0, (region.scrollTop + cursorY) * scale - cursorY);
+      },
+      { passive: false },
+    );
+    return [
+      {
+        dismiss: (): boolean => {
+          const wasEngaged = state === "engaged";
+          drag = null;
+          region.style.cursor = "";
+          transition("dismiss");
+          return wasEngaged;
+        },
+        reset: (): void => {
+          zoom = 1;
+          svg.style.width = `${Math.ceil(naturalWidth)}px`;
+          svg.style.maxWidth = "none";
+          svg.style.height = "auto";
+          region.scrollLeft = 0;
+          region.scrollTop = 0;
+          drag = null;
+          region.style.cursor = "";
+          transition("dismiss");
+        },
+      },
+    ];
+  });
+  return {
+    setEnabled(nextEnabled: boolean): void {
+      enabled = nextEnabled;
+      if (!enabled) controls.forEach((control) => control.dismiss());
+    },
+    dismiss(): boolean {
+      return controls.some((control) => control.dismiss());
+    },
+    reset(): void {
+      controls.forEach((control) => control.reset());
+    },
+  };
+}
+
 function validatePayload(value: unknown): {
   readonly artifactType: string;
   readonly renderer: ReturnType<typeof validateRenderer>;
@@ -135,6 +274,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   container.style.boxSizing = "border-box";
 
   let currentRenderResult: RenderResult | null = null;
+  let diagramRegions: DiagramRegionGestures | null = null;
   let gestureMode: GestureMode = "native";
   let drag: { x: number; y: number } | null = null;
 
@@ -172,10 +312,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
     container.style.cursor = "auto";
   };
 
-  // Gesture listeners exist on the DOM only while panzoom mode is
-  // active — native mode is not "listeners that no-op", it is zero
-  // listeners, so nothing on the frame document can intercept scroll,
-  // click, or text selection.
+  // Frame-wide gesture listeners exist only while panzoom mode is active.
   let gesturesInstalled = false;
   const installGestureListeners = (): void => {
     if (gesturesInstalled) return;
@@ -208,6 +345,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
       drag = null;
       container.style.cursor = "auto";
     }
+    diagramRegions?.setEnabled(mode === "native");
     // Suppress the artifact's own pointer interaction while dragging
     // pans it — events fall through the (now pointer-events:none) root
     // to the container, which is what pointerdown/move/up listen on.
@@ -232,6 +370,8 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
         appendRenderError(container, error instanceof Error ? error.message : String(error));
         throw error;
       }
+
+      diagramRegions = installDiagramRegionGestures(container);
 
       const svg = renderedSvg(container);
       const viewMode = svg === null ? "css" : "native";
@@ -272,11 +412,18 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
         defaultGestureMode,
         gestureMode: () => gestureMode,
         setGestureMode,
+        resetDiagramRegions: () => diagramRegions?.reset(),
       };
       return currentRenderResult;
     },
   };
   Reflect.set(window, "__facetFrame", api);
+
+  document.addEventListener("pointerdown", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest(DIAGRAM_REGION_SELECTOR) !== null) return;
+    diagramRegions?.dismiss();
+  });
 
   // Frame-side listener: this is the frame's own document, distinct
   // from the shell's (app.ts keydown listener attaches to the parent
@@ -286,6 +433,10 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   document.addEventListener("keydown", (event) => {
     const result = currentRenderResult;
     if (!result) return;
+    if (event.key === "Escape" && diagramRegions?.dismiss()) {
+      event.preventDefault();
+      return;
+    }
     const next = nextViewStateForKey(
       result.readViewState(),
       event.key,

@@ -22,9 +22,33 @@ globals["HTMLTemplateElement"] = shimWindow.HTMLTemplateElement;
 let createRendererRegistry: typeof import("../../src/gallery-web/frame/renderers/registry").createRendererRegistry;
 let installGalleryFrameApi: typeof import("../../src/gallery-web/frame/runtime").installGalleryFrameApi;
 
+type DiagramRegionEngagementState = "idle" | "armed" | "engaged";
+type DiagramRegionEngagementEvent = "pointerenter" | "pointerleave" | "activate" | "dismiss";
+
+type DiagramRegionEngagementTransition = (
+  state: DiagramRegionEngagementState,
+  event: DiagramRegionEngagementEvent,
+) => DiagramRegionEngagementState;
+
 beforeAll(async () => {
   ({ createRendererRegistry } = await import("../../src/gallery-web/frame/renderers/registry"));
   ({ installGalleryFrameApi } = await import("../../src/gallery-web/frame/runtime"));
+});
+
+test("diagram regions require pointer entry and activation, then remain engaged until dismissed", async () => {
+  const runtime = await import("../../src/gallery-web/frame/runtime");
+  const transition = Reflect.get(runtime, "nextDiagramRegionEngagement") as
+    | DiagramRegionEngagementTransition
+    | undefined;
+
+  expect(transition).toBeTypeOf("function");
+  const next = transition!;
+  expect(next("idle", "activate")).toBe("idle");
+  expect(next("idle", "pointerenter")).toBe("armed");
+  expect(next("armed", "pointerleave")).toBe("idle");
+  expect(next("armed", "activate")).toBe("engaged");
+  expect(next("engaged", "pointerleave")).toBe("engaged");
+  expect(next("engaged", "dismiss")).toBe("idle");
 });
 
 test("installs a one-shot direct frame API that resolves renderer observations", async () => {

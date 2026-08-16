@@ -519,6 +519,7 @@ describe("gallery shell startup", () => {
         defaultGestureMode: "native",
         gestureMode: () => "native",
         setGestureMode: () => {},
+        resetDiagramRegions: () => {},
       }),
     });
     await startGallery(harness.runtime);
@@ -556,6 +557,7 @@ describe("gallery shell startup", () => {
         defaultGestureMode: "native",
         gestureMode: () => "native",
         setGestureMode: () => {},
+        resetDiagramRegions: () => {},
       }),
     });
     await startGallery(harness.runtime);
@@ -611,6 +613,7 @@ describe("gallery shell startup", () => {
         setGestureMode: (mode: "native" | "panzoom") => {
           gesture.mode = mode;
         },
+        resetDiagramRegions: () => {},
       }),
     });
     await startGallery(harness.runtime);
