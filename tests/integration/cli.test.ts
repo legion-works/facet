@@ -315,10 +315,13 @@ describe("cli contract — surface", () => {
     expect(parseArgs(["export", "artifact-1", "--format", "invalid"]).kind).toBe("usage");
     expect(parseArgs(["export", "--format", "render"]).kind).toBe("usage");
     expect(parseArgs(["export", "artifact-1", "--no-sidecar"]).kind).toBe("usage");
-    expect(parseArgs(["list", "--format", "json"])).toMatchObject({
-      kind: "verb",
-      verb: "list",
-    });
+    // `--format` is export-scoped (source|render); every other verb must
+    // reject it with usage rather than silently dropping it. `withoutFormatFlags`
+    // used to strip `--format <value>` before flag validation ran for any
+    // non-export verb, so `list --format json` (or any typo'd value) ran
+    // exactly as if the flag were absent.
+    expect(parseArgs(["list", "--format", "json"]).kind).toBe("usage");
+    expect(parseArgs(["publish", "--format", "typo"]).kind).toBe("usage");
     expect(parseArgs(["--version", "--format", "json"])).toEqual({
       kind: "version",
       format: "json",
@@ -350,6 +353,15 @@ describe("cli contract — surface", () => {
       expect(parseStdoutEnvelope(io.stdoutBuf.value).ok).toBe(false);
       expect(existsSync(join(home, "run", "facet.lock"))).toBe(false);
     }
+  });
+
+  test("--format on an ordinary verb is a usage error, exit 64, before service startup", async () => {
+    const { env, home } = makeEnv("publish-format-typo");
+    const io = makeIo();
+    const exit = await runCli(["publish", "--format", "json"], { ...io, env });
+    expect(exit.code).toBe(64);
+    expect(parseStdoutEnvelope(io.stdoutBuf.value).ok).toBe(false);
+    expect(existsSync(join(home, "run", "facet.lock"))).toBe(false);
   });
 
   test("publish parses --renderer canvas and builds a canvas request", () => {

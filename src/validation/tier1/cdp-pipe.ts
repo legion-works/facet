@@ -181,10 +181,20 @@ export class PuppeteerTier1Browser {
         args: buildBrowserArgs(profileDir) as string[],
       });
       // A launch that outlives the watchdog is abandoned; should the
-      // handshake settle late anyway, close the orphan immediately.
+      // handshake settle late anyway, close the orphan immediately AND
+      // remove its profile dir. The watchdog's catch block already
+      // removed `profileDir` on the abandon path, but a Chromium
+      // process that only resolves afterward can recreate/write into
+      // that same directory on its way up — closing without a second
+      // (idempotent) removal would strand it again.
       void launchPromise.then(
         (late) => {
-          if (gaveUp) void late.close().catch(() => {});
+          if (gaveUp) {
+            void late
+              .close()
+              .catch(() => {})
+              .finally(() => removeEphemeralProfileDir(profileDir));
+          }
         },
         () => {},
       );

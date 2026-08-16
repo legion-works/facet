@@ -179,6 +179,19 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
   const format = isMeta ? readFormat(argv) : "text";
   const jsonFlag = argv.includes("--json");
   const firstCommand = typeof firstRaw === "string" ? VERB_TO_COMMAND[firstRaw] : undefined;
+  // `--format` is scoped to `--help`/`--version` metadata and to export's
+  // source|render argument; every other verb used to have `--format` (and
+  // its value) silently dropped by `withoutFormatFlags` BEFORE flag
+  // validation ran, so an unsupported or mistyped `--format` on e.g.
+  // `publish` ran the verb as if the flag were absent instead of failing.
+  if (
+    !isMeta &&
+    firstCommand !== undefined &&
+    firstCommand !== "export" &&
+    argv.includes("--format")
+  ) {
+    return { kind: "usage", message: `Flag '--format' is not supported for '${firstRaw}'` };
+  }
   const stripped = withoutFormatFlags(
     argv,
     isMeta || (firstCommand !== undefined && firstCommand !== "export"),

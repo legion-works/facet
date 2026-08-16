@@ -97,6 +97,36 @@ describe("runOrphanCleanup", () => {
     expect(existsSync(`${input.databasePath}-shm`)).toBe(true);
   });
 
+  test("retains a live profile when the pid's start time is unreadable (fails closed)", () => {
+    const input = setup();
+    const profileDir = join(scratchDir, "profile");
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(join(profileDir, "marker"), "live", { mode: 0o600 });
+    // isPidAlive(process.pid) is true (this test process); stub the
+    // start-time reader to return null, simulating unreadable /proc
+    // metadata for an otherwise-live pid.
+    const result = runOrphanCleanup({
+      ...input,
+      profiles: [{ path: profileDir, pid: process.pid, startTime: 12345 }],
+      readPidStartTimeTicks: () => null,
+    });
+    expect(result.removed.profiles).toEqual([]);
+    expect(existsSync(profileDir)).toBe(true);
+  });
+
+  test("removes a profile when the pid is confirmed dead", () => {
+    const input = setup();
+    const profileDir = join(scratchDir, "dead-profile");
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(join(profileDir, "marker"), "dead", { mode: 0o600 });
+    const result = runOrphanCleanup({
+      ...input,
+      profiles: [{ path: profileDir, pid: 999_999_999, startTime: 12345 }],
+    });
+    expect(result.removed.profiles).toEqual([profileDir]);
+    expect(existsSync(profileDir)).toBe(false);
+  });
+
   test("terminates a live orphan process with the matching start time", async () => {
     const input = setup();
     const child = spawn("sleep", ["30"], { stdio: "ignore" });

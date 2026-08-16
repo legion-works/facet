@@ -17,7 +17,11 @@
 
 import { existsSync, rmSync, unlinkSync } from "node:fs";
 
-import { isPidAlive, readLockMetadata, readPidStartTimeTicks } from "./process-lock";
+import {
+  isPidAlive,
+  readLockMetadata,
+  readPidStartTimeTicks as readPidStartTimeTicksReal,
+} from "./process-lock";
 
 export interface OrphanProfile {
   readonly path: string;
@@ -35,6 +39,8 @@ export interface OrphanCleanupInput {
   readonly databasePath: string;
   readonly profiles?: readonly OrphanProfile[];
   readonly processes?: readonly OrphanProcess[];
+  /** Test seam: override start-time reads (e.g. to simulate unreadable /proc). Defaults to the real reader. */
+  readonly readPidStartTimeTicks?: (pid: number) => number | null;
 }
 
 export interface OrphanCleanupResult {
@@ -47,6 +53,7 @@ export interface OrphanCleanupResult {
 }
 
 export function runOrphanCleanup(input: OrphanCleanupInput): OrphanCleanupResult {
+  const readPidStartTimeTicks = input.readPidStartTimeTicks ?? readPidStartTimeTicksReal;
   let removedLock = false;
   const removedSidecars: string[] = [];
   const removedProfiles: string[] = [];
@@ -63,8 +70,16 @@ export function runOrphanCleanup(input: OrphanCleanupInput): OrphanCleanupResult
   }
 
   for (const profile of input.profiles ?? []) {
-    if (isPidAlive(profile.pid) && readPidStartTimeTicks(profile.pid) === profile.startTime)
-      continue;
+    if (isPidAlive(profile.pid)) {
+      const startTime = readPidStartTimeTicks(profile.pid);
+      // Fail closed: a live pid whose start time we could not read is
+      // NOT evidence of a mismatch — `null !== profile.startTime` would
+      // otherwise fall through to deletion below and remove a live
+      // process's profile directory on transient/unreadable /proc
+      // metadata. Only a confirmed dead pid or a confirmed start-time
+      // mismatch is grounds for cleanup.
+      if (startTime === null || startTime === profile.startTime) continue;
+    }
     if (!existsSync(profile.path)) continue;
     rmSync(profile.path, { recursive: true, force: true });
     removedProfiles.push(profile.path);
@@ -104,7 +119,7 @@ function isLockOwnerStale(metadata: { pid: number; startTimeTicks?: number | nul
   return (
     metadata.startTimeTicks !== undefined &&
     metadata.startTimeTicks !== null &&
-    readPidStartTimeTicks(metadata.pid) !== metadata.startTimeTicks
+    readPidStartTimeTicksReal(metadata.pid) !== metadata.startTimeTicks
   );
 }
 
