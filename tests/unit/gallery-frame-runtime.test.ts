@@ -187,3 +187,51 @@ test("gesture listeners are installed only in panzoom mode and fully removed in 
     expect(spy.added.filter((entry) => entry === type)).toHaveLength(2);
   }
 });
+
+// Bug-hunt sol#2 fix proof: the artifact root's pointer-events must be
+// suppressed in panzoom mode regardless of whether panzoom was the
+// artifact's DEFAULT (mermaid/svg/chart render straight into it, no
+// toggle click involved) or reached via the toolbar toggle. A raw SVG
+// root is an SVGSVGElement, not an HTMLElement — a naive
+// `instanceof HTMLElement` guard silently no-ops on exactly this
+// default-panzoom path while still working for the html/tsx
+// CSS-fallback toggle path, which is what shipped and what the
+// adversarial hunt caught (raw SVG anchors kept taking pointer focus
+// while the shell toggle read latched).
+test("default panzoom mode suppresses pointer-events on a raw SVG artifact root, not just the toggled path", async () => {
+  const shim = parseHTML("<!DOCTYPE html><html><body><main id='artifact'></main></body></html>");
+  Object.defineProperty(shim.document, "implementation", { value: fakeImpl, configurable: true });
+  globals["document"] = shim.document;
+  globals["window"] = shim.window;
+  installGalleryFrameApi(
+    createRendererRegistry([
+      [
+        "svg",
+        async (ctx) => {
+          const svg = ctx.container.ownerDocument.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg",
+          );
+          svg.setAttribute("viewBox", "0 0 100 100");
+          ctx.container.appendChild(svg);
+        },
+      ],
+    ]),
+  );
+  const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
+  const result = await api.render({
+    artifactType: "svg",
+    renderer: "svg",
+    bytes: new Uint8Array([1]),
+  });
+
+  // svg is a STANDALONE_DIAGRAM_TYPES entry — panzoom is the default,
+  // no toggle click needed to reach this state.
+  expect(result.defaultGestureMode).toBe("panzoom");
+  expect(result.gestureMode()).toBe("panzoom");
+  const root = shim.document.getElementById("artifact")!.firstElementChild as SVGElement;
+  expect(root.style.pointerEvents).toBe("none");
+
+  result.setGestureMode("native");
+  expect(root.style.pointerEvents).toBe("");
+});

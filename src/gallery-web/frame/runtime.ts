@@ -54,6 +54,13 @@ declare global {
   }
 }
 
+/** Duck-typed `.style` check — covers HTMLElement and SVGElement alike without requiring SVGElement as a global (the frame bundle and this file's unit-test DOM shim don't both provide it). */
+function setPointerEventsIfStylable(node: Element | null, value: string): void {
+  if (node !== null && "style" in node) {
+    (node as Element & { style: CSSStyleDeclaration }).style.pointerEvents = value;
+  }
+}
+
 function renderedSvg(
   container: HTMLElement,
 ): { readonly svg: SVGSVGElement; readonly viewBox: SvgViewBox } | null {
@@ -184,10 +191,14 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
     // Suppress the artifact's own pointer interaction while dragging
     // pans it — events fall through the (now pointer-events:none) root
     // to the container, which is what pointerdown/move/up listen on.
-    const root = container.firstElementChild;
-    if (root instanceof HTMLElement) {
-      root.style.pointerEvents = mode === "panzoom" ? "none" : "";
-    }
+    // A raw SVG root (mermaid/svg/chart, the STANDALONE_DIAGRAM_TYPES
+    // that default straight into panzoom) is an SVGSVGElement, not an
+    // HTMLElement — an `instanceof HTMLElement` guard here silently
+    // skips exactly the default-panzoom path and only ever suppressed
+    // the html/tsx CSS-fallback root reached via the toggle button.
+    // `.style` duck-typing covers both without depending on SVGElement
+    // being a global in every runtime (frame bundle + unit-test shims).
+    setPointerEventsIfStylable(container.firstElementChild, mode === "panzoom" ? "none" : "");
   };
 
   const api: GalleryFrameApi = {

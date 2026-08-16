@@ -188,6 +188,19 @@ export interface ArtifactGeometry {
   readonly rootRight: number;
   /** Root's offset from the `#artifact` viewport's own top edge — the edge-clipping probe (negative means unreachable via forward-only scroll). */
   readonly rootTop: number;
+  /**
+   * Gutter probe for renderer types that mount a full-width wrapper
+   * as `#artifact`'s only child (html/tsx via `[data-facet-renderer-root]`)
+   * — measures the wrapper's own first element child (the fixture's
+   * actual rendered content) instead of the wrapper itself, which
+   * would always read edge-to-edge regardless of whether the real
+   * content is centered. Falls back to `rootLeft`/`rootRight` when
+   * there's no marked wrapper or it has no element child (markdown,
+   * and the standalone-diagram types where the marked root IS the
+   * leaf content).
+   */
+  readonly contentLeft: number;
+  readonly contentRight: number;
 }
 
 /**
@@ -215,6 +228,13 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
       const rootLeft = rootRect && viewportRect ? rootRect.left - viewportRect.left : 0;
       const rootRight = rootRect && viewportRect ? viewportRect.right - rootRect.right : 0;
       const rootTop = rootRect && viewportRect ? rootRect.top - viewportRect.top : 0;
+      const markedRoot = viewport?.querySelector('[data-facet-renderer-root]');
+      const contentEl = markedRoot?.firstElementChild ?? null;
+      const contentRect = contentEl?.getBoundingClientRect();
+      const contentLeft =
+        contentRect && viewportRect ? contentRect.left - viewportRect.left : rootLeft;
+      const contentRight =
+        contentRect && viewportRect ? viewportRect.right - contentRect.right : rootRight;
       return {
         scrollWidth: viewport?.scrollWidth ?? 0,
         scrollHeight: viewport?.scrollHeight ?? 0,
@@ -229,6 +249,8 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
         rootLeft,
         rootRight,
         rootTop,
+        contentLeft,
+        contentRight,
       };
     })()`,
   })) as {
@@ -247,6 +269,8 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
         rootLeft: number;
         rootRight: number;
         rootTop: number;
+        contentLeft: number;
+        contentRight: number;
       };
     };
   };
@@ -262,6 +286,41 @@ export async function readArtifactGeometry(target: GalleryTarget): Promise<Artif
   const outerValue = outer.result?.value;
   if (outerValue === undefined) throw new Error("gallery geometry: iframe rect read failed");
   return { ...innerValue, ...outerValue };
+}
+
+export interface ShellToolbarRect {
+  readonly top: number;
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly innerWidth: number;
+  readonly innerHeight: number;
+}
+
+/**
+ * Bounding box of the shell's `#facet-controls` footer (zoom / pan-zoom
+ * / fullscreen toolbar) plus the CDP-overridden viewport size, both
+ * read from the TOP document (the toolbar is shell chrome, not
+ * artifact content — there is no isolated-world hop here).
+ */
+export async function readShellToolbarRect(target: GalleryTarget): Promise<ShellToolbarRect> {
+  const evaluated = (await target.session.send("Runtime.evaluate", {
+    returnByValue: true,
+    expression: `(() => {
+      const rect = document.getElementById('facet-controls').getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+      };
+    })()`,
+  })) as { result?: { value?: ShellToolbarRect } };
+  const value = evaluated.result?.value;
+  if (value === undefined) throw new Error("gallery geometry: toolbar rect read failed");
+  return value;
 }
 
 /** Click a shell toolbar control (`#facet-zoom-in`, `#facet-zoom-reset`, ...) in the top document. */

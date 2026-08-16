@@ -34,6 +34,7 @@ import {
   galleryBrowser,
   navigateToArtifact,
   readArtifactGeometry,
+  readShellToolbarRect,
   setGalleryViewport,
   type ArtifactGeometry,
   type GalleryTarget,
@@ -51,6 +52,8 @@ interface GeometryCase {
   readonly key: string;
   readonly artifactType: ArtifactType;
   readonly fixture: string;
+  /** Override the default `FIXTURES_DIR` join — for fixtures shared with other test suites (e.g. the templates/ dashboards). */
+  readonly fixtureDir?: string;
   readonly execution?: "static" | "interactive";
   readonly renderer?: Renderer;
   readonly assert: (geometry: ArtifactGeometry, width: number) => void;
@@ -122,6 +125,25 @@ const CASES: readonly GeometryCase[] = [
       expect(geometry.canvasCount).toBe(1);
     },
   },
+  {
+    key: "html-dashboard",
+    artifactType: "html",
+    fixture: "fleet-dashboard.html",
+    fixtureDir: join(import.meta.dir, "../../templates"),
+    assert: (geometry, width) => {
+      // UX-4 centering contract, extended from the mermaid "small-diagram"
+      // case to a native html artifact: fleet-dashboard.html's <main> is a
+      // fixed ~672px (max-w-2xl) column — narrower than the 1920px stage
+      // — so it must sit centered horizontally (equal left/right gutters).
+      // `contentLeft`/`contentRight` (not `rootLeft`/`rootRight`) because
+      // the html renderer always mounts a full-width wrapper as
+      // `#artifact`'s only child — the fixture's own narrow content is a
+      // grandchild, one level deeper.
+      if (width === 1920) {
+        expect(Math.abs(geometry.contentLeft - geometry.contentRight)).toBeLessThanOrEqual(2);
+      }
+    },
+  },
 ];
 
 /**
@@ -182,7 +204,7 @@ test("gallery artifact geometry holds at 1280x720 and 1920x1080", async () => {
           target,
           client,
           geometryCase.artifactType,
-          readFileSync(join(FIXTURES_DIR, geometryCase.fixture), "utf8"),
+          readFileSync(join(geometryCase.fixtureDir ?? FIXTURES_DIR, geometryCase.fixture), "utf8"),
           geometryCase.execution,
           {
             slug: `viewport-geometry-${geometryCase.key}-${viewport.width}`,
@@ -231,6 +253,27 @@ test("gallery artifact geometry holds at 1280x720 and 1920x1080", async () => {
     expect(clipped.frameScrollTop).toBe(0);
     expect(clipped.rootLeft).toBeGreaterThanOrEqual(0);
     expect(clipped.rootTop).toBeGreaterThanOrEqual(0);
+
+    // Bug-hunt sol#1 fix proof: at the supported extreme small
+    // viewport (400x300), the shell chrome — the pan/zoom, zoom, and
+    // fullscreen toolbar — stays part of the visible shell, not pushed
+    // below the fold by whatever pushes the document taller than the
+    // viewport. The recorded failure: every control landed at
+    // y=381.046875 in a 300px-tall viewport, entirely off-screen.
+    await setGalleryViewport(target, 400, 300);
+    await navigateToArtifact(
+      target,
+      client,
+      "mermaid",
+      readFileSync(join(import.meta.dir, "../../templates/service-topology.mmd"), "utf8"),
+      undefined,
+      { slug: "viewport-geometry-toolbar-400x300" },
+    );
+    const toolbar = await readShellToolbarRect(target);
+    expect(toolbar.top).toBeGreaterThanOrEqual(0);
+    expect(toolbar.bottom).toBeLessThanOrEqual(toolbar.innerHeight);
+    expect(toolbar.left).toBeGreaterThanOrEqual(0);
+    expect(toolbar.right).toBeLessThanOrEqual(toolbar.innerWidth);
   } finally {
     await target?.close();
     await service.stop();

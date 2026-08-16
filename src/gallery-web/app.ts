@@ -31,6 +31,8 @@ import type { ObservedCountKey } from "../shared/contracts/observed-counts";
 import {
   clampZoom,
   EMPTY_VIEW_STATE,
+  MAX_ZOOM,
+  MIN_ZOOM,
   nextViewStateForKey,
   normalizeViewState,
   resetViewState,
@@ -776,6 +778,24 @@ function setLiveState(document: Document, state: "idle" | "connecting" | "live")
   if (label !== null) label.textContent = state;
 }
 
+/**
+ * Disable the zoom button that sits at its clamp bound (0.25x /
+ * 8x from view-state.ts) so a clamped click reads as a no-op instead
+ * of silently eating the input. Pure + testable against a fake
+ * document, same shape as the other set* helpers above.
+ */
+function setZoomButtonState(document: Document, zoom: number): void {
+  // `as HTMLButtonElement` rather than `instanceof` — the shell's other
+  // set* helpers (setGalleryStatus, setLiveState, ...) all assign DOM
+  // properties directly without a runtime type guard, and this file's
+  // test-harness DOM shims don't universally expose HTMLButtonElement
+  // as a global to guard against.
+  const zoomOut = document.getElementById("facet-zoom-out") as HTMLButtonElement | null;
+  const zoomIn = document.getElementById("facet-zoom-in") as HTMLButtonElement | null;
+  if (zoomOut !== null) zoomOut.disabled = zoom <= MIN_ZOOM;
+  if (zoomIn !== null) zoomIn.disabled = zoom >= MAX_ZOOM;
+}
+
 function setSwapBar(
   document: Document,
   window: Window,
@@ -874,6 +894,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     setLiveState(document, state);
   const updateSwapBar = (state: "start" | "ready" | "complete" | "failed"): void =>
     setSwapBar(document, window, state);
+  const updateZoomButtons = (zoom: number): void => setZoomButtonState(document, zoom);
   const baseUrl = window.location.origin;
   const bootstrap = await resolveGalleryBootstrap({
     location: window.location.href,
@@ -975,6 +996,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       .then(({ frame, result, verdict }) => {
         current = frame;
         syncPanZoomToggle();
+        syncZoomButtons();
         if (!result.failedNewFrameReady) {
           if (revision !== null) revision.textContent = event.revisionSha.slice(0, 12);
           updateGalleryVerdict(verdict);
@@ -1011,6 +1033,11 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       updateGalleryStatus("idle");
     },
   });
+  // Set below, once the toolbar wiring installs the wheel-zoom sync
+  // poll — declared here so the one `beforeunload` listener can clear
+  // it alongside closing the stream, instead of a second listener
+  // registration (the shell keeps exactly one shutdown path).
+  let zoomButtonPoll: ReturnType<typeof setInterval> | undefined;
   const shutdown = (): void => {
     // The display lease is bound to a per-lease TTL on the service
     // (see GalleryLeaseManager.schedule). Releasing it eagerly on
@@ -1020,6 +1047,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     // releases the lease when the TTL fires, which is the only path
     // that lets "refresh the tab" reach the same displayed canvas.
     stream.close();
+    if (zoomButtonPoll !== undefined) clearInterval(zoomButtonPoll);
   };
   window.addEventListener("beforeunload", shutdown, { once: true });
 
@@ -1046,6 +1074,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       syncPanZoomToggle();
     }
     result.applyViewState(next);
+    syncZoomButtons();
   });
   for (const [id, delta] of [
     ["facet-zoom-in", 0.1],
@@ -1059,6 +1088,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       result.applyViewState(
         zoomAtPoint(state, clampZoom(state.zoom + delta), rect.width / 2, rect.height / 2),
       );
+      syncZoomButtons();
     });
   }
   const panZoomToggle = document.getElementById("facet-panzoom-toggle");
@@ -1067,6 +1097,10 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     if (panZoomToggle === null) return;
     const active = current.renderResult?.gestureMode() === "panzoom";
     panZoomToggle.setAttribute("aria-pressed", active ? "true" : "false");
+  };
+  /** Disable the zoom button sitting at its clamp bound — called at every point the zoom value can change (buttons, keyboard, reset, swap, and the wheel-zoom poll below), mirroring syncPanZoomToggle's called-everywhere shape. */
+  const syncZoomButtons = (): void => {
+    updateZoomButtons(current.renderResult?.readViewState().zoom ?? 1);
   };
   panZoomToggle?.addEventListener("click", () => {
     const result = current.renderResult;
@@ -1080,11 +1114,24 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     result.setGestureMode(result.defaultGestureMode);
     result.applyViewState(resetViewState(result.readViewState()));
     syncPanZoomToggle();
+    syncZoomButtons();
   });
   syncPanZoomToggle();
+  syncZoomButtons();
   document
     .getElementById("facet-fullscreen")
     ?.addEventListener("click", () => void canvas.requestFullscreen());
+  // Wheel-zoom happens inside the frame's own document (see the
+  // `onWheel` listener installed by `installGalleryFrameApi` in
+  // frame/runtime.ts) — an iframe's events never bubble to the parent
+  // document, so the shell has no direct hook to sync from. A light
+  // poll is the only path that reaches the clamp-bound state
+  // regardless of which zoom-changing surface triggered it. Bare
+  // `setInterval` (globalThis, not `window.*`) so this works whether
+  // the injected runtime's `window` fake implements timers or not —
+  // the shell's own DOM interface never required it.
+  zoomButtonPoll = setInterval(syncZoomButtons, 200);
+  if (typeof zoomButtonPoll.unref === "function") zoomButtonPoll.unref();
 }
 
 if (

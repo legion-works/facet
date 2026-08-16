@@ -3,7 +3,7 @@ import { parseHTML } from "linkedom";
 
 import { startGallery, type GalleryRuntime } from "../../src/gallery-web/app";
 import { countPageShim } from "../../src/gallery-web/frame/renderers/registry";
-import { EMPTY_VIEW_STATE } from "../../src/gallery-web/view-state";
+import { EMPTY_VIEW_STATE, MAX_ZOOM, MIN_ZOOM } from "../../src/gallery-web/view-state";
 import {
   installFakeFrameApi,
   makeFakeRenderResult,
@@ -492,6 +492,56 @@ describe("gallery shell startup", () => {
     // The frame document should receive the view state directly
     expect(appliedState).not.toBeNull();
     expect(appliedState.zoom).toBeGreaterThan(1);
+  });
+
+  // Bug-hunt sol#3 fix proof: the zoom button sitting at its clamp
+  // bound (0.25x / 8x) disables instead of silently eating clicks,
+  // and re-enables the moment the view state leaves that bound.
+  test("the zoom-out/zoom-in buttons disable at their clamp bound and re-enable off it", async () => {
+    const harness = createRuntime("css");
+    const state = { zoom: 1 };
+    harness.pendingFrameConfigs.push({
+      viewMode: "css",
+      observed: harness.defaultObserved,
+      render: async () => ({
+        observed: harness.defaultObserved,
+        viewMode: "css",
+        applyViewState: (next: any) => {
+          state.zoom = next.zoom;
+        },
+        readViewState: () => ({ zoom: state.zoom, panX: 0, panY: 0 }),
+        defaultGestureMode: "native",
+        gestureMode: () => "native",
+        setGestureMode: () => {},
+      }),
+    });
+    await startGallery(harness.runtime);
+    await Promise.resolve();
+
+    const zoomOut = harness.elements.get("facet-zoom-out") as unknown as { disabled?: boolean };
+    const zoomIn = harness.elements.get("facet-zoom-in") as unknown as { disabled?: boolean };
+    expect(zoomOut.disabled).toBeFalsy();
+    expect(zoomIn.disabled).toBeFalsy();
+
+    // Drive to the min clamp (delta -0.1/click, clampZoom absorbs overshoot).
+    for (let i = 0; i < 20; i += 1) harness.elements.get("facet-zoom-out")?.emit("click");
+    expect(state.zoom).toBe(MIN_ZOOM);
+    expect(zoomOut.disabled).toBe(true);
+    expect(zoomIn.disabled).toBeFalsy();
+
+    // A no-op click at the clamp must not throw and must stay clamped.
+    harness.elements.get("facet-zoom-out")?.emit("click");
+    expect(state.zoom).toBe(MIN_ZOOM);
+
+    // Leaving the bound re-enables the button.
+    harness.elements.get("facet-zoom-in")?.emit("click");
+    expect(zoomOut.disabled).toBeFalsy();
+
+    // Drive to the max clamp.
+    for (let i = 0; i < 100; i += 1) harness.elements.get("facet-zoom-in")?.emit("click");
+    expect(state.zoom).toBe(MAX_ZOOM);
+    expect(zoomIn.disabled).toBe(true);
+    expect(zoomOut.disabled).toBeFalsy();
   });
 
   // Review-reddened: a no-op click handler (`result.setGestureMode(result.gestureMode())`)

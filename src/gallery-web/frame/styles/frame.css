@@ -48,6 +48,35 @@ body {
   padding-inline: max(16px, calc((100% - 92ch) / 2));
 }
 
+/*
+ * Native dashboard artifacts (html, interactive tsx) read top-down
+ * like markdown — vertical stays start-aligned — but unlike markdown
+ * their width is whatever the fixture authored (often a fixed-width
+ * `max-w-*` container), not a fluid readable column. Left unstyled,
+ * that narrow content sits pinned to the container's left edge,
+ * stranding most of a wide desktop stage as dead space (terra
+ * bug-hunt #1).
+ *
+ * The centering has to land on the renderer-ROOT element
+ * (`.facet-html-root` / `#facet-tsx-mount`), not `#artifact` itself:
+ * `renderHtml`/`renderTsx` always mount a single full-width wrapper
+ * as `#artifact`'s only child, and the fixture's own narrow content
+ * (e.g. `<main class="max-w-2xl">`) is a GRANDCHILD of `#artifact`
+ * inside that wrapper — centering `#artifact`'s single full-width
+ * child does nothing. `safe center` on the horizontal axis only —
+ * the same fallback-to-start mechanism the standalone-diagram rule
+ * above uses — centers content that fits and never clips content
+ * wider than the stage (it start-aligns and stays reachable by
+ * scroll instead).
+ */
+#artifact[data-facet-artifact-type="html"] > [data-facet-renderer-root],
+#artifact[data-facet-artifact-type="tsx"] > [data-facet-renderer-root] {
+  display: flex;
+  justify-content: safe center;
+  align-items: flex-start;
+  min-height: 100%;
+}
+
 #artifact > svg {
   display: block;
   width: fit-content;
