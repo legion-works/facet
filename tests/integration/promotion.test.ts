@@ -105,6 +105,44 @@ describe("promotion", () => {
     }
   });
 
+  test("rejects promotion when the supplied artifactId does not own the revision", () => {
+    const { repository, artifact } = makeStore();
+    const other = repository.createArtifact({
+      projectId: artifact.projectId,
+      slug: "other",
+      title: "Other",
+    });
+    const revision = repository.publishRevision({
+      artifactId: other.id,
+      artifactType: "markdown",
+      source: new TextEncoder().encode("# other"),
+    });
+    expect(() =>
+      repository.promoteRevision({
+        artifactId: artifact.id,
+        revisionId: revision.id,
+        name: "cross-artifact",
+        promotedBy: "operator",
+      }),
+    ).toThrow(/does not own|belongs to|foreign_key/i);
+  });
+
+  test("promotes when the supplied artifactId matches the revision owner", () => {
+    const { repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new TextEncoder().encode("# match"),
+    });
+    const template = repository.promoteRevision({
+      artifactId: artifact.id,
+      revisionId: revision.id,
+      name: "matching",
+      promotedBy: "operator",
+    });
+    expect(template.artifactId).toBe(artifact.id);
+  });
+
   test("instantiation copies immutable source bytes, artifact type, and renderer", async () => {
     const { repository, artifact } = makeStore();
     const source = new Uint8Array([0, 255, 7]);

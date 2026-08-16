@@ -615,6 +615,15 @@ export class ArtifactRepository {
       : null;
     let artifactIdForCleanup: string | null = null;
     try {
+      // Validate BEFORE the INSERT, not after: `render_runs` has no unique
+      // schema-shape constraint SQLite would reject on its own (e.g. an
+      // empty `status`), so a post-insert `RenderRunSchema.parse` failure
+      // used to land in this same catch AFTER the row was already durable
+      // — unlinking evidence files a committed row still pointed at.
+      // Validating first means a schema-invalid input never reaches the
+      // INSERT, so the catch's cleanup-on-failure is only ever reached
+      // when no row was written.
+      const parsed = RenderRunSchema.parse(value);
       if (hasCompiledPath) {
         this.db
           .query(
@@ -661,7 +670,6 @@ export class ArtifactRepository {
         .query("SELECT artifact_id FROM revisions WHERE id = ?")
         .get(input.revisionId) as { artifact_id: string } | null;
       if (ownerRow !== null) artifactIdForCleanup = ownerRow.artifact_id;
-      const parsed = RenderRunSchema.parse(value);
       // Last-N retention runs AFTER the row is durable; a failure
       // here would lose the just-recorded run, so it sits outside the
       // INSERT transaction. Cleanup is best-effort — the row is

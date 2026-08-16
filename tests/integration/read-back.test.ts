@@ -1003,6 +1003,54 @@ describe("cleanup-after-failure leaves no orphan evidence files", () => {
       db.close();
     }
   });
+
+  test("a post-insert schema-validation failure never leaves a durable row pointing at deleted evidence", () => {
+    const { db, evidenceDir, repository } = openRepo("schema-invalid");
+    try {
+      const project = repository.createProject({ projectRoot: `/tmp/${crypto.randomUUID()}` });
+      const artifact = repository.createArtifact({
+        projectId: project.id,
+        slug: "schema-invalid",
+        title: "Schema Invalid",
+      });
+      const revision = repository.publishRevision({
+        artifactId: artifact.id,
+        artifactType: "markdown",
+        source: new TextEncoder().encode("# schema invalid"),
+      });
+      const screenshotPath = join(evidenceDir, "si-screenshot.png");
+      const consolePath = join(evidenceDir, "si-console.txt");
+      Bun.write(screenshotPath, "should-be-removed");
+      Bun.write(consolePath, "should-be-removed");
+      let thrown: unknown = null;
+      try {
+        repository.recordRenderRun({
+          revisionId: revision.id,
+          tier: 1,
+          // An empty status is accepted by SQLite (no NOT-empty column
+          // constraint) but rejected by RenderRunSchema's z.string().min(1).
+          status: "",
+          expected: { nodes: 0 },
+          observed: { nodes: 0 },
+          screenshotPath,
+          consolePath,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).not.toBeNull();
+      const rows = db.query("SELECT id FROM render_runs WHERE revision_id = ?").all(revision.id);
+      // Contract: validate before insert. A schema-invalid input must never
+      // reach the INSERT, so no row exists — and since no row exists, the
+      // evidence cleanup-on-failure path is correct to remove the files the
+      // caller supplied for this (never-persisted) run.
+      expect(rows).toEqual([]);
+      expect(existsSync(screenshotPath)).toBe(false);
+      expect(existsSync(consolePath)).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe("retained rows are exempt from retention eviction", () => {

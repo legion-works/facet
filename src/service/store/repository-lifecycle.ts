@@ -60,16 +60,22 @@ export function evictRevisions(
 }
 
 export function promoteRevision(db: Database, input: PromoteRevisionInput): Template {
-  const artifactId =
-    input.artifactId ??
-    (
-      db.query("SELECT artifact_id FROM revisions WHERE id = ?").get(input.revisionId) as {
-        artifact_id: string;
-      } | null
-    )?.artifact_id;
-  if (!artifactId)
-    throw new FacetStoreError("foreign_key", `Revision not found: ${input.revisionId}`);
-  return createTemplate(db, { ...input, artifactId });
+  const owner = db
+    .query("SELECT artifact_id FROM revisions WHERE id = ?")
+    .get(input.revisionId) as { artifact_id: string } | null;
+  if (!owner) throw new FacetStoreError("foreign_key", `Revision not found: ${input.revisionId}`);
+  // The template table has independent foreign keys on artifact_id and
+  // revision_id, not a composite ownership constraint, so an explicit
+  // artifactId that disagrees with the revision's real owner would
+  // otherwise insert silently — instantiation would then copy the wrong
+  // artifact's bytes under the caller-supplied artifact's identity.
+  if (input.artifactId !== undefined && input.artifactId !== owner.artifact_id) {
+    throw new FacetStoreError(
+      "foreign_key",
+      `Revision ${input.revisionId} belongs to artifact ${owner.artifact_id}, not ${input.artifactId}`,
+    );
+  }
+  return createTemplate(db, { ...input, artifactId: owner.artifact_id });
 }
 
 export function createTemplate(db: Database, input: TemplateInput): Template {
