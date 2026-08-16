@@ -2,7 +2,7 @@
 
 **Scope:** release control plane · **window:** 2026-08-14 · **verdict:** ✓ verified with two follow-ups
 
-> The pipeline accepted only immutable inputs during this audit. One gallery limitation remains: mermaid labels are not visible in markdown renders.
+> The pipeline accepted only immutable inputs during this audit. Markdown Mermaid labels remain visible, and each diagram's pan/zoom stays confined to its own region.
 
 ## Executive signal
 
@@ -79,16 +79,16 @@ The [CLI reference](../docs/reference/cli.md) defines the envelope contract. Use
 
 ## Findings
 
-| Finding                                               | Impact                        | Disposition           |
-| ----------------------------------------------------- | ----------------------------- | --------------------- |
-| Evidence records are revision-bound                   | avoids latest-write ambiguity | ✓ retained            |
-| Mermaid labels are absent in markdown gallery renders | diagrams lose text context    | tracked visual defect |
-| Handoff acknowledgement is external to publish        | requires operator evidence    | → follow-up           |
+| Finding                                                   | Impact                        | Disposition |
+| --------------------------------------------------------- | ----------------------------- | ----------- |
+| Evidence records are revision-bound                       | avoids latest-write ambiguity | ✓ retained  |
+| Mermaid labels remain visible in markdown gallery renders | diagrams retain text context  | ✓ retained  |
+| Handoff acknowledgement is external to publish            | requires operator evidence    | → follow-up |
 
 ### Follow-up queue
 
 - [ ] Attach the signed handoff record to the release review.
-- [ ] Re-run the visual proof after the markdown mermaid label defect closes.
+- [x] Re-run the visual proof after the markdown Mermaid label fix.
 - [x] Keep source bytes and verification evidence separate.
 
 ```mermaid
