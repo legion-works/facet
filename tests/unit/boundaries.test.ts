@@ -155,9 +155,9 @@ describe("boundary check — forbidden package import forms", () => {
 });
 
 describe("boundary check — template literal dynamic imports", () => {
-  // Orchestrator-verified live bypass: `await import(`fast-xml-parser`)` in
-  // src/service/ passed clean before this fix, because IMPORT_SPECIFIER_RE
-  // only matched quote characters, never backticks.
+  // A template-literal dynamic import previously evaded the quote-only
+  // regex: `import(`mermaid`)` matched neither the quoted-string pattern
+  // nor anything else, so it scanned clean.
   test("catches `import(`mermaid`)` (no-substitution template literal)", () => {
     const root = makeRoot();
     writeServiceFile(root, "a.ts", "const m = await import(`mermaid`);");
@@ -189,6 +189,82 @@ describe("boundary check — template literal dynamic imports", () => {
       '// const m = await import(`mermaid`);\nimport { Database } from "bun:sqlite";\n',
     );
     expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
+});
+
+describe("boundary check — multiline dynamic imports (whole-file scan, not per-line)", () => {
+  // A per-line scanner never sees the opening
+  // `import(`/`require(` and its literal argument on the same scanned
+  // unit when legal formatting splits them across lines.
+  test("catches a multiline backtick dynamic import", () => {
+    const root = makeRoot();
+    writeServiceFile(
+      root,
+      "a.ts",
+      "const x = await import(\n  `fast-xml-parser`\n);\nexport default x;\n",
+    );
+    const v = runBoundaryCheck(root);
+    expect(v).toHaveLength(1);
+    expect(v[0]?.specifier).toBe("fast-xml-parser");
+    expect(v[0]?.reason).toContain("not on the service allowlist");
+  });
+
+  test("catches a multiline quoted dynamic import", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "a.ts", 'const x = await import(\n  "mermaid"\n);\nexport default x;\n');
+    const v = runBoundaryCheck(root);
+    expect(v).toHaveLength(1);
+    expect(v[0]?.specifier).toBe("mermaid");
+    expect(v[0]?.reason).toContain("forbidden package import");
+  });
+
+  test("a multiline dynamic import inside a block comment stays clean", () => {
+    const root = makeRoot();
+    writeServiceFile(
+      root,
+      "a.ts",
+      '/**\n * const x = await import(\n *   `fast-xml-parser`\n * );\n */\nimport { Database } from "bun:sqlite";\n',
+    );
+    expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
+
+  test("a static import split across lines (`from` on its own line) is still caught", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "a.ts", 'import { render }\n  from\n  "mermaid";\n');
+    const v = runBoundaryCheck(root);
+    expect(v.map((x) => x.specifier)).toEqual(["mermaid"]);
+  });
+
+  test("import(someVar) with a non-literal argument fails closed as unclassifiable", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "a.ts", "const path = getPath();\nconst m = await import(path);\n");
+    const v = runBoundaryCheck(root);
+    expect(v).toHaveLength(1);
+    expect(v[0]?.specifier).toBe("path");
+    expect(v[0]?.reason).toContain("unclassifiable dynamic specifier");
+  });
+
+  test("the documented runner-path injection allowance clears the exact (main.ts, dynamicPath) call site", () => {
+    const root = makeRoot();
+    writeServiceFile(
+      root,
+      "main.ts",
+      "const dynamicPath = path;\nconst mod = await import(dynamicPath);\n",
+    );
+    expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
+
+  test("the documented runner-path injection allowance is scoped to (file, identifier), not a blanket pass", () => {
+    const root = makeRoot();
+    // Same identifier name, wrong file: still fails closed.
+    writeServiceFile(
+      root,
+      "not-main.ts",
+      "const dynamicPath = getPath();\nawait import(dynamicPath);\n",
+    );
+    const v = runBoundaryCheck(root);
+    expect(v).toHaveLength(1);
+    expect(v[0]?.reason).toContain("unclassifiable dynamic specifier");
   });
 });
 

@@ -7,13 +7,14 @@
 // src/service/lexical/expectations.ts (lexical counting only).
 //
 // This script statically scans import specifiers — no module resolution,
-// no AST, no type info. The pattern is intentionally simple: a regex
-// over `import ... from "..."`, `import "..."`, dynamic `import("...")`,
-// `require("...")`, AND every re-export form (`export * from`,
-// `export { x } from`, `export type { x } from`) catches every
-// realistic case. The pure scanning logic is exported so the
-// accompanying unit test in tests/unit/boundaries.test.ts can run the
-// checker against fixture files without touching this repo's source.
+// no AST, no type info. The scan runs over each file's WHOLE TEXT (not
+// line-by-line): a per-line scan missed any import/require call whose
+// specifier was split across lines by legal formatting (a multiline
+// backtick dynamic import, or `} from` on its own line), because the
+// regex needs the opening `import(`/`require(` and its literal argument
+// on the same scanned unit. Comments are stripped file-wide (multi-line
+// block comments included) before scanning, and match offsets are mapped
+// back to line numbers for reporting.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -63,34 +64,19 @@ export const FORBIDDEN_PACKAGES = new Set([
 export const FORBIDDEN_WORKSPACE_PREFIXES = ["src/validation/", "src/gallery-web/frame/"];
 
 /**
- * Standard import forms:
+ * Static import/export literal forms only (dynamic `import(`/`require(`
+ * calls are handled separately by `DYNAMIC_CALL_RE`, which fails closed on
+ * any non-literal argument instead of silently matching only the quoted
+ * case):
  * - `import x from "spec"`
  * - `import { x } from "spec"`
  * - `import * as x from "spec"`
  * - `import x, { y } from "spec"`
  * - `import type { x } from "spec"`
  * - `import "spec"` (bare side-effect import)
- * - `import("spec")` (dynamic)
- * - `require("spec")` (CJS)
  */
-export const IMPORT_SPECIFIER_RE =
-  /(?:^|\s)(?:import\s+(?:type\s+)?(?:[^"';]+?\s+from\s+)?|import\s*\(|require\s*\()\s*["']([^"']+)["']/g;
-
-/**
- * Dynamic `import(\`spec\`)` / `require(\`spec\`)` forms using a template
- * literal instead of a quoted string. Static `import`/`export ... from`
- * declarations cannot take a template literal (syntax error), so only the
- * two dynamic call forms need this second pattern.
- *
- * A no-substitution literal (no `${`) is a real, known specifier and is
- * treated exactly like a quoted string. A literal WITH a `${` substitution
- * is not staticaly resolvable at all — rather than silently letting it
- * through unclassified, this fails closed: `collectSpecifiers` reports it as
- * an unconditional violation regardless of what the substituted value might
- * be, because a scanner that can't classify a dynamic specifier must not
- * treat that as evidence of safety.
- */
-export const DYNAMIC_TEMPLATE_SPECIFIER_RE = /(?:import\s*\(|require\s*\()\s*`([^`]*)`/g;
+export const STATIC_IMPORT_SPECIFIER_RE =
+  /(?:^|\s)import\s+(?:type\s+)?(?:[\s\S]+?\s+from\s+)?["']([^"']+)["']/g;
 
 /**
  * Re-export forms. All share the `from "spec"` tail so a single regex
@@ -102,11 +88,47 @@ export const DYNAMIC_TEMPLATE_SPECIFIER_RE = /(?:import\s*\(|require\s*\()\s*`([
  * - `export { default as x } from "spec"`
  * - `export type { x } from "spec"`
  * - `export type * from "spec"`
- *
- * The lookahead `(?![\w])` keeps the regex from matching a string
- * that happens to be preceded by a longer identifier like `awayfrom`.
  */
 export const RE_EXPORT_SPECIFIER_RE = /\bfrom\s+["']([^"']+)["']/g;
+
+/**
+ * Every dynamic `import(...)` / `require(...)` call, capturing its raw
+ * argument text verbatim (including newlines — the non-greedy `[\s\S]*?`
+ * stops at the first `)`, which is a known limitation for an argument that
+ * itself contains parens, e.g. `import(path.join(a, b))`; the truncated
+ * capture then fails `classifyDynamicArg`'s literal check and is reported
+ * as unclassifiable, which is the safe direction to be wrong in).
+ *
+ * `classifyDynamicArg` below decides, per match, whether the argument is:
+ *   - a literal specifier (quoted string, or a template literal with no
+ *     `${` substitution) — folded into the same package/workspace checks
+ *     as a static import;
+ *   - unclassifiable — a `${}` substitution, a bare identifier, string
+ *     concatenation, a function call, anything that is not a plain
+ *     literal — and fails closed as a violation UNLESS the exact call site
+ *     is on `DYNAMIC_RUNNER_INJECTION_ALLOWANCE` below.
+ */
+export const DYNAMIC_CALL_RE = /\b(?:import|require)\s*\(\s*([\s\S]*?)\)/g;
+
+/**
+ * The service's ONE deliberate variable-path dynamic import:
+ * `src/service/main.ts` loads the Tier 0/1 runner module from a
+ * CLI-supplied path (`--tier0-runner-path` / `--tier1-runner-path`)
+ * because the concrete runner lives in `src/validation/**` and the CLI is
+ * the only place that knows which module to load — the service process
+ * never hardcodes that import.
+ *
+ * This is scoped to the exact (file, identifier) pair, not a blanket
+ * "variable dynamic imports are fine" rule: a new variable-path dynamic
+ * import anywhere else in `src/service/**`, or a renamed identifier at
+ * this same call site, still fails closed. Checked BEFORE assuming this
+ * is safe: `main.ts:143,169` are the only two dynamic-import call sites
+ * with a non-literal argument under `src/service/`.
+ */
+export const DYNAMIC_RUNNER_INJECTION_ALLOWANCE: ReadonlyArray<{
+  readonly file: string;
+  readonly identifier: string;
+}> = [{ file: "src/service/main.ts", identifier: "dynamicPath" }];
 
 export interface Violation {
   readonly file: string;
@@ -210,84 +232,158 @@ function checkFrameSpecifier(specifier: string): string | null {
 }
 
 /**
- * Strip line comments and the leading `*` of a block-comment body before
- * scanning. Prose routinely contains `from "..."` (e.g. a doc comment reading
- * `distinguishes "no host" from "wrong host"`), which the re-export regex reads
- * as an import specifier. The old denylist hid this — prose never happens to
- * name `mermaid` — so the weakness only surfaced when the check was inverted to
- * fail closed. A scanner that reads comments as code is a false-positive
- * generator, and a guard people learn to override is worse than no guard.
+ * Blank out `/* ... *\/` and `// ...` comments across the WHOLE file,
+ * replacing every stripped character with a space (newlines are kept as
+ * newlines) so character offsets — and therefore line numbers computed
+ * from them — stay identical to the original text. Prose inside a
+ * multi-line block comment routinely contains `from "..."` (e.g. a doc
+ * comment reading `distinguishes "no host" from "wrong host"`), which the
+ * re-export regex would otherwise read as an import specifier; scanning
+ * the raw text line-by-line and only recognizing a block comment when
+ * each line happened to start with `*` missed exactly that case for any
+ * differently formatted block comment, and missed a dynamic import split
+ * across lines entirely (the opening `import(` and its literal argument
+ * never shared a line to match against).
+ *
+ * Known limitation, unchanged from the prior per-line stripper: this is
+ * not string-aware, so a `//` or `/*` inside a string literal (e.g. a URL)
+ * would be misread as a comment start. Acceptable for a lexical guard —
+ * over-stripping can only hide a legitimate import behind a false
+ * "comment", not let a real bypass through.
  */
-function stripComments(line: string): string {
-  const trimmed = line.trimStart();
-  if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return "";
-  const lineComment = line.indexOf("//");
-  return lineComment === -1 ? line : line.slice(0, lineComment);
-}
-
-interface CollectedSpecifiers {
-  /** Statically known specifiers — quoted strings and no-substitution template literals. */
-  readonly literal: string[];
-  /** Template literals with a `${` substitution: unresolvable, flagged unconditionally. */
-  readonly unclassifiable: string[];
-}
-
-function collectSpecifiers(rawLine: string): CollectedSpecifiers {
-  const line = stripComments(rawLine);
-  const literal = new Set<string>();
-  const unclassifiable = new Set<string>();
-  IMPORT_SPECIFIER_RE.lastIndex = 0;
-  for (const match of line.matchAll(IMPORT_SPECIFIER_RE)) {
-    if (match[1]) literal.add(match[1]);
-  }
-  RE_EXPORT_SPECIFIER_RE.lastIndex = 0;
-  for (const match of line.matchAll(RE_EXPORT_SPECIFIER_RE)) {
-    if (match[1]) literal.add(match[1]);
-  }
-  DYNAMIC_TEMPLATE_SPECIFIER_RE.lastIndex = 0;
-  for (const match of line.matchAll(DYNAMIC_TEMPLATE_SPECIFIER_RE)) {
-    const body = match[1] ?? "";
-    if (body.includes("${")) {
-      unclassifiable.add(match[0].trim());
-    } else {
-      literal.add(body);
+function stripCommentsWholeFile(text: string): string {
+  let out = "";
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    if (text[i] === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      const stop = end === -1 ? n : end + 2;
+      for (let j = i; j < stop; j += 1) out += text[j] === "\n" ? "\n" : " ";
+      i = stop;
+      continue;
     }
+    if (text[i] === "/" && text[i + 1] === "/") {
+      const end = text.indexOf("\n", i);
+      const stop = end === -1 ? n : end;
+      out += " ".repeat(stop - i);
+      i = stop;
+      continue;
+    }
+    out += text[i];
+    i += 1;
   }
-  return { literal: [...literal], unclassifiable: [...unclassifiable] };
+  return out;
+}
+
+/** 1-based line number for a character offset into `text`. */
+function lineForOffset(text: string, offset: number): number {
+  let line = 1;
+  for (let i = 0; i < offset && i < text.length; i += 1) {
+    if (text[i] === "\n") line += 1;
+  }
+  return line;
+}
+
+interface DynamicArgClassification {
+  readonly kind: "literal" | "unclassifiable";
+  readonly value: string;
+}
+
+/**
+ * Classify a dynamic `import(...)`/`require(...)` call's raw argument
+ * text. A plain quoted string, or a template literal with no `${`
+ * substitution, is a literal specifier — everything else (a `${}`
+ * substitution, a bare identifier, a concatenation, a nested call) cannot
+ * be statically resolved and is reported as unclassifiable so the caller
+ * fails closed on it.
+ */
+function classifyDynamicArg(raw: string): DynamicArgClassification {
+  const trimmed = raw.trim();
+  const quoted = trimmed.match(/^["']([^"']*)["']$/);
+  if (quoted) return { kind: "literal", value: quoted[1] ?? "" };
+  const backtick = trimmed.match(/^`([^`]*)`$/);
+  if (backtick) {
+    const body = backtick[1] ?? "";
+    if (body.includes("${")) return { kind: "unclassifiable", value: trimmed };
+    return { kind: "literal", value: body };
+  }
+  return { kind: "unclassifiable", value: trimmed };
 }
 
 export function scanFile(
   file: string,
   repoRoot: string,
   check: (specifier: string, file: string, repoRoot: string) => string | null,
+  // Fail-closed reporting for a dynamic import()/require() argument that
+  // is NOT a static literal only applies where it is meaningful: the
+  // service boundary, which must not silently gain a renderer/parser
+  // dependency through an unresolvable specifier. Literal (quoted or
+  // no-substitution backtick) dynamic-import arguments are still checked
+  // either way. The gallery-frame scan's `checkFrameSpecifier` only cares
+  // about `zod` crossing the boundary, and frame code has legitimate
+  // runtime-variable dynamic imports (e.g. blob-URL tsx module loading)
+  // that are not the byte-dumb-service risk this defends against.
+  failClosedOnUnclassifiableDynamic = true,
 ): Violation[] {
-  const text = readFileSync(file, "utf8");
-  const lines = text.split("\n");
+  const raw = readFileSync(file, "utf8");
+  const stripped = stripCommentsWholeFile(raw);
+  const relativeFile = relative(repoRoot, file).replace(/\\/g, "/");
   const violations: Violation[] = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? "";
-    const collected = collectSpecifiers(line);
-    for (const specifier of collected.literal) {
-      const reason = check(specifier, file, repoRoot);
-      if (reason !== null) {
-        violations.push({
-          file: relative(repoRoot, file),
-          line: i + 1,
-          specifier,
-          reason,
-        });
-      }
-    }
-    for (const raw of collected.unclassifiable) {
+  // `import x from "spec"` matches BOTH the static-import regex and the
+  // generic `from "spec"` re-export regex (its text literally contains a
+  // `from "spec"` clause). Both matches end at the same offset — the
+  // closing quote — for the same clause, so dedupe on end offset instead
+  // of reporting the same specifier twice.
+  const reportedEndOffsets = new Set<number>();
+
+  const pushLiteral = (specifier: string, offset: number, endOffset: number): void => {
+    if (reportedEndOffsets.has(endOffset)) return;
+    reportedEndOffsets.add(endOffset);
+    const reason = check(specifier, file, repoRoot);
+    if (reason !== null) {
       violations.push({
-        file: relative(repoRoot, file),
-        line: i + 1,
-        specifier: raw,
-        reason:
-          "unclassifiable dynamic specifier: template literal with a ${} substitution cannot be statically resolved — failing closed",
+        file: relativeFile,
+        line: lineForOffset(stripped, offset),
+        specifier,
+        reason,
       });
     }
+  };
+
+  STATIC_IMPORT_SPECIFIER_RE.lastIndex = 0;
+  for (const match of stripped.matchAll(STATIC_IMPORT_SPECIFIER_RE)) {
+    if (match[1] !== undefined) pushLiteral(match[1], match.index, match.index + match[0].length);
   }
+  RE_EXPORT_SPECIFIER_RE.lastIndex = 0;
+  for (const match of stripped.matchAll(RE_EXPORT_SPECIFIER_RE)) {
+    if (match[1] !== undefined) pushLiteral(match[1], match.index, match.index + match[0].length);
+  }
+
+  DYNAMIC_CALL_RE.lastIndex = 0;
+  for (const match of stripped.matchAll(DYNAMIC_CALL_RE)) {
+    const classification = classifyDynamicArg(match[1] ?? "");
+    const endOffset = match.index + match[0].length;
+    if (classification.kind === "literal") {
+      pushLiteral(classification.value, match.index, endOffset);
+      continue;
+    }
+    if (!failClosedOnUnclassifiableDynamic) continue;
+    if (reportedEndOffsets.has(endOffset)) continue;
+    reportedEndOffsets.add(endOffset);
+    const allowed = DYNAMIC_RUNNER_INJECTION_ALLOWANCE.some(
+      (entry) => entry.file === relativeFile && entry.identifier === classification.value,
+    );
+    if (allowed) continue;
+    violations.push({
+      file: relativeFile,
+      line: lineForOffset(stripped, match.index),
+      specifier: classification.value,
+      reason:
+        "unclassifiable dynamic specifier: import()/require() argument is not a static literal and cannot be resolved \u2014 failing closed",
+    });
+  }
+
   return violations;
 }
 
@@ -306,7 +402,9 @@ export function runBoundaryCheck(roots: BoundaryRoots): Violation[] {
 
   if (roots.frameDir !== undefined && existsDir(roots.frameDir)) {
     for (const file of walk(roots.frameDir)) {
-      violations.push(...scanFile(file, roots.repoRoot, (spec) => checkFrameSpecifier(spec)));
+      violations.push(
+        ...scanFile(file, roots.repoRoot, (spec) => checkFrameSpecifier(spec), false),
+      );
     }
   }
 
