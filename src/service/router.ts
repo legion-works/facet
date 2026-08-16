@@ -451,7 +451,17 @@ export function buildRouter(deps: RouterDeps): {
         return galleryResponse(path);
       }
       if (req.method.toUpperCase() === "GET" && path !== "/") {
-        const rootAssetResponse = await serveGalleryFile(path.replace(/^\//, ""), undefined, {});
+        // `ensureGalleryBuild` requires index.html to exist, so a direct
+        // navigation to /index.html (or any other .html document) reaches
+        // this fallback and must carry the same gallery CSP as /gallery —
+        // otherwise the gallery document ships without its CSP purely
+        // because of which URL served it.
+        const isDocument = /\.html$/i.test(path);
+        const rootAssetResponse = await serveGalleryFile(
+          path.replace(/^\//, ""),
+          isDocument ? galleryCsp : undefined,
+          {},
+        );
         if (rootAssetResponse.status !== 404) return rootAssetResponse;
       }
       if (path === ROUTE_BOOTSTRAP && req.method.toUpperCase() === "POST") {

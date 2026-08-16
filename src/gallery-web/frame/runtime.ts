@@ -66,6 +66,21 @@ function setPointerEventsIfStylable(node: Element | null, value: string): void {
   if (stylable !== null) stylable.style.pointerEvents = value;
 }
 
+/**
+ * Markdown appends its rendered fragment directly into the container,
+ * which can leave MULTIPLE top-level siblings (e.g. a paragraph
+ * followed by a standalone link). Suppressing pointer-events on only
+ * `firstElementChild` left every later sibling interactive during a
+ * panzoom drag, so every top-level child gets the same treatment —
+ * the centering CSS keys on the first child specifically and is
+ * untouched by also styling the rest.
+ */
+function setPointerEventsForAllChildren(container: HTMLElement, value: string): void {
+  for (const child of Array.from(container.children)) {
+    setPointerEventsIfStylable(child, value);
+  }
+}
+
 function renderedSvg(
   container: HTMLElement,
 ): { readonly svg: SVGSVGElement; readonly viewBox: SvgViewBox } | null {
@@ -203,7 +218,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
     // the html/tsx CSS-fallback root reached via the toggle button.
     // `.style` duck-typing covers both without depending on SVGElement
     // being a global in every runtime (frame bundle + unit-test shims).
-    setPointerEventsIfStylable(container.firstElementChild, mode === "panzoom" ? "none" : "");
+    setPointerEventsForAllChildren(container, mode === "panzoom" ? "none" : "");
   };
 
   const api: GalleryFrameApi = {

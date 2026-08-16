@@ -235,6 +235,50 @@ test("default panzoom mode suppresses pointer-events on a raw SVG artifact root,
   expect(root.style.pointerEvents).toBe("");
 });
 
+// Markdown appends a fragment directly into the container, which can
+// produce MULTIPLE top-level siblings (e.g. a paragraph followed by a
+// standalone link/control). Suppressing pointer-events on only
+// `firstElementChild` left every later sibling interactive during a
+// panzoom drag.
+test("panzoom mode suppresses pointer-events on every top-level rendered sibling, not just the first", async () => {
+  const shim = parseHTML("<!DOCTYPE html><html><body><main id='artifact'></main></body></html>");
+  Object.defineProperty(shim.document, "implementation", { value: fakeImpl, configurable: true });
+  globals["document"] = shim.document;
+  globals["window"] = shim.window;
+  installGalleryFrameApi(
+    createRendererRegistry([
+      [
+        "markdown",
+        async (ctx) => {
+          const first = ctx.container.ownerDocument.createElement("p");
+          first.textContent = "first block";
+          const second = ctx.container.ownerDocument.createElement("a");
+          second.textContent = "a link outside the first block";
+          ctx.container.append(first, second);
+        },
+      ],
+    ]),
+  );
+  const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
+  const result = await api.render({
+    artifactType: "markdown",
+    renderer: "svg",
+    bytes: new Uint8Array([1]),
+  });
+
+  const container = shim.document.getElementById("artifact")!;
+  expect(container.children).toHaveLength(2);
+  result.setGestureMode("panzoom");
+  for (const child of Array.from(container.children)) {
+    expect((child as HTMLElement).style.pointerEvents).toBe("none");
+  }
+
+  result.setGestureMode("native");
+  for (const child of Array.from(container.children)) {
+    expect((child as HTMLElement).style.pointerEvents).toBe("");
+  }
+});
+
 // Sibling of the pointer-events guard above, on the zoom-transform
 // path instead: an svg-type artifact whose root has no parseable
 // `viewBox` fails `renderedSvg()`'s check and falls into the

@@ -1028,7 +1028,20 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       updateGalleryVerdict(null);
       swaps.enqueue(event);
     },
-    onClose: () => {
+    onClose: (event) => {
+      // `lease_expired` (the per-lease TTL firing server-side) and a
+      // rejected reconnect (`stream_status_401`, the lease no longer
+      // authenticating) both mean the session itself is gone — the
+      // typed expired screen and a cleared persisted session are the
+      // correct terminal state. Any other close reason is a transient
+      // transport loss; those just go idle, matching the previous
+      // (deliberately unbranched) behavior.
+      if (event.reason === "lease_expired" || event.reason === "stream_status_401") {
+        clearSession(window.sessionStorage);
+        renderSessionExpired(document, updateGalleryError, updateGalleryStatus);
+        updateLiveState("idle");
+        return;
+      }
       updateLiveState("idle");
       updateGalleryStatus("idle");
     },

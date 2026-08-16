@@ -16,7 +16,10 @@ class FakeElement {
   readonly dataset: Record<string, string> = {};
   readonly style: Record<string, string> = {};
   readonly childNodes = [{ textContent: "" }];
-  readonly classList = { add: (..._names: string[]) => undefined };
+  readonly classList = {
+    add: (..._names: string[]) => undefined,
+    toggle: (_name: string, _force?: boolean) => undefined,
+  };
   textContent = "";
   hidden = false;
   private readonly listeners = new Map<string, Listener[]>();
@@ -136,6 +139,9 @@ interface GalleryHarness {
   readonly defaultObserved: PageShimCounts;
   /** Push a `revision:committed` SSE event into the live stream. */
   emitCommitted(event: { readonly revisionSha: string; readonly revisionNumber: number }): void;
+  /** Push a `stream:close` SSE event into the live stream. */
+  emitStreamClose(reason: string): void;
+  readonly sessionStorage: { getItem(key: string): string | null };
 }
 
 function createRuntime(
@@ -273,6 +279,16 @@ function createRuntime(
       };
       streamController?.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`));
     },
+    emitStreamClose(reason) {
+      const payload = {
+        type: "stream:close",
+        streamId: "stream-1",
+        reason,
+        at: new Date().toISOString(),
+      };
+      streamController?.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`));
+    },
+    sessionStorage,
   };
 }
 
@@ -458,6 +474,33 @@ describe("gallery shell startup", () => {
     // request log filter because its fetch is on the global `fetch`,
     // not the harness shim).
     expect(harness.requests.some(({ url }) => url.endsWith("/api/v1/gallery/release"))).toBe(false);
+  });
+
+  test("a stream:close with reason lease_expired renders the expired state and clears the session", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    expect(harness.sessionStorage.getItem("facet:gallery-session")).not.toBeNull();
+
+    harness.emitStreamClose("lease_expired");
+    await waitFor(
+      () => harness.elements.get("facet-status-line")?.textContent === "session expired",
+    );
+
+    expect(harness.elements.get("facet-empty")?.hidden).toBe(true);
+    expect(harness.elements.get("facet-status-line")?.textContent).toBe("session expired");
+    expect(harness.elements.get("facet-error")?.textContent).toContain("session expired");
+    expect(harness.sessionStorage.getItem("facet:gallery-session")).toBeNull();
+  });
+
+  test("a stream:close with an unrelated reason stays idle and keeps the session", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+
+    harness.emitStreamClose("client_disconnect");
+    await waitFor(() => harness.elements.get("facet-live-label")?.textContent === "idle");
+
+    expect(harness.elements.get("facet-expired")?.hidden).toBe(true);
+    expect(harness.sessionStorage.getItem("facet:gallery-session")).not.toBeNull();
   });
 
   test("shell never CSS-transforms the iframe, and delegates view state to the frame document", async () => {

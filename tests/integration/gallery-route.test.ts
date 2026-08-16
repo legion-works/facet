@@ -73,6 +73,33 @@ describe("GET /gallery", () => {
     expect(galleryAsset.status).toBe(200);
   });
 
+  test("GET /index.html carries the same CSP and bytes as /gallery", async () => {
+    moveGalleryDir(originalGalleryDir);
+    rmSync(GALLERY_DIR, { recursive: true, force: true });
+    const testEnvDir = mkdtempSync(join(tmpdir(), "facet-gallery-route-"));
+    envDir = testEnvDir;
+    service = await startFacetService({
+      dbPath: join(testEnvDir, "facet.sqlite"),
+      installTokenPath: join(testEnvDir, "install.token"),
+      promoteTokenPath: join(testEnvDir, "promote.token"),
+      lockPath: join(testEnvDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "gallery-route-index-test" }),
+      tier0Runner: stubTier0Runner,
+    });
+
+    const galleryResponse = await fetch(`${service.url}/gallery`);
+    const galleryBytes = await galleryResponse.arrayBuffer();
+    const galleryCsp = galleryResponse.headers.get("content-security-policy");
+    expect(galleryCsp).not.toBeNull();
+
+    const indexResponse = await fetch(`${service.url}/index.html`);
+    const indexBytes = await indexResponse.arrayBuffer();
+    expect(indexResponse.status).toBe(200);
+    expect(indexResponse.headers.get("content-security-policy")).toBe(galleryCsp);
+    expect(Buffer.from(indexBytes).equals(Buffer.from(galleryBytes))).toBe(true);
+  });
+
   test("the frame script route refuses to escape the gallery root", async () => {
     // af46b64 added a NEW file-serving route keyed on URL path
     // (/gallery/frame/bootstrap/*.js, /gallery/frame/chunks/*.js) so each
