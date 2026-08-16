@@ -254,12 +254,12 @@ test("gallery artifact geometry holds at 1280x720 and 1920x1080", async () => {
     expect(clipped.rootLeft).toBeGreaterThanOrEqual(0);
     expect(clipped.rootTop).toBeGreaterThanOrEqual(0);
 
-    // Bug-hunt sol#1 fix proof: at the supported extreme small
-    // viewport (400x300), the shell chrome — the pan/zoom, zoom, and
-    // fullscreen toolbar — stays part of the visible shell, not pushed
-    // below the fold by whatever pushes the document taller than the
-    // viewport. The recorded failure: every control landed at
-    // y=381.046875 in a 300px-tall viewport, entirely off-screen.
+    // At the supported extreme small viewport (400x300), the shell
+    // chrome — the pan/zoom, zoom, and fullscreen toolbar — stays part
+    // of the visible shell, not pushed below the fold by whatever
+    // pushes the document taller than the viewport. The recorded
+    // failure: every control landed at y=381.046875 in a 300px-tall
+    // viewport, entirely off-screen.
     await setGalleryViewport(target, 400, 300);
     await navigateToArtifact(
       target,

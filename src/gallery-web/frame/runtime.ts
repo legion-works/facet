@@ -54,11 +54,16 @@ declare global {
   }
 }
 
-/** Duck-typed `.style` check — covers HTMLElement and SVGElement alike without requiring SVGElement as a global (the frame bundle and this file's unit-test DOM shim don't both provide it). */
+/** Duck-typed `.style` guard — covers HTMLElement and SVGElement alike without requiring SVGElement as a global (the frame bundle and this file's unit-test DOM shim don't both provide it). */
+function asStylable(node: Element | null): (Element & { style: CSSStyleDeclaration }) | null {
+  return node !== null && "style" in node
+    ? (node as Element & { style: CSSStyleDeclaration })
+    : null;
+}
+
 function setPointerEventsIfStylable(node: Element | null, value: string): void {
-  if (node !== null && "style" in node) {
-    (node as Element & { style: CSSStyleDeclaration }).style.pointerEvents = value;
-  }
+  const stylable = asStylable(node);
+  if (stylable !== null) stylable.style.pointerEvents = value;
 }
 
 function renderedSvg(
@@ -226,8 +231,13 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
           svg.svg.style.maxWidth = "none";
           svg.svg.style.height = "auto";
         } else {
-          const root = container.firstElementChild;
-          if (root instanceof HTMLElement) {
+          // A viewBox-less SVG root (`renderedSvg` returned null, so this
+          // is the CSS-fallback branch) is still an SVGElement, not an
+          // HTMLElement — the same class of guard miss `setGestureMode`
+          // had for pointer-events, reachable here on the zoom path
+          // instead.
+          const root = asStylable(container.firstElementChild);
+          if (root !== null) {
             root.style.transformOrigin = "top left";
             root.style.transform = `scale(${state.zoom})`;
           }

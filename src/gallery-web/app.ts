@@ -1124,12 +1124,16 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   // Wheel-zoom happens inside the frame's own document (see the
   // `onWheel` listener installed by `installGalleryFrameApi` in
   // frame/runtime.ts) — an iframe's events never bubble to the parent
-  // document, so the shell has no direct hook to sync from. A light
-  // poll is the only path that reaches the clamp-bound state
-  // regardless of which zoom-changing surface triggered it. Bare
-  // `setInterval` (globalThis, not `window.*`) so this works whether
-  // the injected runtime's `window` fake implements timers or not —
-  // the shell's own DOM interface never required it.
+  // document, so the shell has no listener to hook a sync call onto.
+  // A callback threaded through the render-result handle (the same
+  // same-origin boundary `applyViewState`/`gestureMode` already cross)
+  // would avoid polling entirely; the poll is simpler for a local
+  // single-tab tool and cheap enough (one unref'd 200ms interval,
+  // cleared on shutdown, not re-created per swap) that the tradeoff
+  // wasn't worth the extra plumbing here. Bare `setInterval`
+  // (globalThis, not `window.*`) so this works whether the injected
+  // runtime's `window` fake implements timers or not — the shell's
+  // own DOM interface never required it.
   zoomButtonPoll = setInterval(syncZoomButtons, 200);
   if (typeof zoomButtonPoll.unref === "function") zoomButtonPoll.unref();
 }

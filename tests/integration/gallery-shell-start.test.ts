@@ -494,9 +494,9 @@ describe("gallery shell startup", () => {
     expect(appliedState.zoom).toBeGreaterThan(1);
   });
 
-  // Bug-hunt sol#3 fix proof: the zoom button sitting at its clamp
-  // bound (0.25x / 8x) disables instead of silently eating clicks,
-  // and re-enables the moment the view state leaves that bound.
+  // The zoom button sitting at its clamp bound (0.25x / 8x) disables
+  // instead of silently eating clicks, and re-enables the moment the
+  // view state leaves that bound.
   test("the zoom-out/zoom-in buttons disable at their clamp bound and re-enable off it", async () => {
     const harness = createRuntime("css");
     const state = { zoom: 1 };
@@ -544,8 +544,8 @@ describe("gallery shell startup", () => {
     expect(zoomOut.disabled).toBeFalsy();
   });
 
-  // Review-reddened: a no-op click handler (`result.setGestureMode(result.gestureMode())`)
-  // left every other gallery test green because nothing else exercises
+  // A no-op click handler (`result.setGestureMode(result.gestureMode())`)
+  // leaves every other gallery test green because nothing else exercises
   // the toolbar toggle. This asserts the actual flip, not just that a
   // click was received.
   test("the pan/zoom toolbar toggle flips the frame's gesture mode both ways, and reset restores the default", async () => {

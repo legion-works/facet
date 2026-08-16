@@ -54,8 +54,7 @@ body {
  * their width is whatever the fixture authored (often a fixed-width
  * `max-w-*` container), not a fluid readable column. Left unstyled,
  * that narrow content sits pinned to the container's left edge,
- * stranding most of a wide desktop stage as dead space (terra
- * bug-hunt #1).
+ * stranding most of a wide desktop stage as dead space.
  *
  * The centering has to land on the renderer-ROOT element
  * (`.facet-html-root` / `#facet-tsx-mount`), not `#artifact` itself:

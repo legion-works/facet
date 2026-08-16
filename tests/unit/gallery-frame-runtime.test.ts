@@ -188,16 +188,15 @@ test("gesture listeners are installed only in panzoom mode and fully removed in 
   }
 });
 
-// Bug-hunt sol#2 fix proof: the artifact root's pointer-events must be
-// suppressed in panzoom mode regardless of whether panzoom was the
-// artifact's DEFAULT (mermaid/svg/chart render straight into it, no
-// toggle click involved) or reached via the toolbar toggle. A raw SVG
-// root is an SVGSVGElement, not an HTMLElement — a naive
-// `instanceof HTMLElement` guard silently no-ops on exactly this
-// default-panzoom path while still working for the html/tsx
-// CSS-fallback toggle path, which is what shipped and what the
-// adversarial hunt caught (raw SVG anchors kept taking pointer focus
-// while the shell toggle read latched).
+// The artifact root's pointer-events must be suppressed in panzoom
+// mode regardless of whether panzoom was the artifact's DEFAULT
+// (mermaid/svg/chart render straight into it, no toggle click
+// involved) or reached via the toolbar toggle. A raw SVG root is an
+// SVGSVGElement, not an HTMLElement — a naive `instanceof HTMLElement`
+// guard silently no-ops on exactly this default-panzoom path while
+// still working for the html/tsx CSS-fallback toggle path (raw SVG
+// anchors kept taking pointer focus while the shell toggle read
+// latched).
 test("default panzoom mode suppresses pointer-events on a raw SVG artifact root, not just the toggled path", async () => {
   const shim = parseHTML("<!DOCTYPE html><html><body><main id='artifact'></main></body></html>");
   Object.defineProperty(shim.document, "implementation", { value: fakeImpl, configurable: true });
@@ -234,4 +233,46 @@ test("default panzoom mode suppresses pointer-events on a raw SVG artifact root,
 
   result.setGestureMode("native");
   expect(root.style.pointerEvents).toBe("");
+});
+
+// Sibling of the pointer-events guard above, on the zoom-transform
+// path instead: an svg-type artifact whose root has no parseable
+// `viewBox` fails `renderedSvg()`'s check and falls into the
+// CSS-fallback `applyViewState` branch, but the root there is still an
+// SVGElement rather than an HTMLElement. The same `instanceof
+// HTMLElement` guard would silently skip the zoom transform on that
+// root; the shared `.style` duck-type check covers it.
+test("applyViewState scales a viewBox-less SVG artifact root through the CSS-fallback transform", async () => {
+  const shim = parseHTML("<!DOCTYPE html><html><body><main id='artifact'></main></body></html>");
+  Object.defineProperty(shim.document, "implementation", { value: fakeImpl, configurable: true });
+  globals["document"] = shim.document;
+  globals["window"] = shim.window;
+  installGalleryFrameApi(
+    createRendererRegistry([
+      [
+        "svg",
+        async (ctx) => {
+          const svg = ctx.container.ownerDocument.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg",
+          );
+          // Deliberately no viewBox attribute — renderedSvg() returns
+          // null for this root, routing applyViewState into the
+          // CSS-fallback (else) branch instead of the native svg.svg.style.width path.
+          ctx.container.appendChild(svg);
+        },
+      ],
+    ]),
+  );
+  const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
+  const result = await api.render({
+    artifactType: "svg",
+    renderer: "svg",
+    bytes: new Uint8Array([1]),
+  });
+
+  result.applyViewState({ zoom: 2, panX: 0, panY: 0 });
+  const root = shim.document.getElementById("artifact")!.firstElementChild as SVGElement;
+  expect(root.style.transform).toBe("scale(2)");
+  expect(root.style.transformOrigin).toBe("top left");
 });

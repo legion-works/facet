@@ -261,7 +261,7 @@ body {
  * small viewports (400x300) whatever pushes the grid's `1fr` canvas
  * row past its available height carries the whole document past
  * 100vh, and an in-flow footer rides off the bottom edge with it
- * (sol bug-hunt #1: every control landed at y=381 in a 300px-tall
+ * (recorded failure: every control landed at y=381 in a 300px-tall
  * viewport). `position: fixed` decouples the toolbar from that
  * document height entirely — it always sits at the visual viewport's
  * own bottom edge. The grid still reserves the `auto` row for it (an
