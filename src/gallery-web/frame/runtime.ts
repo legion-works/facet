@@ -46,17 +46,29 @@ export interface RenderResult {
 const STANDALONE_DIAGRAM_TYPES = new Set(["mermaid", "svg", "chart"]);
 const DIAGRAM_REGION_SELECTOR = "[data-facet-diagram-region]";
 
-export type DiagramRegionEngagementState = "idle" | "armed" | "engaged";
-export type DiagramRegionEngagementEvent = "pointerenter" | "pointerleave" | "activate" | "dismiss";
+export interface DiagramRegionEngagementState {
+  readonly activeRegion: string | null;
+  readonly armedRegion: string | null;
+}
+
+export type DiagramRegionEngagementEvent =
+  | { readonly type: "pointerenter" | "pointerleave" | "activate"; readonly region: string }
+  | { readonly type: "dismiss" };
 
 export function nextDiagramRegionEngagement(
   state: DiagramRegionEngagementState,
   event: DiagramRegionEngagementEvent,
 ): DiagramRegionEngagementState {
-  if (event === "dismiss") return "idle";
-  if (event === "pointerenter") return state === "idle" ? "armed" : state;
-  if (event === "pointerleave") return state === "armed" ? "idle" : state;
-  return state === "armed" ? "engaged" : state;
+  if (event.type === "dismiss") return { activeRegion: null, armedRegion: null };
+  if (event.type === "pointerenter") {
+    return state.activeRegion === event.region ? state : { ...state, armedRegion: event.region };
+  }
+  if (event.type === "pointerleave") {
+    return state.armedRegion === event.region ? { ...state, armedRegion: null } : state;
+  }
+  return state.armedRegion === event.region
+    ? { activeRegion: event.region, armedRegion: null }
+    : state;
 }
 
 interface DiagramRegionGestures {
@@ -115,7 +127,20 @@ function renderedSvg(
 function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGestures {
   const regions = Array.from(container.querySelectorAll<HTMLElement>(DIAGRAM_REGION_SELECTOR));
   let enabled = false;
-  const controls = regions.flatMap((region) => {
+  let engagement: DiagramRegionEngagementState = { activeRegion: null, armedRegion: null };
+  interface RegionControl {
+    readonly region: HTMLElement;
+    readonly regionId: string;
+    readonly sync: () => void;
+    readonly dismiss: () => void;
+    readonly reset: () => void;
+  }
+  let controls: readonly RegionControl[] = [];
+  const transition = (event: DiagramRegionEngagementEvent): void => {
+    engagement = nextDiagramRegionEngagement(engagement, event);
+    controls.forEach((control) => control.sync());
+  };
+  controls = regions.flatMap((region, index) => {
     const svg = region.querySelector<SVGSVGElement>(":scope > svg");
     if (svg === null) return [];
     const rect = svg.getBoundingClientRect();
@@ -125,16 +150,13 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
     region.style.width = `${Math.ceil(naturalWidth)}px`;
     region.style.height = `${Math.ceil(naturalHeight)}px`;
     region.style.overflow = "hidden";
-    let state: DiagramRegionEngagementState = "idle";
+    const regionId = String(index);
     let zoom = 1;
     let drag: { x: number; y: number; pointerId: number } | null = null;
-    const syncEngagement = (): void => {
-      if (state === "engaged") region.setAttribute("data-facet-diagram-engaged", "true");
+    const sync = (): void => {
+      if (engagement.activeRegion === regionId)
+        region.setAttribute("data-facet-diagram-engaged", "true");
       else region.removeAttribute("data-facet-diagram-engaged");
-    };
-    const transition = (event: DiagramRegionEngagementEvent): void => {
-      state = nextDiagramRegionEngagement(state, event);
-      syncEngagement();
     };
     const eventRegion = (event: Event): HTMLElement | null => {
       const target = event.target;
@@ -143,15 +165,15 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
         : null;
     };
     region.addEventListener("pointerenter", () => {
-      if (enabled) transition("pointerenter");
+      if (enabled) transition({ type: "pointerenter", region: regionId });
     });
     region.addEventListener("pointerleave", () => {
-      if (enabled) transition("pointerleave");
+      if (enabled) transition({ type: "pointerleave", region: regionId });
     });
     region.addEventListener("pointerdown", (event) => {
       if (!enabled || eventRegion(event) !== region) return;
-      transition("activate");
-      if (state !== "engaged") return;
+      transition({ type: "activate", region: regionId });
+      if (engagement.activeRegion !== regionId) return;
       region.focus({ preventScroll: true });
       drag = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
       region.setPointerCapture(event.pointerId);
@@ -177,7 +199,8 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
     region.addEventListener(
       "wheel",
       (event) => {
-        if (!enabled || state !== "engaged" || eventRegion(event) !== region) return;
+        if (!enabled || engagement.activeRegion !== regionId || eventRegion(event) !== region)
+          return;
         event.preventDefault();
         const nextZoom = clampZoom(zoom * Math.exp(-event.deltaY * 0.001));
         const regionRect = region.getBoundingClientRect();
@@ -195,12 +218,12 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
     );
     return [
       {
-        dismiss: (): boolean => {
-          const wasEngaged = state === "engaged";
+        region,
+        regionId,
+        sync,
+        dismiss: (): void => {
           drag = null;
           region.style.cursor = "";
-          transition("dismiss");
-          return wasEngaged;
         },
         reset: (): void => {
           zoom = 1;
@@ -211,7 +234,6 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
           region.scrollTop = 0;
           drag = null;
           region.style.cursor = "";
-          transition("dismiss");
         },
       },
     ];
@@ -219,13 +241,20 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
   return {
     setEnabled(nextEnabled: boolean): void {
       enabled = nextEnabled;
-      if (!enabled) controls.forEach((control) => control.dismiss());
+      if (!enabled) {
+        controls.forEach((control) => control.dismiss());
+        transition({ type: "dismiss" });
+      }
     },
     dismiss(): boolean {
-      return controls.some((control) => control.dismiss());
+      const wasEngaged = engagement.activeRegion !== null;
+      controls.forEach((control) => control.dismiss());
+      transition({ type: "dismiss" });
+      return wasEngaged;
     },
     reset(): void {
       controls.forEach((control) => control.reset());
+      transition({ type: "dismiss" });
     },
   };
 }

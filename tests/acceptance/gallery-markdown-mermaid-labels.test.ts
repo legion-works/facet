@@ -48,6 +48,24 @@ const markdownSource = [
   ),
 ].join("\n");
 
+interface RegionState {
+  readonly scrollTop: number;
+  readonly firstWidth: number;
+  readonly secondWidth: number;
+  readonly regionWidth: number;
+  readonly regionHeight: number;
+  readonly regionClientWidth: number;
+  readonly regionScrollWidth: number;
+  readonly regionOverflowX: string;
+  readonly regionDisplay: string;
+  readonly regionOutlineStyle: string;
+  readonly regionOutlineColor: string;
+  readonly svgDisplay: string;
+  readonly svgMaxWidth: string;
+  readonly tagged: boolean;
+  readonly engaged: boolean[];
+}
+
 test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagram's pan/zoom", async () => {
   const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-markdown-mermaid-labels-"));
   const service = await startFacetService({
@@ -87,7 +105,7 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
     // Sequence diagram — the control; stayed correct even at the broken commit.
     expect(diagrams?.[1]?.labels.length).toBeGreaterThan(0);
 
-    const iframePoint = async (): Promise<{ x: number; y: number }> => {
+    const iframePoint = async (diagramIndex: 0 | 1): Promise<{ x: number; y: number }> => {
       const outer = (await target!.session.send("Runtime.evaluate", {
         returnByValue: true,
         expression: `(() => {
@@ -99,8 +117,8 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
         contextId: world,
         returnByValue: true,
         expression: `(() => {
-          const svg = document.querySelectorAll('[data-facet-renderer-graph="true"]')[0];
-          if (!(svg instanceof SVGSVGElement)) throw new Error('first Mermaid diagram missing');
+          const svg = document.querySelectorAll('[data-facet-renderer-graph="true"]')[${diagramIndex}];
+          if (!(svg instanceof SVGSVGElement)) throw new Error('Mermaid diagram missing');
           const rect = svg.getBoundingClientRect();
           return { x: rect.left + Math.min(40, rect.width / 2), y: rect.top + Math.min(40, rect.height / 2) };
         })()`,
@@ -112,15 +130,7 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
       return { x: frame.left + diagram.x, y: frame.top + diagram.y };
     };
 
-    const readRegionState = async (): Promise<{
-      scrollTop: number;
-      firstWidth: number;
-      secondWidth: number;
-      regionWidth: number;
-      regionHeight: number;
-      regionOverflowX: string;
-      tagged: boolean;
-    }> => {
+    const readRegionState = async (): Promise<RegionState> => {
       const evaluated = (await target!.session.send("Runtime.evaluate", {
         contextId: world,
         returnByValue: true,
@@ -135,29 +145,29 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
           const region = first.closest('[data-facet-diagram-region]') ?? first.parentElement;
           if (!(region instanceof HTMLElement)) throw new Error('diagram region missing');
           const rect = region.getBoundingClientRect();
+          const regionStyle = getComputedStyle(region);
+          const svgStyle = getComputedStyle(first);
           return {
             scrollTop: viewport.scrollTop,
             firstWidth: first.getBoundingClientRect().width,
             secondWidth: second.getBoundingClientRect().width,
             regionWidth: rect.width,
             regionHeight: rect.height,
-            regionOverflowX: getComputedStyle(region).overflowX,
+            regionClientWidth: region.clientWidth,
+            regionScrollWidth: region.scrollWidth,
+            regionOverflowX: regionStyle.overflowX,
+            regionDisplay: regionStyle.display,
+            regionOutlineStyle: regionStyle.outlineStyle,
+            regionOutlineColor: regionStyle.outlineColor,
+            svgDisplay: svgStyle.display,
+            svgMaxWidth: svgStyle.maxWidth,
             tagged: region.hasAttribute('data-facet-diagram-region'),
+            engaged: diagrams.map((diagram) =>
+              diagram.closest('[data-facet-diagram-region]')?.hasAttribute('data-facet-diagram-engaged') ?? false,
+            ),
           };
         })()`,
-      })) as {
-        result?: {
-          value?: {
-            scrollTop: number;
-            firstWidth: number;
-            secondWidth: number;
-            regionWidth: number;
-            regionHeight: number;
-            regionOverflowX: string;
-            tagged: boolean;
-          };
-        };
-      };
+      })) as { result?: { value?: RegionState } };
       const value = evaluated.result?.value;
       if (value === undefined) throw new Error("diagram state unavailable");
       return value;
@@ -168,7 +178,7 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
       expression: `document.getElementById('artifact').scrollTop = 0`,
     });
     const beforeNativeWheel = await readRegionState();
-    const initialPoint = await iframePoint();
+    const initialPoint = await iframePoint(0);
     await target.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...initialPoint });
     await target.session.send("Input.dispatchMouseEvent", {
       type: "mouseWheel",
@@ -186,7 +196,7 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
       expression: `document.getElementById('artifact').scrollTop = 300`,
     });
     const beforeEngagedWheel = await readRegionState();
-    const engagedPoint = await iframePoint();
+    const engagedPoint = await iframePoint(0);
     await target.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...engagedPoint });
     await target.session.send("Input.dispatchMouseEvent", {
       type: "mousePressed",
@@ -214,7 +224,40 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
     expect(afterEngagedWheel.regionWidth).toBeCloseTo(beforeEngagedWheel.regionWidth, 1);
     expect(afterEngagedWheel.regionHeight).toBeCloseTo(beforeEngagedWheel.regionHeight, 1);
     expect(afterEngagedWheel.regionOverflowX).toBe("hidden");
+    expect(afterEngagedWheel.regionDisplay).toBe("block");
+    expect(afterEngagedWheel.regionOutlineStyle).toBe("solid");
+    expect(afterEngagedWheel.regionOutlineColor).toBe("rgb(130, 170, 255)");
+    expect(afterEngagedWheel.svgDisplay).toBe("block");
+    expect(afterEngagedWheel.svgMaxWidth).toBe("none");
+    expect(afterEngagedWheel.firstWidth).toBeGreaterThan(afterEngagedWheel.regionWidth + 10);
+    expect(afterEngagedWheel.regionScrollWidth).toBeGreaterThan(
+      afterEngagedWheel.regionClientWidth + 10,
+    );
     expect(afterEngagedWheel.tagged).toBeTrue();
+    expect(afterEngagedWheel.engaged).toEqual([true, false]);
+
+    const secondPoint = await iframePoint(1);
+    await target.session.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...secondPoint });
+    await target.session.send("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      ...secondPoint,
+      button: "left",
+      clickCount: 1,
+    });
+    await target.session.send("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      ...secondPoint,
+      button: "left",
+      clickCount: 1,
+    });
+    expect((await readRegionState()).engaged).toEqual([false, true]);
+
+    await target.session.send("Runtime.evaluate", {
+      expression: `document.getElementById('facet-zoom-reset')?.click()`,
+    });
+    const afterReset = await readRegionState();
+    expect(afterReset.firstWidth).toBeCloseTo(beforeEngagedWheel.firstWidth, 1);
+    expect(afterReset.engaged).toEqual([false, false]);
 
     await target.session.send("Input.dispatchKeyEvent", {
       type: "keyDown",
@@ -222,7 +265,7 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
       code: "Escape",
     });
     const beforeDisengagedWheel = await readRegionState();
-    const disengagedPoint = await iframePoint();
+    const disengagedPoint = await iframePoint(0);
     await target.session.send("Input.dispatchMouseEvent", {
       type: "mouseMoved",
       ...disengagedPoint,

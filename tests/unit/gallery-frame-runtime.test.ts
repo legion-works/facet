@@ -22,8 +22,14 @@ globals["HTMLTemplateElement"] = shimWindow.HTMLTemplateElement;
 let createRendererRegistry: typeof import("../../src/gallery-web/frame/renderers/registry").createRendererRegistry;
 let installGalleryFrameApi: typeof import("../../src/gallery-web/frame/runtime").installGalleryFrameApi;
 
-type DiagramRegionEngagementState = "idle" | "armed" | "engaged";
-type DiagramRegionEngagementEvent = "pointerenter" | "pointerleave" | "activate" | "dismiss";
+interface DiagramRegionEngagementState {
+  readonly activeRegion: string | null;
+  readonly armedRegion: string | null;
+}
+
+type DiagramRegionEngagementEvent =
+  | { readonly type: "pointerenter" | "pointerleave" | "activate"; readonly region: string }
+  | { readonly type: "dismiss" };
 
 type DiagramRegionEngagementTransition = (
   state: DiagramRegionEngagementState,
@@ -35,7 +41,7 @@ beforeAll(async () => {
   ({ installGalleryFrameApi } = await import("../../src/gallery-web/frame/runtime"));
 });
 
-test("diagram regions require pointer entry and activation, then remain engaged until dismissed", async () => {
+test("diagram regions switch the active region only after the newly entered region is activated", async () => {
   const runtime = await import("../../src/gallery-web/frame/runtime");
   const transition = Reflect.get(runtime, "nextDiagramRegionEngagement") as
     | DiagramRegionEngagementTransition
@@ -43,12 +49,19 @@ test("diagram regions require pointer entry and activation, then remain engaged 
 
   expect(transition).toBeTypeOf("function");
   const next = transition!;
-  expect(next("idle", "activate")).toBe("idle");
-  expect(next("idle", "pointerenter")).toBe("armed");
-  expect(next("armed", "pointerleave")).toBe("idle");
-  expect(next("armed", "activate")).toBe("engaged");
-  expect(next("engaged", "pointerleave")).toBe("engaged");
-  expect(next("engaged", "dismiss")).toBe("idle");
+  const idle = { activeRegion: null, armedRegion: null };
+  const armedA = next(idle, { type: "pointerenter", region: "A" });
+  expect(armedA).toEqual({ activeRegion: null, armedRegion: "A" });
+  expect(next(armedA, { type: "pointerleave", region: "A" })).toEqual(idle);
+  const activeA = next(armedA, { type: "activate", region: "A" });
+  expect(activeA).toEqual({ activeRegion: "A", armedRegion: null });
+  const armedB = next(activeA, { type: "pointerenter", region: "B" });
+  expect(armedB).toEqual({ activeRegion: "A", armedRegion: "B" });
+  expect(next(armedB, { type: "activate", region: "B" })).toEqual({
+    activeRegion: "B",
+    armedRegion: null,
+  });
+  expect(next(activeA, { type: "dismiss" })).toEqual(idle);
 });
 
 test("installs a one-shot direct frame API that resolves renderer observations", async () => {
