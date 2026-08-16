@@ -77,6 +77,22 @@ export const IMPORT_SPECIFIER_RE =
   /(?:^|\s)(?:import\s+(?:type\s+)?(?:[^"';]+?\s+from\s+)?|import\s*\(|require\s*\()\s*["']([^"']+)["']/g;
 
 /**
+ * Dynamic `import(\`spec\`)` / `require(\`spec\`)` forms using a template
+ * literal instead of a quoted string. Static `import`/`export ... from`
+ * declarations cannot take a template literal (syntax error), so only the
+ * two dynamic call forms need this second pattern.
+ *
+ * A no-substitution literal (no `${`) is a real, known specifier and is
+ * treated exactly like a quoted string. A literal WITH a `${` substitution
+ * is not staticaly resolvable at all — rather than silently letting it
+ * through unclassified, this fails closed: `collectSpecifiers` reports it as
+ * an unconditional violation regardless of what the substituted value might
+ * be, because a scanner that can't classify a dynamic specifier must not
+ * treat that as evidence of safety.
+ */
+export const DYNAMIC_TEMPLATE_SPECIFIER_RE = /(?:import\s*\(|require\s*\()\s*`([^`]*)`/g;
+
+/**
  * Re-export forms. All share the `from "spec"` tail so a single regex
  * matches every variant:
  * - `export * from "spec"`
@@ -209,18 +225,35 @@ function stripComments(line: string): string {
   return lineComment === -1 ? line : line.slice(0, lineComment);
 }
 
-function collectSpecifiers(rawLine: string): string[] {
+interface CollectedSpecifiers {
+  /** Statically known specifiers — quoted strings and no-substitution template literals. */
+  readonly literal: string[];
+  /** Template literals with a `${` substitution: unresolvable, flagged unconditionally. */
+  readonly unclassifiable: string[];
+}
+
+function collectSpecifiers(rawLine: string): CollectedSpecifiers {
   const line = stripComments(rawLine);
-  const found = new Set<string>();
+  const literal = new Set<string>();
+  const unclassifiable = new Set<string>();
   IMPORT_SPECIFIER_RE.lastIndex = 0;
   for (const match of line.matchAll(IMPORT_SPECIFIER_RE)) {
-    if (match[1]) found.add(match[1]);
+    if (match[1]) literal.add(match[1]);
   }
   RE_EXPORT_SPECIFIER_RE.lastIndex = 0;
   for (const match of line.matchAll(RE_EXPORT_SPECIFIER_RE)) {
-    if (match[1]) found.add(match[1]);
+    if (match[1]) literal.add(match[1]);
   }
-  return [...found];
+  DYNAMIC_TEMPLATE_SPECIFIER_RE.lastIndex = 0;
+  for (const match of line.matchAll(DYNAMIC_TEMPLATE_SPECIFIER_RE)) {
+    const body = match[1] ?? "";
+    if (body.includes("${")) {
+      unclassifiable.add(match[0].trim());
+    } else {
+      literal.add(body);
+    }
+  }
+  return { literal: [...literal], unclassifiable: [...unclassifiable] };
 }
 
 export function scanFile(
@@ -233,7 +266,8 @@ export function scanFile(
   const violations: Violation[] = [];
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
-    for (const specifier of collectSpecifiers(line)) {
+    const collected = collectSpecifiers(line);
+    for (const specifier of collected.literal) {
       const reason = check(specifier, file, repoRoot);
       if (reason !== null) {
         violations.push({
@@ -243,6 +277,15 @@ export function scanFile(
           reason,
         });
       }
+    }
+    for (const raw of collected.unclassifiable) {
+      violations.push({
+        file: relative(repoRoot, file),
+        line: i + 1,
+        specifier: raw,
+        reason:
+          "unclassifiable dynamic specifier: template literal with a ${} substitution cannot be statically resolved — failing closed",
+      });
     }
   }
   return violations;

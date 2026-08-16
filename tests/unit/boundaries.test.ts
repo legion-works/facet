@@ -154,6 +154,44 @@ describe("boundary check — forbidden package import forms", () => {
   });
 });
 
+describe("boundary check — template literal dynamic imports", () => {
+  // Orchestrator-verified live bypass: `await import(`fast-xml-parser`)` in
+  // src/service/ passed clean before this fix, because IMPORT_SPECIFIER_RE
+  // only matched quote characters, never backticks.
+  test("catches `import(`mermaid`)` (no-substitution template literal)", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "a.ts", "const m = await import(`mermaid`);");
+    const v = runBoundaryCheck(root);
+    expect(v.map((x) => x.specifier)).toEqual(["mermaid"]);
+    expect(v[0]?.reason).toContain("forbidden package import");
+  });
+
+  test("catches `require(`mermaid`)` (no-substitution template literal)", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "a.ts", "const m = require(`mermaid`);");
+    const v = runBoundaryCheck(root);
+    expect(v.map((x) => x.specifier)).toEqual(["mermaid"]);
+  });
+
+  test("fails closed on a template literal with a substitution — unclassifiable specifier", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "a.ts", "const pkg = 'mermaid'; const m = await import(`${pkg}`);");
+    const v = runBoundaryCheck(root);
+    expect(v).toHaveLength(1);
+    expect(v[0]?.reason).toContain("unclassifiable dynamic specifier");
+  });
+
+  test("a backtick literal inside a comment stays clean", () => {
+    const root = makeRoot();
+    writeServiceFile(
+      root,
+      "a.ts",
+      '// const m = await import(`mermaid`);\nimport { Database } from "bun:sqlite";\n',
+    );
+    expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
+});
+
 describe("boundary check — workspace path probes", () => {
   test("catches a relative import that resolves under src/validation/", () => {
     const root = makeRoot();
