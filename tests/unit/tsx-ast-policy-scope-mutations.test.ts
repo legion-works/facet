@@ -177,33 +177,21 @@ afterAll(() => {
 });
 
 /**
- * Rewrite the AST policy module's relative imports to absolute paths so
- * the mutated copy (written under /tmp) can resolve its dependencies
- * from the repo root. The two relative imports in `ast-policy.ts`:
- *
- *   - "../../../shared/contracts/validation"
- *   - "../../../shared/tsx/import-policy"
- *
- * Both are computed relative to `src/validation/tier0/tsx/`. The
- * TypeScript compiler and `typescript` itself are resolved by Bun's
- * default module resolution, so we leave them as-is.
+ * Rewrite every relative import in the copied AST policy to an absolute
+ * repository path. The mutation target is written under `/tmp`, so keeping
+ * a relative specifier would resolve beside the temporary file rather than
+ * beside the source module.
  */
 function rewrittenImports(source: string, repoRoot: string): string {
-  const absoluteRoot = repoRoot.endsWith("/") ? repoRoot : `${repoRoot}/`;
-  return (
-    source
-      .replaceAll(
-        '"../../../shared/contracts/validation"',
-        `"${absoluteRoot}src/shared/contracts/validation"`,
-      )
-      .replaceAll(
-        '"../../../shared/tsx/import-policy"',
-        `"${absoluteRoot}src/shared/tsx/import-policy"`,
-      )
-      // The bare `typescript` import resolves from the file's location;
-      // the mutated file lives under /tmp, so we pin the absolute path.
-      .replaceAll('from "typescript"', `from "${absoluteRoot}node_modules/typescript"`)
-  );
+  const sourceDir = join(repoRoot, "src/validation/tier0/tsx");
+  return source
+    .replace(/from "(\.{1,2}\/[^\x22]+)"/g, (_match, specifier: string) => {
+      return `from ${JSON.stringify(join(sourceDir, specifier))}`;
+    })
+    .replaceAll(
+      'from "typescript"',
+      `from ${JSON.stringify(join(repoRoot, "node_modules/typescript"))}`,
+    );
 }
 
 /**
