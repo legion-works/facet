@@ -142,12 +142,13 @@ const COMMAND_TO_VERB: Readonly<Record<CommandName, string>> = {
  * print a JSON envelope on stdout. The flag is recognized in any
  * position so adapters can pass it either first or last.
  */
-function readFormat(argv: readonly string[]): "text" | "json" {
+function readFormat(argv: readonly string[]): "text" | "json" | null {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--format") {
       const value = argv[i + 1];
       if (value === "text" || value === "json") return value;
+      return null;
     } else if (arg === "--json") {
       return "json";
     }
@@ -176,7 +177,15 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
   const firstRaw = argv[0];
   const isMeta =
     firstRaw === "--help" || firstRaw === "-h" || firstRaw === "--version" || firstRaw === "-V";
-  const format = isMeta ? readFormat(argv) : "text";
+  const metaFormat = isMeta ? readFormat(argv) : "text";
+  if (metaFormat === null) {
+    return {
+      kind: "usage",
+      message: "Flag '--format' must be one of: text, json",
+      details: { flag: "--format", allowedValues: "text, json" },
+    };
+  }
+  const format = metaFormat;
   const jsonFlag = argv.includes("--json");
   const firstCommand = typeof firstRaw === "string" ? VERB_TO_COMMAND[firstRaw] : undefined;
   // `--format` is scoped to `--help`/`--version` metadata and to export's

@@ -330,6 +330,8 @@ describe("cli contract — surface", () => {
       kind: "help",
       format: "text",
     });
+    expect(parseArgs(["--help", "--format", "yaml"]).kind).toBe("usage");
+    expect(parseArgs(["--version", "--format", "yaml"]).kind).toBe("usage");
   });
 
   test("meta --format json remains a version envelope", async () => {
