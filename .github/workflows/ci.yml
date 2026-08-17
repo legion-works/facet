@@ -281,6 +281,7 @@ jobs:
           - egress.test.ts
           - gallery-contrast.test.ts
           - gallery-daisyui-library.test.ts
+          - gallery-export.test.ts
           - gallery-html-scroll.test.ts
           - gallery-interactive-tsx.test.ts
           - gallery-markdown-mermaid-labels.test.ts
@@ -289,6 +290,7 @@ jobs:
           - gallery-geometry.test.ts
           - gallery-mermaid-natural.test.ts
           - gallery-static-tsx.test.ts
+          - gallery-title-favicon.test.ts
           - gallery-tsx-styles.test.ts
           - gallery-tsx-styles-templates.test.ts
           - gallery-viewport-geometry.test.ts

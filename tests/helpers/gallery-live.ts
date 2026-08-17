@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 import { FacetClient, publishArtifact } from "../../src/cli/client";
 import type { ArtifactType } from "../../src/shared/contracts/artifact-types";
@@ -393,4 +393,100 @@ export async function captureGalleryScreenshot(target: GalleryTarget, path: stri
   }
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, Buffer.from(shot.data, "base64"));
+}
+
+export interface GalleryShellState {
+  readonly status: string;
+  readonly revision: string;
+  readonly title: string;
+  readonly artifactTitle: string;
+  readonly faviconHref: string;
+}
+
+export async function settleTopDocument(
+  target: GalleryTarget,
+  expectedRevisionSha?: string,
+): Promise<GalleryShellState> {
+  const evaluation = (await target.session.send("Runtime.evaluate", {
+    returnByValue: true,
+    awaitPromise: true,
+    expression: `new Promise((resolve) => {
+      const deadline = Date.now() + 7000;
+      const inspect = () => {
+        const status = document.querySelector('#facet-status-line')?.textContent ?? '';
+        const revision = document.querySelector('#facet-revision')?.textContent ?? '';
+        const ready = status === 'displayed' &&
+          (${expectedRevisionSha === undefined ? "true" : `revision.includes(${JSON.stringify(expectedRevisionSha.slice(0, 12))})`});
+        if (ready || status === 'error' || Date.now() >= deadline) {
+          resolve({
+            status,
+            revision,
+            title: document.title,
+            artifactTitle: document.querySelector('#facet-artifact-title')?.textContent ?? '',
+            faviconHref: document.querySelector('#facet-favicon')?.getAttribute('href') ?? '',
+          });
+          return;
+        }
+        setTimeout(inspect, 25);
+      };
+      inspect();
+    })`,
+  })) as { result?: { value?: GalleryShellState } };
+  if (evaluation.result?.value === undefined) throw new Error("gallery top document never settled");
+  return evaluation.result.value;
+}
+
+export async function configureBrowserDownloads(
+  target: GalleryTarget,
+  downloadPath: string,
+): Promise<void> {
+  await target.session.send("Browser.setDownloadBehavior", {
+    behavior: "allowAndName",
+    downloadPath,
+    eventsEnabled: true,
+  });
+}
+
+export async function waitForBrowserDownload(
+  target: GalleryTarget,
+  downloadPath: string,
+  click: () => Promise<void>,
+): Promise<{ readonly guid: string; readonly suggestedFilename: string; readonly path: string }> {
+  let begun: { guid: string; suggestedFilename: string } | undefined;
+  let resolveCompleted: ((value: { guid: string; suggestedFilename: string }) => void) | undefined;
+  let rejectCompleted: ((error: Error) => void) | undefined;
+  const completed = new Promise<{ guid: string; suggestedFilename: string }>((resolve, reject) => {
+    resolveCompleted = resolve;
+    rejectCompleted = reject;
+  });
+  const onBegin = (event: unknown): void => {
+    const value = event as { guid?: string; suggestedFilename?: string };
+    if (typeof value.guid === "string" && typeof value.suggestedFilename === "string") {
+      begun = { guid: value.guid, suggestedFilename: value.suggestedFilename };
+    }
+  };
+  const onProgress = (event: unknown): void => {
+    const value = event as { guid?: string; state?: string };
+    const current = begun;
+    if (current !== undefined && value.guid === current.guid && value.state === "completed")
+      resolveCompleted?.(current);
+  };
+  target.session.on("Browser.downloadWillBegin", onBegin);
+  target.session.on("Browser.downloadProgress", onProgress);
+  try {
+    await click();
+    const result = await Promise.race([
+      completed,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("browser download timed out")), 10_000),
+      ),
+    ]);
+    return { ...result, path: join(downloadPath, result.guid) };
+  } catch (error) {
+    rejectCompleted?.(error instanceof Error ? error : new Error(String(error)));
+    throw error;
+  } finally {
+    target.session.off("Browser.downloadWillBegin", onBegin);
+    target.session.off("Browser.downloadProgress", onProgress);
+  }
 }
