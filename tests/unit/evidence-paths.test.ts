@@ -14,9 +14,16 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 import { buildServiceSpawnArgs } from "../../src/cli/spawn-service";
-import { resolveEvidenceReadRoots, type EvidenceFs } from "../../src/shared/config/evidence-read";
+import {
+  directoryHasEvidence,
+  evidenceBytesAcross,
+  resolveEvidenceReadRoots,
+  type EvidenceFs,
+} from "../../src/shared/config/evidence-read";
 import { computeFacetPaths, legacyXdgEvidenceRoot } from "../../src/shared/config/paths";
 
 const XDG_ENV = {
@@ -110,5 +117,45 @@ describe("resolveEvidenceReadRoots — tolerant read fallback", () => {
   test("legacy equals canonical → no duplicate", () => {
     const roots = resolveEvidenceReadRoots("/same/evidence", "/same/evidence");
     expect(roots.map((r) => r.path)).toEqual(["/same/evidence"]);
+  });
+});
+
+describe("directoryHasEvidence — tolerant filesystem reads", () => {
+  test("treats missing, empty, zero-byte, and non-file paths as absent evidence", () => {
+    const root = mkdtempSync(`${tmpdir()}/facet-evidence-read-`);
+    try {
+      const empty = `${root}/empty`;
+      const zero = `${root}/zero.bin`;
+      const nonFile = `${root}/non-file`;
+      mkdirSync(empty);
+      writeFileSync(zero, "");
+      mkdirSync(nonFile);
+      expect(directoryHasEvidence(`${root}/missing`)).toBe(false);
+      expect(directoryHasEvidence(empty)).toBe(false);
+      expect(directoryHasEvidence(zero)).toBe(false);
+      expect(directoryHasEvidence(nonFile)).toBe(false);
+      expect(directoryHasEvidence("/dev/null")).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("finds nested non-empty evidence and counts bytes across missing roots", () => {
+    const root = mkdtempSync(`${tmpdir()}/facet-evidence-read-`);
+    try {
+      const nested = `${root}/nested/deeper`;
+      mkdirSync(nested, { recursive: true });
+      writeFileSync(`${nested}/one.bin`, "123");
+      writeFileSync(`${nested}/two.bin`, "4567");
+      expect(directoryHasEvidence(root)).toBe(true);
+      expect(
+        evidenceBytesAcross([
+          { path: root, legacy: false },
+          { path: `${root}/gone`, legacy: true },
+        ]),
+      ).toBe(7);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

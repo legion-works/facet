@@ -117,4 +117,40 @@ describe("TSX renderer", () => {
       "module evaluation failed",
     );
   });
+
+  test("interactive TSX reports browser errors once through the renderer marker", async () => {
+    const container = freshContainer();
+    (tsx as TsxRendererWithTestRuntime).setTsxModuleRuntimeForTests?.({
+      createObjectURL: () => "blob:facet-events-module",
+      importModule: async () => {},
+      revokeObjectURL: () => {},
+    });
+
+    await tsx.renderTsx(
+      { container, nonce: "n-events" },
+      new TextEncoder().encode("export default {};"),
+      "svg",
+      "interactive",
+    );
+    shimWindow.dispatchEvent(new shimWindow.Event("error"));
+    shimWindow.dispatchEvent(new shimWindow.Event("unhandledrejection"));
+
+    expect(container.querySelectorAll("[data-facet-error='true']")).toHaveLength(1);
+    expect(container.querySelector("[data-facet-error='true']")?.textContent).toBe(
+      "interactive TSX runtime error",
+    );
+  });
+
+  test("interactive TSX falls back to the browser module runtime when no test runtime is injected", async () => {
+    const container = freshContainer();
+    (tsx as TsxRendererWithTestRuntime).setTsxModuleRuntimeForTests?.(undefined);
+
+    await tsx.renderTsx(
+      { container, nonce: "n-browser-runtime" },
+      new TextEncoder().encode("export default {};"),
+      "svg",
+      "interactive",
+    );
+    expect(container.querySelector("#facet-tsx-mount")).not.toBeNull();
+  });
 });

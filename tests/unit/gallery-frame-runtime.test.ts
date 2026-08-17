@@ -357,3 +357,206 @@ test("applyViewState scales a viewBox-less SVG artifact root through the CSS-fal
   expect(root.style.transform).toBe("scale(2)");
   expect(root.style.transformOrigin).toBe("top left");
 });
+
+function eventWith<T extends Event>(
+  shim: ReturnType<typeof parseHTML>,
+  type: string,
+  values: Record<string, unknown>,
+): T {
+  const event = new shim.window.Event(type, { bubbles: true, cancelable: true }) as T;
+  for (const [key, value] of Object.entries(values)) Object.defineProperty(event, key, { value });
+  return event;
+}
+
+function prepareFrame(shim: ReturnType<typeof parseHTML>): HTMLElement {
+  Object.defineProperty(shim.document, "implementation", { value: fakeImpl, configurable: true });
+  globals["document"] = shim.document;
+  globals["window"] = shim.window;
+  return shim.document.getElementById("artifact")!;
+}
+
+test("panzoom wheel zooms around the cursor and pointer drag updates pan state", async () => {
+  const shim = parseHTML("<!DOCTYPE html><html><body><main id='artifact'></main></body></html>");
+  const container = prepareFrame(shim);
+  Object.defineProperty(container, "getBoundingClientRect", {
+    value: () => ({ left: 10, top: 20, width: 400, height: 300 }),
+  });
+  Object.defineProperty(container, "setPointerCapture", { value: () => {} });
+  Object.defineProperty(container, "releasePointerCapture", { value: () => {} });
+  installGalleryFrameApi(createRendererRegistry([["svg", async () => {}]]));
+  const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
+  const result = await api.render({
+    artifactType: "svg",
+    renderer: "svg",
+    bytes: new Uint8Array([1]),
+  });
+
+  const wheel = eventWith<WheelEvent>(shim, "wheel", {
+    deltaY: 100,
+    clientX: 110,
+    clientY: 120,
+  });
+  container.dispatchEvent(wheel);
+  expect(wheel.defaultPrevented).toBe(true);
+  expect(result.readViewState().zoom).toBeCloseTo(Math.exp(-0.1));
+  expect(result.readViewState().panX).toBeCloseTo(100 * (1 - Math.exp(-0.1)));
+
+  container.dispatchEvent(
+    eventWith<PointerEvent>(shim, "pointerdown", { clientX: 10, clientY: 20, pointerId: 4 }),
+  );
+  container.dispatchEvent(
+    eventWith<PointerEvent>(shim, "pointermove", { clientX: 25, clientY: 35, pointerId: 4 }),
+  );
+  expect(result.readViewState().panX).toBeCloseTo(100 * (1 - Math.exp(-0.1)) + 15);
+  expect(result.readViewState().panY).toBeCloseTo(100 * (1 - Math.exp(-0.1)) + 15);
+  container.dispatchEvent(eventWith<PointerEvent>(shim, "pointerup", { pointerId: 4 }));
+  expect(container.style.cursor).toBe("auto");
+});
+
+test("native diagram regions require activation before wheel and drag gestures engage", async () => {
+  const shim = parseHTML("<!DOCTYPE html><html><body><main id='artifact'></main></body></html>");
+  const container = prepareFrame(shim);
+  installGalleryFrameApi(
+    createRendererRegistry([
+      [
+        "markdown",
+        async (ctx) => {
+          const region = ctx.container.ownerDocument.createElement("section");
+          region.setAttribute("data-facet-diagram-region", "true");
+          const svg = ctx.container.ownerDocument.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg",
+          );
+          Object.defineProperty(svg, "getBoundingClientRect", {
+            value: () => ({ width: 200, height: 100 }),
+          });
+          Object.defineProperty(region, "setPointerCapture", { value: () => {} });
+          Object.defineProperty(region, "releasePointerCapture", { value: () => {} });
+          Object.defineProperty(region, "hasPointerCapture", { value: () => false });
+          region.appendChild(svg);
+          ctx.container.appendChild(region);
+        },
+      ],
+    ]),
+  );
+  const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
+  await api.render({ artifactType: "markdown", renderer: "svg", bytes: new Uint8Array([1]) });
+  const region = container.firstElementChild as HTMLElement;
+  const svg = region.firstElementChild as SVGElement;
+  region.scrollLeft = 0;
+  region.scrollTop = 0;
+  const passthrough = eventWith<WheelEvent>(shim, "wheel", {
+    deltaY: 100,
+    clientX: 20,
+    clientY: 20,
+  });
+  region.dispatchEvent(passthrough);
+  expect(passthrough.defaultPrevented).toBe(false);
+
+  region.dispatchEvent(eventWith<PointerEvent>(shim, "pointerenter", {}));
+  region.dispatchEvent(
+    eventWith<PointerEvent>(shim, "pointerdown", { clientX: 10, clientY: 20, pointerId: 2 }),
+  );
+  expect(region.getAttribute("data-facet-diagram-engaged")).toBe("true");
+  region.dispatchEvent(
+    eventWith<PointerEvent>(shim, "pointermove", { clientX: 30, clientY: 35, pointerId: 2 }),
+  );
+  expect(region.scrollLeft).toBe(0);
+  expect(region.scrollTop).toBe(0);
+  const engagedWheel = eventWith<WheelEvent>(shim, "wheel", {
+    deltaY: -100,
+    clientX: 40,
+    clientY: 50,
+  });
+  region.dispatchEvent(engagedWheel);
+  expect(engagedWheel.defaultPrevented).toBe(true);
+  expect(svg.style.width).toBe("222px");
+});
+
+test("outside click and Escape dismiss an engaged diagram region, while reset clears zoom and scroll", async () => {
+  const shim = parseHTML(
+    "<!DOCTYPE html><html><body><main id='artifact'><aside></aside></main></body></html>",
+  );
+  const container = prepareFrame(shim);
+  installGalleryFrameApi(
+    createRendererRegistry([
+      [
+        "markdown",
+        async (ctx) => {
+          const region = ctx.container.ownerDocument.createElement("section");
+          region.setAttribute("data-facet-diagram-region", "true");
+          const svg = ctx.container.ownerDocument.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg",
+          );
+          Object.defineProperty(svg, "getBoundingClientRect", {
+            value: () => ({ width: 100, height: 80 }),
+          });
+          Object.defineProperty(region, "setPointerCapture", { value: () => {} });
+          Object.defineProperty(region, "releasePointerCapture", { value: () => {} });
+          Object.defineProperty(region, "hasPointerCapture", { value: () => false });
+          region.appendChild(svg);
+          ctx.container.replaceChildren(region);
+        },
+      ],
+    ]),
+  );
+  const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
+  const result = await api.render({
+    artifactType: "markdown",
+    renderer: "svg",
+    bytes: new Uint8Array([1]),
+  });
+  const region = container.firstElementChild as HTMLElement;
+  region.dispatchEvent(eventWith<PointerEvent>(shim, "pointerenter", {}));
+  region.dispatchEvent(
+    eventWith<PointerEvent>(shim, "pointerdown", { clientX: 0, clientY: 0, pointerId: 1 }),
+  );
+  expect(region.getAttribute("data-facet-diagram-engaged")).toBe("true");
+  shim.document.dispatchEvent(eventWith<PointerEvent>(shim, "pointerdown", { target: container }));
+  expect(region.getAttribute("data-facet-diagram-engaged")).toBeNull();
+
+  region.dispatchEvent(eventWith<PointerEvent>(shim, "pointerenter", {}));
+  region.dispatchEvent(
+    eventWith<PointerEvent>(shim, "pointerdown", { clientX: 0, clientY: 0, pointerId: 1 }),
+  );
+  const escape = eventWith<KeyboardEvent>(shim, "keydown", { key: "Escape", shiftKey: false });
+  shim.document.dispatchEvent(escape);
+  expect(escape.defaultPrevented).toBe(true);
+  expect(region.getAttribute("data-facet-diagram-engaged")).toBeNull();
+  result.resetDiagramRegions();
+  expect((region.firstElementChild as SVGElement).style.width).toBe("100px");
+  expect(region.scrollLeft).toBe(0);
+});
+
+test("applyViewState sizes a parsed SVG viewBox and clamps negative scroll offsets", async () => {
+  const shim = parseHTML("<!DOCTYPE html><html><body><main id='artifact'></main></body></html>");
+  const container = prepareFrame(shim);
+  installGalleryFrameApi(
+    createRendererRegistry([
+      [
+        "svg",
+        async (ctx) => {
+          const svg = ctx.container.ownerDocument.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg",
+          );
+          svg.setAttribute("viewBox", "0 0 80 40");
+          ctx.container.appendChild(svg);
+        },
+      ],
+    ]),
+  );
+  const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
+  const result = await api.render({
+    artifactType: "svg",
+    renderer: "svg",
+    bytes: new Uint8Array([1]),
+  });
+  result.applyViewState({ zoom: 1.5, panX: 30, panY: -10 });
+  const svg = container.firstElementChild as SVGElement;
+  expect(svg.style.width).toBe("120px");
+  expect(svg.style.maxWidth).toBe("none");
+  expect(container.scrollLeft).toBe(0);
+  expect(container.scrollTop).toBe(10);
+});
