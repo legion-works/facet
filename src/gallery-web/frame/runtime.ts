@@ -391,8 +391,8 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   const api: GalleryFrameApi = {
     async render(payload: FrameRenderPayload): Promise<RenderResult> {
       if (rendered) throw new FacetRenderError("frame already rendered", "invalid_request");
-      rendered = true;
       const validated = validatePayload(payload);
+      rendered = true;
       try {
         await dispatchRender(registry, { container }, validated);
       } catch (error) {

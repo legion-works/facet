@@ -79,6 +79,14 @@ test("installs a one-shot direct frame API that resolves renderer observations",
   const api = Reflect.get(shimWindow, "__facetFrame") as GalleryFrameApi | undefined;
   expect(api).toBeDefined();
 
+  await expect(
+    api!.render({
+      artifactType: "markdown",
+      renderer: "missing" as unknown as "svg",
+      bytes: new Uint8Array([1]),
+    }),
+  ).rejects.toThrow(/missing a supported renderer/);
+
   const result = await api!.render({
     artifactType: "markdown",
     renderer: "svg",
