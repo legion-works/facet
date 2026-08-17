@@ -42,6 +42,15 @@ import {
 import type { FrameRenderPayload, GestureMode } from "./frame/frame-payload";
 import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 import { faviconTint, renderFavicon } from "./favicon";
+import {
+  buildGallerySidecar,
+  commitGalleryExportState,
+  downloadBlob,
+  renderFilename,
+  sidecarFilename,
+  sourceFilename,
+  type GalleryExportState,
+} from "./export";
 
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
@@ -593,6 +602,10 @@ export interface RevisionFetchResult {
   readonly verdict?: Verdict | null;
 }
 
+interface GalleryEvidenceResponse {
+  readonly bytes: Uint8Array | null;
+}
+
 export interface SwapToRevisionDeps {
   readonly dom: ShellDom;
   readonly host: FrameHost;
@@ -701,6 +714,28 @@ async function fetchGallerySource(
     ...(payload.execution === undefined ? {} : { execution: payload.execution }),
     verdict: payload.verdict ?? null,
   };
+}
+
+async function fetchGalleryEvidence(
+  baseUrl: string,
+  handoff: BootstrapHandoff,
+  revisionSha: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<GalleryEvidenceResponse> {
+  const url = new URL(`${baseUrl.replace(/\/$/, "")}/api/v1/gallery/evidence`);
+  assertLoopbackHostname(url.hostname);
+  url.searchParams.set("revisionSha", revisionSha);
+  const response = await fetchImpl(url, {
+    headers: {
+      authorization: handoff.authorization,
+      "x-gallery-lease": handoff.lease.leaseId,
+      "x-gallery-artifact": handoff.artifactId,
+    },
+  });
+  if (isLeaseUnauthorized(response)) throw new GallerySessionExpiredError("Gallery lease expired");
+  if (response.status === 404) return { bytes: null };
+  if (!response.ok) throw new Error(`Gallery evidence fetch failed (${response.status})`);
+  return { bytes: new Uint8Array(await response.arrayBuffer()) };
 }
 
 function setGalleryTitle(document: Document, artifactTitle: string | null): void {
@@ -981,6 +1016,10 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   if (bootstrap.outcome === "expired") {
     setGalleryFavicon(document, "expired");
     expired = true;
+    for (const id of ["facet-export-source", "facet-export-render", "facet-export-sidecar"]) {
+      const item = document.getElementById(id) as HTMLButtonElement | null;
+      if (item !== null) item.disabled = true;
+    }
     renderSessionExpired(
       document,
       (message) => setGalleryError(document, message),
@@ -989,6 +1028,73 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     return;
   }
   const handoff = bootstrap.session;
+  let exportState: GalleryExportState | null = null;
+  const exportToggle = document.getElementById("facet-export-toggle");
+  const exportMenu = document.getElementById("facet-export-menu");
+  const exportSource = document.getElementById("facet-export-source") as HTMLButtonElement | null;
+  const exportRender = document.getElementById("facet-export-render") as HTMLButtonElement | null;
+  const exportSidecar = document.getElementById("facet-export-sidecar") as HTMLButtonElement | null;
+  const syncExportMenu = (): void => {
+    const terminal = expired;
+    if (exportSource !== null) exportSource.disabled = terminal || exportState === null;
+    if (exportRender !== null) {
+      const available = exportState?.renderBytes !== null && exportState?.renderBytes !== undefined;
+      exportRender.disabled = terminal || !available;
+      exportRender.title = available ? "" : "no stored render";
+    }
+    if (exportSidecar !== null) {
+      const available = exportState?.verdict !== null && exportState?.verdict !== undefined;
+      exportSidecar.disabled = terminal || !available;
+      exportSidecar.title = available ? "" : "no stored verdict";
+    }
+  };
+  const setExportState = (next: GalleryExportState): void => {
+    exportState = commitGalleryExportState(exportState, next, { expired });
+    syncExportMenu();
+  };
+  exportToggle?.addEventListener("click", () => {
+    if (expired || exportMenu === null) return;
+    exportMenu.hidden = !exportMenu.hidden;
+    exportToggle.setAttribute("aria-expanded", exportMenu.hidden ? "false" : "true");
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || exportMenu === null || exportMenu.hidden) return;
+    exportMenu.hidden = true;
+    exportToggle?.setAttribute("aria-expanded", "false");
+  });
+  document.addEventListener("click", (event) => {
+    if (exportMenu === null || exportMenu.hidden) return;
+    const target = event.target as Node | null;
+    const wrapper = document.getElementById("facet-export");
+    if (wrapper !== null && target !== null && wrapper.contains(target)) return;
+    exportMenu.hidden = true;
+    exportToggle?.setAttribute("aria-expanded", "false");
+  });
+  exportSource?.addEventListener("click", () => {
+    if (exportState === null) return;
+    downloadBlob(
+      document,
+      sourceFilename(exportState),
+      exportState.sourceBytes,
+      "application/octet-stream",
+    );
+  });
+  exportRender?.addEventListener("click", () => {
+    if (exportState?.renderBytes === null || exportState?.renderBytes === undefined) return;
+    downloadBlob(document, renderFilename(exportState), exportState.renderBytes, "image/png");
+  });
+  exportSidecar?.addEventListener("click", () => {
+    if (exportState === null) return;
+    const sidecar = buildGallerySidecar(exportState, new Date().toISOString());
+    if (sidecar === null) return;
+    downloadBlob(
+      document,
+      sidecarFilename(exportState),
+      `${JSON.stringify(sidecar, null, 2)}\n`,
+      "application/json",
+    );
+  });
+  syncExportMenu();
   const title = document.getElementById("facet-title");
   const revisionLabel = document.getElementById("facet-revision");
   if (title !== null) title.textContent = "facet";
@@ -1057,6 +1163,33 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   if (initialResult.observed.errorCount !== 0) {
     throw new Error("Gallery artifact failed to render");
   }
+  let initialEvidence: GalleryEvidenceResponse;
+  try {
+    initialEvidence = await fetchGalleryEvidence(baseUrl, handoff, source.revisionSha, fetch);
+  } catch (error) {
+    if (!(error instanceof GallerySessionExpiredError)) throw error;
+    setGalleryFavicon(document, "expired");
+    expired = true;
+    syncExportMenu();
+    clearSession(window.sessionStorage);
+    renderSessionExpired(
+      document,
+      (message) => setGalleryError(document, message),
+      (status) => setGalleryStatus(document, status),
+    );
+    return;
+  }
+  setExportState({
+    artifactId: source.artifactId,
+    revisionSha: source.revisionSha,
+    slug: source.slug,
+    title: source.title,
+    artifactType: source.artifactType as GalleryExportState["artifactType"],
+    renderer: source.renderer as GalleryExportState["renderer"],
+    sourceBytes: source.bytes,
+    verdict: source.verdict ?? null,
+    renderBytes: initialEvidence.bytes,
+  });
   host.setVisibility(current.frameId, true);
   updateGalleryTitle(source.title);
   updateGalleryFavicon(source.verdict?.status ?? "unverified");
@@ -1077,7 +1210,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       event,
       current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
     )
-      .then(({ frame, result, revision }) => {
+      .then(async ({ frame, result, revision }) => {
         if (!result.failedNewFrameReady) updateGalleryTitle(revision.title);
         updateGalleryFavicon(
           result.failedNewFrameReady ? "unverified" : (revision.verdict?.status ?? "unverified"),
@@ -1087,6 +1220,24 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         syncPanZoomToggle();
         syncZoomButtons();
         if (!result.failedNewFrameReady) {
+          const evidence = await fetchGalleryEvidence(
+            baseUrl,
+            handoff,
+            revision.revisionSha,
+            fetch,
+          );
+          if (expired) return;
+          setExportState({
+            artifactId: revision.artifactId,
+            revisionSha: revision.revisionSha,
+            slug: revision.slug,
+            title: revision.title,
+            artifactType: revision.artifactType as GalleryExportState["artifactType"],
+            renderer: revision.renderer as GalleryExportState["renderer"],
+            sourceBytes: revision.bytes,
+            verdict: revision.verdict ?? null,
+            renderBytes: evidence.bytes,
+          });
           if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
           updateGalleryVerdict(revision.verdict ?? null);
           updateGalleryStatus("displayed");
@@ -1112,6 +1263,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     if (expired) return;
     setGalleryFavicon(document, "expired");
     expired = true;
+    syncExportMenu();
     swaps.close();
     clearSession(window.sessionStorage);
     renderSessionExpired(

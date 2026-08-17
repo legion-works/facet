@@ -183,6 +183,7 @@ interface GalleryHarness {
 interface RuntimeOptions {
   readonly bootstrapStatus?: number;
   readonly sourceStatus?: number;
+  readonly evidenceStatus?: number;
 }
 
 function createRuntime(
@@ -213,6 +214,12 @@ function createRuntime(
     "facet-zoom-out",
     "facet-zoom-reset",
     "facet-panzoom-toggle",
+    "facet-export",
+    "facet-export-toggle",
+    "facet-export-menu",
+    "facet-export-source",
+    "facet-export-render",
+    "facet-export-sidecar",
     "facet-fullscreen",
   ])
     elements.set(id, id === "facet-favicon" ? new FakeLinkElement() : new FakeElement());
@@ -304,6 +311,16 @@ function createRuntime(
           revisionSha === "a".repeat(64) || verdict === null
             ? verdict
             : { ...verdict, status: verdict.status === "ok" ? "error" : "ok" },
+      });
+    }
+    if (url.includes("/evidence")) {
+      if (options.evidenceStatus !== undefined)
+        return new Response(null, { status: options.evidenceStatus });
+      const revisionSha = new URL(url).searchParams.get("revisionSha") ?? "a".repeat(64);
+      if (revisionSha === "a".repeat(64)) return new Response(null, { status: 404 });
+      return new Response(new Uint8Array([137, 80, 78, 71]), {
+        status: 200,
+        headers: { "content-type": "image/png" },
       });
     }
     if (url.endsWith("/stream")) return new Response(stream);
@@ -540,6 +557,31 @@ describe("gallery shell startup", () => {
     expect(harness.requests.some(({ url }) => url.endsWith("/api/v1/gallery/release"))).toBe(false);
   });
 
+  test("keeps render disabled without stored evidence and enables it after a completed revision swap", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    const render = harness.elements.get("facet-export-render")! as unknown as {
+      disabled?: boolean;
+      title?: string;
+    };
+    const sidecar = harness.elements.get("facet-export-sidecar")! as unknown as {
+      disabled?: boolean;
+      title?: string;
+    };
+    expect(render.disabled).toBe(true);
+    expect(render.title).toBe("no stored render");
+    expect(sidecar.disabled).toBe(true);
+    expect(sidecar.title).toBe("no stored verdict");
+
+    // Reuse the current harness's stream and source fixture; the later source
+    // response remains unverified, while evidence returns PNG bytes.
+    harness.pendingFrameConfigs.push({ viewMode: "native", observed: harness.defaultObserved });
+    harness.emitCommitted({ revisionSha: "b2".padEnd(64, "b"), revisionNumber: 2 });
+    await waitFor(() => render.disabled === false);
+    expect(render.title).toBe("");
+    expect(sidecar.disabled).toBe(true);
+  });
+
   test("sets idle grey before asynchronous bootstrap and tints the completed verdict", async () => {
     const harness = createRuntime("native", {
       status: "ok",
@@ -571,6 +613,12 @@ describe("gallery shell startup", () => {
     const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
     expect(favicon.href).toContain("#77809a");
     expect(favicon.hrefWrites).toBe(2);
+    expect(
+      (harness.elements.get("facet-export-source") as unknown as { disabled?: boolean }).disabled,
+    ).toBe(true);
+    expect(
+      (harness.elements.get("facet-export-sidecar") as unknown as { disabled?: boolean }).disabled,
+    ).toBe(true);
   });
 
   test("sets expired grey when the initial source fetch is unauthorized", async () => {
@@ -580,6 +628,15 @@ describe("gallery shell startup", () => {
     const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
     expect(favicon.href).toContain("#77809a");
     expect(favicon.hrefWrites).toBe(2);
+  });
+
+  test("sets expired state when the initial evidence fetch is unauthorized", async () => {
+    const harness = createRuntime("native", null, undefined, { evidenceStatus: 401 });
+    await startGallery(harness.runtime);
+    expect(harness.elements.get("facet-status-line")?.textContent).toBe("session expired");
+    expect(
+      (harness.elements.get("facet-export-render") as unknown as { disabled?: boolean }).disabled,
+    ).toBe(true);
   });
 
   test("a stream:close with reason lease_expired renders the expired state and clears the session", async () => {

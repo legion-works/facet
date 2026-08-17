@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -52,6 +60,28 @@ describe("GET /gallery", () => {
     restoreGalleryDir();
     if (envDir !== undefined) rmSync(envDir, { recursive: true, force: true });
     envDir = undefined;
+  });
+
+  test("evidence route reuses the shared reader instead of resolving render runs directly", () => {
+    const source = readFileSync(new URL("../../src/service/router.ts", import.meta.url), "utf8");
+    const start = source.indexOf(
+      'if (path === ROUTE_EVIDENCE && req.method.toUpperCase() === "GET")',
+    );
+    const end = source.indexOf("if (path === ROUTE_API)", start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const route = source.slice(start, end);
+    expect(route).toContain("readStoredRenderEvidence");
+    for (const forbidden of [
+      "listRenderRuns",
+      "resolveEvidencePath",
+      "verdictFromStoredRun",
+      "tier0Runner",
+      "dispatch(",
+      "renderers/",
+    ]) {
+      expect(route).not.toContain(forbidden);
+    }
   });
 
   test("builds the real shell on demand and serves its referenced asset", async () => {

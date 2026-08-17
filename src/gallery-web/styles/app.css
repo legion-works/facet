@@ -359,6 +359,34 @@ body {
   border-color: var(--facet-cyan);
 }
 
+.facet-export {
+  position: relative;
+}
+
+#facet-export-menu {
+  position: absolute;
+  right: 0;
+  bottom: 36px;
+  z-index: 6;
+  display: grid;
+  gap: 4px;
+  min-width: 120px;
+  padding: 6px;
+  border: 1px solid var(--facet-rule);
+  border-radius: 6px;
+  background: var(--facet-navy-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+#facet-export-menu[hidden] {
+  display: none;
+}
+
+#facet-export-menu button {
+  width: 100%;
+  justify-content: start;
+}
+
 /* Display-layer failure chip — an event, not a verdict, so it takes
    the outline treatment (only `tampered` ever fills). */
 #facet-error {
