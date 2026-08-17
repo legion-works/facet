@@ -1038,6 +1038,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
     )
       .then(({ frame, result, verdict }) => {
+        if (expired) return;
         current = frame;
         syncPanZoomToggle();
         syncZoomButtons();
@@ -1053,6 +1054,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         }
       })
       .catch((error: unknown) => {
+        if (expired) return;
         if (error instanceof GallerySessionExpiredError) {
           expireSession();
           return;

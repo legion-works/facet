@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -208,18 +208,23 @@ describe("Must #4: lease expiry fires onExpireNotify", () => {
 });
 
 describe("Must #5: atomic install-token create (no existsSync → write race)", () => {
-  test("two concurrent first-start create the same on-disk token (atomic write)", () => {
+  test("a loser re-reads the winner after a forced first-write collision", () => {
     const tokenPath = join(scratchDir, "install.token");
-    const a = createInstallTokenStore({ tokenPath });
     const b = createInstallTokenStore({ tokenPath });
+    let tokenB: string | null = null;
+    let interleaved = false;
+    const a = createInstallTokenStore({
+      tokenPath,
+      beforeFirstWrite: () => {
+        interleaved = true;
+        tokenB = b.read();
+      },
+    });
     const tokenA = a.read();
-    const tokenB = b.read();
-    // Both stores must see the SAME on-disk value (no fabricated
-    // diverging token cached in memory).
-    expect(tokenA).toBe(tokenB);
-    // The on-disk file must match what both stores returned.
-    const disk = createInstallTokenStore({ tokenPath });
-    expect(disk.read()).toBe(tokenA);
+    expect(interleaved).toBe(true);
+    expect(tokenB).not.toBeNull();
+    expect(tokenA).toBe(tokenB!);
+    expect(readFileSync(tokenPath, "utf8").trim()).toBe(tokenA);
   });
 });
 

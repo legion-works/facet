@@ -22,6 +22,8 @@ import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
 export interface InstallTokenStoreOptions {
   readonly tokenPath: string;
+  /** Test seam for forcing the losing first-write path without timing races. */
+  readonly beforeFirstWrite?: () => void;
 }
 
 export interface InstallTokenStore {
@@ -85,6 +87,7 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
     ensureOwnerOnlyDirectory(dirname(options.tokenPath));
     const fresh = generateInstallToken();
     try {
+      options.beforeFirstWrite?.();
       writeFileSync(options.tokenPath, fresh, {
         mode: 0o600,
         flag: emptyExistingFile ? "w" : "wx",

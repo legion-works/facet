@@ -687,4 +687,33 @@ describe("gallery shell startup", () => {
     const payload = harness.frames[2]!.receivedPayloads[0] as { bytes: Uint8Array };
     expect(new TextDecoder().decode(payload.bytes)).toContain(newestSha.slice(0, 8));
   });
+
+  test("terminal expiry blocks an in-flight swap completion from replacing the expired screen", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    let releaseRender: (() => void) | null = null;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseRender = () => resolve(makeFakeRenderResult("native", harness.defaultObserved));
+        }),
+    });
+    const revisionSha = "c2".padEnd(64, "c");
+    harness.emitCommitted({ revisionSha, revisionNumber: 2 });
+    await waitFor(
+      () => harness.elements.get("facet-canvas")?.children.filter(isIframe).length === 2,
+    );
+    await waitFor(() => releaseRender !== null);
+    harness.emitStreamClose("lease_expired");
+    await waitFor(
+      () => harness.elements.get("facet-status-line")?.textContent === "session expired",
+    );
+    releaseRender!();
+    await waitFor(() => harness.frames[1]?.receivedPayloads.length === 1);
+
+    expect(harness.elements.get("facet-status-line")?.textContent).toBe("session expired");
+    expect(harness.elements.get("facet-revision")?.textContent).toBe("aaaaaaaaaaaa");
+  });
 });
