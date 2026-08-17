@@ -93,6 +93,7 @@ class FakeElement {
 class FakeLinkElement extends FakeElement {
   private currentHref = "";
   hrefWrites = 0;
+  readonly hrefHistory: string[] = [];
 
   get href(): string {
     return this.currentHref;
@@ -101,6 +102,7 @@ class FakeLinkElement extends FakeElement {
   set href(value: string) {
     this.currentHref = value;
     this.hrefWrites += 1;
+    this.hrefHistory.push(value);
   }
 }
 
@@ -818,7 +820,20 @@ describe("gallery shell startup", () => {
   });
 
   test("a failed new frame sets the favicon to unverified grey", async () => {
-    const harness = createRuntime();
+    const harness = createRuntime("native", {
+      status: "ok",
+      tier: 0,
+      revisionSha: "a".repeat(64),
+      artifactId: "artifact-1",
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+    });
     await startGallery(harness.runtime);
     harness.pendingFrameConfigs.push({
       viewMode: "native",
@@ -829,7 +844,14 @@ describe("gallery shell startup", () => {
 
     const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
     harness.emitCommitted({ revisionSha: "d2".padEnd(64, "d"), revisionNumber: 2 });
-    await waitFor(() => favicon.href.includes("#77809a"));
+    await waitFor(() => favicon.hrefWrites === 4);
+    expect(favicon.hrefHistory.map((href) => href.split(":").at(-1))).toEqual([
+      "#77809a",
+      "#86e1fc",
+      "#77809a",
+      "#77809a",
+    ]);
+    expect(favicon.hrefWrites).toBe(4);
     expect(favicon.href).toContain("#77809a");
   });
 
