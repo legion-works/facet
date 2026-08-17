@@ -317,7 +317,8 @@ function createRuntime(
       if (options.evidenceStatus !== undefined)
         return new Response(null, { status: options.evidenceStatus });
       const revisionSha = new URL(url).searchParams.get("revisionSha") ?? "a".repeat(64);
-      if (revisionSha === "a".repeat(64)) return new Response(null, { status: 404 });
+      if (revisionSha === "a".repeat(64))
+        return Response.json({ error: { code: "evidence_unavailable" } }, { status: 404 });
       return new Response(new Uint8Array([137, 80, 78, 71]), {
         status: 200,
         headers: { "content-type": "image/png" },

@@ -10,6 +10,7 @@ import {
   sourceFilename,
   type GalleryExportState,
 } from "../../src/gallery-web/export";
+import { fetchGalleryEvidence, fetchGallerySource } from "../../src/gallery-web/app";
 
 const revisionSha = "a".repeat(64);
 const observed = {
@@ -108,5 +109,53 @@ describe("gallery export helpers", () => {
       if (originalDocument === undefined) delete globals.document;
       else globals.document = originalDocument;
     }
+  });
+
+  test("keeps published TSX source bytes separate from compiled frame bytes", async () => {
+    const source = "export default function Showcase() { return <main>source</main>; }";
+    const renderBytes = new Uint8Array([1, 2, 3, 4]);
+    const handoff = {
+      authorization: "Bearer token",
+      artifactId: "artifact-1",
+      revisionSha,
+      lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
+      headers: new Headers(),
+    };
+    const result = await fetchGallerySource(
+      "http://127.0.0.1:43123",
+      handoff,
+      revisionSha,
+      (async () =>
+        Response.json({
+          artifactId: "artifact-1",
+          revisionSha,
+          slug: "tsx-showcase",
+          title: "TSX showcase",
+          artifactType: "tsx",
+          renderer: "svg",
+          source,
+          renderBytesBase64: btoa(String.fromCharCode(...renderBytes)),
+          verdict: null,
+        })) as unknown as typeof fetch,
+    );
+    expect(new TextDecoder().decode(result.sourceBytes)).toBe(source);
+    expect(result.bytes).toEqual(renderBytes);
+  });
+
+  test("rejects a 404 evidence response without the typed unavailable code", async () => {
+    const handoff = {
+      authorization: "Bearer token",
+      artifactId: "artifact-1",
+      revisionSha,
+      lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
+      headers: new Headers(),
+    };
+    await expect(
+      fetchGalleryEvidence("http://127.0.0.1:43123", handoff, revisionSha, (async () =>
+        Response.json(
+          { error: { code: "other_not_found" } },
+          { status: 404 },
+        )) as unknown as typeof fetch),
+    ).rejects.toThrow("Gallery evidence fetch failed (404)");
   });
 });

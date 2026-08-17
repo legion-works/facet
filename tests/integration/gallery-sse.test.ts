@@ -836,6 +836,7 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
             artifactType: "markdown",
             renderer: "svg",
             bytes,
+            sourceBytes: bytes,
           };
         },
         readyTimeoutMs: 2_000,
@@ -855,6 +856,7 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
       artifactType: "markdown",
       renderer: "svg",
       bytes,
+      sourceBytes: bytes,
     });
     expect(frame).not.toBe(current);
     expect(frames[1]!.receivedPayloads).toEqual([
