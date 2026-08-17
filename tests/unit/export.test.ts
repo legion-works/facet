@@ -18,10 +18,15 @@ import { ExportSidecarSchema } from "../../src/shared/contracts/commands/results
 import type { Verdict } from "../../src/shared/contracts/validation";
 import {
   buildExportRequest,
+  extensionForExport as cliExtensionForExport,
   resolveExportPaths,
   writeExportFiles,
 } from "../../src/cli/commands/export";
-import { buildExportSidecar, extensionForExport } from "../../src/shared/export";
+import {
+  buildExportSidecar,
+  extensionForExport as sharedExtensionForExport,
+} from "../../src/shared/export";
+import { buildExportSidecar as serviceBuildExportSidecar } from "../../src/service/export";
 
 const artifact: Artifact = {
   id: "artifact-1",
@@ -92,6 +97,11 @@ function validExportResultFor(
 }
 
 describe("export CLI helpers", () => {
+  test("CLI and service surfaces consume the shared export helpers", () => {
+    expect(cliExtensionForExport).toBe(sharedExtensionForExport);
+    expect(serviceBuildExportSidecar).toBe(buildExportSidecar);
+  });
+
   test("builds only service-owned request fields and defaults to source", () => {
     expect(
       buildExportRequest({ "artifact-id": "artifact-1", out: "out.md", force: true }),
@@ -121,13 +131,13 @@ describe("export CLI helpers", () => {
   });
 
   test("maps source artifact types and render to the CLI extension", () => {
-    expect(extensionForExport("source", "markdown")).toBe(".md");
-    expect(extensionForExport("source", "mermaid")).toBe(".md");
-    expect(extensionForExport("source", "svg")).toBe(".svg");
-    expect(extensionForExport("source", "chart")).toBe(".json");
-    expect(extensionForExport("source", "html")).toBe(".html");
-    expect(extensionForExport("source", "tsx")).toBe(".tsx");
-    expect(extensionForExport("render", "markdown")).toBe(".png");
+    expect(cliExtensionForExport("source", "markdown")).toBe(".md");
+    expect(cliExtensionForExport("source", "mermaid")).toBe(".md");
+    expect(cliExtensionForExport("source", "svg")).toBe(".svg");
+    expect(cliExtensionForExport("source", "chart")).toBe(".json");
+    expect(cliExtensionForExport("source", "html")).toBe(".html");
+    expect(cliExtensionForExport("source", "tsx")).toBe(".tsx");
+    expect(cliExtensionForExport("render", "markdown")).toBe(".png");
   });
 
   test("resolves default, explicit, absolute, and extensionless output paths", () => {

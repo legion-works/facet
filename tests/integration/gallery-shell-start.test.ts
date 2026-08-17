@@ -727,6 +727,7 @@ describe("gallery shell startup", () => {
     );
     releaseRender!();
     await waitFor(() => harness.frames[1]?.receivedPayloads.length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 25));
 
     expect(harness.elements.get("facet-status-line")?.textContent).toBe("session expired");
     expect(harness.elements.get("facet-revision")?.textContent).toBe("aaaaaaaaaaaa");

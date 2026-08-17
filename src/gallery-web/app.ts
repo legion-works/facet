@@ -1060,13 +1060,13 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
     )
       .then(({ frame, result, revision }) => {
+        if (!result.failedNewFrameReady) updateGalleryTitle(revision.title);
         if (expired) return;
         current = frame;
         syncPanZoomToggle();
         syncZoomButtons();
         if (!result.failedNewFrameReady) {
           if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
-          updateGalleryTitle(revision.title);
           updateGalleryVerdict(revision.verdict ?? null);
           updateGalleryStatus("displayed");
           updateSwapBar("complete");
