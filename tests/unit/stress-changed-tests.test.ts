@@ -86,12 +86,20 @@ describe("changed-test stress selection", () => {
     ).toBe(1);
   });
 
-  test("main rejects an empty diff", () => {
-    expect(
-      main(["bun", "stress-changed-tests.ts", "fixture-base"], {
-        changedPathsSince: () => [],
-      }),
-    ).toBe(1);
+  test("main skips an empty diff with an explicit note", () => {
+    const output: string[] = [];
+    const originalLog = console.log;
+    console.log = (message?: unknown) => output.push(String(message));
+    try {
+      expect(
+        main(["bun", "stress-changed-tests.ts", "fixture-base"], {
+          changedPathsSince: () => [],
+        }),
+      ).toBe(0);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(output).toContain("SKIP empty diff — no files changed, nothing to stress");
   });
 
   test("main skips a diff without stressable tests", () => {

@@ -70,6 +70,48 @@ function legacyRunsHaveNoCompiledPath(
   return runs.length > 0 && runs.every((run) => run.compiledPath === null);
 }
 
+function isStructuralViewBox(value: string): boolean {
+  const tokens = value.trim().split(/\s+/);
+  if (
+    tokens.length !== 4 ||
+    tokens.some((token) => token === "" || !Number.isFinite(Number(token)))
+  ) {
+    return false;
+  }
+  const [x = NaN, y = NaN, width = NaN, height = NaN] = tokens.map(Number);
+  return x === 0 && y === 0 && width > 0 && height > 0;
+}
+
+function expectConsumerBaseline(
+  type: string,
+  actual: ReturnType<typeof projectConsumer>,
+  expected: ReturnType<typeof projectConsumer>,
+): void {
+  const hostSensitiveViewBox = type === "markdown" || type === "mermaid";
+  if (!hostSensitiveViewBox) {
+    expect(actual, type).toEqual(expected);
+    return;
+  }
+
+  const { viewBoxes: actualViewBoxes, ...actualObserved } = actual.observed;
+  const { viewBoxes: expectedViewBoxes, ...expectedObserved } = expected.observed;
+  expect({ ...actual, observed: actualObserved }, type).toEqual({
+    ...expected,
+    observed: expectedObserved,
+  });
+  expect(actualViewBoxes ?? [], `${type} viewBoxes`).toHaveLength((expectedViewBoxes ?? []).length);
+  expect(
+    (actualViewBoxes ?? []).every(isStructuralViewBox),
+    `${type} viewBoxes are structural`,
+  ).toBe(true);
+}
+
+test("structural Mermaid viewBox assertions reject malformed geometry", () => {
+  expect(isStructuralViewBox("0 0 114.3515625 160")).toBe(true);
+  expect(isStructuralViewBox("garbage")).toBe(false);
+  expect(isStructuralViewBox("0 0 114.3515625")).toBe(false);
+});
+
 test("legacy compiled-path guard rejects a non-null run row", () => {
   expect(legacyRunsHaveNoCompiledPath([{ compiledPath: "/tmp/legacy.js" }])).toBe(false);
 });
@@ -226,5 +268,9 @@ test("existing artifact consumers keep their projected payload under the unchang
       `${type} has a meaningful count`,
     ).toBe(true);
   }
-  expect(rows).toEqual(CONSUMER_BASELINE);
+  for (const [type, row] of Object.entries(rows)) {
+    const expected = CONSUMER_BASELINE[type];
+    if (!expected) throw new Error(`no consumer baseline recorded for type: ${type}`);
+    expectConsumerBaseline(type, row, expected);
+  }
 }, 180_000);

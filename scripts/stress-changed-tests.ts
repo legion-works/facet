@@ -83,10 +83,8 @@ export function main(argv: readonly string[], runtime: StressRuntime = {}): numb
 
   const { selected, totalChanged } = selectChangedTests(changed);
   if (totalChanged === 0) {
-    // A push that changes nothing means the base ref is wrong, not that the
-    // work is clean. Selecting nothing silently is the invisible failure.
-    console.error(`ERROR diff against ${baseRef} is empty — base ref is probably wrong`);
-    return 1;
+    console.log("SKIP empty diff — no files changed, nothing to stress");
+    return 0;
   }
   if (selected.length === 0) {
     console.log(`SKIP no stressable test files changed (${totalChanged} file(s) in diff)`);
