@@ -1079,6 +1079,9 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     )
       .then(({ frame, result, revision }) => {
         if (!result.failedNewFrameReady) updateGalleryTitle(revision.title);
+        updateGalleryFavicon(
+          result.failedNewFrameReady ? "unverified" : (revision.verdict?.status ?? "unverified"),
+        );
         if (expired) return;
         current = frame;
         syncPanZoomToggle();
@@ -1086,11 +1089,9 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         if (!result.failedNewFrameReady) {
           if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
           updateGalleryVerdict(revision.verdict ?? null);
-          updateGalleryFavicon(revision.verdict?.status ?? "unverified");
           updateGalleryStatus("displayed");
           updateSwapBar("complete");
         } else {
-          updateGalleryFavicon("unverified");
           updateSwapBar("failed");
           updateGalleryVerdict(null);
           updateGalleryStatus("displayed");

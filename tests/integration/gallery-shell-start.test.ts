@@ -91,7 +91,17 @@ class FakeElement {
 }
 
 class FakeLinkElement extends FakeElement {
-  href = "";
+  private currentHref = "";
+  hrefWrites = 0;
+
+  get href(): string {
+    return this.currentHref;
+  }
+
+  set href(value: string) {
+    this.currentHref = value;
+    this.hrefWrites += 1;
+  }
 }
 
 class FakeCanvasElement extends FakeElement {
@@ -168,10 +178,16 @@ interface GalleryHarness {
   readonly sessionStorage: { getItem(key: string): string | null };
 }
 
+interface RuntimeOptions {
+  readonly bootstrapStatus?: number;
+  readonly sourceStatus?: number;
+}
+
 function createRuntime(
   viewMode: "native" | "css" = "native",
   verdict: Record<string, unknown> | null = null,
   observed = pageShimObserved('<svg data-facet-renderer-root="true" viewBox="0 0 10 10"></svg>'),
+  options: RuntimeOptions = {},
 ): GalleryHarness {
   const elements = new Map<string, FakeElement>();
   for (const id of [
@@ -261,6 +277,9 @@ function createRuntime(
     const url = String(input);
     requests.push({ url, ...(init === undefined ? {} : { init }) });
     if (url.endsWith("/bootstrap"))
+      if (options.bootstrapStatus !== undefined)
+        return new Response(null, { status: options.bootstrapStatus });
+    if (url.endsWith("/bootstrap"))
       return Response.json({
         authorization: "Bearer session-token",
         artifactId: "artifact-1",
@@ -268,6 +287,8 @@ function createRuntime(
         lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
       });
     if (url.includes("/source")) {
+      if (options.sourceStatus !== undefined)
+        return new Response(null, { status: options.sourceStatus });
       const revisionSha = new URL(url).searchParams.get("revisionSha") ?? "a".repeat(64);
       return Response.json({
         artifactId: "artifact-1",
@@ -517,6 +538,48 @@ describe("gallery shell startup", () => {
     expect(harness.requests.some(({ url }) => url.endsWith("/api/v1/gallery/release"))).toBe(false);
   });
 
+  test("sets idle grey before asynchronous bootstrap and tints the completed verdict", async () => {
+    const harness = createRuntime("native", {
+      status: "ok",
+      tier: 0,
+      revisionSha: "a".repeat(64),
+      artifactId: "artifact-1",
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+    });
+    const startup = startGallery(harness.runtime);
+    const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
+    expect(favicon.href).toContain("#77809a");
+    expect(favicon.hrefWrites).toBe(1);
+    await startup;
+    expect(favicon.href).toContain("#86e1fc");
+    expect(favicon.hrefWrites).toBe(2);
+  });
+
+  test("sets expired grey when bootstrap is already unauthorized", async () => {
+    const harness = createRuntime("native", null, undefined, { bootstrapStatus: 401 });
+    await startGallery(harness.runtime);
+
+    const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
+    expect(favicon.href).toContain("#77809a");
+    expect(favicon.hrefWrites).toBe(2);
+  });
+
+  test("sets expired grey when the initial source fetch is unauthorized", async () => {
+    const harness = createRuntime("native", null, undefined, { sourceStatus: 401 });
+    await startGallery(harness.runtime);
+
+    const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
+    expect(favicon.href).toContain("#77809a");
+    expect(favicon.hrefWrites).toBe(2);
+  });
+
   test("a stream:close with reason lease_expired renders the expired state and clears the session", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);
@@ -754,6 +817,22 @@ describe("gallery shell startup", () => {
     expect(new TextDecoder().decode(payload.bytes)).toContain(newestSha.slice(0, 8));
   });
 
+  test("a failed new frame sets the favicon to unverified grey", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: { ...harness.defaultObserved, errorCount: 1 },
+      render: async () =>
+        makeFakeRenderResult("native", { ...harness.defaultObserved, errorCount: 1 }),
+    });
+
+    const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
+    harness.emitCommitted({ revisionSha: "d2".padEnd(64, "d"), revisionNumber: 2 });
+    await waitFor(() => favicon.href.includes("#77809a"));
+    expect(favicon.href).toContain("#77809a");
+  });
+
   test("terminal expiry blocks an in-flight swap completion from replacing the expired screen", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);
@@ -772,10 +851,15 @@ describe("gallery shell startup", () => {
       () => harness.elements.get("facet-canvas")?.children.filter(isIframe).length === 2,
     );
     await waitFor(() => releaseRender !== null);
+    const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
+    const beforeExpiryWrites = favicon.hrefWrites;
     harness.emitStreamClose("lease_expired");
     await waitFor(
       () => harness.elements.get("facet-status-line")?.textContent === "session expired",
     );
+    const terminalWrites = favicon.hrefWrites;
+    expect(favicon.href).toContain("#77809a");
+    expect(terminalWrites).toBe(beforeExpiryWrites + 1);
     releaseRender!();
     await waitFor(() => harness.frames[1]?.receivedPayloads.length === 1);
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -786,6 +870,7 @@ describe("gallery shell startup", () => {
     expect((harness.runtime.document as unknown as { title: string }).title).toBe(
       "Initial title · facet",
     );
-    expect((harness.elements.get("facet-favicon") as FakeLinkElement).href).toContain("#77809a");
+    expect(favicon.href).toContain("#77809a");
+    expect(favicon.hrefWrites).toBe(terminalWrites);
   });
 });
