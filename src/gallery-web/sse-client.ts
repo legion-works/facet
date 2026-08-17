@@ -55,6 +55,8 @@ export interface ConnectRevisionStreamHandle {
 }
 
 const HEARTBEAT_PREFIX = ":";
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_DELAY_MS = 100;
 
 /**
  * Connect to the revision SSE stream. Returns a handle whose `close()`
@@ -79,7 +81,27 @@ export function connectRevisionStream(
   }
   let closed = false;
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  void (async () => {
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectAttempt = 0;
+  const closeWithReason = (reason: string): void => {
+    options.onState?.("idle");
+    options.onClose?.({ streamId: "", reason, at: new Date().toISOString() });
+  };
+  const reconnect = (reason: string): void => {
+    if (closed) return;
+    if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      closeWithReason(reason);
+      return;
+    }
+    const delay = RECONNECT_DELAY_MS * 2 ** reconnectAttempt;
+    reconnectAttempt += 1;
+    options.onState?.("connecting");
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      void connect();
+    }, delay);
+  };
+  const connect = async (): Promise<void> => {
     try {
       const response = await fetcher(url, {
         method: "GET",
@@ -92,16 +114,12 @@ export function connectRevisionStream(
         signal: controller.signal,
       });
       if (response.status !== 200 || response.body === null) {
-        // Surface the failure to the caller via onClose so the shell
-        // can decide to reconnect with a fresh lease.
-        options.onClose?.({
-          streamId: "",
-          reason: `stream_status_${response.status}`,
-          at: new Date().toISOString(),
-        });
-        options.onState?.("idle");
+        const reason = `stream_status_${response.status}`;
+        if (response.status === 401) closeWithReason(reason);
+        else reconnect(reason);
         return;
       }
+      reconnectAttempt = 0;
       options.onState?.("live");
       reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -137,20 +155,18 @@ export function connectRevisionStream(
           dispatch(options, parsed);
         }
       }
+      if (!closed) reconnect("stream_closed");
     } catch (error) {
       if (controller.signal.aborted) return;
-      options.onState?.("idle");
-      options.onClose?.({
-        streamId: "",
-        reason: error instanceof Error ? error.message : "stream_error",
-        at: new Date().toISOString(),
-      });
+      reconnect(error instanceof Error ? error.message : "stream_error");
     }
-  })();
+  };
+  void connect();
   return {
     close(): void {
       if (closed) return;
       closed = true;
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
       try {
         controller.abort();
       } catch {

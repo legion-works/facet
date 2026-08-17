@@ -63,6 +63,16 @@ describe("resolveGalleryBootstrap", () => {
     expect(exchanges).toHaveLength(1);
   });
 
+  test("maps a consumed bootstrap token 401 to the typed expired outcome", async () => {
+    const result = await resolveGalleryBootstrap({
+      location: "http://127.0.0.1:43123/gallery#bootstrap=consumed-token",
+      storage: new MemoryStorage(),
+      fetchImpl: (async () => new Response(null, { status: 401 })) as unknown as typeof fetch,
+      validateLease: async () => true,
+    });
+    expect(result).toEqual({ outcome: "expired", reason: "invalid" });
+  });
+
   test("reuses a persisted session on refresh when the lease validates", async () => {
     const storage = new MemoryStorage();
     storage.setItem(GALLERY_SESSION_STORAGE_KEY, JSON.stringify(makeSession()));

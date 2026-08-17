@@ -71,6 +71,12 @@ export interface BootstrapHandoff {
   readonly headers: Headers;
 }
 
+class GallerySessionExpiredError extends Error {}
+
+function isLeaseUnauthorized(response: Response): boolean {
+  return response.status === 401;
+}
+
 export type GalleryBootstrap =
   | {
       readonly outcome: "bootstrapped";
@@ -128,6 +134,7 @@ export async function resolveGalleryBootstrap(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ token: liveToken }),
     });
+    if (isLeaseUnauthorized(response)) return { outcome: "expired", reason: "invalid" };
     if (!response.ok) throw new Error(`Gallery bootstrap failed (${response.status})`);
     const payload = (await response.json()) as Omit<BootstrapHandoff, "headers">;
     const headers = new Headers({
@@ -670,6 +677,7 @@ async function fetchGallerySource(
       "x-gallery-artifact": handoff.artifactId,
     },
   });
+  if (isLeaseUnauthorized(response)) throw new GallerySessionExpiredError("Gallery lease expired");
   if (!response.ok) throw new Error(`Gallery source fetch failed (${response.status})`);
   const payload = (await response.json()) as GallerySourceResponse;
   return {
@@ -832,6 +840,8 @@ export interface SerializedSwapQueue<T> {
   readonly enqueue: (event: T) => void;
   /** Resolve when no swap is in flight and nothing is queued. */
   readonly settle: () => Promise<void>;
+  /** Drop queued work; an already-running task may finish but callers gate its writes. */
+  readonly close: () => void;
 }
 
 /**
@@ -844,6 +854,7 @@ export function createSerializedSwapQueue<T>(
 ): SerializedSwapQueue<T> {
   let inFlight: Promise<void> | null = null;
   let pending: T | null = null;
+  let closed = false;
   let tail: Promise<void> = Promise.resolve();
 
   const drain = async (): Promise<void> => {
@@ -864,6 +875,7 @@ export function createSerializedSwapQueue<T>(
 
   return {
     enqueue(event: T): void {
+      if (closed) return;
       pending = event;
       if (inFlight === null) {
         tail = drain().catch(() => undefined);
@@ -871,6 +883,10 @@ export function createSerializedSwapQueue<T>(
     },
     settle(): Promise<void> {
       return tail;
+    },
+    close(): void {
+      closed = true;
+      pending = null;
     },
   };
 }
@@ -889,14 +905,19 @@ function browserGalleryRuntime(): GalleryRuntime {
 
 export async function startGallery(runtime = browserGalleryRuntime()): Promise<void> {
   const { window, document, history, HTMLElement, fetch } = runtime;
-  const updateGalleryStatus = (status: string): void => setGalleryStatus(document, status);
-  const updateGalleryError = (message: string): void => setGalleryError(document, message);
+  let expired = false;
+  const updateGalleryStatus = (status: string): void => {
+    if (!expired) setGalleryStatus(document, status);
+  };
+  const updateGalleryError = (message: string): void => {
+    if (!expired) setGalleryError(document, message);
+  };
   const updateGalleryVerdict = (verdict: Verdict | null): void =>
-    setGalleryVerdict(document, verdict);
+    expired ? undefined : setGalleryVerdict(document, verdict);
   const updateLiveState = (state: "idle" | "connecting" | "live"): void =>
-    setLiveState(document, state);
+    expired ? undefined : setLiveState(document, state);
   const updateSwapBar = (state: "start" | "ready" | "complete" | "failed"): void =>
-    setSwapBar(document, window, state);
+    expired ? undefined : setSwapBar(document, window, state);
   const updateZoomButtons = (zoom: number): void => setZoomButtonState(document, zoom);
   const baseUrl = window.location.origin;
   const bootstrap = await resolveGalleryBootstrap({
@@ -922,7 +943,12 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     },
   });
   if (bootstrap.outcome === "expired") {
-    renderSessionExpired(document, updateGalleryError, updateGalleryStatus);
+    expired = true;
+    renderSessionExpired(
+      document,
+      (message) => setGalleryError(document, message),
+      (status) => setGalleryStatus(document, status),
+    );
     return;
   }
   const handoff = bootstrap.session;
@@ -956,7 +982,22 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     showErrorBadge: updateGalleryError,
   };
   const dom: ShellDom = { document, hostname: window.location.hostname };
-  const source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
+  let source: RevisionFetchResult;
+  try {
+    source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
+  } catch (error) {
+    if (error instanceof GallerySessionExpiredError) {
+      expired = true;
+      clearSession(window.sessionStorage);
+      renderSessionExpired(
+        document,
+        (message) => setGalleryError(document, message),
+        (status) => setGalleryStatus(document, status),
+      );
+      return;
+    }
+    throw error;
+  }
   let current = createArtifactFrame({
     artifactType: source.artifactType,
     renderer: source.renderer,
@@ -1012,11 +1053,27 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         }
       })
       .catch((error: unknown) => {
+        if (error instanceof GallerySessionExpiredError) {
+          expireSession();
+          return;
+        }
         updateSwapBar("failed");
         updateGalleryStatus("displayed");
         updateGalleryError(error instanceof Error ? error.message : String(error));
       }),
   );
+  const expireSession = (): void => {
+    if (expired) return;
+    expired = true;
+    swaps.close();
+    clearSession(window.sessionStorage);
+    renderSessionExpired(
+      document,
+      (message) => setGalleryError(document, message),
+      (status) => setGalleryStatus(document, status),
+    );
+    setLiveState(document, "idle");
+  };
   const stream = connectRevisionStream({
     baseUrl,
     bearer: handoff.authorization.replace(/^Bearer\s+/i, ""),
@@ -1040,9 +1097,8 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       // transport loss; those just go idle, matching the previous
       // (deliberately unbranched) behavior.
       if (event.reason === "lease_expired" || event.reason === "stream_status_401") {
-        clearSession(window.sessionStorage);
-        renderSessionExpired(document, updateGalleryError, updateGalleryStatus);
-        updateLiveState("idle");
+        expireSession();
+        stream.close();
         return;
       }
       updateLiveState("idle");
