@@ -52,6 +52,8 @@ const verdicts = [
   ["partial:unstable", "interactive structure changed after the barrier"],
   ["tampered", "page channel diverges from protocol authority"],
   ["timeout", "render barrier never completed"],
+  ["shim_only", "only the renderer shim produced an observation"],
+  ["probe_only", "only the isolated probe produced an observation"],
   ["insecure:unvalidated", "level 3 explicitly skipped validation"],
 ] as const;
 
@@ -634,7 +636,7 @@ export default function FacetStory() {
             requires them.
           </p>
           <div className="metrics">
-            <Metric label="publish → visible p95" value={65.9} suffix=" ms" decimals={1} />
+            <Metric label="publish → visible budget" value={300} suffix=" ms" />
             <Metric label="T0 warm p95" value={0.25} suffix=" ms" decimals={2} />
             <Metric label="browser exit" value={83} suffix=" ms" />
             <Metric label="RSS delta" value={23.6} suffix=" MiB" decimals={1} />
