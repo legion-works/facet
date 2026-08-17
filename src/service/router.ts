@@ -565,9 +565,15 @@ export function buildRouter(deps: RouterDeps): {
         if (revision === null) {
           return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
         }
+        const artifact = deps.repository.getArtifactById(artifactId);
+        if (artifact === null) {
+          return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
+        }
         return new Response(
           JSON.stringify({
             artifactId,
+            slug: artifact.slug,
+            title: artifact.title,
             revisionSha: revision.sha256,
             artifactType: revision.artifactType,
             renderer: revision.renderer,

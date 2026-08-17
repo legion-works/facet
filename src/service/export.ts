@@ -3,37 +3,17 @@ import { isAbsolute, relative } from "node:path";
 
 import {
   ExportResultSchema,
-  ExportSidecarSchema,
-  type ExportFormat,
   type ExportRequest,
   type ExportResult,
-  type ExportSidecar,
 } from "../shared/contracts/commands";
 import type { Artifact, Revision } from "../shared/contracts/artifact";
-import { type Verdict } from "../shared/contracts/validation";
+import { buildExportSidecar } from "../shared/export";
 import { FacetError } from "../shared/errors/facet-error";
 import { now } from "../shared/util/time";
 import { latestStoredVerdict, verdictFromStoredRun } from "./stored-verdict";
 import type { ArtifactRepository } from "./store/repository";
 
-export function buildExportSidecar(input: {
-  readonly artifact: Artifact;
-  readonly revision: Revision;
-  readonly verdict: Verdict;
-  readonly format: ExportFormat;
-  readonly exportedAt: string;
-}): ExportSidecar {
-  return ExportSidecarSchema.parse({
-    artifactId: input.artifact.id,
-    slug: input.artifact.slug,
-    revisionSha: input.revision.sha256,
-    artifactType: input.revision.artifactType,
-    renderer: input.revision.renderer,
-    verdict: input.verdict,
-    format: input.format,
-    exportedAt: input.exportedAt,
-  });
-}
+export { buildExportSidecar } from "../shared/export";
 
 function resolveExportTarget(
   repository: ArtifactRepository,
@@ -151,8 +131,11 @@ export function exportStoredSource(input: {
     format,
     bytes: Buffer.from(revision.source).toString("base64"),
     sidecar: buildExportSidecar({
-      artifact,
-      revision,
+      artifactId: artifact.id,
+      slug: artifact.slug,
+      revisionSha: revision.sha256,
+      artifactType: revision.artifactType,
+      renderer: revision.renderer,
       verdict,
       format,
       exportedAt: input.exportedAt ?? now(),
@@ -194,8 +177,11 @@ export function exportStoredRender(input: {
     format: "render",
     bytes: Buffer.from(bytes).toString("base64"),
     sidecar: buildExportSidecar({
-      artifact,
-      revision,
+      artifactId: artifact.id,
+      slug: artifact.slug,
+      revisionSha: revision.sha256,
+      artifactType: revision.artifactType,
+      renderer: revision.renderer,
       verdict,
       format: "render",
       exportedAt: input.exportedAt ?? now(),

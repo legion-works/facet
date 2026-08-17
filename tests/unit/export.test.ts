@@ -14,14 +14,14 @@ import { tmpdir } from "node:os";
 
 import type { Artifact, Revision } from "../../src/shared/contracts/artifact";
 import type { ExportResult } from "../../src/shared/contracts/commands/results";
+import { ExportSidecarSchema } from "../../src/shared/contracts/commands/results";
 import type { Verdict } from "../../src/shared/contracts/validation";
 import {
   buildExportRequest,
-  extensionForExport,
   resolveExportPaths,
   writeExportFiles,
 } from "../../src/cli/commands/export";
-import { buildExportSidecar } from "../../src/service/export";
+import { buildExportSidecar, extensionForExport } from "../../src/shared/export";
 
 const artifact: Artifact = {
   id: "artifact-1",
@@ -298,12 +298,19 @@ describe("buildExportSidecar", () => {
       observed,
     };
     const sidecar = buildExportSidecar({
-      artifact,
-      revision,
+      artifactId: artifact.id,
+      slug: artifact.slug,
+      revisionSha: revision.sha256,
+      artifactType: revision.artifactType,
+      renderer: revision.renderer,
       verdict: secureVerdict,
       format: "source",
       exportedAt,
     });
+
+    expect(Object.keys(sidecar).toSorted()).toEqual(
+      Object.keys(ExportSidecarSchema.shape).toSorted(),
+    );
 
     expect(JSON.stringify(sidecar)).toBe(
       JSON.stringify({
@@ -333,8 +340,11 @@ describe("buildExportSidecar", () => {
     };
 
     const sidecar = buildExportSidecar({
-      artifact,
-      revision,
+      artifactId: artifact.id,
+      slug: artifact.slug,
+      revisionSha: revision.sha256,
+      artifactType: revision.artifactType,
+      renderer: revision.renderer,
       verdict: insecureVerdict,
       format: "source",
       exportedAt,
@@ -387,8 +397,11 @@ describe("buildExportSidecar", () => {
       },
     };
     const sidecar = buildExportSidecar({
-      artifact,
-      revision: { ...revision, artifactType: "html" },
+      artifactId: artifact.id,
+      slug: artifact.slug,
+      revisionSha: revision.sha256,
+      artifactType: "html",
+      renderer: revision.renderer,
       verdict: htmlVerdict,
       format: "source",
       exportedAt,
@@ -413,8 +426,11 @@ describe("buildExportSidecar", () => {
       execution: "static",
     };
     const tsxSidecar = buildExportSidecar({
-      artifact,
-      revision: { ...revision, artifactType: "tsx" },
+      artifactId: artifact.id,
+      slug: artifact.slug,
+      revisionSha: revision.sha256,
+      artifactType: "tsx",
+      renderer: revision.renderer,
       verdict: tsxVerdict,
       format: "source",
       exportedAt,
@@ -429,8 +445,11 @@ describe("buildExportSidecar", () => {
       observed,
     };
     const nonTsxSidecar = buildExportSidecar({
-      artifact,
-      revision: { ...revision, artifactType: "markdown" },
+      artifactId: artifact.id,
+      slug: artifact.slug,
+      revisionSha: revision.sha256,
+      artifactType: "markdown",
+      renderer: revision.renderer,
       verdict: nonTsxVerdict,
       format: "source",
       exportedAt,

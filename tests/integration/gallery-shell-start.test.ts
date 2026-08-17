@@ -152,6 +152,7 @@ function createRuntime(
   const elements = new Map<string, FakeElement>();
   for (const id of [
     "facet-title",
+    "facet-artifact-title",
     "facet-revision",
     "facet-status-line",
     "facet-error",
@@ -183,6 +184,7 @@ function createRuntime(
   const frames: FakeIframe[] = [];
   const pendingFrameConfigs: FakeFrameConfig[] = [];
   const document = {
+    title: "facet gallery",
     getElementById: (id: string) => elements.get(id) ?? null,
     createElement: (tag: string) => {
       if (tag !== "iframe") return new FakeElement();
@@ -243,6 +245,9 @@ function createRuntime(
       return Response.json({
         artifactId: "artifact-1",
         revisionSha,
+        slug: "source-artifact",
+        title:
+          revisionSha === "a".repeat(64) ? "Initial title" : `Title ${revisionSha.slice(0, 8)}`,
         artifactType: "markdown",
         source: `# ${revisionSha.slice(0, 8)}`,
         verdict,
@@ -447,6 +452,10 @@ describe("gallery shell startup", () => {
     await startGallery(harness.runtime);
 
     expect(harness.elements.get("facet-title")?.textContent).toBe("facet");
+    expect(harness.elements.get("facet-artifact-title")?.textContent).toBe("Initial title");
+    expect((harness.runtime.document as unknown as { title: string }).title).toBe(
+      "Initial title · facet",
+    );
     expect(harness.elements.get("facet-revision")?.textContent).toBe("aaaaaaaaaaaa");
     expect(harness.elements.get("facet-status-line")?.textContent).toBe("displayed");
     expect(harness.elements.get("facet-live-label")?.textContent).toBe("live");
@@ -677,6 +686,12 @@ describe("gallery shell startup", () => {
     await waitFor(
       () => harness.elements.get("facet-revision")?.textContent === newestSha.slice(0, 12),
     );
+    expect(harness.elements.get("facet-artifact-title")?.textContent).toBe(
+      `Title ${newestSha.slice(0, 8)}`,
+    );
+    expect((harness.runtime.document as unknown as { title: string }).title).toBe(
+      `Title ${newestSha.slice(0, 8)} · facet`,
+    );
     // Exactly one frame remains — the intermediate swap's frame and the
     // initial frame were both removed; no orphan.
     const survivors = canvas.children.filter(isIframe);
@@ -715,5 +730,9 @@ describe("gallery shell startup", () => {
 
     expect(harness.elements.get("facet-status-line")?.textContent).toBe("session expired");
     expect(harness.elements.get("facet-revision")?.textContent).toBe("aaaaaaaaaaaa");
+    expect(harness.elements.get("facet-artifact-title")?.textContent).toBe("Initial title");
+    expect((harness.runtime.document as unknown as { title: string }).title).toBe(
+      "Initial title · facet",
+    );
   });
 });

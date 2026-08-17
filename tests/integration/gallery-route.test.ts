@@ -283,6 +283,8 @@ describe("GET /gallery", () => {
     const sourceBody = (await source.json()) as { verdict: unknown };
     expect(sourceBody).toMatchObject({
       artifactId: first.artifactId,
+      slug: "source-a",
+      title: "source-a",
       artifactType: "mermaid",
       renderer: "svg",
     });

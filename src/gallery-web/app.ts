@@ -581,6 +581,10 @@ export async function replaceArtifactFrame(
 }
 
 export interface RevisionFetchResult {
+  readonly artifactId: string;
+  readonly revisionSha: string;
+  readonly slug: string;
+  readonly title: string;
   readonly artifactType: string;
   readonly renderer: string;
   readonly bytes: Uint8Array;
@@ -619,7 +623,7 @@ export async function swapToRevision(
 ): Promise<{
   readonly frame: CreatedArtifactFrame;
   readonly result: ReplaceArtifactFrameResult;
-  readonly verdict: Verdict | null;
+  readonly revision: RevisionFetchResult;
 }> {
   const revision = await deps.fetchRevision(event.artifactId, event.revisionSha);
   const next = createArtifactFrame({
@@ -646,13 +650,15 @@ export async function swapToRevision(
   return {
     frame: result.failedNewFrameReady ? current : next,
     result,
-    verdict: revision.verdict ?? null,
+    revision,
   };
 }
 
 interface GallerySourceResponse {
   readonly artifactId: string;
   readonly revisionSha: string;
+  readonly slug: string;
+  readonly title: string;
   readonly artifactType: string;
   readonly renderer?: string;
   readonly source: string;
@@ -681,6 +687,10 @@ async function fetchGallerySource(
   if (!response.ok) throw new Error(`Gallery source fetch failed (${response.status})`);
   const payload = (await response.json()) as GallerySourceResponse;
   return {
+    artifactId: payload.artifactId,
+    revisionSha: payload.revisionSha,
+    slug: payload.slug,
+    title: payload.title,
     artifactType: payload.artifactType,
     renderer: payload.renderer ?? "svg",
     bytes:
@@ -690,6 +700,14 @@ async function fetchGallerySource(
     ...(payload.execution === undefined ? {} : { execution: payload.execution }),
     verdict: payload.verdict ?? null,
   };
+}
+
+function setGalleryTitle(document: Document, artifactTitle: string | null): void {
+  const normalized = artifactTitle?.trim() ?? "";
+  const displayTitle = normalized.length === 0 ? null : normalized;
+  const shellTitle = document.getElementById("facet-artifact-title");
+  if (shellTitle !== null) shellTitle.textContent = displayTitle ?? "";
+  document.title = displayTitle === null ? "facet gallery" : `${displayTitle} · facet`;
 }
 
 function setGalleryStatus(document: Document, status: string): void {
@@ -914,6 +932,9 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   };
   const updateGalleryVerdict = (verdict: Verdict | null): void =>
     expired ? undefined : setGalleryVerdict(document, verdict);
+  const updateGalleryTitle = (artifactTitle: string | null): void => {
+    if (!expired) setGalleryTitle(document, artifactTitle);
+  };
   const updateLiveState = (state: "idle" | "connecting" | "live"): void =>
     expired ? undefined : setLiveState(document, state);
   const updateSwapBar = (state: "start" | "ready" | "complete" | "failed"): void =>
@@ -953,9 +974,9 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   }
   const handoff = bootstrap.session;
   const title = document.getElementById("facet-title");
-  const revision = document.getElementById("facet-revision");
+  const revisionLabel = document.getElementById("facet-revision");
   if (title !== null) title.textContent = "facet";
-  if (revision !== null) revision.textContent = handoff.revisionSha.slice(0, 12);
+  if (revisionLabel !== null) revisionLabel.textContent = handoff.revisionSha.slice(0, 12);
   updateGalleryStatus("idle");
   updateLiveState("connecting");
   const frameUrl = `${baseUrl}/gallery/frame`;
@@ -1020,6 +1041,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     throw new Error("Gallery artifact failed to render");
   }
   host.setVisibility(current.frameId, true);
+  updateGalleryTitle(source.title);
   updateGalleryVerdict(source.verdict ?? null);
   updateGalleryStatus("displayed");
   updateLiveState("live");
@@ -1037,14 +1059,15 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       event,
       current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
     )
-      .then(({ frame, result, verdict }) => {
+      .then(({ frame, result, revision }) => {
         if (expired) return;
         current = frame;
         syncPanZoomToggle();
         syncZoomButtons();
         if (!result.failedNewFrameReady) {
-          if (revision !== null) revision.textContent = event.revisionSha.slice(0, 12);
-          updateGalleryVerdict(verdict);
+          if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
+          updateGalleryTitle(revision.title);
+          updateGalleryVerdict(revision.verdict ?? null);
           updateGalleryStatus("displayed");
           updateSwapBar("complete");
         } else {

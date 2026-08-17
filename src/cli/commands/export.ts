@@ -10,10 +10,10 @@ import { existsSync, mkdirSync, renameSync, statSync, unlinkSync, writeFileSync 
 import { randomUUID } from "node:crypto";
 import { basename, dirname, extname, join, resolve } from "node:path";
 
-import type { ExportFormat, ExportRequest } from "../../shared/contracts/commands/requests";
+import type { ExportRequest } from "../../shared/contracts/commands/requests";
 import { ExportRequestSchema } from "../../shared/contracts/commands/requests";
 import type { ExportResult } from "../../shared/contracts/commands/results";
-import type { ArtifactType } from "../../shared/contracts/artifact";
+import { extensionForExport } from "../../shared/export";
 import { FacetError } from "../../shared/errors/facet-error";
 import { generateRequestId } from "../../shared/util/time";
 
@@ -41,25 +41,7 @@ export function buildExportRequest(
   });
 }
 
-export function extensionForExport(
-  format: ExportFormat,
-  artifactType: ArtifactType,
-): ".md" | ".svg" | ".json" | ".html" | ".tsx" | ".png" {
-  if (format === "render") return ".png";
-  switch (artifactType) {
-    case "markdown":
-    case "mermaid":
-      return ".md";
-    case "svg":
-      return ".svg";
-    case "chart":
-      return ".json";
-    case "html":
-      return ".html";
-    case "tsx":
-      return ".tsx";
-  }
-}
+export { extensionForExport } from "../../shared/export";
 
 function sidecarPathForArtifact(path: string): string {
   const extension = extname(path);

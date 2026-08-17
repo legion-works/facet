@@ -822,13 +822,21 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     // The swap's NEXT frame is created inside swapToRevision; the fake
     // DOM installs its default resolving render at creation.
 
-    const { frame, result } = await swapToRevision(
+    const { frame, result, revision } = await swapToRevision(
       {
         dom,
         host: recording.host,
         fetchRevision: async (artifactId, revisionSha) => {
           fetched.push({ artifactId, revisionSha });
-          return { artifactType: "markdown", renderer: "svg", bytes };
+          return {
+            artifactId: "art-1",
+            revisionSha: "sha-1",
+            slug: "artifact",
+            title: "Artifact title",
+            artifactType: "markdown",
+            renderer: "svg",
+            bytes,
+          };
         },
         readyTimeoutMs: 2_000,
       },
@@ -839,6 +847,15 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
 
     expect(fetched).toEqual([{ artifactId: "art-1", revisionSha: "sha-1" }]);
     expect(result.failedNewFrameReady).toBe(false);
+    expect(revision).toEqual({
+      artifactId: "art-1",
+      revisionSha: "sha-1",
+      slug: "artifact",
+      title: "Artifact title",
+      artifactType: "markdown",
+      renderer: "svg",
+      bytes,
+    });
     expect(frame).not.toBe(current);
     expect(frames[1]!.receivedPayloads).toEqual([
       { artifactType: "markdown", renderer: "svg", bytes },
