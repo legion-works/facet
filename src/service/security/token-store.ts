@@ -15,15 +15,8 @@
  *     action; this module simply refuses to fabricate one.
  */
 
-import {
-  chmodSync,
-  existsSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
@@ -61,9 +54,6 @@ function ensureTightPermissions(path: string): void {
 }
 
 export function recoverInstallTokenAfterWriteFailure(path: string, error: unknown): string {
-  try {
-    writeFileSync("/dev/null", "");
-  } catch {}
   if (existsSync(path)) {
     const value = readFileSync(path, "utf8").trim();
     if (value.length > 0) {
@@ -78,12 +68,14 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
   let cached: string | null = null;
 
   function loadFromDisk(): string {
+    let emptyExistingFile = false;
     if (existsSync(options.tokenPath)) {
       const value = readFileSync(options.tokenPath, "utf8").trim();
       if (value.length > 0) {
         ensureTightPermissions(options.tokenPath);
         return value;
       }
+      emptyExistingFile = true;
     }
     // Atomic first-write: O_EXCL ensures exactly one writer wins the
     // race. Losers (EEXIST) re-read what the winner persisted — they
@@ -92,19 +84,14 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
     // a hostile umask cannot widen the secret-bearing layout.
     ensureOwnerOnlyDirectory(dirname(options.tokenPath));
     const fresh = generateInstallToken();
-    const tokenDir = dirname(options.tokenPath);
-    const tmpPath = join(tokenDir, `.facet-token-${crypto.randomUUID()}.tmp`);
     try {
-      writeFileSync(tmpPath, fresh, { mode: 0o600 });
-      renameSync(tmpPath, options.tokenPath);
+      writeFileSync(options.tokenPath, fresh, {
+        mode: 0o600,
+        flag: emptyExistingFile ? "w" : "wx",
+      });
       ensureTightPermissions(options.tokenPath);
       return fresh;
     } catch (error) {
-      try {
-        unlinkSync(tmpPath);
-      } catch {
-        // Preserve the original write or rename failure.
-      }
       return recoverInstallTokenAfterWriteFailure(options.tokenPath, error);
     }
   }
