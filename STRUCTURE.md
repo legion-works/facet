@@ -1,6 +1,6 @@
 # Structure
 
-Gallery source reads use the lease-gated `GET /api/v1/gallery/source` route alongside bootstrap, release, and revision SSE; responses include source bytes and the latest stored verdict or `null`. Shell session state is persisted to `sessionStorage` (`src/gallery-web/session.ts`) so tab refreshes validate against stored leases without re-submitting single-use bootstrap tokens, and SSE heartbeats renew active lease TTLs (`src/service/security/leases.ts`).
+Gallery source and stored-render reads use the lease-gated `GET /api/v1/gallery/source` and `GET /api/v1/gallery/evidence` routes alongside bootstrap, release, and revision SSE; source responses include source bytes and the latest stored verdict or `null`, while evidence responses serve retained Tier-1 screenshot bytes. Shell session state is persisted to `sessionStorage` (`src/gallery-web/session.ts`) so tab refreshes validate against stored leases without re-submitting single-use bootstrap tokens, and SSE heartbeats renew active lease TTLs (`src/service/security/leases.ts`).
 
 Public extension points: `RendererRegistry`, `Tier0ValidatorRegistry`, `Tier1ProbeRegistry`, `EvidenceStore`, `CliTransport`, `ArtifactBuilder`, `ExportSink`, `AuthorizationPolicy`, `SearchIndex`, and `FormBridge`. Artifact code never gains host capabilities.
 
@@ -63,6 +63,8 @@ Recent TSX artifact & database v8 additions: `src/shared/tsx/execution.ts` expor
 
 Opaque-content coverage lives in `tests/unit/tier1-screenshot-evidence.test.ts`
 and the related renderer fixtures and integration tests.
+
+Recent gallery export, favicon, and evidence additions: `src/shared/export.ts` owns `extensionForExport` and schema-backed `buildExportSidecar`; `src/gallery-web/export.ts` owns `GalleryExportState`, `exportMenuStateFrom`, filenames, sidecar construction, atomic state commits, and blob downloads, while `src/gallery-web/export-menu.ts` owns `installGalleryExportMenu` and terminal disablement. `src/gallery-web/favicon.ts` owns `FAVICON_TINT_BY_STATUS`, `faviconTint`, and `renderFavicon`; the shell updates the document title to `<artifact title> · facet` and swaps favicon tint as verdict, idle, unverified, or expired state changes. The lease-gated evidence route uses `readStoredRenderEvidence` and returns retained screenshot bytes without triggering a render. Coverage lives in `tests/unit/gallery-export.test.ts`, `tests/integration/gallery-shell-start.test.ts`, and `tests/integration/gallery-route.test.ts`.
 
 ## Export slot
 

@@ -16,6 +16,23 @@ export interface GalleryExportState {
   readonly renderBytes: Uint8Array | null;
 }
 
+export interface DownloadBlobUrlRuntime {
+  readonly createObjectURL: (blob: Blob) => string;
+  readonly revokeObjectURL: (url: string) => void;
+}
+
+const browserDownloadBlobUrlRuntime: DownloadBlobUrlRuntime = {
+  createObjectURL: (blob) => URL.createObjectURL(blob),
+  revokeObjectURL: (url) => URL.revokeObjectURL(url),
+};
+
+let downloadBlobUrlRuntime = browserDownloadBlobUrlRuntime;
+
+/** Test-only injection keeps blob URL assertions independent of global URL state. */
+export function setDownloadBlobUrlForTests(runtime: DownloadBlobUrlRuntime | undefined): void {
+  downloadBlobUrlRuntime = runtime ?? browserDownloadBlobUrlRuntime;
+}
+
 export function commitGalleryExportState(
   current: GalleryExportState | null,
   next: GalleryExportState,
@@ -23,6 +40,23 @@ export function commitGalleryExportState(
 ): GalleryExportState | null {
   if (options.expired === true || options.swapSucceeded === false) return current;
   return next;
+}
+
+export function exportMenuStateFrom(
+  revision: Pick<
+    GalleryExportState,
+    | "artifactId"
+    | "revisionSha"
+    | "slug"
+    | "title"
+    | "artifactType"
+    | "renderer"
+    | "sourceBytes"
+    | "verdict"
+  >,
+  renderBytes: Uint8Array | null,
+): GalleryExportState {
+  return { ...revision, renderBytes };
 }
 
 export function sourceFilename(state: Pick<GalleryExportState, "slug" | "artifactType">): string {
@@ -60,10 +94,10 @@ export function downloadBlob(
   bytes: BlobPart,
   type: string,
 ): void {
-  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  const url = downloadBlobUrlRuntime.createObjectURL(new Blob([bytes], { type }));
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  URL.revokeObjectURL(url);
+  downloadBlobUrlRuntime.revokeObjectURL(url);
 }

@@ -40,12 +40,12 @@ export function installGalleryExportMenu(
     const terminal = options.isExpired();
     if (source !== null) source.disabled = terminal || state === null;
     if (render !== null) {
-      const available = state?.renderBytes !== null && state?.renderBytes !== undefined;
+      const available = state?.renderBytes != null;
       render.disabled = terminal || !available;
       render.title = available ? "" : "no stored render";
     }
     if (sidecar !== null) {
-      const available = state?.verdict !== null && state?.verdict !== undefined;
+      const available = state?.verdict != null;
       sidecar.disabled = terminal || !available;
       sidecar.title = available ? "" : "no stored verdict";
     }
@@ -73,7 +73,7 @@ export function installGalleryExportMenu(
     downloadBlob(document, sourceFilename(state), state.sourceBytes, "application/octet-stream");
   });
   render?.addEventListener("click", () => {
-    if (state?.renderBytes === null || state?.renderBytes === undefined) return;
+    if (state?.renderBytes == null) return;
     downloadBlob(document, renderFilename(state), state.renderBytes, "image/png");
   });
   sidecar?.addEventListener("click", () => {

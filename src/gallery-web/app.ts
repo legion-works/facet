@@ -42,8 +42,12 @@ import {
 import type { FrameRenderPayload, GestureMode } from "./frame/frame-payload";
 import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 import { faviconTint, renderFavicon } from "./favicon";
-import type { GalleryExportState } from "./export";
-import { disableGalleryExportMenu, installGalleryExportMenu } from "./export-menu";
+import { exportMenuStateFrom, type GalleryExportState } from "./export";
+import {
+  disableGalleryExportMenu,
+  installGalleryExportMenu,
+  type GalleryExportMenuController,
+} from "./export-menu";
 
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
@@ -740,10 +744,10 @@ export async function fetchGalleryEvidence(
     }
     const code =
       typeof body === "object" &&
-      body !== null &&
+      body != null &&
       "error" in body &&
       typeof body.error === "object" &&
-      body.error !== null &&
+      body.error != null &&
       "code" in body.error
         ? body.error.code
         : undefined;
@@ -766,6 +770,9 @@ export function setGalleryFavicon(
   document: Document,
   state: Parameters<typeof faviconTint>[0],
 ): void {
+  // `as HTMLLinkElement` rather than `instanceof` — the shell's other
+  // set* helpers assign DOM properties directly, and the test-harness DOM
+  // shims do not universally expose HTMLLinkElement as a global guard.
   const link = document.getElementById("facet-favicon") as HTMLLinkElement | null;
   if (link === null) return;
   const dataUrl = renderFavicon(faviconTint(state));
@@ -1005,6 +1012,22 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   const updateSwapBar = (state: "start" | "ready" | "complete" | "failed"): void =>
     expired ? undefined : setSwapBar(document, window, state);
   const updateZoomButtons = (zoom: number): void => setZoomButtonState(document, zoom);
+  let exportMenu: GalleryExportMenuController | null = null;
+  let swaps: SerializedSwapQueue<RevisionEvent> | null = null;
+  const expireSession = (): void => {
+    if (expired) return;
+    setGalleryFavicon(document, "expired");
+    expired = true;
+    exportMenu?.sync();
+    swaps?.close();
+    clearSession(window.sessionStorage);
+    renderSessionExpired(
+      document,
+      (message) => setGalleryError(document, message),
+      (status) => setGalleryStatus(document, status),
+    );
+    setLiveState(document, "idle");
+  };
   const baseUrl = window.location.origin;
   updateGalleryFavicon("idle");
   const bootstrap = await resolveGalleryBootstrap({
@@ -1030,18 +1053,12 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     },
   });
   if (bootstrap.outcome === "expired") {
-    setGalleryFavicon(document, "expired");
-    expired = true;
+    expireSession();
     disableGalleryExportMenu(document);
-    renderSessionExpired(
-      document,
-      (message) => setGalleryError(document, message),
-      (status) => setGalleryStatus(document, status),
-    );
     return;
   }
   const handoff = bootstrap.session;
-  const exportMenu = installGalleryExportMenu({ document, isExpired: () => expired });
+  exportMenu = installGalleryExportMenu({ document, isExpired: () => expired });
   const title = document.getElementById("facet-title");
   const revisionLabel = document.getElementById("facet-revision");
   if (title !== null) title.textContent = "facet";
@@ -1077,14 +1094,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
   } catch (error) {
     if (error instanceof GallerySessionExpiredError) {
-      setGalleryFavicon(document, "expired");
-      expired = true;
-      clearSession(window.sessionStorage);
-      renderSessionExpired(
-        document,
-        (message) => setGalleryError(document, message),
-        (status) => setGalleryStatus(document, status),
-      );
+      expireSession();
       return;
     }
     throw error;
@@ -1115,35 +1125,31 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     initialEvidence = await fetchGalleryEvidence(baseUrl, handoff, source.revisionSha, fetch);
   } catch (error) {
     if (!(error instanceof GallerySessionExpiredError)) throw error;
-    setGalleryFavicon(document, "expired");
-    expired = true;
-    exportMenu.sync();
-    clearSession(window.sessionStorage);
-    renderSessionExpired(
-      document,
-      (message) => setGalleryError(document, message),
-      (status) => setGalleryStatus(document, status),
-    );
+    expireSession();
     return;
   }
-  exportMenu.setState({
-    artifactId: source.artifactId,
-    revisionSha: source.revisionSha,
-    slug: source.slug,
-    title: source.title,
-    artifactType: source.artifactType as GalleryExportState["artifactType"],
-    renderer: source.renderer as GalleryExportState["renderer"],
-    sourceBytes: source.sourceBytes,
-    verdict: source.verdict ?? null,
-    renderBytes: initialEvidence.bytes,
-  });
+  exportMenu!.setState(
+    exportMenuStateFrom(
+      {
+        artifactId: source.artifactId,
+        revisionSha: source.revisionSha,
+        slug: source.slug,
+        title: source.title,
+        artifactType: source.artifactType as GalleryExportState["artifactType"],
+        renderer: source.renderer as GalleryExportState["renderer"],
+        sourceBytes: source.sourceBytes,
+        verdict: source.verdict ?? null,
+      },
+      initialEvidence.bytes,
+    ),
+  );
   host.setVisibility(current.frameId, true);
   updateGalleryTitle(source.title);
   updateGalleryFavicon(source.verdict?.status ?? "unverified");
   updateGalleryVerdict(source.verdict ?? null);
   updateGalleryStatus("displayed");
   updateLiveState("live");
-  const swaps = createSerializedSwapQueue<RevisionEvent>((event) =>
+  swaps = createSerializedSwapQueue<RevisionEvent>((event) =>
     swapToRevision(
       {
         dom,
@@ -1174,17 +1180,21 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
             fetch,
           );
           if (expired) return;
-          exportMenu.setState({
-            artifactId: revision.artifactId,
-            revisionSha: revision.revisionSha,
-            slug: revision.slug,
-            title: revision.title,
-            artifactType: revision.artifactType as GalleryExportState["artifactType"],
-            renderer: revision.renderer as GalleryExportState["renderer"],
-            sourceBytes: revision.sourceBytes,
-            verdict: revision.verdict ?? null,
-            renderBytes: evidence.bytes,
-          });
+          exportMenu!.setState(
+            exportMenuStateFrom(
+              {
+                artifactId: revision.artifactId,
+                revisionSha: revision.revisionSha,
+                slug: revision.slug,
+                title: revision.title,
+                artifactType: revision.artifactType as GalleryExportState["artifactType"],
+                renderer: revision.renderer as GalleryExportState["renderer"],
+                sourceBytes: revision.sourceBytes,
+                verdict: revision.verdict ?? null,
+              },
+              evidence.bytes,
+            ),
+          );
           if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
           updateGalleryVerdict(revision.verdict ?? null);
           updateGalleryStatus("displayed");
@@ -1206,20 +1216,6 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         updateGalleryError(error instanceof Error ? error.message : String(error));
       }),
   );
-  const expireSession = (): void => {
-    if (expired) return;
-    setGalleryFavicon(document, "expired");
-    expired = true;
-    exportMenu.sync();
-    swaps.close();
-    clearSession(window.sessionStorage);
-    renderSessionExpired(
-      document,
-      (message) => setGalleryError(document, message),
-      (status) => setGalleryStatus(document, status),
-    );
-    setLiveState(document, "idle");
-  };
   const stream = connectRevisionStream({
     baseUrl,
     bearer: handoff.authorization.replace(/^Bearer\s+/i, ""),
@@ -1233,7 +1229,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       updateSwapBar("start");
       updateGalleryFavicon("unverified");
       updateGalleryVerdict(null);
-      swaps.enqueue(event);
+      swaps?.enqueue(event);
     },
     onClose: (event) => {
       // `lease_expired` (the per-lease TTL firing server-side) and a

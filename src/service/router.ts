@@ -29,13 +29,7 @@ import { resolve as resolvePath } from "node:path";
 import { readFileSync } from "node:fs";
 
 import { requireAnyBearer, checkMutationSecurityHeaders } from "./security/auth";
-import {
-  checkHostOrigin,
-  isCrossSiteRejection,
-  isMissingHostRejection,
-  resolveHost,
-  type HostOriginResult,
-} from "./security/host-origin";
+import { checkHostOrigin, resolveHost, type HostOriginResult } from "./security/host-origin";
 import { dispatch, type DispatcherDeps } from "./dispatcher";
 import { handleStream, type RevisionBroadcaster } from "./stream";
 import { envelopeResponse, generateRequestId, pickRequestId } from "./http-utils";
@@ -45,6 +39,8 @@ import {
   parseBody,
   readCappedBody,
   readRequestMeta,
+  resolveGalleryRequest,
+  statusForHostCheck,
   statusFor,
   type RequestMeta,
 } from "./router-guards";
@@ -118,17 +114,6 @@ export interface RouterDeps extends DispatcherDeps {
     string,
     { readonly artifactId: string; readonly revisionSha: string; readonly leaseId: string }
   >;
-}
-
-function statusForHostCheck(error: FacetError | undefined): number {
-  // Cross-site mutation → 403 (CSRF). Missing host → 421 (Misdirected
-  // Request, per RFC 8470 — distinguishes "no host" from "wrong host",
-  // both of which are 400-ish but the typed 421 makes the missing-host
-  // case unambiguous in logs and test assertions). Every other
-  // host/origin failure is a 400.
-  if (isCrossSiteRejection(error)) return 403;
-  if (isMissingHostRejection(error)) return 421;
-  return 400;
 }
 
 export async function handleCommand(deps: RouterDeps, req: Request): Promise<Response> {
@@ -533,44 +518,9 @@ export function buildRouter(deps: RouterDeps): {
         return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
       }
       if (path === ROUTE_SOURCE && req.method.toUpperCase() === "GET") {
-        const meta = readRequestMeta(req);
-        const hostCheck = checkHostOrigin({
-          method: meta.method,
-          host: meta.host,
-          origin: meta.origin,
-          secFetchSite: meta.secFetchSite,
-          expectedHost: resolveHost(deps.expectedHost),
-          ownOrigin: resolveHost(deps.ownOrigin),
-        });
-        if (!hostCheck.ok)
-          return new Response(null, { status: statusForHostCheck(hostCheck.error) });
-        const auth = requireAnyBearer(meta.authorization, [deps.installToken]);
-        const leaseId = meta.headers.get("x-gallery-lease");
-        const artifactId = meta.headers.get("x-gallery-artifact");
-        if (!auth.ok || leaseId === null || artifactId === null) {
-          return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
-        }
-        // artifactId comes from the CALLER's X-Gallery-Artifact header, so the
-        // lease must be matched on BOTH fields: a valid lease for artifact A
-        // paired with a header naming artifact B would otherwise read B's bytes.
-        const lease = deps.leases
-          .list()
-          .find((entry) => entry.leaseId === leaseId && entry.artifactId === artifactId);
-        if (lease === undefined) {
-          return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
-        }
-        const revisionSha = new URL(req.url).searchParams.get("revisionSha");
-        if (revisionSha === null || revisionSha.length === 0) {
-          return new Response(null, { status: 400, headers: { "cache-control": "no-store" } });
-        }
-        const revision = deps.repository.getRevisionBySha(artifactId, revisionSha);
-        if (revision === null) {
-          return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
-        }
-        const artifact = deps.repository.getArtifactById(artifactId);
-        if (artifact === null) {
-          return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
-        }
+        const resolved = resolveGalleryRequest(req, deps);
+        if (!resolved.ok) return resolved.response;
+        const { artifactId, revision, artifact } = resolved;
         return new Response(
           JSON.stringify({
             artifactId,
@@ -612,41 +562,9 @@ export function buildRouter(deps: RouterDeps): {
         );
       }
       if (path === ROUTE_EVIDENCE && req.method.toUpperCase() === "GET") {
-        const meta = readRequestMeta(req);
-        const hostCheck = checkHostOrigin({
-          method: meta.method,
-          host: meta.host,
-          origin: meta.origin,
-          secFetchSite: meta.secFetchSite,
-          expectedHost: resolveHost(deps.expectedHost),
-          ownOrigin: resolveHost(deps.ownOrigin),
-        });
-        if (!hostCheck.ok)
-          return new Response(null, { status: statusForHostCheck(hostCheck.error) });
-        const auth = requireAnyBearer(meta.authorization, [deps.installToken]);
-        const leaseId = meta.headers.get("x-gallery-lease");
-        const artifactId = meta.headers.get("x-gallery-artifact");
-        if (!auth.ok || leaseId === null || artifactId === null) {
-          return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
-        }
-        const lease = deps.leases
-          .list()
-          .find((entry) => entry.leaseId === leaseId && entry.artifactId === artifactId);
-        if (lease === undefined) {
-          return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
-        }
-        const revisionSha = new URL(req.url).searchParams.get("revisionSha");
-        if (revisionSha === null || revisionSha.length === 0) {
-          return new Response(null, { status: 400, headers: { "cache-control": "no-store" } });
-        }
-        const revision = deps.repository.getRevisionBySha(artifactId, revisionSha);
-        if (revision === null) {
-          return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
-        }
-        const artifact = deps.repository.getArtifactById(artifactId);
-        if (artifact === null) {
-          return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
-        }
+        const resolved = resolveGalleryRequest(req, deps);
+        if (!resolved.ok) return resolved.response;
+        const { revision, artifact } = resolved;
         try {
           const evidence = readStoredRenderEvidence({
             repository: deps.repository,

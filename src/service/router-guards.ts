@@ -5,13 +5,22 @@
  * between `handleCommand`'s header read and its dispatch call:
  * request-metadata extraction, body-cap enforcement, JSON parsing,
  * and the `FacetError.code → HTTP status` mapping used by the
- * catch-all error path. The guard ORDER stays in `router.ts` so the
- * 7-step pipeline (host → auth → content-type → body-cap → parse →
- * command-validate → reserved-verb → promote → dispatch) is readable
- * at the call site; this file holds the pieces, not the orchestration.
+ * catch-all error path. Gallery routes use `resolveGalleryRequest` for the
+ * shared host → auth → lease → revision → artifact sequence, while command
+ * routes retain their longer orchestration in `router.ts`.
  */
 
 import { FacetError } from "../shared/errors/facet-error";
+import { requireAnyBearer } from "./security/auth";
+import {
+  checkHostOrigin,
+  isCrossSiteRejection,
+  isMissingHostRejection,
+  resolveHost,
+} from "./security/host-origin";
+import type { GalleryLeaseManager, GalleryLease } from "./security/leases";
+import type { Artifact, Revision } from "../shared/contracts/artifact";
+import type { ArtifactRepository } from "./store/repository";
 
 /**
  * Hard ceiling on the raw HTTP body. Distinct from `SOURCE_CAP_BYTES`
@@ -53,6 +62,92 @@ export function readRequestMeta(req: Request): RequestMeta {
     contentLength: cl !== null ? Number(cl) : null,
     headers: req.headers,
   };
+}
+
+export interface GalleryRequestDeps {
+  readonly expectedHost: string | (() => string);
+  readonly ownOrigin: string | (() => string);
+  readonly installToken: string;
+  readonly leases: GalleryLeaseManager;
+  readonly repository: ArtifactRepository;
+}
+
+export type GalleryRequestResolution =
+  | {
+      readonly ok: true;
+      readonly meta: RequestMeta;
+      readonly lease: GalleryLease;
+      readonly artifactId: string;
+      readonly revision: Revision;
+      readonly artifact: Artifact;
+    }
+  | { readonly ok: false; readonly response: Response };
+
+export function statusForHostCheck(error: FacetError | undefined): number {
+  if (isCrossSiteRejection(error)) return 403;
+  if (isMissingHostRejection(error)) return 421;
+  return 400;
+}
+
+/** Resolve the shared host, capability, and bound-revision gallery guards. */
+export function resolveGalleryRequest(
+  req: Request,
+  deps: GalleryRequestDeps,
+): GalleryRequestResolution {
+  const meta = readRequestMeta(req);
+  const hostCheck = checkHostOrigin({
+    method: meta.method,
+    host: meta.host,
+    origin: meta.origin,
+    secFetchSite: meta.secFetchSite,
+    expectedHost: resolveHost(deps.expectedHost),
+    ownOrigin: resolveHost(deps.ownOrigin),
+  });
+  if (!hostCheck.ok)
+    return {
+      ok: false,
+      response: new Response(null, { status: statusForHostCheck(hostCheck.error) }),
+    };
+  const auth = requireAnyBearer(meta.authorization, [deps.installToken]);
+  const leaseId = meta.headers.get("x-gallery-lease");
+  const artifactId = meta.headers.get("x-gallery-artifact");
+  if (!auth.ok || leaseId === null || artifactId === null) {
+    return {
+      ok: false,
+      response: new Response(null, { status: 401, headers: { "cache-control": "no-store" } }),
+    };
+  }
+  const lease = deps.leases
+    .list()
+    .find((entry) => entry.leaseId === leaseId && entry.artifactId === artifactId);
+  if (lease === undefined) {
+    return {
+      ok: false,
+      response: new Response(null, { status: 401, headers: { "cache-control": "no-store" } }),
+    };
+  }
+  const revisionSha = new URL(req.url).searchParams.get("revisionSha");
+  if (revisionSha === null || revisionSha.length === 0) {
+    return {
+      ok: false,
+      response: new Response(null, { status: 400, headers: { "cache-control": "no-store" } }),
+    };
+  }
+  const revision = deps.repository.getRevisionBySha(artifactId, revisionSha);
+  if (revision === null) {
+    return {
+      ok: false,
+      response: new Response(null, { status: 404, headers: { "cache-control": "no-store" } }),
+    };
+  }
+  const artifact = deps.repository.getArtifactById(artifactId);
+  if (artifact === null) {
+    return {
+      ok: false,
+      response: new Response(null, { status: 404, headers: { "cache-control": "no-store" } }),
+    };
+  }
+  return { ok: true, meta, lease, artifactId, revision, artifact };
 }
 
 /**

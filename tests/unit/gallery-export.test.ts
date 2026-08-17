@@ -8,6 +8,7 @@ import {
   renderFilename,
   sidecarFilename,
   sourceFilename,
+  setDownloadBlobUrlForTests,
   type GalleryExportState,
 } from "../../src/gallery-web/export";
 import { fetchGalleryEvidence, fetchGallerySource } from "../../src/gallery-web/app";
@@ -80,23 +81,19 @@ describe("gallery export helpers", () => {
   });
 
   test("downloads a blob with the exact filename and revokes its object URL after click", () => {
-    const globals = globalThis as Record<string, unknown>;
-    const originalURL = globals.URL;
-    const originalDocument = globals.document;
     const calls: string[] = [];
     const anchor = {
       href: "",
       download: "",
       click: () => calls.push("click"),
     };
-    globals.URL = {
+    setDownloadBlobUrlForTests({
       createObjectURL: () => "blob:gallery-export",
       revokeObjectURL: (url: string) => calls.push(`revoke:${url}`),
-    };
-    globals.document = { createElement: (tag: string) => (tag === "a" ? anchor : null) };
+    });
     try {
       downloadBlob(
-        globals.document as unknown as Document,
+        { createElement: (tag: string) => (tag === "a" ? anchor : null) } as unknown as Document,
         "example-slug.png",
         new Uint8Array([1]),
         "image/png",
@@ -104,10 +101,7 @@ describe("gallery export helpers", () => {
       expect(anchor.download).toBe("example-slug.png");
       expect(calls).toEqual(["click", "revoke:blob:gallery-export"]);
     } finally {
-      if (originalURL === undefined) delete globals.URL;
-      else globals.URL = originalURL;
-      if (originalDocument === undefined) delete globals.document;
-      else globals.document = originalDocument;
+      setDownloadBlobUrlForTests(undefined);
     }
   });
 
