@@ -10,7 +10,7 @@
  * without ever writing to the legacy root.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,7 +19,7 @@ import { describe, expect, test } from "bun:test";
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
 import { ArtifactRepository } from "../../src/service/store/repository";
-import { exportStoredRender } from "../../src/service/export";
+import { exportStoredRender, readStoredRenderEvidence } from "../../src/service/export";
 
 const PNG_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
 
@@ -67,6 +67,17 @@ describe("exportStoredRender — legacy evidence root tolerance", () => {
         expected: {},
         observed: { rendererRootSvgCount: 1 },
         screenshotPath,
+      });
+
+      const artifact = repository.getArtifactById(artifactId);
+      if (artifact === null) throw new Error("missing seeded artifact");
+      const evidence = readStoredRenderEvidence({ repository, artifact, revision });
+      expect(evidence.bytes).toEqual(PNG_BYTES);
+      expect(evidence.verdict).toMatchObject({
+        artifactId,
+        revisionSha,
+        tier: 1,
+        status: "ok",
       });
 
       const result = exportStoredRender({
@@ -164,6 +175,48 @@ describe("exportStoredRender — legacy evidence root tolerance", () => {
           requestId: "r-1",
         }),
       ).toThrow(/evidence_unavailable|Screenshot evidence unavailable/);
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a screenshot symlink that resolves outside both evidence roots", () => {
+    const dir = mkdtempSync(join(tmpdir(), "facet-export-symlink-escape-"));
+    const canonical = join(dir, "state", "evidence");
+    const legacy = join(dir, "share", "evidence");
+    const outside = join(dir, "outside.png");
+    mkdirSync(canonical, { recursive: true });
+    mkdirSync(legacy, { recursive: true });
+
+    const db = openDatabase(join(dir, "facet.sqlite"));
+    runMigrations(db);
+    try {
+      const repository = new ArtifactRepository(db, {
+        evidenceRoot: canonical,
+        legacyEvidenceRoot: legacy,
+      });
+      const { artifactId, revisionSha } = seedRevision(repository);
+      const revision = repository.getRevisionBySha(artifactId, revisionSha);
+      if (revision === null) throw new Error("missing seeded revision");
+      const screenshotPath = join(canonical, artifactId, revisionSha, "run-1", "screenshot.png");
+      mkdirSync(join(canonical, artifactId, revisionSha, "run-1"), { recursive: true });
+      writeFileSync(outside, PNG_BYTES);
+      symlinkSync(outside, screenshotPath);
+      repository.recordRenderRun({
+        revisionId: revision.id,
+        tier: 1,
+        status: "ok",
+        expected: {},
+        observed: { rendererRootSvgCount: 1 },
+        screenshotPath,
+      });
+
+      const artifact = repository.getArtifactById(artifactId);
+      if (artifact === null) throw new Error("missing seeded artifact");
+      expect(() => readStoredRenderEvidence({ repository, artifact, revision })).toThrow(
+        /evidence_unavailable|Screenshot evidence unavailable/,
+      );
     } finally {
       db.close();
       rmSync(dir, { recursive: true, force: true });

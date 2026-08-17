@@ -53,6 +53,7 @@ import { buildFrameDocument } from "../gallery-web/frame-html";
 import { ARTIFACT_TYPES } from "../shared/contracts/artifact-types";
 import { ArtifactTypeSchema } from "../shared/contracts/artifact";
 import { latestStoredVerdict } from "./stored-verdict";
+import { readStoredRenderEvidence } from "./export";
 
 const ROUTE_API = "/api/v1/commands";
 const ROUTE_STREAM = "/api/v1/stream";
@@ -61,6 +62,7 @@ const ROUTE_FRAME = "/gallery/frame";
 const ROUTE_BOOTSTRAP = "/api/v1/gallery/bootstrap";
 const ROUTE_RELEASE = "/api/v1/gallery/release";
 const ROUTE_SOURCE = "/api/v1/gallery/source";
+const ROUTE_EVIDENCE = "/api/v1/gallery/evidence";
 const FRAME_RUNTIME_PREFIX = `${ROUTE_FRAME}/runtime/`;
 const FRAME_CHUNK_PREFIX = `${ROUTE_FRAME}/chunks/`;
 const TIER1_TRACE = process.env.FACET_TIER1_TRACE === "1";
@@ -608,6 +610,59 @@ export function buildRouter(deps: RouterDeps): {
             headers: { "content-type": "application/json", "cache-control": "no-store" },
           },
         );
+      }
+      if (path === ROUTE_EVIDENCE && req.method.toUpperCase() === "GET") {
+        const meta = readRequestMeta(req);
+        const hostCheck = checkHostOrigin({
+          method: meta.method,
+          host: meta.host,
+          origin: meta.origin,
+          secFetchSite: meta.secFetchSite,
+          expectedHost: resolveHost(deps.expectedHost),
+          ownOrigin: resolveHost(deps.ownOrigin),
+        });
+        if (!hostCheck.ok)
+          return new Response(null, { status: statusForHostCheck(hostCheck.error) });
+        const auth = requireAnyBearer(meta.authorization, [deps.installToken]);
+        const leaseId = meta.headers.get("x-gallery-lease");
+        const artifactId = meta.headers.get("x-gallery-artifact");
+        if (!auth.ok || leaseId === null || artifactId === null) {
+          return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
+        }
+        const lease = deps.leases
+          .list()
+          .find((entry) => entry.leaseId === leaseId && entry.artifactId === artifactId);
+        if (lease === undefined) {
+          return new Response(null, { status: 401, headers: { "cache-control": "no-store" } });
+        }
+        const revisionSha = new URL(req.url).searchParams.get("revisionSha");
+        if (revisionSha === null || revisionSha.length === 0) {
+          return new Response(null, { status: 400, headers: { "cache-control": "no-store" } });
+        }
+        const revision = deps.repository.getRevisionBySha(artifactId, revisionSha);
+        if (revision === null) {
+          return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
+        }
+        const artifact = deps.repository.getArtifactById(artifactId);
+        if (artifact === null) {
+          return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
+        }
+        try {
+          const evidence = readStoredRenderEvidence({
+            repository: deps.repository,
+            artifact,
+            revision,
+          });
+          return new Response(evidence.bytes, {
+            status: 200,
+            headers: { "content-type": "image/png", "cache-control": "no-store" },
+          });
+        } catch (error) {
+          if (error instanceof FacetError && error.code === "evidence_unavailable") {
+            return envelopeResponse(errEnvelope(generateRequestId(), error.toBody()), 404);
+          }
+          throw error;
+        }
       }
       if (path === ROUTE_API) return handleCommand({ ...deps, galleryBootstrap: bootstrap }, req);
       if (path === ROUTE_STREAM) {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -22,6 +22,17 @@ function moveGalleryDir(destination: string): void {
     cpSync(GALLERY_DIR, destination, { recursive: true });
     rmSync(GALLERY_DIR, { recursive: true, force: true });
   }
+}
+
+function evidenceHeadersFor(
+  handoff: { authorization: string; lease: { leaseId: string } },
+  artifactId: string,
+): Record<string, string> {
+  return {
+    authorization: handoff.authorization,
+    "x-gallery-lease": handoff.lease.leaseId,
+    "x-gallery-artifact": artifactId,
+  };
 }
 
 function restoreGalleryDir(): void {
@@ -331,6 +342,119 @@ describe("GET /gallery", () => {
         })
       ).status,
     ).toBe(401);
+  });
+
+  test("serves stored screenshot evidence only through the matching gallery lease", async () => {
+    const testEnvDir = mkdtempSync(join(tmpdir(), "facet-gallery-evidence-"));
+    envDir = testEnvDir;
+    const evidenceRoot = join(testEnvDir, "evidence");
+    const dbPath = join(testEnvDir, "facet.sqlite");
+    service = await startFacetService({
+      dbPath,
+      evidencePath: evidenceRoot,
+      installTokenPath: join(testEnvDir, "install.token"),
+      promoteTokenPath: join(testEnvDir, "promote.token"),
+      lockPath: join(testEnvDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "gallery-evidence-test" }),
+      tier0Runner: stubTier0Runner,
+    });
+    const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
+    const first = await publishArtifact(client, {
+      artifactType: "mermaid",
+      bytes: new TextEncoder().encode("graph TD\n A-->B").buffer as ArrayBuffer,
+      slug: "evidence-a",
+    });
+    const second = await publishArtifact(client, {
+      artifactType: "mermaid",
+      bytes: new TextEncoder().encode("graph TD\n C-->D").buffer as ArrayBuffer,
+      slug: "evidence-b",
+    });
+
+    const db = openDatabase({ databasePath: dbPath });
+    runMigrations(db);
+    const repository = new ArtifactRepository(db, { evidenceRoot });
+    const firstRevision = repository.getRevisionBySha(first.artifactId, first.revisionSha);
+    if (firstRevision === null) throw new Error("missing first revision");
+    const expectedPngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 7, 8, 9]);
+    const screenshotPath = join(
+      evidenceRoot,
+      first.artifactId,
+      first.revisionSha,
+      "run-1",
+      "screenshot.png",
+    );
+    mkdirSync(join(evidenceRoot, first.artifactId, first.revisionSha, "run-1"), {
+      recursive: true,
+    });
+    writeFileSync(screenshotPath, expectedPngBytes);
+    repository.recordRenderRun({
+      revisionId: firstRevision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: { rendererRootSvgCount: 1 },
+      screenshotPath,
+      retained: true,
+    });
+    db.close();
+
+    const openDisplay = async (artifactId: string, revisionSha: string) => {
+      const openResponse = await client.sendCommand({
+        command: "open",
+        requestId: generateRequestId(),
+        artifactId,
+        revisionSha,
+      });
+      expect(openResponse.ok).toBe(true);
+      if (!openResponse.ok) throw new Error("open request failed");
+      const open = CommandResultSchema.parse(openResponse.data);
+      if (open.command !== "open") throw new Error("open result mismatch");
+      const bootstrap = await fetch(`${service!.url}/api/v1/gallery/bootstrap`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: new URL(open.frameUrl).hash.split("=")[1] }),
+      });
+      expect(bootstrap.status).toBe(200);
+      return (await bootstrap.json()) as {
+        authorization: string;
+        lease: { leaseId: string };
+      };
+    };
+    const firstHandoff = await openDisplay(first.artifactId, first.revisionSha);
+    const secondHandoff = await openDisplay(second.artifactId, second.revisionSha);
+    const evidenceUrl = `${service.url}/api/v1/gallery/evidence?revisionSha=`;
+    const headersFor = evidenceHeadersFor;
+
+    const hostRejected = await fetch(`${evidenceUrl}${first.revisionSha}`, {
+      headers: { host: "evil.example" },
+    });
+    expect(hostRejected.status).toBe(400);
+    const noLease = await fetch(`${evidenceUrl}${first.revisionSha}`);
+    expect(noLease.status).toBe(401);
+    const wrongLease = await fetch(`${evidenceUrl}${first.revisionSha}`, {
+      headers: { ...headersFor(firstHandoff, first.artifactId), "x-gallery-lease": "wrong" },
+    });
+    expect(wrongLease.status).toBe(401);
+    const crossArtifactHeader = await fetch(`${evidenceUrl}${second.revisionSha}`, {
+      headers: headersFor(firstHandoff, second.artifactId),
+    });
+    expect(crossArtifactHeader.status).toBe(401);
+    const crossRevision = await fetch(`${evidenceUrl}${second.revisionSha}`, {
+      headers: headersFor(firstHandoff, first.artifactId),
+    });
+    expect(crossRevision.status).toBe(404);
+    const missingEvidence = await fetch(`${evidenceUrl}${second.revisionSha}`, {
+      headers: headersFor(secondHandoff, second.artifactId),
+    });
+    expect(missingEvidence.status).toBe(404);
+    expect((await missingEvidence.json()).error.code).toBe("evidence_unavailable");
+    const happy = await fetch(`${evidenceUrl}${first.revisionSha}`, {
+      headers: headersFor(firstHandoff, first.artifactId),
+    });
+    expect(happy.status).toBe(200);
+    expect(happy.headers.get("content-type")).toBe("image/png");
+    expect(new Uint8Array(await happy.arrayBuffer())).toEqual(expectedPngBytes);
   });
 
   test("returns null for an unvalidated revision without creating a render run", async () => {

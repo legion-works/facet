@@ -26,7 +26,10 @@ import {
   buildExportSidecar,
   extensionForExport as sharedExtensionForExport,
 } from "../../src/shared/export";
-import { buildExportSidecar as serviceBuildExportSidecar } from "../../src/service/export";
+import {
+  buildExportSidecar as serviceBuildExportSidecar,
+  readStoredRenderEvidence,
+} from "../../src/service/export";
 
 const artifact: Artifact = {
   id: "artifact-1",
@@ -97,6 +100,10 @@ function validExportResultFor(
 }
 
 describe("export CLI helpers", () => {
+  test("exports the shared stored-render evidence reader", () => {
+    expect(readStoredRenderEvidence).toBeTypeOf("function");
+  });
+
   test("CLI and service surfaces consume the shared export helpers", () => {
     expect(cliExtensionForExport).toBe(sharedExtensionForExport);
     expect(serviceBuildExportSidecar).toBe(buildExportSidecar);

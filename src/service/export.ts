@@ -101,6 +101,33 @@ function resolveEvidencePath(
   throw evidenceUnavailable(artifact, revision);
 }
 
+export function readStoredRenderEvidence(input: {
+  readonly repository: ArtifactRepository;
+  readonly artifact: Artifact;
+  readonly revision: Revision;
+}): { bytes: Uint8Array; verdict: ReturnType<typeof verdictFromStoredRun> } {
+  const run = input.repository.listRenderRuns({ revisionId: input.revision.id, tier: 1 })[0];
+  if (run === undefined || run.screenshotPath === null) {
+    throw evidenceUnavailable(input.artifact, input.revision);
+  }
+
+  try {
+    const screenshotPath = resolveEvidencePath(
+      input.repository,
+      run.screenshotPath,
+      input.artifact,
+      input.revision,
+    );
+    return {
+      bytes: new Uint8Array(readFileSync(screenshotPath)),
+      verdict: verdictFromStoredRun(input.revision, run),
+    };
+  } catch (cause) {
+    if (cause instanceof FacetError) throw cause;
+    throw evidenceUnavailable(input.artifact, input.revision, cause);
+  }
+}
+
 export function exportStoredSource(input: {
   readonly repository: ArtifactRepository;
   readonly command: ExportRequest;
@@ -150,39 +177,23 @@ export function exportStoredRender(input: {
   readonly exportedAt?: string;
 }): ExportResult {
   const { artifact, revision } = resolveExportTarget(input.repository, input.command);
-
-  const run = input.repository.listRenderRuns({ revisionId: revision.id, tier: 1 })[0];
-  if (run === undefined || run.screenshotPath === null) {
-    throw evidenceUnavailable(artifact, revision);
-  }
-
-  let bytes: Uint8Array;
-  try {
-    const screenshotPath = resolveEvidencePath(
-      input.repository,
-      run.screenshotPath,
-      artifact,
-      revision,
-    );
-    bytes = new Uint8Array(readFileSync(screenshotPath));
-  } catch (cause) {
-    if (cause instanceof FacetError) throw cause;
-    throw evidenceUnavailable(artifact, revision, cause);
-  }
-
-  const verdict = verdictFromStoredRun(revision, run);
+  const evidence = readStoredRenderEvidence({
+    repository: input.repository,
+    artifact,
+    revision,
+  });
   return ExportResultSchema.parse({
     command: "export",
     requestId: input.requestId,
     format: "render",
-    bytes: Buffer.from(bytes).toString("base64"),
+    bytes: Buffer.from(evidence.bytes).toString("base64"),
     sidecar: buildExportSidecar({
       artifactId: artifact.id,
       slug: artifact.slug,
       revisionSha: revision.sha256,
       artifactType: revision.artifactType,
       renderer: revision.renderer,
-      verdict,
+      verdict: evidence.verdict,
       format: "render",
       exportedAt: input.exportedAt ?? now(),
     }),
