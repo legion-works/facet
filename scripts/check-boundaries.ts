@@ -12,9 +12,9 @@
 // specifier was split across lines by legal formatting (a multiline
 // backtick dynamic import, or `} from` on its own line), because the
 // regex needs the opening `import(`/`require(` and its literal argument
-// on the same scanned unit. Comments are stripped file-wide (multi-line
-// block comments included) before scanning, and match offsets are mapped
-// back to line numbers for reporting.
+// on the same scanned unit. A small lexer masks comments while tracking
+// strings, templates, and regexes so only code-position import keywords are
+// scanned. Match offsets are mapped back to line numbers for reporting.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -231,49 +231,187 @@ function checkFrameSpecifier(specifier: string): string | null {
   return null;
 }
 
-/**
- * Blank out `/* ... *\/` and `// ...` comments across the WHOLE file,
- * replacing every stripped character with a space (newlines are kept as
- * newlines) so character offsets — and therefore line numbers computed
- * from them — stay identical to the original text. Prose inside a
- * multi-line block comment routinely contains `from "..."` (e.g. a doc
- * comment reading `distinguishes "no host" from "wrong host"`), which the
- * re-export regex would otherwise read as an import specifier; scanning
- * the raw text line-by-line and only recognizing a block comment when
- * each line happened to start with `*` missed exactly that case for any
- * differently formatted block comment, and missed a dynamic import split
- * across lines entirely (the opening `import(` and its literal argument
- * never shared a line to match against).
- *
- * Known limitation, unchanged from the prior per-line stripper: this is
- * not string-aware, so a `//` or `/*` inside a string literal (e.g. a URL)
- * would be misread as a comment start. Acceptable for a lexical guard —
- * over-stripping can only hide a legitimate import behind a false
- * "comment", not let a real bypass through.
- */
-function stripCommentsWholeFile(text: string): string {
-  let out = "";
+/** Preserve source offsets while masking comments and tracking executable code. */
+interface LexedSource {
+  readonly text: string;
+  readonly code: readonly boolean[];
+  readonly ambiguousOffset: number | null;
+}
+
+type LexMode =
+  | { readonly kind: "code" }
+  | { readonly kind: "template-expression"; depth: number }
+  | { readonly kind: "string"; readonly quote: "'" | '"'; readonly start: number }
+  | { readonly kind: "template"; readonly start: number }
+  | { readonly kind: "regex"; readonly start: number; inCharacterClass: boolean }
+  | { readonly kind: "block-comment"; readonly start: number }
+  | { readonly kind: "line-comment" };
+
+function previousCodeWord(text: string, code: readonly boolean[], before: number): string {
+  let end = before;
+  while (end > 0 && (!code[end - 1] || /\s/.test(text[end - 1] ?? ""))) end -= 1;
+  let start = end;
+  while (start > 0 && code[start - 1] && /[A-Za-z]/.test(text[start - 1] ?? "")) start -= 1;
+  return text.slice(start, end);
+}
+
+function beginsRegex(text: string, code: readonly boolean[], slash: number): boolean {
+  let previous = slash - 1;
+  while (previous >= 0 && (!code[previous] || /\s/.test(text[previous] ?? ""))) previous -= 1;
+  if (previous < 0) return true;
+  const character = text[previous] ?? "";
+  if ("([{:;,=!?&|+-*%^~<>".includes(character)) return true;
+  return [
+    "return",
+    "throw",
+    "case",
+    "delete",
+    "void",
+    "typeof",
+    "yield",
+    "await",
+    "in",
+    "of",
+  ].includes(previousCodeWord(text, code, slash));
+}
+
+function lexSource(text: string): LexedSource {
+  const masked = text.split("");
+  const code = Array<boolean>(text.length).fill(false);
+  const modes: LexMode[] = [{ kind: "code" }];
   let i = 0;
-  const n = text.length;
-  while (i < n) {
-    if (text[i] === "/" && text[i + 1] === "*") {
-      const end = text.indexOf("*/", i + 2);
-      const stop = end === -1 ? n : end + 2;
-      for (let j = i; j < stop; j += 1) out += text[j] === "\n" ? "\n" : " ";
-      i = stop;
+  const mask = (offset: number): void => {
+    if (text[offset] !== "\n") masked[offset] = " ";
+  };
+
+  while (i < text.length) {
+    const mode = modes.at(-1);
+    if (mode === undefined) return { text: masked.join(""), code, ambiguousOffset: i };
+    const character = text[i] ?? "";
+    const next = text[i + 1] ?? "";
+
+    if (mode.kind === "line-comment") {
+      mask(i);
+      if (character === "\n") modes.pop();
+      i += 1;
       continue;
     }
-    if (text[i] === "/" && text[i + 1] === "/") {
-      const end = text.indexOf("\n", i);
-      const stop = end === -1 ? n : end;
-      out += " ".repeat(stop - i);
-      i = stop;
+    if (mode.kind === "block-comment") {
+      mask(i);
+      if (character === "*" && next === "/") {
+        mask(i + 1);
+        modes.pop();
+        i += 2;
+        continue;
+      }
+      i += 1;
       continue;
     }
-    out += text[i];
+    if (mode.kind === "string") {
+      if (character === "\\") {
+        i += 2;
+        continue;
+      }
+      if (character === mode.quote) modes.pop();
+      else if (character === "\n")
+        return { text: masked.join(""), code, ambiguousOffset: mode.start };
+      i += 1;
+      continue;
+    }
+    if (mode.kind === "regex") {
+      if (character === "\\") {
+        i += 2;
+        continue;
+      }
+      if (character === "[") mode.inCharacterClass = true;
+      if (character === "]") mode.inCharacterClass = false;
+      if (character === "/" && !mode.inCharacterClass) modes.pop();
+      else if (character === "\n")
+        return { text: masked.join(""), code, ambiguousOffset: mode.start };
+      i += 1;
+      continue;
+    }
+    if (mode.kind === "template") {
+      if (character === "\\") {
+        i += 2;
+        continue;
+      }
+      if (character === "`") modes.pop();
+      else if (character === "$" && next === "{") {
+        modes.push({ kind: "template-expression", depth: 0 });
+        i += 2;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    if (mode.kind === "template-expression" && character === "}") {
+      if (mode.depth === 0) {
+        modes.pop();
+      } else {
+        mode.depth -= 1;
+        code[i] = true;
+      }
+      i += 1;
+      continue;
+    }
+    if (mode.kind === "template-expression" && character === "{") {
+      mode.depth += 1;
+      code[i] = true;
+      i += 1;
+      continue;
+    }
+    if (character === "/" && next === "/") {
+      mask(i);
+      mask(i + 1);
+      modes.push({ kind: "line-comment" });
+      i += 2;
+      continue;
+    }
+    if (character === "/" && next === "*") {
+      mask(i);
+      mask(i + 1);
+      modes.push({ kind: "block-comment", start: i });
+      i += 2;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      modes.push({ kind: "string", quote: character, start: i });
+      i += 1;
+      continue;
+    }
+    if (character === "`") {
+      modes.push({ kind: "template", start: i });
+      i += 1;
+      continue;
+    }
+    if (character === "/" && beginsRegex(text, code, i)) {
+      modes.push({ kind: "regex", start: i, inCharacterClass: false });
+      i += 1;
+      continue;
+    }
+    code[i] = true;
     i += 1;
   }
-  return out;
+
+  const unclosed = modes.findLast((entry) => entry.kind !== "code");
+  const ambiguousOffset =
+    unclosed?.kind === "string" ||
+    unclosed?.kind === "template" ||
+    unclosed?.kind === "regex" ||
+    unclosed?.kind === "block-comment"
+      ? unclosed.start
+      : unclosed?.kind === "template-expression"
+        ? text.length
+        : null;
+  return { text: masked.join(""), code, ambiguousOffset };
+}
+
+function isCodeAt(source: LexedSource, offset: number, value: string): boolean {
+  for (let index = offset; index < offset + value.length; index += 1) {
+    if (!source.code[index]) return false;
+  }
+  return true;
 }
 
 /** 1-based line number for a character offset into `text`. */
@@ -327,9 +465,19 @@ export function scanFile(
   failClosedOnUnclassifiableDynamic = true,
 ): Violation[] {
   const raw = readFileSync(file, "utf8");
-  const stripped = stripCommentsWholeFile(raw);
+  const source = lexSource(raw);
+  const stripped = source.text;
   const relativeFile = relative(repoRoot, file).replace(/\\/g, "/");
   const violations: Violation[] = [];
+  if (source.ambiguousOffset !== null) {
+    violations.push({
+      file: relativeFile,
+      line: lineForOffset(stripped, source.ambiguousOffset),
+      specifier: "<source>",
+      reason: "unclassifiable source syntax while scanning imports — failing closed",
+    });
+    return violations;
+  }
   // `import x from "spec"` matches BOTH the static-import regex and the
   // generic `from "spec"` re-export regex (its text literally contains a
   // `from "spec"` clause). Both matches end at the same offset — the
@@ -353,15 +501,25 @@ export function scanFile(
 
   STATIC_IMPORT_SPECIFIER_RE.lastIndex = 0;
   for (const match of stripped.matchAll(STATIC_IMPORT_SPECIFIER_RE)) {
-    if (match[1] !== undefined) pushLiteral(match[1], match.index, match.index + match[0].length);
+    const importOffset = match.index + match[0].indexOf("import");
+    if (match[1] !== undefined && isCodeAt(source, importOffset, "import")) {
+      pushLiteral(match[1], match.index, match.index + match[0].length);
+    }
   }
   RE_EXPORT_SPECIFIER_RE.lastIndex = 0;
   for (const match of stripped.matchAll(RE_EXPORT_SPECIFIER_RE)) {
-    if (match[1] !== undefined) pushLiteral(match[1], match.index, match.index + match[0].length);
+    if (match[1] !== undefined && isCodeAt(source, match.index, "from")) {
+      pushLiteral(match[1], match.index, match.index + match[0].length);
+    }
   }
 
   DYNAMIC_CALL_RE.lastIndex = 0;
   for (const match of stripped.matchAll(DYNAMIC_CALL_RE)) {
+    const callOffset = match.index;
+    const callName = stripped.slice(callOffset, callOffset + 7).startsWith("require")
+      ? "require"
+      : "import";
+    if (!isCodeAt(source, callOffset, callName)) continue;
     const classification = classifyDynamicArg(match[1] ?? "");
     const endOffset = match.index + match[0].length;
     if (classification.kind === "literal") {

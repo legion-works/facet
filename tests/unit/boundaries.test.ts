@@ -353,6 +353,27 @@ describe("boundary check — allowlist fails closed on unlisted packages", () =>
     );
     expect(runBoundaryCheck(root)).toHaveLength(0);
   });
+
+  test("a string containing a block-comment opener cannot hide a forbidden import", () => {
+    const root = makeRoot();
+    writeServiceFile(
+      root,
+      "string-comment.ts",
+      'const marker = "/*";\nimport { render } from "mermaid";\n/* */\n',
+    );
+    const violations = runBoundaryCheck(root);
+    expect(violations.map((violation) => violation.specifier)).toEqual(["mermaid"]);
+  });
+
+  test("a string containing an import tail cannot fabricate a violation", () => {
+    const root = makeRoot();
+    writeServiceFile(
+      root,
+      "string-import-tail.ts",
+      'const prose = \'from "mermaid"\';\nimport { Database } from "bun:sqlite";\n',
+    );
+    expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
 });
 
 describe("boundary check — clean surface", () => {
