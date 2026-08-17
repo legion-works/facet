@@ -41,6 +41,7 @@ import {
 } from "./view-state";
 import type { FrameRenderPayload, GestureMode } from "./frame/frame-payload";
 import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
+import { faviconTint, renderFavicon } from "./favicon";
 
 // Re-exports — the gate test + sibling modules import these from `app`
 // for the v0.1 public surface.
@@ -710,6 +711,16 @@ function setGalleryTitle(document: Document, artifactTitle: string | null): void
   document.title = displayTitle === null ? "facet gallery" : `${displayTitle} · facet`;
 }
 
+export function setGalleryFavicon(
+  document: Document,
+  state: Parameters<typeof faviconTint>[0],
+): void {
+  const link = document.getElementById("facet-favicon") as HTMLLinkElement | null;
+  if (link === null) return;
+  const dataUrl = renderFavicon(faviconTint(state));
+  if (dataUrl !== null) link.href = dataUrl;
+}
+
 function setGalleryStatus(document: Document, status: string): void {
   const target = document.getElementById("facet-status-line");
   if (target !== null) target.textContent = status;
@@ -935,12 +946,16 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   const updateGalleryTitle = (artifactTitle: string | null): void => {
     if (!expired) setGalleryTitle(document, artifactTitle);
   };
+  const updateGalleryFavicon = (state: Parameters<typeof faviconTint>[0]): void => {
+    if (!expired) setGalleryFavicon(document, state);
+  };
   const updateLiveState = (state: "idle" | "connecting" | "live"): void =>
     expired ? undefined : setLiveState(document, state);
   const updateSwapBar = (state: "start" | "ready" | "complete" | "failed"): void =>
     expired ? undefined : setSwapBar(document, window, state);
   const updateZoomButtons = (zoom: number): void => setZoomButtonState(document, zoom);
   const baseUrl = window.location.origin;
+  updateGalleryFavicon("idle");
   const bootstrap = await resolveGalleryBootstrap({
     location: window.location.href,
     storage: window.sessionStorage,
@@ -964,6 +979,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     },
   });
   if (bootstrap.outcome === "expired") {
+    setGalleryFavicon(document, "expired");
     expired = true;
     renderSessionExpired(
       document,
@@ -1008,6 +1024,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     source = await fetchGallerySource(baseUrl, handoff, handoff.revisionSha, fetch);
   } catch (error) {
     if (error instanceof GallerySessionExpiredError) {
+      setGalleryFavicon(document, "expired");
       expired = true;
       clearSession(window.sessionStorage);
       renderSessionExpired(
@@ -1042,6 +1059,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   }
   host.setVisibility(current.frameId, true);
   updateGalleryTitle(source.title);
+  updateGalleryFavicon(source.verdict?.status ?? "unverified");
   updateGalleryVerdict(source.verdict ?? null);
   updateGalleryStatus("displayed");
   updateLiveState("live");
@@ -1068,9 +1086,11 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         if (!result.failedNewFrameReady) {
           if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
           updateGalleryVerdict(revision.verdict ?? null);
+          updateGalleryFavicon(revision.verdict?.status ?? "unverified");
           updateGalleryStatus("displayed");
           updateSwapBar("complete");
         } else {
+          updateGalleryFavicon("unverified");
           updateSwapBar("failed");
           updateGalleryVerdict(null);
           updateGalleryStatus("displayed");
@@ -1089,6 +1109,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   );
   const expireSession = (): void => {
     if (expired) return;
+    setGalleryFavicon(document, "expired");
     expired = true;
     swaps.close();
     clearSession(window.sessionStorage);
@@ -1110,6 +1131,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     onCommit: (event) => {
       updateGalleryStatus("swapping");
       updateSwapBar("start");
+      updateGalleryFavicon("unverified");
       updateGalleryVerdict(null);
       swaps.enqueue(event);
     },

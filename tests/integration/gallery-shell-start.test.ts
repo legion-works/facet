@@ -90,6 +90,30 @@ class FakeElement {
   }
 }
 
+class FakeLinkElement extends FakeElement {
+  href = "";
+}
+
+class FakeCanvasElement extends FakeElement {
+  width = 0;
+  height = 0;
+  readonly context = {
+    fillStyle: "",
+    font: "",
+    textAlign: "center",
+    textBaseline: "middle",
+    fillText() {},
+  };
+
+  getContext(_kind: string): CanvasRenderingContext2D {
+    return this.context as unknown as CanvasRenderingContext2D;
+  }
+
+  toDataURL(_kind: string): string {
+    return `data:image/png;base64,${this.width}x${this.height}:${this.context.fillStyle}`;
+  }
+}
+
 function pageShimObserved(body: string): ReturnType<typeof countPageShim> {
   const globals = globalThis as Record<string, unknown>;
   const previousDocument = globals.document;
@@ -151,6 +175,7 @@ function createRuntime(
 ): GalleryHarness {
   const elements = new Map<string, FakeElement>();
   for (const id of [
+    "facet-favicon",
     "facet-title",
     "facet-artifact-title",
     "facet-revision",
@@ -172,7 +197,7 @@ function createRuntime(
     "facet-panzoom-toggle",
     "facet-fullscreen",
   ])
-    elements.set(id, new FakeElement());
+    elements.set(id, id === "facet-favicon" ? new FakeLinkElement() : new FakeElement());
   const verdictBadge = new FakeElement();
   verdictBadge.attach(".tier", new FakeElement());
   elements.set("facet-verdict", verdictBadge);
@@ -187,6 +212,7 @@ function createRuntime(
     title: "facet gallery",
     getElementById: (id: string) => elements.get(id) ?? null,
     createElement: (tag: string) => {
+      if (tag === "canvas") return new FakeCanvasElement();
       if (tag !== "iframe") return new FakeElement();
       const frame = new FakeIframe();
       const config = pendingFrameConfigs.shift();
@@ -196,6 +222,7 @@ function createRuntime(
     },
     addEventListener: (type: string, listener: Listener) => documentListeners.set(type, listener),
   };
+  (globalThis as Record<string, unknown>).document = document;
   const windowListeners = new Map<string, Listener>();
   const sessionStorageData = new Map<string, string>();
   const sessionStorage = {
@@ -250,7 +277,10 @@ function createRuntime(
           revisionSha === "a".repeat(64) ? "Initial title" : `Title ${revisionSha.slice(0, 8)}`,
         artifactType: "markdown",
         source: `# ${revisionSha.slice(0, 8)}`,
-        verdict,
+        verdict:
+          revisionSha === "a".repeat(64) || verdict === null
+            ? verdict
+            : { ...verdict, status: verdict.status === "ok" ? "error" : "ok" },
       });
     }
     if (url.endsWith("/stream")) return new Response(stream);
@@ -456,6 +486,8 @@ describe("gallery shell startup", () => {
     expect((harness.runtime.document as unknown as { title: string }).title).toBe(
       "Initial title · facet",
     );
+    const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
+    expect(favicon.href).toContain("data:image/png;base64,32x32:");
     expect(harness.elements.get("facet-revision")?.textContent).toBe("aaaaaaaaaaaa");
     expect(harness.elements.get("facet-status-line")?.textContent).toBe("displayed");
     expect(harness.elements.get("facet-live-label")?.textContent).toBe("live");
@@ -499,6 +531,7 @@ describe("gallery shell startup", () => {
     expect(harness.elements.get("facet-status-line")?.textContent).toBe("session expired");
     expect(harness.elements.get("facet-error")?.textContent).toContain("session expired");
     expect(harness.sessionStorage.getItem("facet:gallery-session")).toBeNull();
+    expect((harness.elements.get("facet-favicon") as FakeLinkElement).href).toContain("#77809a");
   });
 
   test("a stream:close with an unrelated reason stays idle and keeps the session", async () => {
@@ -652,9 +685,24 @@ describe("gallery shell startup", () => {
   });
 
   test("two rapid revision commits serialize: newest revision wins, exactly one frame at settle", async () => {
-    const harness = createRuntime();
+    const harness = createRuntime("native", {
+      status: "ok",
+      tier: 0,
+      revisionSha: "a".repeat(64),
+      artifactId: "artifact-1",
+      observed: {
+        rendererRootSvgCount: 1,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 1,
+        opaqueRegionCount: 0,
+        errorCount: 0,
+      },
+    });
     await startGallery(harness.runtime);
     const canvas = harness.elements.get("facet-canvas")!;
+    const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
+    const initialFavicon = favicon.href;
 
     // Script the two swap frames BEFORE the commits: the first commit's
     // render resolves only when released; the newest commit's resolves.
@@ -677,6 +725,7 @@ describe("gallery shell startup", () => {
     const newestSha = "b2".padEnd(64, "b");
     harness.emitCommitted({ revisionSha: firstSha, revisionNumber: 2 });
     harness.emitCommitted({ revisionSha: newestSha, revisionNumber: 3 });
+    await waitFor(() => favicon.href.includes("#77809a"));
     // The first swap's frame is mounted off-screen; the newest commit
     // is queued behind it (latest-wins).
     await waitFor(() => canvas.children.filter(isIframe).length >= 2);
@@ -692,6 +741,8 @@ describe("gallery shell startup", () => {
     expect((harness.runtime.document as unknown as { title: string }).title).toBe(
       `Title ${newestSha.slice(0, 8)} · facet`,
     );
+    expect(favicon.href).not.toBe(initialFavicon);
+    expect(favicon.href).toContain("#ff6e6e");
     // Exactly one frame remains — the intermediate swap's frame and the
     // initial frame were both removed; no orphan.
     const survivors = canvas.children.filter(isIframe);
@@ -735,5 +786,6 @@ describe("gallery shell startup", () => {
     expect((harness.runtime.document as unknown as { title: string }).title).toBe(
       "Initial title · facet",
     );
+    expect((harness.elements.get("facet-favicon") as FakeLinkElement).href).toContain("#77809a");
   });
 });
