@@ -100,6 +100,26 @@ describe("GET /gallery", () => {
     expect(Buffer.from(indexBytes).equals(Buffer.from(galleryBytes))).toBe(true);
   });
 
+  test("GET /index.html builds the gallery before serving the root fallback", async () => {
+    moveGalleryDir(originalGalleryDir);
+    rmSync(GALLERY_DIR, { recursive: true, force: true });
+    const testEnvDir = mkdtempSync(join(tmpdir(), "facet-gallery-root-fallback-"));
+    envDir = testEnvDir;
+    service = await startFacetService({
+      dbPath: join(testEnvDir, "facet.sqlite"),
+      installTokenPath: join(testEnvDir, "install.token"),
+      promoteTokenPath: join(testEnvDir, "promote.token"),
+      lockPath: join(testEnvDir, "facet.lock"),
+      idleTimeoutMs: 30_000,
+      logger: createQuietLogger({ component: "gallery-root-fallback-test" }),
+      tier0Runner: stubTier0Runner,
+    });
+
+    const response = await fetch(`${service.url}/index.html`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain("Loading facet gallery…");
+  });
+
   test("the frame script route refuses to escape the gallery root", async () => {
     // af46b64 added a NEW file-serving route keyed on URL path
     // (/gallery/frame/bootstrap/*.js, /gallery/frame/chunks/*.js) so each

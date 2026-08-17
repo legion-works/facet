@@ -457,6 +457,16 @@ export function buildRouter(deps: RouterDeps): {
         // otherwise the gallery document ships without its CSP purely
         // because of which URL served it.
         const isDocument = /\.html$/i.test(path);
+        if (isDocument) {
+          try {
+            await ensureGalleryBuild();
+          } catch (error) {
+            return new Response(error instanceof Error ? error.message : "Gallery build failed", {
+              status: 500,
+              headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+            });
+          }
+        }
         const rootAssetResponse = await serveGalleryFile(
           path.replace(/^\//, ""),
           isDocument ? galleryCsp : undefined,

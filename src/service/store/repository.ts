@@ -687,11 +687,28 @@ export class ArtifactRepository {
       }
       return parsed;
     } catch (error) {
-      // Cleanup-after-failure: if the INSERT failed, unlink any
-      // caller-supplied evidence files so the failed write leaves no
-      // orphan pixels behind. The row is the authoritative state —
-      // an unpaired file is recoverable only via manual inspection.
-      if (input.screenshotPath !== null && input.screenshotPath !== undefined) {
+      const isReferencedByDurableRun = (path: string | null | undefined): boolean => {
+        if (path === null || path === undefined) return false;
+        const row = hasCompiledPath
+          ? this.db
+              .query(
+                "SELECT 1 FROM render_runs WHERE screenshot_path = ? OR console_path = ? OR compiled_path = ? LIMIT 1",
+              )
+              .get(path, path, path)
+          : this.db
+              .query(
+                "SELECT 1 FROM render_runs WHERE screenshot_path = ? OR console_path = ? LIMIT 1",
+              )
+              .get(path, path);
+        return row !== null && row !== undefined;
+      };
+      // A retry may re-submit an existing evidence path. Durable rows
+      // own their evidence; only unreferenced paths are orphan cleanup.
+      if (
+        input.screenshotPath !== null &&
+        input.screenshotPath !== undefined &&
+        !isReferencedByDurableRun(input.screenshotPath)
+      ) {
         try {
           const { rmSync } = require("node:fs") as typeof import("node:fs");
           rmSync(input.screenshotPath, { force: true });
@@ -699,7 +716,11 @@ export class ArtifactRepository {
           // best-effort
         }
       }
-      if (input.consolePath !== null && input.consolePath !== undefined) {
+      if (
+        input.consolePath !== null &&
+        input.consolePath !== undefined &&
+        !isReferencedByDurableRun(input.consolePath)
+      ) {
         try {
           const { rmSync } = require("node:fs") as typeof import("node:fs");
           rmSync(input.consolePath, { force: true });
@@ -707,7 +728,7 @@ export class ArtifactRepository {
           // best-effort
         }
       }
-      if (compiledPath !== null) {
+      if (compiledPath !== null && !isReferencedByDurableRun(compiledPath)) {
         try {
           const { rmSync } = require("node:fs") as typeof import("node:fs");
           rmSync(compiledPath, { force: true });

@@ -557,6 +557,37 @@ describe("artifact store", () => {
     expect(existsSync(compiledPath)).toBe(false);
   });
 
+  test("preserves evidence already referenced by an earlier render run when a retry is invalid", () => {
+    const { repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new TextEncoder().encode("# evidence"),
+    });
+    const screenshotPath = `/tmp/facet-evidence-${crypto.randomUUID()}.png`;
+    writeFileSync(screenshotPath, "pixels");
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: {},
+      screenshotPath,
+    });
+
+    expect(() =>
+      repository.recordRenderRun({
+        revisionId: revision.id,
+        tier: 1,
+        status: "",
+        expected: {},
+        observed: {},
+        screenshotPath,
+      }),
+    ).toThrow();
+    expect(existsSync(screenshotPath)).toBe(true);
+  });
+
   test("FK gate: rebuild steps must disable FKs; non-rebuild steps must not", () => {
     // Pin the gate shape introduced after the v8 fragment needed
     // FK enforcement off (the create-copy-drop-rename sequence on a
