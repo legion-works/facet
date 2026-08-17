@@ -10,10 +10,11 @@ const conditionalGatePatterns: readonly RegExp[] = [
   /test\.skipIf/,
   /SKIP gallery-/,
 ];
+const conditionalAcceptanceAllowlist = new Set(["_repro-browser-lifecycle.test.ts"]);
 
-function galleryAcceptanceFiles(): readonly string[] {
+function acceptanceFiles(): readonly string[] {
   return readdirSync(acceptanceDirectory)
-    .filter((entry) => entry.startsWith("gallery-") && entry.endsWith(".test.ts"))
+    .filter((entry) => entry.endsWith(".test.ts"))
     .toSorted();
 }
 
@@ -28,9 +29,9 @@ function matrixListsFile(ciWorkflow: string, file: string): boolean {
   return new RegExp(`^\\s+-\\s+${escapeRegExp(file)}\\s*$`, "m").test(ciWorkflow);
 }
 
-test("every gallery acceptance file runs unconditionally in CI", () => {
+test("every acceptance file runs unconditionally in CI", () => {
   const ciWorkflow = readFileSync(ciWorkflowPath, "utf8");
-  const files = galleryAcceptanceFiles();
+  const files = acceptanceFiles();
   expect(files.length).toBeGreaterThan(0);
 
   const unregistered: string[] = [];
@@ -41,7 +42,7 @@ test("every gallery acceptance file runs unconditionally in CI", () => {
 
     const source = readFileSync(join(acceptanceDirectory, file), "utf8");
     for (const pattern of conditionalGatePatterns) {
-      if (pattern.test(source)) {
+      if (!conditionalAcceptanceAllowlist.has(file) && pattern.test(source)) {
         conditional.push(`${file}: ${pattern}`);
         break;
       }
@@ -55,7 +56,7 @@ test("every gallery acceptance file runs unconditionally in CI", () => {
   }
 });
 
-test("deleted gallery acceptance files stay out of the CI matrix", () => {
+test("deleted acceptance files stay out of the CI matrix", () => {
   const ciWorkflow = readFileSync(ciWorkflowPath, "utf8");
   const removedFiles = ["tsx-interactive-isolation.test.ts", "nested-frame-denials.test.ts"];
 
