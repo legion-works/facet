@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseHTML } from "linkedom";
 
 import { ExportSidecarSchema } from "../../src/shared/contracts/commands/results";
 import {
@@ -12,6 +13,10 @@ import {
   type GalleryExportState,
 } from "../../src/gallery-web/export";
 import { fetchGalleryEvidence, fetchGallerySource } from "../../src/gallery-web/app";
+import {
+  disableGalleryExportMenu,
+  installGalleryExportMenu,
+} from "../../src/gallery-web/export-menu";
 
 const revisionSha = "a".repeat(64);
 const observed = {
@@ -46,6 +51,18 @@ function state(overrides: Partial<GalleryExportState> = {}): GalleryExportState 
     renderBytes: new Uint8Array([137, 80, 78, 71]),
     ...overrides,
   };
+}
+
+function exportMenuDom() {
+  const dom = parseHTML(`<!doctype html><div id="facet-export">
+    <button id="facet-export-toggle" aria-expanded="false"></button>
+    <div id="facet-export-menu" hidden>
+      <button id="facet-export-source"></button>
+      <button id="facet-export-render"></button>
+      <button id="facet-export-sidecar"></button>
+    </div>
+  </div>`);
+  return dom;
 }
 
 describe("gallery export helpers", () => {
@@ -151,5 +168,75 @@ describe("gallery export helpers", () => {
           { status: 404 },
         )) as unknown as typeof fetch),
     ).rejects.toThrow("Gallery evidence fetch failed (404)");
+  });
+
+  test("toggles the menu and closes it from Escape or an outside click", () => {
+    const { document, window } = exportMenuDom();
+    let expired = false;
+    installGalleryExportMenu({ document, isExpired: () => expired });
+    const toggle = document.getElementById("facet-export-toggle")!;
+    const menu = document.getElementById("facet-export-menu")!;
+
+    toggle.dispatchEvent(new window.Event("click"));
+    expect(menu.hidden).toBe(false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const escape = new window.Event("keydown");
+    Object.defineProperty(escape, "key", { value: "Escape" });
+    document.dispatchEvent(escape);
+    expect(menu.hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    toggle.dispatchEvent(new window.Event("click"));
+    document.dispatchEvent(new window.Event("click"));
+    expect(menu.hidden).toBe(true);
+    expired = true;
+    toggle.dispatchEvent(new window.Event("click"));
+    expect(menu.hidden).toBe(true);
+  });
+
+  test("keeps menu clicks open and disabled export items inert until data exists", () => {
+    const { document, window } = exportMenuDom();
+    const controller = installGalleryExportMenu({ document, isExpired: () => false });
+    const menu = document.getElementById("facet-export-menu")!;
+    const source = document.getElementById("facet-export-source") as HTMLButtonElement;
+    const render = document.getElementById("facet-export-render") as HTMLButtonElement;
+    const sidecar = document.getElementById("facet-export-sidecar") as HTMLButtonElement;
+    const wrapper = document.getElementById("facet-export")!;
+
+    menu.hidden = false;
+    menu.dispatchEvent(new window.Event("click", { bubbles: true }));
+    expect(menu.hidden).toBe(false);
+    expect(source.disabled).toBe(true);
+    expect(render.disabled).toBe(true);
+    expect(render.title).toBe("no stored render");
+    expect(sidecar.disabled).toBe(true);
+    expect(sidecar.title).toBe("no stored verdict");
+    expect(controller.getState()).toBeNull();
+    expect(wrapper.contains(menu)).toBe(true);
+  });
+
+  test("clears nullable state and disables every item after terminal expiry", () => {
+    const { document } = exportMenuDom();
+    let expired = false;
+    const controller = installGalleryExportMenu({ document, isExpired: () => expired });
+    const source = document.getElementById("facet-export-source") as HTMLButtonElement;
+    const render = document.getElementById("facet-export-render") as HTMLButtonElement;
+    const sidecar = document.getElementById("facet-export-sidecar") as HTMLButtonElement;
+
+    controller.setState(state({ verdict: null, renderBytes: null }));
+    expect(controller.getState()).not.toBeNull();
+    expect(source.disabled).toBe(false);
+    expect(render.disabled).toBe(true);
+    expect(sidecar.disabled).toBe(true);
+    controller.setState(null);
+    expect(controller.getState()).toBeNull();
+    expired = true;
+    controller.setState(state());
+    expect(controller.getState()).toBeNull();
+    controller.clear();
+    disableGalleryExportMenu(document);
+    expect(source.disabled).toBe(true);
+    expect(render.disabled).toBe(true);
+    expect(sidecar.disabled).toBe(true);
   });
 });
