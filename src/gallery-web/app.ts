@@ -621,6 +621,10 @@ export interface RevisionEvent {
   readonly revisionSha: string;
 }
 
+type GallerySwapEvent = RevisionEvent & {
+  readonly previousExportState: GalleryExportState | null;
+};
+
 /**
  * publish→visible, one revision at a time: fetch the exact revision
  * the committed event named, build a fresh frame for it, and
@@ -1013,7 +1017,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     expired ? undefined : setSwapBar(document, window, state);
   const updateZoomButtons = (zoom: number): void => setZoomButtonState(document, zoom);
   let exportMenu: GalleryExportMenuController | null = null;
-  let swaps: SerializedSwapQueue<RevisionEvent> | null = null;
+  let swaps: SerializedSwapQueue<GallerySwapEvent> | null = null;
   const expireSession = (): void => {
     if (expired) return;
     setGalleryFavicon(document, "expired");
@@ -1149,7 +1153,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   updateGalleryVerdict(source.verdict ?? null);
   updateGalleryStatus("displayed");
   updateLiveState("live");
-  swaps = createSerializedSwapQueue<RevisionEvent>((event) =>
+  swaps = createSerializedSwapQueue<GallerySwapEvent>((event) =>
     swapToRevision(
       {
         dom,
@@ -1200,6 +1204,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
           updateGalleryStatus("displayed");
           updateSwapBar("complete");
         } else {
+          exportMenu!.setState(event.previousExportState);
           updateSwapBar("failed");
           updateGalleryVerdict(null);
           updateGalleryStatus("displayed");
@@ -1225,11 +1230,13 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     fetchImpl: fetch,
     onState: updateLiveState,
     onCommit: (event) => {
+      const previousExportState = exportMenu?.getState() ?? null;
+      exportMenu?.clear();
       updateGalleryStatus("swapping");
       updateSwapBar("start");
       updateGalleryFavicon("unverified");
       updateGalleryVerdict(null);
-      swaps?.enqueue(event);
+      swaps?.enqueue({ ...event, previousExportState });
     },
     onClose: (event) => {
       // `lease_expired` (the per-lease TTL firing server-side) and a

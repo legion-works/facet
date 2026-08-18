@@ -15,7 +15,8 @@ export interface GalleryExportMenuOptions {
 
 export interface GalleryExportMenuController {
   readonly getState: () => GalleryExportState | null;
-  readonly setState: (next: GalleryExportState) => void;
+  readonly setState: (next: GalleryExportState | null) => void;
+  readonly clear: () => void;
   readonly sync: () => void;
 }
 
@@ -91,7 +92,16 @@ export function installGalleryExportMenu(
   return {
     getState: () => state,
     setState: (next) => {
+      if (next === null) {
+        state = null;
+        sync();
+        return;
+      }
       state = commitGalleryExportState(state, next, { expired: options.isExpired() });
+      sync();
+    },
+    clear: () => {
+      state = null;
       sync();
     },
     sync,
