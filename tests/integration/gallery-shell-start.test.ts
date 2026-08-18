@@ -9,6 +9,7 @@ import {
   makeFakeRenderResult,
   type FakeRenderResultShape,
 } from "../helpers/fake-frame";
+import { setDownloadBlobUrlForTests } from "../../src/gallery-web/export";
 
 type Listener = (event: Record<string, unknown>) => void;
 
@@ -47,6 +48,10 @@ class FakeElement {
 
   emit(type: string, event: Record<string, unknown> = {}): void {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+
+  click(): void {
+    this.emit("click");
   }
 
   appendChild(child: FakeElement): void {
@@ -184,6 +189,7 @@ interface RuntimeOptions {
   readonly bootstrapStatus?: number;
   readonly sourceStatus?: number;
   readonly evidenceStatus?: number;
+  readonly evidenceGate?: Promise<void>;
 }
 
 function createRuntime(
@@ -317,6 +323,9 @@ function createRuntime(
       if (options.evidenceStatus !== undefined)
         return new Response(null, { status: options.evidenceStatus });
       const revisionSha = new URL(url).searchParams.get("revisionSha") ?? "a".repeat(64);
+      if (revisionSha !== "a".repeat(64) && options.evidenceGate !== undefined) {
+        await options.evidenceGate;
+      }
       if (revisionSha === "a".repeat(64))
         return Response.json({ error: { code: "evidence_unavailable" } }, { status: 404 });
       return new Response(new Uint8Array([137, 80, 78, 71]), {
@@ -581,6 +590,53 @@ describe("gallery shell startup", () => {
     await waitFor(() => render.disabled === false);
     expect(render.title).toBe("");
     expect(sidecar.disabled).toBe(true);
+  });
+
+  test("does not export stale source bytes while swapped revision evidence is unresolved", async () => {
+    let evidenceStarted = false;
+    let resolveEvidence!: () => void;
+    const evidenceGate = new Promise<void>((resolve) => {
+      resolveEvidence = () => {
+        resolve();
+      };
+    });
+    const harness = createRuntime("native", null, undefined, {
+      evidenceGate: new Promise<void>((resolve) => {
+        evidenceStarted = true;
+        void evidenceGate.then(resolve);
+      }),
+    });
+    const downloads: Blob[] = [];
+    setDownloadBlobUrlForTests({
+      createObjectURL: (blob) => {
+        downloads.push(blob);
+        return "blob:gallery-shell-start";
+      },
+      revokeObjectURL: () => undefined,
+    });
+    try {
+      await startGallery(harness.runtime);
+      const source = harness.elements.get("facet-export-source")!;
+      expect((source as unknown as { disabled?: boolean }).disabled).toBe(false);
+      harness.pendingFrameConfigs.push({ viewMode: "native", observed: harness.defaultObserved });
+      harness.emitCommitted({ revisionSha: "b2".padEnd(64, "b"), revisionNumber: 2 });
+      await waitFor(
+        () =>
+          evidenceStarted &&
+          harness.elements.get("facet-artifact-title")?.textContent === "Title b2bbbbbb",
+      );
+
+      source.emit("click");
+      expect(downloads).toHaveLength(0);
+
+      resolveEvidence();
+      await waitFor(() => (source as unknown as { disabled?: boolean }).disabled === false);
+      source.emit("click");
+      expect(downloads).toHaveLength(1);
+      expect(new TextDecoder().decode(await downloads[0]!.arrayBuffer())).toBe("# b2bbbbbb");
+    } finally {
+      setDownloadBlobUrlForTests(undefined);
+    }
   });
 
   test("sets idle grey before asynchronous bootstrap and tints the completed verdict", async () => {

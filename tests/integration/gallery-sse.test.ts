@@ -39,67 +39,10 @@ import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { installFakeFrameApi, makeFakeRenderResult } from "../helpers/fake-frame";
-import {
-  installGalleryExportMenu,
-  type GalleryExportMenuController,
-} from "../../src/gallery-web/export-menu";
-import { setDownloadBlobUrlForTests, type GalleryExportState } from "../../src/gallery-web/export";
 
 const RUNTIME_URL = "/gallery/frame/runtime/markdown.js";
 
 const ARTIFACT_SENTINEL = "FACET_SENTINEL_ARTIFACT_BYTES_ZZZ_9999";
-
-function delayedEvidenceExportHarness(): {
-  readonly controller: GalleryExportMenuController;
-  readonly source: { disabled: boolean; click: () => void };
-  readonly downloads: string[];
-} {
-  const listeners = new Map<string, (() => void)[]>();
-  const source = {
-    disabled: true,
-    addEventListener: (type: string, listener: () => void) => {
-      const pending = listeners.get(type) ?? [];
-      pending.push(listener);
-      listeners.set(type, pending);
-    },
-    click: () => {
-      for (const listener of listeners.get("click") ?? []) listener();
-    },
-  };
-  const document = {
-    getElementById: (id: string) => (id === "facet-export-source" ? source : null),
-    addEventListener: () => undefined,
-    createElement: () => ({
-      href: "",
-      download: "",
-      click: () => undefined,
-    }),
-  } as unknown as Document;
-  const downloads: string[] = [];
-  setDownloadBlobUrlForTests({
-    createObjectURL: (blob) => {
-      downloads.push(`${blob.size}`);
-      return "blob:delayed-evidence";
-    },
-    revokeObjectURL: () => undefined,
-  });
-  const controller = installGalleryExportMenu({ document, isExpired: () => false });
-  return { controller, source, downloads };
-}
-
-function exportState(revisionSha: string, sourceBytes: number[]): GalleryExportState {
-  return {
-    artifactId: "artifact-1",
-    revisionSha,
-    slug: `revision-${revisionSha.slice(0, 4)}`,
-    title: "Delayed evidence",
-    artifactType: "markdown",
-    renderer: "svg",
-    sourceBytes: new Uint8Array(sourceBytes),
-    verdict: null,
-    renderBytes: null,
-  };
-}
 
 describe("gallery shell — CSP + frame-document invariants", () => {
   test("buildFrameAttributes: ordinary same-origin frames carry no sandbox", () => {
@@ -124,32 +67,6 @@ describe("gallery shell — CSP + frame-document invariants", () => {
     // own scripts do not own shell transforms.
     expect(attrs.allow).toBe("");
   });
-});
-
-test("gallery shell disables export during delayed evidence and enables the new revision after commit", async () => {
-  const { controller, source, downloads } = delayedEvidenceExportHarness();
-  try {
-    controller.setState(exportState("a".repeat(64), [1]));
-    let resolveEvidence!: () => void;
-    const evidence = new Promise<void>((resolve) => {
-      resolveEvidence = resolve;
-    });
-    controller.clear();
-    expect(source.disabled).toBe(true);
-    source.click();
-    expect(downloads).toHaveLength(0);
-
-    const next = exportState("b".repeat(64), [2, 3]);
-    const commit = evidence.then(() => controller.setState(next));
-    resolveEvidence();
-    await commit;
-    expect(source.disabled).toBe(false);
-    source.click();
-    expect(downloads).toHaveLength(1);
-    expect(downloads[0]).toBe("2");
-  } finally {
-    setDownloadBlobUrlForTests(undefined);
-  }
 });
 
 describe("gallery shell — verdict status styling", () => {
