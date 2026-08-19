@@ -833,6 +833,47 @@ describe("cli contract — kill switch", () => {
 });
 
 describe("cli contract — lazy spawn", () => {
+  test("list rejects a non-integer --limit instead of silently using the default", async () => {
+    const { env } = makeEnv("invalid-list-limit");
+    const io = makeIo();
+
+    const exit = await runCli(["list", "--project-id", "p", "--limit", "nope"], { ...io, env });
+
+    expect(exit.code).toBe(0);
+    const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+    expect(envelope.ok).toBe(false);
+    if (!envelope.ok) {
+      expect(envelope.error).toMatchObject({ code: "invalid_request" });
+    }
+  });
+
+  test("dead cross-version lock is reaped before a cold CLI start", async () => {
+    const { env, home } = makeEnv("dead-cross-version-lock");
+    const runDir = join(home, "run");
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(
+      join(runDir, "facet.lock"),
+      JSON.stringify({
+        pid: 999_999_999,
+        startTime: Date.now() - 60_000,
+        port: 12345,
+        contractVersion: "facet.v0",
+      }),
+      { mode: 0o600 },
+    );
+
+    const io = makeIo();
+    const exit = await runCli(["list", "--project-id", "p"], { ...io, env });
+
+    expect(exit.code).toBe(0);
+    const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
+    expect(envelope.ok).toBe(true);
+    expect(exit.spawnedPid).toBeGreaterThan(0);
+    expect(JSON.parse(readFileSync(join(runDir, "facet.lock"), "utf8"))).toMatchObject({
+      contractVersion: FACET_SCHEMA_VERSION,
+    });
+  });
+
   test("cold call spawns the service; the second call reuses the same lock record", async () => {
     const { env, home } = makeEnv("lazy");
     const io = makeIo();

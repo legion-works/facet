@@ -292,12 +292,11 @@ export async function ensureService(
     };
   }
 
-  // Cross-version fast path: record exists but the contract does not
-  // match. Surface the typed mismatch — the CLI must NOT talk to a
-  // service built against a different schema.
+  // A live foreign owner cannot be used or reclaimed. A dead owner falls
+  // through so coldStart can reap its stale lock before spawning.
   const raw = readLockMetadata(paths.lock);
   if (raw !== null) {
-    if (raw.contractVersion !== FACET_SCHEMA_VERSION) {
+    if (raw.contractVersion !== FACET_SCHEMA_VERSION && isPidAlive(raw.pid)) {
       throw contractMismatchError(raw);
     }
     // Same-version but stale (dead pid): fall through to the cold
