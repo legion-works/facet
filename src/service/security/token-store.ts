@@ -15,7 +15,7 @@
  *     action; this module simply refuses to fabricate one.
  */
 
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
@@ -70,14 +70,20 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
   let cached: string | null = null;
 
   function loadFromDisk(): string {
-    let emptyExistingFile = false;
+    let emptyRecoveryPath: string | null = null;
     if (existsSync(options.tokenPath)) {
       const value = readFileSync(options.tokenPath, "utf8").trim();
       if (value.length > 0) {
         ensureTightPermissions(options.tokenPath);
         return value;
       }
-      emptyExistingFile = true;
+      emptyRecoveryPath = `${options.tokenPath}.empty-${crypto.randomUUID()}`;
+      try {
+        renameSync(options.tokenPath, emptyRecoveryPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return loadFromDisk();
+        throw error;
+      }
     }
     // Atomic first-write: O_EXCL ensures exactly one writer wins the
     // race. Losers (EEXIST) re-read what the winner persisted — they
@@ -90,12 +96,14 @@ export function createInstallTokenStore(options: InstallTokenStoreOptions): Inst
       options.beforeFirstWrite?.();
       writeFileSync(options.tokenPath, fresh, {
         mode: 0o600,
-        flag: emptyExistingFile ? "w" : "wx",
+        flag: "wx",
       });
       ensureTightPermissions(options.tokenPath);
       return fresh;
     } catch (error) {
       return recoverInstallTokenAfterWriteFailure(options.tokenPath, error);
+    } finally {
+      if (emptyRecoveryPath !== null) rmSync(emptyRecoveryPath, { force: true });
     }
   }
 

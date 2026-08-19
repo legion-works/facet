@@ -132,6 +132,24 @@ describe("createInstallTokenStore", () => {
     expect(readFileSync(path, "utf8").trim()).not.toBe("");
   });
 
+  test("concurrent empty-file recovery converges both stores on one token", () => {
+    const path = freshPath("empty-race");
+    writeFileSync(path, "\n", { mode: 0o600 });
+    const second = createInstallTokenStore({ tokenPath: path });
+    let secondToken = "";
+    const first = createInstallTokenStore({
+      tokenPath: path,
+      beforeFirstWrite: () => {
+        secondToken = second.read();
+      },
+    });
+
+    const firstToken = first.read();
+
+    expect(firstToken).toBe(secondToken);
+    expect(readFileSync(path, "utf8").trim()).toBe(firstToken);
+  });
+
   test("keeps cached token readable when the file is removed", () => {
     const path = freshPath("cached-install");
     const store = createInstallTokenStore({ tokenPath: path });
