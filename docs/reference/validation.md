@@ -121,6 +121,18 @@ The two channels are independent: one parses bytes with no egress, the
 other renders in a browser. Their expected-vs-observed comparison is
 what makes an HTML verdict a real prediction rather than a self-claim.
 
+An HTML Tier 0 response is a normal publish/read-back verdict, for example:
+
+```json
+{
+  "status": "ok",
+  "tier": 0,
+  "artifactId": "art-123",
+  "revisionSha": "<sha256>",
+  "observed": { "htmlElementCount": 4, "htmlTextNodeCount": 2 }
+}
+```
+
 The differential corpus at `tests/acceptance/html-differential.test.ts`
 is the live gate that keeps the two parsers in agreement over a body
 of real documents. Any divergence in the corpus is a design input
@@ -150,6 +162,10 @@ Cleanup is best-effort: a row is the authoritative state, a stale
 file is recoverable by the next orphan sweep. A failed `INSERT` runs
 the converse cleanup — any caller-supplied `screenshotPath` /
 `consolePath` is unlinked so no orphan pixels accumulate.
+
+Retention controls evidence files, not read-back payload history. Read-back
+reconstructs a revision-bound verdict from its stored render-run row; an
+evicted screenshot or console path is intentionally not returned as bytes.
 
 ## Revision-binding guarantee
 

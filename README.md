@@ -78,16 +78,16 @@ Requires Bun `1.3.14`.
 ```sh
 bun install
 
-facet status
-facet create --project-id demo --slug chart --title "Chart"
-printf '%s' "$SOURCE" | facet publish --artifact-id <id> --type markdown --file -
-facet read-back --artifact-id <id> --revision-sha <sha> --tier 0
-facet read-back --artifact-id <id> --revision-sha <sha> --tier visual
-facet open --artifact-id <id> --revision-sha <sha>
-facet export <artifactId> --format source
+bun ./src/cli/main.ts status
+bun ./src/cli/main.ts create --project-id demo --slug chart --title "Chart"
+printf '%s' "$SOURCE" | bun ./src/cli/main.ts publish --artifact-id <id> --type markdown --file -
+bun ./src/cli/main.ts read-back --artifact-id <id> --revision-sha <sha> --tier 0
+bun ./src/cli/main.ts read-back --artifact-id <id> --revision-sha <sha> --tier visual
+bun ./src/cli/main.ts open --artifact-id <id> --revision-sha <sha>
+bun ./src/cli/main.ts export <artifactId> --format source
 ```
 
-Use the SHA returned by the publish envelope. Tier 0 is browser-free; visual read-back is explicit Tier 1 escalation. `open` asks a human to inspect the sandboxed gallery. The CLI always writes one JSON envelope per verb to stdout; diagnostics go to stderr.
+This checkout invocation needs no global link. Use the SHA returned by the publish envelope. Tier 0 is browser-free; visual read-back is explicit Tier 1 escalation. `open` is display-only: it asks a human to inspect the sandboxed gallery and does not verify it. The CLI always writes one JSON envelope per verb to stdout; diagnostics go to stderr.
 
 Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) and is never the default. It weakens or skips validation by level, marks every affected verdict, and speaks loudly at startup, in envelopes, in the CLI, and in the gallery. `FACET_INSECURE_AUTO=1` permits startup probe fallback but never selects level 3. Restart after changing either environment variable.
 

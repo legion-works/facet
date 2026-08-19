@@ -3,11 +3,14 @@
 ## Syntax
 
 ```sh
-facet export <artifactId> [--revision <sha>] [--format source|render] [--out <path>] [--force]
+facet export <artifactId> [--revision <sha>] [--format source|render] [--out <path>] [--force] [--include-bytes]
 ```
 
 The default format is `source`. The command returns one JSON envelope on
-stdout and writes the exported bytes plus a mandatory sidecar locally.
+stdout and writes the exported bytes plus a mandatory sidecar locally. In
+file-output mode the CLI envelope reports `paths`, `byteCount`, and `sidecar`
+instead of duplicating base64 bytes. Pass `--include-bytes` to retain the wire
+payload in the CLI envelope; the HTTP/API contract always retains it.
 
 ## Source and render
 
