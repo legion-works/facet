@@ -438,9 +438,15 @@ test("native diagram regions require activation before wheel and drag gestures e
           Object.defineProperty(svg, "getBoundingClientRect", {
             value: () => ({ width: 200, height: 100 }),
           });
+          let released = 0;
           Object.defineProperty(region, "setPointerCapture", { value: () => {} });
-          Object.defineProperty(region, "releasePointerCapture", { value: () => {} });
-          Object.defineProperty(region, "hasPointerCapture", { value: () => false });
+          Object.defineProperty(region, "releasePointerCapture", {
+            value: () => {
+              released += 1;
+            },
+          });
+          Object.defineProperty(region, "hasPointerCapture", { value: () => true });
+          Object.defineProperty(region, "releasedCaptureCount", { value: () => released });
           region.appendChild(svg);
           ctx.container.appendChild(region);
         },
@@ -448,7 +454,11 @@ test("native diagram regions require activation before wheel and drag gestures e
     ]),
   );
   const api = Reflect.get(shim.window, "__facetFrame") as GalleryFrameApi;
-  await api.render({ artifactType: "markdown", renderer: "svg", bytes: new Uint8Array([1]) });
+  const result = await api.render({
+    artifactType: "markdown",
+    renderer: "svg",
+    bytes: new Uint8Array([1]),
+  });
   const region = container.firstElementChild as HTMLElement;
   const svg = region.firstElementChild as SVGElement;
   region.scrollLeft = 0;
@@ -479,6 +489,10 @@ test("native diagram regions require activation before wheel and drag gestures e
   region.dispatchEvent(engagedWheel);
   expect(engagedWheel.defaultPrevented).toBe(true);
   expect(svg.style.width).toBe("222px");
+  result.setGestureMode("panzoom");
+  expect(
+    (region as typeof region & { releasedCaptureCount: () => number }).releasedCaptureCount(),
+  ).toBe(1);
 });
 
 test("outside click and Escape dismiss an engaged diagram region, while reset clears zoom and scroll", async () => {

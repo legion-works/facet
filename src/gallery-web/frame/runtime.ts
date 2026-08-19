@@ -190,8 +190,18 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
     });
     const endDrag = (event: PointerEvent): void => {
       if (drag === null || event.pointerId !== drag.pointerId) return;
+      releaseDrag();
+    };
+    const releaseDrag = (): void => {
+      const activeDrag = drag;
       drag = null;
-      if (region.hasPointerCapture(event.pointerId)) region.releasePointerCapture(event.pointerId);
+      if (
+        activeDrag !== null &&
+        region.isConnected &&
+        region.hasPointerCapture(activeDrag.pointerId)
+      ) {
+        region.releasePointerCapture(activeDrag.pointerId);
+      }
       region.style.cursor = "";
     };
     region.addEventListener("pointerup", endDrag);
@@ -222,8 +232,7 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
         regionId,
         sync,
         dismiss: (): void => {
-          drag = null;
-          region.style.cursor = "";
+          releaseDrag();
         },
         reset: (): void => {
           zoom = 1;
@@ -232,8 +241,7 @@ function installDiagramRegionGestures(container: HTMLElement): DiagramRegionGest
           svg.style.height = "auto";
           region.scrollLeft = 0;
           region.scrollTop = 0;
-          drag = null;
-          region.style.cursor = "";
+          releaseDrag();
         },
       },
     ];

@@ -169,15 +169,15 @@ export async function readCappedBody(req: Request, contentLength: number | null)
       });
     }
   }
-  const text = await req.text();
-  const receivedBytes = new TextEncoder().encode(text).byteLength;
+  const bytes = new Uint8Array(await req.arrayBuffer());
+  const receivedBytes = bytes.byteLength;
   if (receivedBytes > RAW_BODY_CAP_BYTES) {
     throw new FacetError("payload_too_large", "Request body exceeds raw cap", {
       retryable: false,
       details: { capBytes: RAW_BODY_CAP_BYTES, receivedBytes },
     });
   }
-  return text;
+  return new TextDecoder().decode(bytes);
 }
 
 /**
