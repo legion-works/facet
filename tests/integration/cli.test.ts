@@ -675,8 +675,8 @@ describe("cli contract — surface", () => {
     const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
     if (envelope.ok) throw new Error("envelope unexpectedly ok");
     expect(envelope.error.code).toBe("invalid_request");
-    expect(envelope.error.message).toContain("--type, --file");
-    expect(envelope.error.details).toEqual({ reason: "usage_error", missing: "--type, --file" });
+    expect(envelope.error.message).toContain("--type");
+    expect(envelope.error.details).toEqual({ reason: "usage_error", missing: "--type" });
   });
 
   test("publish without --renderer preserves the svg request shape", () => {
@@ -1399,6 +1399,26 @@ describe("cli contract — wire", () => {
     expect(env1.ok).toBe(false);
     if (!env1.ok) expect(env1.error.code).toBe("invalid_request");
   }, 20_000);
+
+  test("publish reads piped stdin when --file is omitted", async () => {
+    const { env } = makeEnv("piped-publish-without-file");
+    const createIo = makeIo();
+    await runCli(["create", "--project-id", "p", "--slug", "piped", "--title", "Piped"], {
+      ...createIo,
+      env,
+    });
+    const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+    if (!created.ok) throw new Error("create must succeed");
+    const artifactId = (created.data["artifact"] as { id: string }).id;
+
+    const publishIo = makeIo("# piped\n");
+    const exit = await runCli(["publish", "--artifact-id", artifactId, "--type", "markdown"], {
+      ...publishIo,
+      env,
+    });
+    expect(exit.code).toBe(0);
+    expect(parseStdoutEnvelope(publishIo.stdoutBuf.value).ok).toBe(true);
+  }, 30_000);
 
   test("missing required inputs are aggregated into typed usage envelopes", async () => {
     // Builders that throw on missing args must throw a FacetError

@@ -64,7 +64,7 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
     { flag: "--type", takesValue: true, required: true },
     { flag: "--renderer", takesValue: true, values: [...RENDERERS] },
     { flag: "--execution", takesValue: true, values: [...TSX_EXECUTION_MODES] },
-    { flag: "--file", takesValue: true, required: true },
+    { flag: "--file", takesValue: true },
     { flag: "--note", takesValue: true },
     { flag: "--parent-revision-id", takesValue: true },
   ],
