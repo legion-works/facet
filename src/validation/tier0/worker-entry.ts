@@ -33,8 +33,11 @@ export function splitWorkerInputLines(buffered: string): {
   return { lines, remainder };
 }
 
-async function main(): Promise<number> {
-  const reader = Bun.stdin.stream().getReader();
+export async function runWorkerLoop(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  writeStdout: (text: string) => void,
+  writeStderr: (text: string) => void,
+): Promise<number> {
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let buffered = "";
   for (;;) {
@@ -46,7 +49,7 @@ async function main(): Promise<number> {
     try {
       ({ lines, remainder: buffered } = splitWorkerInputLines(buffered));
     } catch {
-      process.stderr.write("tier0.worker.input_error request line exceeds byte cap\n");
+      writeStderr("tier0.worker.input_error request line exceeds byte cap\n");
       return 2;
     }
     for (const line of lines) {
@@ -55,7 +58,7 @@ async function main(): Promise<number> {
         input = parseWorkerInput(line);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`tier0.worker.input_error ${message}\n`);
+        writeStderr(`tier0.worker.input_error ${message}\n`);
         return 2;
       }
       let result;
@@ -63,26 +66,31 @@ async function main(): Promise<number> {
         result = await runParser(input);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`tier0.worker.parser_error ${message}\n`);
+        writeStderr(`tier0.worker.parser_error ${message}\n`);
         return 3;
       }
-      process.stdout.write(`${JSON.stringify({ requestId: input.requestId, result })}\n`);
+      writeStdout(`${JSON.stringify({ requestId: input.requestId, result })}\n`);
     }
   }
   if (buffered.length > 0) {
-    process.stderr.write("tier0.worker.input_error incomplete request line\n");
+    writeStderr("tier0.worker.input_error incomplete request line\n");
     return 2;
   }
   return 0;
 }
 
+export function formatWorkerUnhandled(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `tier0.worker.unhandled ${message}\n`;
+}
+
 if (import.meta.main) {
-  main().then(
-    (code) => process.exit(code),
-    (error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`tier0.worker.unhandled ${message}\n`);
-      process.exit(1);
-    },
-  );
+  runWorkerLoop(
+    Bun.stdin.stream().getReader(),
+    process.stdout.write.bind(process.stdout),
+    process.stderr.write.bind(process.stderr),
+  ).then(process.exit, (error) => {
+    process.stderr.write(formatWorkerUnhandled(error));
+    process.exit(1);
+  });
 }
