@@ -40,6 +40,13 @@ function writeFrameFile(root: BoundaryRoots, name: string, body: string): string
 }
 
 describe("boundary check — forbidden package import forms", () => {
+  test("accepts escaped CRLF continuations in a string literal", () => {
+    const root = makeRoot();
+    writeServiceFile(root, "a.ts", 'const label = "safe\\\r\nstring";');
+
+    expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
+
   test('catches `import x from "mermaid"` (default import)', () => {
     const root = makeRoot();
     writeServiceFile(root, "a.ts", `import x from "mermaid";`);

@@ -275,6 +275,10 @@ function beginsRegex(text: string, code: readonly boolean[], slash: number): boo
   ].includes(previousCodeWord(text, code, slash));
 }
 
+function escapedSequenceWidth(text: string, offset: number): number {
+  return text[offset + 1] === "\r" && text[offset + 2] === "\n" ? 3 : 2;
+}
+
 function lexSource(text: string): LexedSource {
   const masked = text.split("");
   const code = Array<boolean>(text.length).fill(false);
@@ -309,7 +313,7 @@ function lexSource(text: string): LexedSource {
     }
     if (mode.kind === "string") {
       if (character === "\\") {
-        i += 2;
+        i += escapedSequenceWidth(text, i);
         continue;
       }
       if (character === mode.quote) modes.pop();
@@ -320,7 +324,7 @@ function lexSource(text: string): LexedSource {
     }
     if (mode.kind === "regex") {
       if (character === "\\") {
-        i += 2;
+        i += escapedSequenceWidth(text, i);
         continue;
       }
       if (character === "[") mode.inCharacterClass = true;
@@ -333,7 +337,7 @@ function lexSource(text: string): LexedSource {
     }
     if (mode.kind === "template") {
       if (character === "\\") {
-        i += 2;
+        i += escapedSequenceWidth(text, i);
         continue;
       }
       if (character === "`") modes.pop();
