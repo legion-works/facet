@@ -334,6 +334,25 @@ describe("cli contract — surface", () => {
     expect(parseArgs(["--version", "--format", "yaml"]).kind).toBe("usage");
   });
 
+  test("per-verb help is generated from the command flag table", async () => {
+    expect(parseArgs(["create", "--help"])).toEqual({
+      kind: "help",
+      format: "text",
+      verb: "create",
+    });
+    expect(parseArgs(["export", "--help"])).toEqual({
+      kind: "help",
+      format: "text",
+      verb: "export",
+    });
+    const { env } = makeEnv("export-help");
+    const io = makeIo();
+    const exit = await runCli(["export", "--help"], { ...io, env });
+    expect(exit.code).toBe(0);
+    expect(io.stdoutBuf.value).toContain("Usage: facet export <artifactId>");
+    expect(io.stdoutBuf.value).toContain("--include-bytes");
+  });
+
   test("meta --format json remains a version envelope", async () => {
     const { env } = makeEnv("version-meta-format");
     const io = makeIo();
@@ -375,6 +394,8 @@ describe("cli contract — surface", () => {
       "chart",
       "--renderer",
       "canvas",
+      "--file",
+      "-",
     ]);
     expect(parsed).toMatchObject({
       kind: "verb",
@@ -413,6 +434,8 @@ describe("cli contract — surface", () => {
       "tsx",
       "--execution",
       "interactive",
+      "--file",
+      "-",
     ]);
     expect(parsed).toMatchObject({
       kind: "verb",
@@ -611,6 +634,8 @@ describe("cli contract — surface", () => {
         "markdown",
         "--execution",
         "interactive",
+        "--file",
+        "-",
       ],
       { ...io, env },
     );
@@ -642,16 +667,16 @@ describe("cli contract — surface", () => {
     }
   });
 
-  test("publish without --type returns the typed allowed-type error", async () => {
+  test("publish reports every missing required input in one usage envelope", async () => {
     const { env } = makeEnv("type-omitted");
     const io = makeIo("hello");
     const exit = await runCli(["publish", "--artifact-id", "artifact-1"], { ...io, env });
-    expect(exit.code).toBe(0);
+    expect(exit.code).toBe(64);
     const envelope = parseStdoutEnvelope(io.stdoutBuf.value);
     if (envelope.ok) throw new Error("envelope unexpectedly ok");
     expect(envelope.error.code).toBe("invalid_request");
-    expect(envelope.error.message).toContain("markdown, mermaid, svg, chart, html, tsx");
-    expect(envelope.error.details).toEqual({ reason: "invalid_artifact_type" });
+    expect(envelope.error.message).toContain("--type, --file");
+    expect(envelope.error.details).toEqual({ reason: "usage_error", missing: "--type, --file" });
   });
 
   test("publish without --renderer preserves the svg request shape", () => {
@@ -773,7 +798,7 @@ describe("cli contract — surface", () => {
     for (const run of normalizedRuns.slice(1)) expect(run).toEqual(normalizedRuns[0]);
   }, 60_000);
 
-  test("--help describes JSON as the default rather than a universal stdout format", async () => {
+  test("--help scopes JSON formatting to meta commands and export", async () => {
     const { env } = makeEnv("help");
     const io = makeIo();
     const exit = await runCli(["--help"], { ...io, env });
@@ -788,7 +813,7 @@ describe("cli contract — surface", () => {
     expect(io.stdoutBuf.value).toContain("promote");
     expect(io.stdoutBuf.value).toContain("instantiate");
     expect(io.stdoutBuf.value).toContain("pin");
-    expect(io.stdoutBuf.value).toContain("stdout defaults to the versioned JSON envelope");
+    expect(io.stdoutBuf.value).toContain("verb stdout is always a versioned JSON envelope");
   });
 
   test("--version prints version + contractVersion", async () => {
@@ -1094,10 +1119,54 @@ describe("cli contract — wire", () => {
       const sidecarPath = join(exportCwd, `cli-export-${revisionSha.slice(0, 7)}.facet.json`);
       expect(readFileSync(artifactPath, "utf8")).toBe(source);
       expect(JSON.parse(readFileSync(sidecarPath, "utf8"))).toEqual(exported.data["sidecar"]);
+      expect(exported.data["paths"]).toEqual({ artifactPath, sidecarPath });
+      expect(exported.data["byteCount"]).toBe(Buffer.byteLength(source));
+      expect(exported.data["bytes"]).toBeUndefined();
+
+      const inlineIo = makeIo();
+      const inlinePath = join(exportCwd, "inline.md");
+      const inlineExit = await runCli(
+        ["export", artifactId, "--out", inlinePath, "--include-bytes"],
+        { ...inlineIo, env },
+      );
+      expect(inlineExit.code).toBe(0);
+      const inline = parseStdoutEnvelope(inlineIo.stdoutBuf.value);
+      if (!inline.ok) throw new Error("inline export must succeed");
+      expect(inline.data["bytes"]).toBe(Buffer.from(source).toString("base64"));
     } finally {
       process.chdir(originalCwd);
     }
   });
+
+  test("export write failures name the requested destination in a typed envelope", async () => {
+    const { env } = makeEnv("export-output-unwritable");
+    const createIo = makeIo();
+    await runCli(["create", "--project-id", "p", "--slug", "unwritable", "--title", "Unwritable"], {
+      ...createIo,
+      env,
+    });
+    const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+    if (!created.ok) throw new Error("create must succeed");
+    const artifactId = (created.data["artifact"] as { id: string }).id;
+    const publishIo = makeIo("# export\n");
+    await runCli(["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"], {
+      ...publishIo,
+      env,
+    });
+    const blockedParent = join(scratchRoot, `blocked-${crypto.randomUUID()}`);
+    writeFileSync(blockedParent, "not a directory");
+    const destination = join(blockedParent, "out.md");
+    const io = makeIo();
+    const exit = await runCli(["export", artifactId, "--out", destination], { ...io, env });
+    expect(exit.code).toBe(0);
+    const exported = parseStdoutEnvelope(io.stdoutBuf.value);
+    expect(exported.ok).toBe(false);
+    if (!exported.ok) {
+      expect(exported.error.code).toBe("output_unwritable");
+      expect(exported.error.message).toContain(destination);
+      expect(exported.error.message).not.toContain(".tmp");
+    }
+  }, 30_000);
 
   test("export preflights an existing sidecar and force replaces the pair", async () => {
     const { env } = makeEnv("export-preflight");
@@ -1318,17 +1387,20 @@ describe("cli contract — wire", () => {
     const warmIo = makeIo();
     await runCli(["list", "--project-id", "warm"], { ...warmIo, env });
     const io = makeIo("");
-    const exit = await runCli(["publish", "--artifact-id", "x", "--type", "markdown"], {
-      ...io,
-      env,
-    });
+    const exit = await runCli(
+      ["publish", "--artifact-id", "x", "--type", "markdown", "--file", "-"],
+      {
+        ...io,
+        env,
+      },
+    );
     expect(exit.code).toBe(0);
     const env1 = parseStdoutEnvelope(io.stdoutBuf.value);
     expect(env1.ok).toBe(false);
     if (!env1.ok) expect(env1.error.code).toBe("invalid_request");
   }, 20_000);
 
-  test("every per-verb builder surfaces a typed invalid_request on missing args (not invalid_envelope)", async () => {
+  test("missing required inputs are aggregated into typed usage envelopes", async () => {
     // Builders that throw on missing args must throw a FacetError
     // with code="invalid_request" so the main catch passes the
     // typed code through unchanged. A raw `new Error(...)` would
@@ -1338,39 +1410,126 @@ describe("cli contract — wire", () => {
     const warmIo = makeIo();
     await runCli(["list", "--project-id", "warm"], { ...warmIo, env });
 
-    const cases: { args: string[]; label: string }[] = [
-      { args: ["list"], label: "list missing --project-id" },
-      { args: ["create", "--project-id", "p", "--slug", "s"], label: "create missing --title" },
-      { args: ["open", "--artifact-id", "x"], label: "open missing --revision-sha" },
-      { args: ["pin", "--pinned", "true"], label: "pin missing --revision-id" },
+    const cases: { args: string[]; label: string; exitCode: number }[] = [
+      { args: ["list"], label: "list missing --project-id", exitCode: 64 },
+      {
+        args: ["create", "--project-id", "p", "--slug", "s"],
+        label: "create missing --title",
+        exitCode: 64,
+      },
+      { args: ["open", "--artifact-id", "x"], label: "open missing --revision-sha", exitCode: 64 },
+      { args: ["pin", "--pinned", "true"], label: "pin missing --revision-id", exitCode: 64 },
       {
         args: ["promote", "--revision-id", "r", "--name", "n"],
         label: "promote missing --promoted-by",
+        exitCode: 64,
       },
       {
         args: ["read-back", "--artifact-id", "x", "--revision-sha", "not-a-sha"],
         label: "read-back malformed --revision-sha",
+        exitCode: 0,
       },
     ];
 
     for (const tc of cases) {
       const io = makeIo();
       const exit = await runCli(tc.args, { ...io, env });
-      // Typed error envelope; well-formed → exit 0 (envelope-first
-      // policy), NOT 64 (which is reserved for pre-parse usage
-      // errors the CLI cannot even envelope).
-      expect(exit.code).toBe(0);
+      expect(exit.code).toBe(tc.exitCode);
       const env1 = parseStdoutEnvelope(io.stdoutBuf.value);
       expect(env1.ok).toBe(false);
       if (!env1.ok) {
-        // The builder threw a typed FacetError; the main catch
-        // passed it through, preserving the `invalid_request` code
-        // — NOT the generic `invalid_envelope` that a raw
-        // `new Error(...)` would collapse to via FacetError.from().
         expect(env1.error.code).toBe("invalid_request");
       }
     }
   }, 60_000);
+
+  test("publish returns its stored Tier 0 error verdict in the CLI envelope", async () => {
+    const { env } = makeEnv("publish-tier0-verdict");
+    const createIo = makeIo();
+    await runCli(["create", "--project-id", "p", "--slug", "bad-chart", "--title", "Bad chart"], {
+      ...createIo,
+      env,
+    });
+    const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+    if (!created.ok) throw new Error("create must succeed");
+    const artifactId = (created.data["artifact"] as { id: string }).id;
+
+    const publishIo = makeIo('{"series":}');
+    const exit = await runCli(
+      ["publish", "--artifact-id", artifactId, "--type", "chart", "--file", "-"],
+      { ...publishIo, env },
+    );
+    expect(exit.code).toBe(0);
+    const published = parseStdoutEnvelope(publishIo.stdoutBuf.value);
+    if (!published.ok) throw new Error("publish must commit malformed source");
+    expect((published.data["verdict"] as { status: string }).status).toBe("error");
+  }, 30_000);
+
+  test("CLI promotion reads the operator token from FACET_HOME without exposing it", async () => {
+    const { env, home } = makeEnv("cli-promote-token");
+    const token = "operator-token-never-in-envelope";
+    mkdirSync(join(home, "secrets"), { recursive: true });
+    writeFileSync(join(home, "secrets", "promote.token"), token, { mode: 0o600 });
+    const createIo = makeIo();
+    await runCli(["create", "--project-id", "p", "--slug", "promote", "--title", "Promote"], {
+      ...createIo,
+      env,
+    });
+    const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+    if (!created.ok) throw new Error("create must succeed");
+    const artifactId = (created.data["artifact"] as { id: string }).id;
+    const publishIo = makeIo("# promote\n");
+    await runCli(["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"], {
+      ...publishIo,
+      env,
+    });
+    const published = parseStdoutEnvelope(publishIo.stdoutBuf.value);
+    if (!published.ok) throw new Error("publish must succeed");
+    const revisionId = (published.data["revision"] as { id: string }).id;
+
+    const promoteIo = makeIo();
+    const exit = await runCli(
+      ["promote", "--revision-id", revisionId, "--name", "stable", "--promoted-by", "operator"],
+      { ...promoteIo, env },
+    );
+    expect(exit.code).toBe(0);
+    const promoted = parseStdoutEnvelope(promoteIo.stdoutBuf.value);
+    if (!promoted.ok) throw new Error(`promotion failed: ${JSON.stringify(promoted.error)}`);
+    expect((promoted.data["template"] as { promotedBy: string }).promotedBy).toBe("operator");
+    expect(promoteIo.stdoutBuf.value).not.toContain(token);
+    expect(promoteIo.stderrBuf.value).not.toContain(token);
+  }, 30_000);
+
+  test("read-back defaults to the latest revision and status reports its sha", async () => {
+    const { env } = makeEnv("latest-revision");
+    const createIo = makeIo();
+    await runCli(["create", "--project-id", "p", "--slug", "latest", "--title", "Latest"], {
+      ...createIo,
+      env,
+    });
+    const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+    if (!created.ok) throw new Error("create must succeed");
+    const artifactId = (created.data["artifact"] as { id: string }).id;
+    for (const source of ["# first\n", "# second\n"]) {
+      const publishIo = makeIo(source);
+      await runCli(["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"], {
+        ...publishIo,
+        env,
+      });
+    }
+    const statusIo = makeIo();
+    await runCli(["status", "--artifact-id", artifactId], { ...statusIo, env });
+    const status = parseStdoutEnvelope(statusIo.stdoutBuf.value);
+    if (!status.ok) throw new Error("status must succeed");
+    const latestSha = status.data["latestRevisionSha"] as string;
+    expect(latestSha).toHaveLength(64);
+
+    const readIo = makeIo();
+    await runCli(["read-back", "--artifact-id", artifactId], { ...readIo, env });
+    const readBack = parseStdoutEnvelope(readIo.stdoutBuf.value);
+    if (!readBack.ok) throw new Error(`read-back failed: ${readBack.error.code}`);
+    expect((readBack.data["verdict"] as { revisionSha: string }).revisionSha).toBe(latestSha);
+  }, 30_000);
 
   test("status without artifact id reports dormant health without spawning", async () => {
     const { env, home } = makeEnv("health-dormant");

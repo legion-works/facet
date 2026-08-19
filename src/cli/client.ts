@@ -39,6 +39,7 @@ import type { ScreenshotError, TsxExecutionMode } from "../shared/contracts/vali
 export interface FacetClientOptions {
   readonly baseUrl: string;
   readonly installToken: string;
+  readonly promoteToken?: string;
   readonly commandTimeoutMs?: number;
   /** `fetch` indirection so tests can stub network. */
   readonly fetchImpl?: typeof fetch;
@@ -54,12 +55,14 @@ export interface SendCommandOptions {
 export class FacetClient {
   readonly #baseUrl: string;
   readonly #installToken: string;
+  readonly #promoteToken: string | undefined;
   readonly #commandTimeoutMs: number;
   readonly #fetchImpl: typeof fetch;
 
   constructor(options: FacetClientOptions) {
     this.#baseUrl = options.baseUrl.replace(/\/$/, "");
     this.#installToken = options.installToken;
+    this.#promoteToken = options.promoteToken;
     this.#commandTimeoutMs = options.commandTimeoutMs ?? FACET_CLIENT_COMMAND_TIMEOUT_MS;
     this.#fetchImpl = options.fetchImpl ?? fetch;
   }
@@ -94,7 +97,7 @@ export class FacetClient {
       data: parsed,
     };
     const headers: Record<string, string> = {
-      authorization: `Bearer ${this.#installToken}`,
+      authorization: `Bearer ${parsed.command === "promote" && this.#promoteToken !== undefined ? this.#promoteToken : this.#installToken}`,
       host: new URL(this.#baseUrl).host,
     };
     if (isMutation) {

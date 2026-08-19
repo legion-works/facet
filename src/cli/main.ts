@@ -22,6 +22,7 @@
  */
 
 import type { Readable } from "node:stream";
+import { existsSync, readFileSync } from "node:fs";
 
 import { FACET_SCHEMA_VERSION, okEnvelope, type FacetEnvelope } from "../shared/contracts/envelope";
 import type { CommandRequest, CommandResult } from "../shared/contracts/commands";
@@ -133,13 +134,15 @@ async function executeVerb(
   verb: ParsedCommand & { kind: "verb" },
   args: Readonly<Record<string, string | boolean>>,
   stdinBytes: Uint8Array,
-  resolved: { baseUrl: string; installToken: string },
+  resolved: { baseUrl: string; installToken: string; promoteToken?: string },
   openLauncher?: (url: string) => void | Promise<void>,
   cwd = process.cwd(),
-): Promise<FacetEnvelope<CommandResult>> {
+  promoteToken?: string,
+): Promise<FacetEnvelope<unknown>> {
   const client = new FacetClient({
     baseUrl: resolved.baseUrl,
     installToken: resolved.installToken,
+    ...(promoteToken === undefined ? {} : { promoteToken }),
   });
   let request: CommandRequest;
   switch (verb.verb) {
@@ -192,7 +195,28 @@ async function executeVerb(
       typeof args.out === "string" ? args.out : undefined,
       cwd,
     );
-    writeExportFiles(result, paths, args.force === true);
+    try {
+      writeExportFiles(result, paths, args.force === true);
+    } catch (cause) {
+      if (cause instanceof FacetError) throw cause;
+      throw new FacetError(
+        "output_unwritable",
+        `Cannot write export output: ${paths.artifactPath}`,
+        {
+          retryable: false,
+          cause,
+          details: { out: paths.artifactPath },
+        },
+      );
+    }
+    if (args["include-bytes"] !== true) {
+      const { bytes: _bytes, ...projected } = result;
+      void _bytes;
+      return {
+        ...response,
+        data: { ...projected, paths, byteCount: Buffer.from(result.bytes, "base64").byteLength },
+      };
+    }
   }
   if (verb.verb === "open" && response.ok) {
     const openData = response.data as Extract<CommandResult, { command: "open" }>;
@@ -225,7 +249,7 @@ export async function runCli(
 
   // 2. Meta commands: --help, --version.
   if (parsed.kind === "help") {
-    io.stdout.write(renderHelp());
+    io.stdout.write(renderHelp(parsed.verb));
     io.stdout.write("\n");
     return { code: EXIT_CODES.OK, spawnedPid: null };
   }
@@ -301,11 +325,24 @@ export async function runCli(
   let resolved: {
     baseUrl: string;
     installToken: string;
+    promoteToken?: string;
     metadata: { pid: number; startTime: number; port: number; contractVersion: string };
   };
+  let promoteToken: string | undefined;
   try {
     const r = await ensureService({ env: io.env }, testHooks as ServiceHooks);
-    resolved = { baseUrl: r.baseUrl, installToken: r.installToken, metadata: r.metadata };
+    const paths = computeFacetPaths(
+      io.env.FACET_HOME === undefined ? {} : { facetHome: io.env.FACET_HOME },
+    );
+    promoteToken =
+      io.env.FACET_PROMOTE_TOKEN ??
+      (existsSync(paths.token) ? readFileSync(paths.token, "utf8").trim() : undefined);
+    resolved = {
+      baseUrl: r.baseUrl,
+      installToken: r.installToken,
+      metadata: r.metadata,
+      ...(promoteToken === undefined || promoteToken.length === 0 ? {} : { promoteToken }),
+    };
   } catch (error) {
     // Any `FacetError` produces a well-formed envelope on stdout;
     // adapters branch on the envelope, so exit 0. A non-FacetError
@@ -337,6 +374,7 @@ export async function runCli(
       },
       testHooks.openLauncher,
       process.cwd(),
+      promoteToken,
     );
     writeEnvelope(io, parsed, response);
     return { code: EXIT_CODES.OK, spawnedPid: resolved.metadata.pid };

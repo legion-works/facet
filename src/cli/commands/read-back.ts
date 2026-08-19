@@ -38,7 +38,10 @@ export function buildReadBackRequest(
       retryable: false,
     });
   }
-  if (typeof revisionSha !== "string" || !/^[a-f0-9]{64}$/.test(revisionSha)) {
+  if (
+    revisionSha !== undefined &&
+    (typeof revisionSha !== "string" || !/^[a-f0-9]{64}$/.test(revisionSha))
+  ) {
     throw new FacetError("invalid_request", "--revision-sha must be a 64-char hex sha256", {
       retryable: false,
     });
@@ -47,7 +50,7 @@ export function buildReadBackRequest(
     command: "readBack",
     requestId: generateRequestId(),
     artifactId,
-    revisionSha,
+    ...(typeof revisionSha === "string" ? { revisionSha } : {}),
     tier: parseTier(args["tier"]),
   };
 }

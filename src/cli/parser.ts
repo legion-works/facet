@@ -26,7 +26,7 @@ import { TSX_EXECUTION_MODES } from "../shared/tsx/execution";
  * (`--help`, `--version`); `verb !== null` for every v1 verb.
  */
 export type ParsedCommand =
-  | { readonly kind: "help"; readonly format: "text" | "json" }
+  | { readonly kind: "help"; readonly format: "text" | "json"; readonly verb?: CommandName }
   | { readonly kind: "version"; readonly format: "text" | "json" }
   | {
       readonly kind: "verb";
@@ -50,30 +50,31 @@ interface FlagDefinition {
   readonly flag: string;
   readonly takesValue: boolean;
   readonly values?: readonly string[];
+  readonly required?: boolean;
 }
 
 const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
   create: [
-    { flag: "--project-id", takesValue: true },
-    { flag: "--slug", takesValue: true },
-    { flag: "--title", takesValue: true },
+    { flag: "--project-id", takesValue: true, required: true },
+    { flag: "--slug", takesValue: true, required: true },
+    { flag: "--title", takesValue: true, required: true },
   ],
   publish: [
-    { flag: "--artifact-id", takesValue: true },
-    { flag: "--type", takesValue: true },
+    { flag: "--artifact-id", takesValue: true, required: true },
+    { flag: "--type", takesValue: true, required: true },
     { flag: "--renderer", takesValue: true, values: [...RENDERERS] },
     { flag: "--execution", takesValue: true, values: [...TSX_EXECUTION_MODES] },
-    { flag: "--file", takesValue: true },
+    { flag: "--file", takesValue: true, required: true },
     { flag: "--note", takesValue: true },
     { flag: "--parent-revision-id", takesValue: true },
   ],
   list: [
-    { flag: "--project-id", takesValue: true },
+    { flag: "--project-id", takesValue: true, required: true },
     { flag: "--slug-prefix", takesValue: true },
     { flag: "--limit", takesValue: true },
   ],
   readBack: [
-    { flag: "--artifact-id", takesValue: true },
+    { flag: "--artifact-id", takesValue: true, required: true },
     { flag: "--revision-sha", takesValue: true },
     { flag: "--tier", takesValue: true },
   ],
@@ -82,30 +83,31 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
     { flag: "--start", takesValue: false },
   ],
   open: [
-    { flag: "--artifact-id", takesValue: true },
-    { flag: "--revision-sha", takesValue: true },
+    { flag: "--artifact-id", takesValue: true, required: true },
+    { flag: "--revision-sha", takesValue: true, required: true },
   ],
   promote: [
     { flag: "--artifact-id", takesValue: true },
-    { flag: "--revision-id", takesValue: true },
-    { flag: "--name", takesValue: true },
+    { flag: "--revision-id", takesValue: true, required: true },
+    { flag: "--name", takesValue: true, required: true },
     { flag: "--description", takesValue: true },
-    { flag: "--promoted-by", takesValue: true },
+    { flag: "--promoted-by", takesValue: true, required: true },
   ],
   instantiate: [
-    { flag: "--name", takesValue: true },
-    { flag: "--new-slug", takesValue: true },
+    { flag: "--name", takesValue: true, required: true },
+    { flag: "--new-slug", takesValue: true, required: true },
     { flag: "--project-id", takesValue: true },
   ],
   pin: [
-    { flag: "--revision-id", takesValue: true },
-    { flag: "--pinned", takesValue: true },
+    { flag: "--revision-id", takesValue: true, required: true },
+    { flag: "--pinned", takesValue: true, required: true },
   ],
   export: [
     { flag: "--revision", takesValue: true },
     { flag: "--format", takesValue: true, values: ["source", "render"] },
     { flag: "--out", takesValue: true },
     { flag: "--force", takesValue: false },
+    { flag: "--include-bytes", takesValue: false },
   ],
 };
 
@@ -216,6 +218,9 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
   if (command === undefined) {
     return { kind: "usage", message: `Unknown verb: '${verb}'` };
   }
+  if (stripped.slice(1).includes("--help") || stripped.slice(1).includes("-h")) {
+    return { kind: "help", format, verb: command };
+  }
 
   const flags = VERB_FLAGS[command];
   const args: Record<string, string | boolean> = {};
@@ -251,8 +256,18 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
       args[flag.slice(2)] = true;
     }
   }
+  const missing = flags
+    .filter((flag) => flag.required === true && args[flag.flag.slice(2)] === undefined)
+    .map((flag) => flag.flag);
   if (command === "export" && args["artifact-id"] === undefined) {
-    return { kind: "usage", message: "export: artifact id is required" };
+    missing.push("<artifactId>");
+  }
+  if (missing.length > 0) {
+    return {
+      kind: "usage",
+      message: `Missing required input(s) for ${verb}: ${missing.join(", ")}`,
+      details: { missing: missing.join(", ") },
+    };
   }
   return { kind: "verb", verb: command, args, format, jsonFlag };
 }
@@ -262,7 +277,28 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
  * asserts the verb list and the "stdout is JSON" line can never
  * silently fail when a new verb is added.
  */
-export function renderHelp(): string {
+export function renderHelp(verb?: CommandName): string {
+  if (verb !== undefined) {
+    const commandVerb = COMMAND_TO_VERB[verb];
+    const positional = verb === "export" ? " <artifactId>" : "";
+    const flags = VERB_FLAGS[verb]
+      .map((flag) => {
+        const value = flag.takesValue ? " <value>" : "";
+        return `  ${flag.flag}${value}${flag.required === true ? "  required" : ""}`;
+      })
+      .join("\n");
+    return [
+      `Usage: facet ${commandVerb}${positional} [--flag value]...`,
+      "",
+      positional.length > 0 ? "Positionals:" : "",
+      ...(positional.length > 0 ? ["  <artifactId>  artifact identifier to export"] : []),
+      ...(positional.length > 0 ? [""] : []),
+      "Flags:",
+      flags,
+      "",
+      "stdout is always a versioned JSON envelope for verb calls.",
+    ].join("\n");
+  }
   const verbs = [...IMPLEMENTED_COMMANDS, ...RESERVED_COMMANDS]
     .map((c) => COMMAND_TO_VERB[c])
     .join(", ");
@@ -280,7 +316,7 @@ export function renderHelp(): string {
     "  facet publish --artifact-id <id> --type <t> [--renderer <svg|canvas>] --file -        read bytes from stdin",
     "  cat src.md | facet publish --artifact-id <id> --type <t> [--renderer <svg|canvas>]    read bytes from stdin (piped)",
     "",
-    "stdout defaults to the versioned JSON envelope; --format text and TTY output are text.",
+    "verb stdout is always a versioned JSON envelope; --format applies to meta commands and export only.",
     "diagnostics are stderr.",
     "",
     "Exit codes:",

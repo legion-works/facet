@@ -5,6 +5,30 @@ import { FacetError } from "../../src/shared/errors/facet-error";
 import { generateRequestId } from "../../src/shared/util/time";
 
 describe("FacetClient transport", () => {
+  test("promote requests use the configured operator bearer", async () => {
+    let authorization: string | null = null;
+    const client = new FacetClient({
+      baseUrl: "http://127.0.0.1:1",
+      installToken: "install-token",
+      promoteToken: "operator-token",
+      fetchImpl: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        authorization = new Headers(init?.headers).get("authorization");
+        throw new Error("stop after request capture");
+      }) as unknown as typeof fetch,
+    });
+
+    await expect(
+      client.sendCommand({
+        command: "promote",
+        requestId: generateRequestId(),
+        revisionId: "revision",
+        name: "stable",
+        promotedBy: "operator",
+      }),
+    ).rejects.toBeInstanceOf(FacetError);
+    expect(authorization as string | null).toBe("Bearer operator-token");
+  });
+
   test("command timeout surfaces a typed retryable transport error", async () => {
     const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       await new Promise<never>((_resolve, reject) => {
