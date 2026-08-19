@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 import { openDatabase } from "../../src/service/store/database";
 import { ArtifactRepository } from "../../src/service/store/repository";
@@ -538,6 +540,37 @@ describe("artifact store", () => {
       promotedBy: "test",
     });
     expect(template.revisionId).toBe(revision.id);
+  });
+
+  test("render-run writes re-harden recreated SQLite sidecars", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-store-sidecar-"));
+    const databasePath = join(root, "facet.sqlite");
+    const db = openDatabase({ databasePath });
+    databases.push(db);
+    runMigrations(db);
+    const repository = new ArtifactRepository(db);
+    const project = repository.createProject({ projectRoot: root });
+    const artifact = repository.createArtifact({
+      projectId: project.id,
+      slug: "sidecar",
+      title: "Sidecar",
+    });
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([1]),
+    });
+    chmodSync(`${databasePath}-wal`, 0o644);
+
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 0,
+      status: "ok",
+      expected: {},
+      observed: {},
+    });
+
+    expect(statSync(`${databasePath}-wal`).mode & 0o777).toBe(0o600);
   });
 
   test("removes compiled evidence when render-run insert fails", () => {

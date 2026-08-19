@@ -30,7 +30,7 @@ import {
   type PromoteRevisionInput,
   type TemplateInput,
 } from "./repository-lifecycle";
-import { enforceEvidenceRetention } from "./evidence-retention";
+import { enforceEvidenceRetention, removeUnreferencedEvidence } from "./evidence-retention";
 
 interface ProjectInput {
   readonly projectRoot: string;
@@ -685,57 +685,10 @@ export class ArtifactRepository {
           // Retention cleanup is best-effort; do not fail the write.
         }
       }
+      hardenDatabaseFiles(this.db.filename);
       return parsed;
     } catch (error) {
-      const isReferencedByDurableRun = (path: string | null | undefined): boolean => {
-        if (path === null || path === undefined) return false;
-        const row = hasCompiledPath
-          ? this.db
-              .query(
-                "SELECT 1 FROM render_runs WHERE screenshot_path = ? OR console_path = ? OR compiled_path = ? LIMIT 1",
-              )
-              .get(path, path, path)
-          : this.db
-              .query(
-                "SELECT 1 FROM render_runs WHERE screenshot_path = ? OR console_path = ? LIMIT 1",
-              )
-              .get(path, path);
-        return row !== null && row !== undefined;
-      };
-      // A retry may re-submit an existing evidence path. Durable rows
-      // own their evidence; only unreferenced paths are orphan cleanup.
-      if (
-        input.screenshotPath !== null &&
-        input.screenshotPath !== undefined &&
-        !isReferencedByDurableRun(input.screenshotPath)
-      ) {
-        try {
-          const { rmSync } = require("node:fs") as typeof import("node:fs");
-          rmSync(input.screenshotPath, { force: true });
-        } catch {
-          // best-effort
-        }
-      }
-      if (
-        input.consolePath !== null &&
-        input.consolePath !== undefined &&
-        !isReferencedByDurableRun(input.consolePath)
-      ) {
-        try {
-          const { rmSync } = require("node:fs") as typeof import("node:fs");
-          rmSync(input.consolePath, { force: true });
-        } catch {
-          // best-effort
-        }
-      }
-      if (compiledPath !== null && !isReferencedByDurableRun(compiledPath)) {
-        try {
-          const { rmSync } = require("node:fs") as typeof import("node:fs");
-          rmSync(compiledPath, { force: true });
-        } catch {
-          // best-effort
-        }
-      }
+      removeUnreferencedEvidence(this.db, [input.screenshotPath, input.consolePath, compiledPath]);
       throw asStoreError(error);
     }
   }

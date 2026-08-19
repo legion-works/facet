@@ -42,6 +42,7 @@ describe("evidence retention", () => {
     const deleted: string[] = [];
     const db = {
       query(sql: string) {
+        if (sql.includes("SELECT 1 FROM render_runs")) return { get: () => null };
         if (sql.startsWith("SELECT")) {
           return {
             all: () => [
@@ -98,6 +99,40 @@ describe("evidence retention", () => {
       limit: 10,
     });
     expect(deleted).toEqual([]);
+  });
+
+  test("keeps evidence that remains referenced after an evicted row is deleted", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-evidence-"));
+    roots.push(root);
+    const sharedPath = join(root, "shared.png");
+    writeFileSync(sharedPath, "pixels");
+    const deleted: string[] = [];
+    const db = {
+      transaction: (fn: () => void) => Object.assign(fn, { immediate: fn }),
+      query(sql: string) {
+        if (sql.includes("PRAGMA table_info")) return { all: () => [{ name: "compiled_path" }] };
+        if (sql.includes("SELECT 1 FROM render_runs")) return { get: () => ({ id: "new" }) };
+        if (sql.startsWith("SELECT")) {
+          return {
+            all: () => [
+              { id: "new", screenshot_path: sharedPath, console_path: null, compiled_path: null },
+              { id: "old", screenshot_path: sharedPath, console_path: null, compiled_path: null },
+            ],
+          };
+        }
+        return { run: (id: string) => deleted.push(id) };
+      },
+    };
+
+    enforceEvidenceRetention({
+      db: db as never,
+      artifactId: "artifact",
+      evidenceRoot: root,
+      limit: 1,
+    });
+
+    expect(deleted).toEqual(["old"]);
+    expect(existsSync(sharedPath)).toBe(true);
   });
 
   test("wraps database failures as store errors", () => {

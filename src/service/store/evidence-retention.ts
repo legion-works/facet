@@ -49,6 +49,42 @@ export interface EnforceRetentionOptions {
   readonly limit?: number;
 }
 
+export function removeUnreferencedEvidence(
+  db: Database,
+  paths: readonly (string | null | undefined)[],
+): void {
+  const candidates = [...new Set(paths.filter((path): path is string => path != null))];
+  if (candidates.length === 0) return;
+  let hasCompiledPath = false;
+  try {
+    const pragma = db.query("PRAGMA table_info(render_runs)");
+    if (typeof pragma.all === "function") {
+      hasCompiledPath = (pragma.all() as Array<{ name: string }>).some(
+        (column) => column.name === "compiled_path",
+      );
+    }
+  } catch {
+    hasCompiledPath = false;
+  }
+  const release = (): void => {
+    for (const path of candidates) {
+      const referenced = db
+        .query(
+          hasCompiledPath
+            ? "SELECT 1 FROM render_runs WHERE screenshot_path = ? OR console_path = ? OR compiled_path = ? LIMIT 1"
+            : "SELECT 1 FROM render_runs WHERE screenshot_path = ? OR console_path = ? LIMIT 1",
+        )
+        .get(...(hasCompiledPath ? [path, path, path] : [path, path]));
+      if (referenced === null || referenced === undefined) unlinkEvidenceFiles(path, null);
+    }
+  };
+  const transaction = (
+    db as unknown as { transaction?: (fn: () => void) => { immediate: () => void } }
+  ).transaction;
+  if (transaction === undefined) release();
+  else transaction.call(db, release).immediate();
+}
+
 interface RenderRunRow {
   readonly id: string;
   readonly screenshot_path: string | null;
@@ -94,8 +130,19 @@ export function enforceEvidenceRetention(options: EnforceRetentionOptions): void
       .all(options.artifactId) as RenderRunRow[];
     const evictable = candidates.slice(limit);
     for (const row of evictable) {
-      unlinkEvidenceFiles(row.screenshot_path, row.console_path, row.compiled_path);
-      options.db.query("DELETE FROM render_runs WHERE id = ?").run(row.id);
+      const evict = (): void => {
+        options.db.query("DELETE FROM render_runs WHERE id = ?").run(row.id);
+        removeUnreferencedEvidence(options.db, [
+          row.screenshot_path,
+          row.console_path,
+          row.compiled_path,
+        ]);
+      };
+      const transaction = (
+        options.db as unknown as { transaction?: (fn: () => void) => { immediate: () => void } }
+      ).transaction;
+      if (transaction === undefined) evict();
+      else transaction.call(options.db, evict).immediate();
     }
   } catch (error) {
     throw asStoreError(error);
