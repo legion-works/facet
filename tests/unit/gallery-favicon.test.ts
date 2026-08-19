@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { setGalleryFavicon } from "../../src/gallery-web/app";
 import { FAVICON_TINT_BY_STATUS, faviconTint, renderFavicon } from "../../src/gallery-web/favicon";
 import { RenderStatusSchema } from "../../src/shared/contracts/validation";
 
@@ -76,6 +77,29 @@ describe("gallery favicon", () => {
     expect(context.font).toBe("24px sans-serif");
     expect(context.textAlign).toBe("center");
     expect(context.textBaseline).toBe("middle");
+  });
+
+  test("renders a shell favicon through the injected document instead of the ambient global", () => {
+    const link = { href: "" };
+    const injectedDocument = {
+      getElementById: (id: string) => (id === "facet-favicon" ? link : null),
+      createElement: (tag: string) => {
+        expect(tag).toBe("canvas");
+        return {
+          getContext: () => ({ fillText() {} }),
+          toDataURL: () => "data:image/png;base64,injected-document",
+        };
+      },
+    } as unknown as Document;
+    globals.document = {
+      createElement: () => {
+        throw new Error("ambient document must not create the favicon canvas");
+      },
+    };
+
+    setGalleryFavicon(injectedDocument, "ok");
+
+    expect(link.href).toBe("data:image/png;base64,injected-document");
   });
 
   test("returns null when canvas rendering is unavailable", () => {

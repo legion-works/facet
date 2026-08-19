@@ -779,7 +779,7 @@ export function setGalleryFavicon(
   // shims do not universally expose HTMLLinkElement as a global guard.
   const link = document.getElementById("facet-favicon") as HTMLLinkElement | null;
   if (link === null) return;
-  const dataUrl = renderFavicon(faviconTint(state));
+  const dataUrl = renderFavicon(faviconTint(state), document);
   if (dataUrl !== null) link.href = dataUrl;
 }
 
@@ -1018,11 +1018,14 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   const updateZoomButtons = (zoom: number): void => setZoomButtonState(document, zoom);
   let exportMenu: GalleryExportMenuController | null = null;
   let swaps: SerializedSwapQueue<GallerySwapEvent> | null = null;
+  let activeFrame: CreatedArtifactFrame | null = null;
   const expireSession = (): void => {
     if (expired) return;
     setGalleryFavicon(document, "expired");
     expired = true;
+    exportMenu?.close();
     exportMenu?.sync();
+    activeFrame?.renderResult?.setGestureMode("native");
     swaps?.close();
     clearSession(window.sessionStorage);
     renderSessionExpired(
@@ -1109,6 +1112,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     frameUrl,
     dom,
   });
+  activeFrame = current;
   host.mountOffScreen(current.frameId, current.element.raw);
   const loaded = await current.awaitLoad(DEFAULT_READY_TIMEOUT_MS);
   if (!loaded) throw new Error("Gallery frame failed to load");
@@ -1147,6 +1151,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       initialEvidence.bytes,
     ),
   );
+  let displayedExportState = exportMenu!.getState();
   host.setVisibility(current.frameId, true);
   updateGalleryTitle(source.title);
   updateGalleryFavicon(source.verdict?.status ?? "unverified");
@@ -1174,6 +1179,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         );
         if (expired) return;
         current = frame;
+        activeFrame = frame;
         syncPanZoomToggle();
         syncZoomButtons();
         if (!result.failedNewFrameReady) {
@@ -1199,12 +1205,13 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
               evidence.bytes,
             ),
           );
+          displayedExportState = exportMenu!.getState();
           if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
           updateGalleryVerdict(revision.verdict ?? null);
           updateGalleryStatus("displayed");
           updateSwapBar("complete");
         } else {
-          exportMenu!.setState(event.previousExportState);
+          exportMenu!.setState(displayedExportState);
           updateSwapBar("failed");
           updateGalleryVerdict(null);
           updateGalleryStatus("displayed");
@@ -1230,7 +1237,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     fetchImpl: fetch,
     onState: updateLiveState,
     onCommit: (event) => {
-      const previousExportState = exportMenu?.getState() ?? null;
+      const previousExportState = displayedExportState;
       exportMenu?.clear();
       updateGalleryStatus("swapping");
       updateSwapBar("start");
@@ -1281,6 +1288,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   // through `nextViewStateForKey` so the key-to-state mapping has one
   // tested home.
   document.addEventListener("keydown", (event) => {
+    if (expired) return;
     const result = current.renderResult;
     if (!result) return;
     const next = nextViewStateForKey(
@@ -1303,6 +1311,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     ["facet-zoom-out", -0.1],
   ] as const) {
     document.getElementById(id)?.addEventListener("click", () => {
+      if (expired) return;
       const result = current.renderResult;
       if (!result) return;
       const state = result.readViewState();
@@ -1325,12 +1334,14 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     updateZoomButtons(current.renderResult?.readViewState().zoom ?? 1);
   };
   panZoomToggle?.addEventListener("click", () => {
+    if (expired) return;
     const result = current.renderResult;
     if (!result) return;
     result.setGestureMode(result.gestureMode() === "panzoom" ? "native" : "panzoom");
     syncPanZoomToggle();
   });
   document.getElementById("facet-zoom-reset")?.addEventListener("click", () => {
+    if (expired) return;
     const result = current.renderResult;
     if (!result) return;
     result.setGestureMode(result.defaultGestureMode);

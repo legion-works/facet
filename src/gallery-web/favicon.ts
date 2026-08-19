@@ -30,10 +30,14 @@ export function faviconTint(state: RenderStatus | "idle" | "expired" | "unverifi
   return FAVICON_TINT_BY_STATUS[state as RenderStatus];
 }
 
-export function renderFavicon(tint: FaviconTint): string | null {
+export function renderFavicon(
+  tint: FaviconTint,
+  documentOverride?: Pick<Document, "createElement">,
+): string | null {
   try {
-    if (typeof document === "undefined") return null;
-    const canvas = document.createElement("canvas");
+    const canvasDocument = documentOverride ?? (typeof document === "undefined" ? null : document);
+    if (canvasDocument === null) return null;
+    const canvas = canvasDocument.createElement("canvas");
     canvas.width = 32;
     canvas.height = 32;
     const context = canvas.getContext("2d");

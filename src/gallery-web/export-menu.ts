@@ -17,6 +17,7 @@ export interface GalleryExportMenuController {
   readonly getState: () => GalleryExportState | null;
   readonly setState: (next: GalleryExportState | null) => void;
   readonly clear: () => void;
+  readonly close: () => void;
   readonly sync: () => void;
 }
 
@@ -37,6 +38,10 @@ export function installGalleryExportMenu(
   const source = document.getElementById("facet-export-source") as HTMLButtonElement | null;
   const render = document.getElementById("facet-export-render") as HTMLButtonElement | null;
   const sidecar = document.getElementById("facet-export-sidecar") as HTMLButtonElement | null;
+  const close = (): void => {
+    if (menu !== null) menu.hidden = true;
+    toggle?.setAttribute("aria-expanded", "false");
+  };
   const sync = (): void => {
     const terminal = options.isExpired();
     if (source !== null) source.disabled = terminal || state === null;
@@ -104,6 +109,7 @@ export function installGalleryExportMenu(
       state = null;
       sync();
     },
+    close,
     sync,
   };
 }

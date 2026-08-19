@@ -713,6 +713,62 @@ describe("gallery shell startup", () => {
     expect((harness.elements.get("facet-favicon") as FakeLinkElement).href).toContain("#77809a");
   });
 
+  test("lease expiry closes an open export menu and resets its expanded ARIA state", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    const toggle = harness.elements.get("facet-export-toggle")!;
+    const menu = harness.elements.get("facet-export-menu")!;
+    menu.hidden = true;
+    toggle.emit("click");
+    expect(menu.hidden).toBe(false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    harness.emitStreamClose("lease_expired");
+    await waitFor(
+      () => harness.elements.get("facet-status-line")?.textContent === "session expired",
+    );
+
+    expect(menu.hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  test("lease expiry blocks shell view-state controls behind the terminal screen", async () => {
+    const harness = createRuntime();
+    let applied = 0;
+    let gestureChanges = 0;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: async () => ({
+        observed: harness.defaultObserved,
+        viewMode: "native",
+        applyViewState: () => {
+          applied += 1;
+        },
+        readViewState: () => EMPTY_VIEW_STATE,
+        defaultGestureMode: "native",
+        gestureMode: () => "native",
+        setGestureMode: () => {
+          gestureChanges += 1;
+        },
+        resetDiagramRegions: () => {},
+      }),
+    });
+    await startGallery(harness.runtime);
+
+    harness.emitStreamClose("lease_expired");
+    await waitFor(
+      () => harness.elements.get("facet-status-line")?.textContent === "session expired",
+    );
+    const stateAtExpiry = { applied, gestureChanges };
+    harness.elements.get("facet-zoom-in")?.emit("click");
+    harness.elements.get("facet-panzoom-toggle")?.emit("click");
+    harness.elements.get("facet-zoom-reset")?.emit("click");
+
+    expect(applied).toBe(stateAtExpiry.applied);
+    expect(gestureChanges).toBe(stateAtExpiry.gestureChanges);
+  });
+
   test("a stream:close with an unrelated reason stays idle and keeps the session", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);
@@ -967,6 +1023,38 @@ describe("gallery shell startup", () => {
     ]);
     expect(favicon.hrefWrites).toBe(4);
     expect(favicon.href).toContain("#77809a");
+  });
+
+  test("two queued failed swaps preserve the last displayed export state", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    const source = harness.elements.get("facet-export-source") as unknown as { disabled?: boolean };
+    expect(source.disabled).toBe(false);
+
+    let releaseFirstRender: (() => void) | null = null;
+    const failedObserved = { ...harness.defaultObserved, errorCount: 1 };
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: failedObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseFirstRender = () => resolve(makeFakeRenderResult("native", failedObserved));
+        }),
+    });
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: failedObserved,
+      render: async () => makeFakeRenderResult("native", failedObserved),
+    });
+
+    harness.emitCommitted({ revisionSha: "b2".padEnd(64, "b"), revisionNumber: 2 });
+    await waitFor(() => releaseFirstRender !== null);
+    harness.emitCommitted({ revisionSha: "c2".padEnd(64, "c"), revisionNumber: 3 });
+    releaseFirstRender!();
+
+    await waitFor(() => harness.elements.get("facet-swapbar")?.dataset.failed === "");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(source.disabled).toBe(false);
   });
 
   test("terminal expiry blocks an in-flight swap completion from replacing the expired screen", async () => {
