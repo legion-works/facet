@@ -306,6 +306,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   let diagramRegions: DiagramRegionGestures | null = null;
   let gestureMode: GestureMode = "native";
   let drag: { x: number; y: number } | null = null;
+  let capturedPointerId: number | null = null;
 
   const onWheel = (event: WheelEvent): void => {
     event.preventDefault();
@@ -321,6 +322,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   const onPointerDown = (event: PointerEvent): void => {
     drag = { x: event.clientX, y: event.clientY };
     container.setPointerCapture(event.pointerId);
+    capturedPointerId = event.pointerId;
     container.style.cursor = "grabbing";
   };
   const onPointerMove = (event: PointerEvent): void => {
@@ -338,6 +340,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   const onPointerEnd = (event: PointerEvent): void => {
     drag = null;
     container.releasePointerCapture(event.pointerId);
+    capturedPointerId = null;
     container.style.cursor = "auto";
   };
 
@@ -360,6 +363,10 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
     container.removeEventListener("pointermove", onPointerMove);
     container.removeEventListener("pointerup", onPointerEnd);
     container.removeEventListener("pointercancel", onPointerEnd);
+    if (capturedPointerId !== null) {
+      container.releasePointerCapture(capturedPointerId);
+      capturedPointerId = null;
+    }
   };
 
   const setGestureMode = (mode: GestureMode): void => {

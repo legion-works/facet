@@ -170,10 +170,11 @@ export async function readCappedBody(req: Request, contentLength: number | null)
     }
   }
   const text = await req.text();
-  if (text.length > RAW_BODY_CAP_BYTES) {
+  const receivedBytes = new TextEncoder().encode(text).byteLength;
+  if (receivedBytes > RAW_BODY_CAP_BYTES) {
     throw new FacetError("payload_too_large", "Request body exceeds raw cap", {
       retryable: false,
-      details: { capBytes: RAW_BODY_CAP_BYTES, receivedBytes: text.length },
+      details: { capBytes: RAW_BODY_CAP_BYTES, receivedBytes },
     });
   }
   return text;

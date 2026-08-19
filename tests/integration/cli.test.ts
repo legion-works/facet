@@ -773,7 +773,7 @@ describe("cli contract — surface", () => {
     for (const run of normalizedRuns.slice(1)) expect(run).toEqual(normalizedRuns[0]);
   }, 60_000);
 
-  test("--help prints usage including every verb, the stdin example, and the stdout-is-JSON line", async () => {
+  test("--help describes JSON as the default rather than a universal stdout format", async () => {
     const { env } = makeEnv("help");
     const io = makeIo();
     const exit = await runCli(["--help"], { ...io, env });
@@ -788,7 +788,7 @@ describe("cli contract — surface", () => {
     expect(io.stdoutBuf.value).toContain("promote");
     expect(io.stdoutBuf.value).toContain("instantiate");
     expect(io.stdoutBuf.value).toContain("pin");
-    expect(io.stdoutBuf.value).toContain("stdout is");
+    expect(io.stdoutBuf.value).toContain("stdout defaults to the versioned JSON envelope");
   });
 
   test("--version prints version + contractVersion", async () => {

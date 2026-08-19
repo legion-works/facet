@@ -803,12 +803,21 @@ export async function captureScreenshotWithRetry(
   const capture = options.capture ?? captureScreenshotWithFallback;
   let failure: unknown = new Error("screenshot capture returned no data");
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const pendingCapture = capture(session);
     try {
-      const screenshot = await withTimeout(capture(session), timeoutMs);
+      const screenshot = await withTimeout(pendingCapture, timeoutMs);
       if (screenshot !== null) return { screenshot, screenshotError: null };
       failure = new Error("screenshot capture returned no data");
     } catch (error) {
       failure = error;
+      try {
+        await withTimeout(
+          pendingCapture.catch(() => undefined),
+          timeoutMs,
+        );
+      } catch {
+        break;
+      }
     }
   }
   return {

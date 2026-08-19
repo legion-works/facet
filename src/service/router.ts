@@ -25,8 +25,7 @@ import {
 } from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
 import { join, normalize, relative } from "node:path";
-import { resolve as resolvePath } from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 
 import { requireAnyBearer, checkMutationSecurityHeaders } from "./security/auth";
 import { checkHostOrigin, resolveHost, type HostOriginResult } from "./security/host-origin";
@@ -540,11 +539,17 @@ export function buildRouter(deps: RouterDeps): {
                   const compiledPath = run?.compiledPath ?? null;
                   const root = deps.repository.getEvidenceRoot();
                   if (compiledPath === null || root === undefined) return {};
-                  const candidate = resolvePath(compiledPath);
-                  const evidenceRoot = resolvePath(root);
-                  const rootRelative = relative(evidenceRoot, candidate);
-                  if (rootRelative.startsWith("..") || rootRelative.includes("/..")) return {};
                   try {
+                    const candidate = realpathSync(compiledPath);
+                    const evidenceRoot = realpathSync(root);
+                    const rootRelative = relative(evidenceRoot, candidate);
+                    if (
+                      rootRelative.length === 0 ||
+                      rootRelative === ".." ||
+                      rootRelative.startsWith("../")
+                    ) {
+                      return {};
+                    }
                     return {
                       renderBytesBase64: Buffer.from(readFileSync(candidate)).toString("base64"),
                       execution: revision.execution ?? "static",

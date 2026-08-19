@@ -280,7 +280,7 @@ export function renderHelp(): string {
     "  facet publish --artifact-id <id> --type <t> [--renderer <svg|canvas>] --file -        read bytes from stdin",
     "  cat src.md | facet publish --artifact-id <id> --type <t> [--renderer <svg|canvas>]    read bytes from stdin (piped)",
     "",
-    "stdout is the versioned JSON envelope (or --help / --version text);",
+    "stdout defaults to the versioned JSON envelope; --format text and TTY output are text.",
     "diagnostics are stderr.",
     "",
     "Exit codes:",

@@ -321,23 +321,23 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
     }
     const line = stdoutBuffer.subarray(0, newline);
     const trailing = stdoutBuffer.subarray(newline + 1);
-    stdoutBuffer = Buffer.alloc(0);
+    stdoutBuffer = trailing;
+    if (trailing.byteLength > 0 && trailing[0] !== 0x7b) {
+      failWorker(
+        target,
+        new FacetError("tier0_protocol_error", "Worker emitted invalid trailing stdout bytes", {
+          retryable: false,
+        }),
+        true,
+      );
+      return;
+    }
     if (line.byteLength > options.outputCap) {
       failWorker(
         target,
         new FacetError("tier0_output_cap", "Worker stdout exceeded the byte cap", {
           retryable: false,
           details: { capBytes: options.outputCap },
-        }),
-        true,
-      );
-      return;
-    }
-    if (trailing.byteLength > 0) {
-      failWorker(
-        target,
-        new FacetError("tier0_protocol_error", "Worker emitted trailing stdout bytes", {
-          retryable: false,
         }),
         true,
       );
@@ -417,6 +417,8 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
         }, timeoutMs),
       };
       pending = target;
+      if (stdoutBuffer.byteLength > 0) handleStdout(worker, Buffer.alloc(0));
+      if (pending !== target) return;
       try {
         worker.stdin?.write(envelopeJson);
       } catch {
