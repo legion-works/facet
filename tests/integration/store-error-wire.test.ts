@@ -103,16 +103,23 @@ const envelopeRequest: EnvelopeRequest = async (env, body, extraHeaders = {}) =>
   });
 };
 
-function parseEnvelope(
-  text: string,
-): { ok: true; data: unknown } | { ok: false; error: { code: string; message?: string } } {
+function parseEnvelope(text: string):
+  | { ok: true; data: unknown }
+  | {
+      ok: false;
+      error: {
+        code: string;
+        message?: string;
+        details?: Record<string, string | number | boolean | null> | undefined;
+      };
+    } {
   const parsed = JSON.parse(text);
   const valid = FacetEnvelopeSchema.parse(parsed);
   return valid.ok ? { ok: true, data: valid.data } : { ok: false, error: valid.error };
 }
 
 describe("store errors surface on the wire with typed codes", () => {
-  test("duplicate_revision surfaces with code + status 409 (not invalid_envelope)", async () => {
+  test("duplicate_revision surfaces the existing revision sha with code + status 409", async () => {
     const env = await startEnv();
     try {
       const createRes = await envelopeRequest(env, {
@@ -135,6 +142,7 @@ describe("store errors surface on the wire with typed codes", () => {
       expect(firstRes.status).toBe(200);
       const firstBody = parseEnvelope(await firstRes.text());
       expect(firstBody.ok).toBe(true);
+      if (!firstBody.ok) throw new Error("first publish must succeed");
 
       // Second publish of identical bytes triggers a UNIQUE constraint
       // violation → store layer maps it to duplicate_revision.
@@ -149,6 +157,9 @@ describe("store errors surface on the wire with typed codes", () => {
       expect(dupBody.ok).toBe(false);
       if (dupBody.ok) throw new Error("expected error envelope");
       expect(dupBody.error.code).toBe("duplicate_revision");
+      expect(dupBody.error.details?.revisionSha).toBe(
+        (firstBody.data as { revision: { sha256: string } }).revision.sha256,
+      );
       // Critically: NOT the old default invalid_envelope that the
       // original bridge bug produced.
       expect(dupBody.error.code).not.toBe("invalid_envelope");
@@ -157,22 +168,22 @@ describe("store errors surface on the wire with typed codes", () => {
     }
   });
 
-  test("foreign_key surfaces with code + status 409 (not invalid_envelope)", async () => {
+  test("publish to a missing artifact surfaces artifact_not_found with its id", async () => {
     const env = await startEnv();
     try {
-      // Publish against an artifactId that does not exist. The
-      // INSERT hits the FK constraint → store maps it to foreign_key.
+      // Publish against an artifactId that does not exist.
       const res = await envelopeRequest(env, {
         command: "publish",
         artifactId: "no-such-artifact",
         artifactType: "markdown",
         bytes: "aGk=",
       });
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(404);
       const body = parseEnvelope(await res.text());
       expect(body.ok).toBe(false);
       if (body.ok) throw new Error("expected error envelope");
-      expect(body.error.code).toBe("foreign_key");
+      expect(body.error.code).toBe("artifact_not_found");
+      expect(body.error.details?.artifactId).toBe("no-such-artifact");
       expect(body.error.code).not.toBe("invalid_envelope");
     } finally {
       await env.cleanup();

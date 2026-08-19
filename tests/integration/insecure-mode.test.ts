@@ -323,10 +323,11 @@ describe("insecure dispatcher semantics", () => {
         requestId: result.requestId,
         command: "publish" as const,
         revision: result.revision,
+        verdict: result.verdict,
       };
       expect(JSON.stringify(result)).toBe(JSON.stringify(baseline));
       expect(JSON.stringify(result)).not.toContain("insecure");
-      expect("verdict" in result).toBe(false);
+      expect(result.verdict?.insecure).toBeUndefined();
     },
   );
 });

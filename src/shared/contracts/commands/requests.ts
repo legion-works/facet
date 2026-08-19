@@ -85,7 +85,10 @@ export type ListRequest = z.infer<typeof ListRequestSchema>;
 export const ReadBackRequestSchema = BaseRequestSchema.extend({
   command: z.literal("readBack"),
   artifactId: z.string().min(1),
-  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
+  revisionSha: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   tier: ReadBackTierSchema,
 });
 export type ReadBackRequest = z.infer<typeof ReadBackRequestSchema>;

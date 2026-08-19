@@ -587,10 +587,10 @@ describe("HTML validation observables", () => {
   });
 
   test("byte-equality baseline for non-tsx wire surfaces (frozen literal snapshot)", () => {
-    // FROZEN LITERAL JSONS captured from the pre-arc wire form. These
+    // FROZEN LITERAL JSONS capture the current wire form. These
     // strings are NOT computed from the schemas under test — they are
     // the byte-exact output recorded before the tsx arc added its
-    // optional `execution` and `compiledPath` markers. A schema change
+    // optional `execution`, `compiledPath`, and publish Tier 0 verdict. A schema change
     // that adds a field to any of these wire surfaces MUST surface
     // here as a hard fail (the snapshot will not match the new
     // schema-emitted bytes). The previous version of this test
@@ -599,7 +599,7 @@ describe("HTML validation observables", () => {
     // field to a schema and watching the test pass. Do not let that
     // pattern back in.
     const FROZEN_PUBLISH_RESULT =
-      '{"requestId":"req-1","command":"publish","revision":{"id":"rev-1","artifactId":"art-1","revisionNumber":1,"parentRevisionId":null,"artifactType":"markdown","renderer":"svg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","note":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"},"tier1Verdict":null}';
+      '{"requestId":"req-1","command":"publish","revision":{"id":"rev-1","artifactId":"art-1","revisionNumber":1,"parentRevisionId":null,"artifactType":"markdown","renderer":"svg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","note":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"},"verdict":{"status":"ok","tier":0,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}},"tier1Verdict":null}';
     const FROZEN_TIER0 =
       '{"status":"ok","tier":0,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0},"expected":{"rendererRootSvgCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0}}';
     const FROZEN_TIER1 =
@@ -650,6 +650,7 @@ describe("HTML validation observables", () => {
       screenshotPath: null,
       consolePath: null,
     };
+    const publishVerdictBaseline = { ...verdictBaseline, tier: 0 };
     const publishResultBaseline = {
       command: "publish" as const,
       requestId: "req-1",
@@ -665,6 +666,7 @@ describe("HTML validation observables", () => {
         pinned: false,
         createdAt: NOW,
       },
+      verdict: publishVerdictBaseline,
       tier1Verdict: null,
     };
     const readBackBaseline = {

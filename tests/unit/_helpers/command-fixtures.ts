@@ -87,6 +87,7 @@ export function validPublishResult() {
     command: "publish" as const,
     requestId: REQUEST_ID,
     revision: REVISION,
+    verdict: validReadBackResult().verdict,
     tier1Verdict: null,
   };
 }

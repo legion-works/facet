@@ -20,7 +20,7 @@ export type CreateResult = z.infer<typeof CreateResultSchema>;
 export const PublishResultSchema = BaseResultSchema.extend({
   command: z.literal("publish"),
   revision: RevisionEnvelopeSchema,
-  verdict: VerdictSchema.optional(),
+  verdict: VerdictSchema,
   /**
    * Deprecated compatibility field. Publish is browser-free; visual
    * read-back owns Tier 1 verification.
@@ -52,6 +52,10 @@ export type ReadBackResult = z.infer<typeof ReadBackResultSchema>;
 export const StatusResultSchema = BaseResultSchema.extend({
   command: z.literal("status"),
   artifactId: z.string().min(1).optional(),
+  latestRevisionSha: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   revisionCount: z.number().int().nonnegative().optional(),
   pinnedCount: z.number().int().nonnegative().optional(),
   templateCount: z.number().int().nonnegative().optional(),

@@ -344,6 +344,12 @@ export async function dispatch(
       // (the canonical default) and the wire form simply omits the
       // field; TSX artifacts carry the declared value end-to-end.
       const executionMode = artifactType === "tsx" ? (command.execution ?? "static") : "static";
+      if (deps.repository.getArtifactById(command.artifactId) === null) {
+        throw new FacetError("artifact_not_found", "Artifact not found", {
+          retryable: false,
+          details: { artifactId: command.artifactId },
+        });
+      }
       const revision = deps.repository.publishRevision({
         artifactId: command.artifactId,
         artifactType,
@@ -487,7 +493,7 @@ export async function dispatch(
         command: "publish",
         requestId,
         revision: envelope,
-        ...(insecure !== undefined ? { verdict: enriched } : {}),
+        verdict: enriched,
       };
     }
     case "list": {
@@ -505,11 +511,17 @@ export async function dispatch(
       };
     }
     case "readBack": {
-      const revision = deps.repository.getRevisionBySha(command.artifactId, command.revisionSha);
+      const revision =
+        command.revisionSha === undefined
+          ? deps.repository.getLatestRevision(command.artifactId)
+          : deps.repository.getRevisionBySha(command.artifactId, command.revisionSha);
       if (revision === null) {
         throw new FacetError("revision_not_found", "Revision not found", {
           retryable: false,
-          details: { artifactId: command.artifactId, revisionSha: command.revisionSha },
+          details: {
+            artifactId: command.artifactId,
+            ...(command.revisionSha === undefined ? {} : { revisionSha: command.revisionSha }),
+          },
         });
       }
       const tier = normalizeReadBackTier(command.tier);
@@ -564,6 +576,10 @@ export async function dispatch(
         command.artifactId === undefined
           ? undefined
           : deps.repository.statusForArtifact({ artifactId: command.artifactId });
+      const latestRevision =
+        command.artifactId === undefined
+          ? undefined
+          : deps.repository.getLatestRevision(command.artifactId);
       return {
         command: "status",
         requestId,
@@ -575,6 +591,9 @@ export async function dispatch(
               revisionCount: counts.revisionCount,
               pinnedCount: counts.pinnedCount,
               templateCount: counts.templateCount,
+              ...(latestRevision === undefined || latestRevision === null
+                ? {}
+                : { latestRevisionSha: latestRevision.sha256 }),
             }),
         activeLeases: deps.leases.list().length,
       };

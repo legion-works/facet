@@ -520,8 +520,11 @@ export class ArtifactRepository {
       return revision;
     } catch (error) {
       const mapped = asStoreError(error);
-      if (mapped.code === "constraint" && mapped.message.toLowerCase().includes("unique")) {
-        throw new FacetStoreError("duplicate_revision", mapped.message, { cause: error });
+      if (mapped.code === "duplicate_revision") {
+        throw new FacetStoreError("duplicate_revision", mapped.message, {
+          cause: error,
+          details: { revisionSha: sha },
+        });
       }
       throw mapped;
     }
