@@ -1,16 +1,23 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { parseHTML } from "linkedom";
 
 const { document: shimDocument, window: shimWindow } = parseHTML(
   "<!doctype html><html><body></body></html>",
 );
 const globals = globalThis as Record<string, unknown>;
+const priorDocument = globals["document"];
+const priorWindow = globals["window"];
 globals["document"] = shimDocument;
 globals["window"] = shimWindow;
 globals["Element"] = shimWindow.Element;
 globals["HTMLElement"] = shimWindow.HTMLElement;
 globals["Node"] = shimWindow.Node;
 globals["DOMParser"] = shimWindow.DOMParser;
+
+afterAll(() => {
+  globals["document"] = priorDocument;
+  globals["window"] = priorWindow;
+});
 
 let tsx: typeof import("../../src/gallery-web/frame/renderers/tsx");
 let html: typeof import("../../src/gallery-web/frame/renderers/html");

@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { parseHTML } from "linkedom";
 import type { GalleryFrameApi } from "../../src/gallery-web/frame/runtime";
 
@@ -11,6 +11,8 @@ const fakeImpl = {
 };
 Object.defineProperty(shimDocument, "implementation", { value: fakeImpl, configurable: true });
 const globals = globalThis as Record<string, unknown>;
+const priorDocument = globals["document"];
+const priorWindow = globals["window"];
 globals["document"] = shimDocument;
 globals["window"] = shimWindow;
 globals["Element"] = shimWindow.Element;
@@ -18,6 +20,11 @@ globals["HTMLElement"] = shimWindow.HTMLElement;
 globals["Node"] = shimWindow.Node;
 globals["DocumentFragment"] = shimWindow.DocumentFragment;
 globals["HTMLTemplateElement"] = shimWindow.HTMLTemplateElement;
+
+afterAll(() => {
+  globals["document"] = priorDocument;
+  globals["window"] = priorWindow;
+});
 
 let createRendererRegistry: typeof import("../../src/gallery-web/frame/renderers/registry").createRendererRegistry;
 let installGalleryFrameApi: typeof import("../../src/gallery-web/frame/runtime").installGalleryFrameApi;

@@ -17,11 +17,13 @@
 import { parseHTML } from "linkedom";
 
 let installed = false;
+export let domShimDocument: Document;
 
 function installDomShim(): void {
   if (installed) return;
   installed = true;
   const { document, window } = parseHTML("<!DOCTYPE html><html><body></body></html>");
+  domShimDocument = document as unknown as Document;
   // DOMPurify's isSupported check looks for `implementation.createHTMLDocument`.
   // linkedom ships without an implementation object; we attach a minimal shim
   // that returns a freshly-parsed document. This is structural only —
