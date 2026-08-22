@@ -52,10 +52,17 @@ function verify(db: Database) {
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 }
 
+function refuse(message: string): never {
+  process.stderr.write(
+    JSON.stringify({ error: { code: "operator_migration_refused", message } }) + "\n",
+  );
+  process.exit(1);
+}
+
 if (sourcePath !== undefined || copyPath !== undefined) {
   if (sourcePath === undefined || copyPath === undefined)
-    throw new Error("--source and --copy must be provided together");
-  if (!existsSync(sourcePath)) throw new Error(`operator source is absent: ${sourcePath}`);
+    refuse("--source and --copy must be provided together");
+  if (!existsSync(sourcePath)) refuse(`operator source is absent: ${sourcePath}`);
   const source = new Database(sourcePath, { readonly: true });
   try {
     const maxVersion = (
@@ -64,7 +71,7 @@ if (sourcePath !== undefined || copyPath !== undefined) {
       }
     ).version;
     if (maxVersion !== 8)
-      throw new Error(`operator source must be at schema v8; found ${String(maxVersion)}`);
+      refuse(`operator source must be at schema v8; found ${String(maxVersion)}`);
     if (existsSync(copyPath)) unlinkSync(copyPath);
     source.exec(`VACUUM INTO '${copyPath.replaceAll("'", "''")}'`);
   } finally {

@@ -64,7 +64,7 @@ export const RenderRunSchema = z.object({
   expectedJson: z.string(),
   observedJson: z.string(),
   screenshotPath: z.string().nullable(),
-  screenshotFormat: EvidenceImageFormatSchema.nullable().optional(),
+  screenshotFormat: EvidenceImageFormatSchema.nullable(),
   consolePath: z.string().nullable(),
   /**
    * TSX compiled-bundle evidence (D7). The compiled bundle is derived

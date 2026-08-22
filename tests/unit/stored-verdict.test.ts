@@ -53,6 +53,7 @@ function makeRun(overrides: Partial<RenderRun> = {}): RenderRun {
       errorCount: 0,
     }),
     screenshotPath: null,
+    screenshotFormat: null,
     consolePath: null,
     screenshotErrorJson: null,
     insecureJson: null,
