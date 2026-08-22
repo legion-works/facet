@@ -63,9 +63,8 @@ const CONTRAST_HELPERS = `
 `;
 
 // One CDP launch per acceptance file (see acceptance-browser-launch-budget.test.ts) —
-// the release-ledger alert check and the fleet-dashboard worker-card
-// regression pin share one browser session across two navigations.
-test("gallery HTML cards keep dark surfaces and readable text", async () => {
+// both fixtures and both resolved themes share one browser session.
+test("gallery HTML cards keep readable text in both resolved themes", async () => {
   const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-html-theme-"));
   const service = await startFacetService({
     dbPath: join(envDir, "facet.sqlite"),
@@ -81,87 +80,126 @@ test("gallery HTML cards keep dark surfaces and readable text", async () => {
   try {
     const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
     target = await browser.launch();
-    await navigateToArtifact(
-      target,
-      client,
-      "html",
-      readFileSync(join(import.meta.dir, "../../templates/html-release-ledger.html"), "utf8"),
-      undefined,
-      { slug: "gallery-contrast-release-ledger" },
-    );
-    const ledgerWorld = await artifactWorld(target);
-    const colors = (await target.session.send("Runtime.evaluate", {
-      contextId: ledgerWorld,
-      returnByValue: true,
-      expression: `(() => {
+    for (const theme of ["dark", "light"] as const) {
+      await navigateToArtifact(
+        target,
+        client,
+        "html",
+        readFileSync(join(import.meta.dir, "../../templates/html-release-ledger.html"), "utf8"),
+        undefined,
+        { slug: `gallery-contrast-release-ledger-${theme}` },
+      );
+      const shellColors = (await target.session.send("Runtime.evaluate", {
+        returnByValue: true,
+        expression: `(() => {
+          document.documentElement.dataset.theme = ${JSON.stringify(theme)};
           ${CONTRAST_HELPERS}
-          const alert = document.querySelector('.alert');
-          if (alert === null) throw new Error('release ledger alert missing');
+          const selectors = ['#facet-status .title', '#facet-status .revision', '#facet-status-line', '#facet-verdict', '#facet-live'];
+          const elements = selectors.map((selector) => document.querySelector(selector));
+          if (elements.some((element) => element === null)) throw new Error('gallery shell contrast fixture missing');
+          return elements.map((element, index) => ({ selector: selectors[index], ...contrastOf(element) }));
+        })()`,
+      })) as {
+        result?: {
+          value?: readonly {
+            selector: string;
+            color: string;
+            backgroundColor: string;
+            contrast: number;
+          }[];
+        };
+      };
+      expect(shellColors.result?.value).toHaveLength(5);
+      for (const color of shellColors.result!.value!) {
+        if (color.contrast < 4.5)
+          throw new Error(
+            `${color.selector} ${color.color} on ${color.backgroundColor}: ${color.contrast}`,
+          );
+      }
+      const ledgerWorld = await artifactWorld(target);
+      const colors = (await target.session.send("Runtime.evaluate", {
+        contextId: ledgerWorld,
+        returnByValue: true,
+        expression: `(() => {
+          document.documentElement.dataset.theme = ${JSON.stringify(theme === "dark" ? "night" : "winter")};
+           ${CONTRAST_HELPERS}
+           const alert = document.querySelector('.alert');
+           if (alert === null) throw new Error('release ledger alert missing');
           const style = getComputedStyle(alert);
           const foreground = luminance(style.color);
           const background = luminance(style.backgroundColor);
-          return {
-            backgroundColor: style.backgroundColor,
-            color: style.color,
-            background,
-            contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+           return {
+             backgroundColor: style.backgroundColor,
+             color: style.color,
+             bodyColor: getComputedStyle(document.body).color,
+             dataTheme: document.documentElement.dataset.theme,
+             background,
+             contrast: (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05),
+           };
+         })()`,
+      })) as {
+        result?: {
+          value?: {
+            backgroundColor: string;
+            color: string;
+            bodyColor: string;
+            dataTheme: string;
+            background: number;
+            contrast: number;
           };
-        })()`,
-    })) as {
-      result?: {
-        value?: { backgroundColor: string; color: string; background: number; contrast: number };
+        };
       };
-    };
-    expect(colors.result?.value?.background).toBeLessThan(0.2);
-    expect(colors.result?.value?.contrast).toBeGreaterThanOrEqual(4.5);
+      if (theme === "dark") expect(colors.result?.value?.bodyColor).toBe("rgb(200, 211, 245)");
+      else {
+        expect(colors.result?.value?.dataTheme).toBe("winter");
+        expect(colors.result?.value?.bodyColor).toBe("rgb(23, 32, 51)");
+      }
+      expect(colors.result?.value?.contrast).toBeGreaterThanOrEqual(4.5);
 
-    // Regression pin for the operator-reported "worker allocation cards
-    // are light-on-light" defect: `bg-legion-ink` is the light
-    // foreground/text token, not a card background — the
-    // fleet-dashboard template used it as one, pairing a light lavender
-    // box with the also-light text-legion-muted/text-legion-cyan labels
-    // inside it. Every label + status span in the worker-allocation
-    // cards must clear WCAG AA against its own card background.
-    await navigateToArtifact(
-      target,
-      client,
-      "html",
-      readFileSync(join(import.meta.dir, "../../templates/fleet-dashboard.html"), "utf8"),
-      undefined,
-      { slug: "gallery-contrast-fleet-dashboard" },
-    );
-    const fleetWorld = await artifactWorld(target);
-    const cards = (await target.session.send("Runtime.evaluate", {
-      contextId: fleetWorld,
-      returnByValue: true,
-      expression: `(() => {
-          ${CONTRAST_HELPERS}
-          const cards = Array.from(document.querySelectorAll('.bg-legion-paper, .bg-legion-ink'));
+      // Regression pin for worker allocation cards: every label + status span
+      // must clear WCAG AA against its own card background.
+      await navigateToArtifact(
+        target,
+        client,
+        "html",
+        readFileSync(join(import.meta.dir, "../../templates/fleet-dashboard.html"), "utf8"),
+        undefined,
+        { slug: `gallery-contrast-fleet-dashboard-${theme}` },
+      );
+      const fleetWorld = await artifactWorld(target);
+      const cards = (await target.session.send("Runtime.evaluate", {
+        contextId: fleetWorld,
+        returnByValue: true,
+        expression: `(() => {
+          document.documentElement.dataset.theme = ${JSON.stringify(theme === "dark" ? "night" : "winter")};
+           ${CONTRAST_HELPERS}
+           const cards = Array.from(document.querySelectorAll('.bg-legion-paper, .bg-legion-ink'));
           if (cards.length === 0) throw new Error('fleet dashboard worker cards missing');
           return cards.map((card) => ({
             cardBackgroundColor: getComputedStyle(card).backgroundColor,
             spans: Array.from(card.querySelectorAll('span, strong')).map(contrastOf),
           }));
         })()`,
-    })) as {
-      result?: {
-        value?: readonly {
-          cardBackgroundColor: string;
-          spans: readonly {
-            text: string;
-            backgroundColor: string;
-            color: string;
-            contrast: number;
+      })) as {
+        result?: {
+          value?: readonly {
+            cardBackgroundColor: string;
+            spans: readonly {
+              text: string;
+              backgroundColor: string;
+              color: string;
+              contrast: number;
+            }[];
           }[];
-        }[];
+        };
       };
-    };
-    const observed = cards.result?.value;
-    expect(observed).toBeDefined();
-    expect(observed!.length).toBe(3);
-    for (const card of observed!) {
-      for (const span of card.spans) {
-        expect(span.contrast).toBeGreaterThanOrEqual(4.5);
+      const observed = cards.result?.value;
+      expect(observed).toBeDefined();
+      expect(observed!.length).toBe(3);
+      for (const card of observed!) {
+        for (const span of card.spans) {
+          expect(span.contrast).toBeGreaterThanOrEqual(4.5);
+        }
       }
     }
   } finally {

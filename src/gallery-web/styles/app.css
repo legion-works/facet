@@ -14,8 +14,8 @@
 
 body {
   margin: 0;
-  background: var(--facet-navy);
-  color: var(--facet-ink);
+  background: var(--facet-surface);
+  color: var(--facet-text);
   font-family: var(--facet-font-sans);
   font-size: 14px;
   line-height: 1.45;
@@ -35,8 +35,8 @@ body {
   gap: 14px;
   height: 52px;
   padding: 0 20px;
-  border-bottom: 1px solid var(--facet-rule);
-  background: var(--facet-navy-2);
+  border-bottom: 1px solid var(--facet-rule-semantic);
+  background: var(--facet-surface-raised);
 }
 
 #facet-mark {
@@ -47,17 +47,17 @@ body {
 
 #facet-status .title {
   font-weight: 600;
-  color: var(--facet-ink);
+  color: var(--facet-text);
 }
 
 #facet-status .sep {
   width: 1px;
   height: 18px;
-  background: var(--facet-rule);
+  background: var(--facet-rule-semantic);
 }
 
 #facet-artifact-title {
-  color: var(--facet-ink-dim);
+  color: var(--facet-text-muted);
   font-size: 13px;
 }
 #facet-artifact-title:empty {
@@ -73,7 +73,7 @@ body {
 /* Display-state readout (T2 — display, never a verdict). */
 #facet-status .status-line {
   margin-left: auto;
-  color: var(--facet-ink-faint);
+  color: var(--facet-text-faint);
   font-family: var(--facet-font-mono);
   font-size: 11px;
 }
@@ -89,17 +89,17 @@ body {
   align-items: center;
   gap: 22px;
   padding: 9px 20px;
-  background: #17171f;
-  border-bottom: 1px solid #26262f;
+  background: var(--facet-surface-raised);
+  border-bottom: 1px solid var(--facet-rule-semantic);
   font-family: var(--facet-font-mono);
   font-size: 11.5px;
-  color: var(--facet-ink-dim);
+  color: var(--facet-text-muted);
 }
 #facet-evidence[hidden] {
   display: none;
 }
 #facet-evidence .label {
-  color: #545c7e;
+  color: var(--facet-text-faint);
   font-size: 10px;
   letter-spacing: 0.1em;
 }
@@ -111,7 +111,7 @@ body {
 }
 #facet-evidence .binding {
   margin-left: auto;
-  color: #545c7e;
+  color: var(--facet-text-faint);
 }
 
 /* ---- canvas · sunken stage ---- */
@@ -122,7 +122,7 @@ body {
 #facet-canvas {
   position: relative;
   overflow: hidden;
-  background: #101018;
+  background: var(--facet-surface-stage);
   /* border-box: the reserved padding below must come OUT of the grid's
      allocated `1fr` row height, not add to it — content-box padding
      would grow the canvas's total footprint by the footer's height
@@ -142,7 +142,7 @@ body {
   left: 0;
   right: 0;
   height: 2px;
-  background: rgba(134, 225, 252, 0.12);
+  background: color-mix(in srgb, var(--facet-focus) 12%, transparent);
 }
 #facet-swapbar[hidden] {
   display: none;
@@ -169,28 +169,28 @@ body {
 }
 #facet-empty .glyph {
   font-size: 26px;
-  color: #3b4261;
+  color: var(--facet-text-faint);
 }
 #facet-empty .head {
   font-weight: 600;
   font-size: 15px;
-  color: var(--facet-ink);
+  color: var(--facet-text);
 }
 #facet-empty .sub {
   font-size: 13px;
-  color: var(--facet-ink-faint);
+  color: var(--facet-text-faint);
 }
 #facet-empty .cmd {
   font-family: var(--facet-font-mono);
   font-size: 12px;
-  color: var(--facet-ink-dim);
-  background: var(--facet-navy);
-  border: 1px solid var(--facet-rule);
+  color: var(--facet-text-muted);
+  background: var(--facet-surface);
+  border: 1px solid var(--facet-rule-semantic);
   border-radius: 6px;
   padding: 8px 14px;
 }
 #facet-empty .cmd .p {
-  color: #545c7e;
+  color: var(--facet-text-faint);
 }
 
 #facet-expired {
@@ -214,24 +214,24 @@ body {
 }
 #facet-expired .sub {
   font-size: 13px;
-  color: var(--facet-ink-faint);
+  color: var(--facet-text-faint);
 }
 #facet-expired .cmd {
   font-family: var(--facet-font-mono);
   font-size: 12px;
-  color: var(--facet-ink-dim);
-  background: var(--facet-navy);
-  border: 1px solid var(--facet-rule);
+  color: var(--facet-text-muted);
+  background: var(--facet-surface);
+  border: 1px solid var(--facet-rule-semantic);
   border-radius: 6px;
   padding: 8px 14px;
 }
 #facet-expired .cmd .p {
-  color: #545c7e;
+  color: var(--facet-text-faint);
 }
 
 #facet-canvas iframe {
   border: 0;
-  background: var(--facet-navy);
+  background: var(--facet-surface);
   transform-origin: center center;
   transition:
     transform 120ms ease-out,
@@ -280,8 +280,8 @@ body {
   gap: 8px;
   height: 44px;
   padding: 0 20px;
-  border-top: 1px solid #26262f;
-  background: var(--facet-navy-2);
+  border-top: 1px solid var(--facet-rule-semantic);
+  background: var(--facet-surface-raised);
 }
 
 #facet-live {
@@ -290,11 +290,11 @@ body {
   gap: 7px;
   font-family: var(--facet-font-mono);
   font-size: 11px;
-  color: #545c7e;
+  color: var(--facet-text-faint);
 }
 #facet-live .dot {
   font-size: 9px;
-  color: #545c7e;
+  color: var(--facet-text-faint);
 }
 #facet-live[data-state="live"] .dot {
   color: var(--facet-ok, #c3e88d);
@@ -313,9 +313,9 @@ body {
   padding: 0 10px;
   display: grid;
   place-items: center;
-  background: var(--facet-navy-3);
-  color: var(--facet-ink);
-  border: 1px solid var(--facet-rule);
+  background: var(--facet-surface-control);
+  color: var(--facet-text);
+  border: 1px solid var(--facet-rule-semantic);
   border-radius: 6px;
   font-family: var(--facet-font-mono);
   font-size: 11.5px;
@@ -326,12 +326,12 @@ body {
 }
 
 #facet-controls button:hover {
-  border-color: rgba(134, 225, 252, 0.48);
-  color: var(--facet-cyan);
+  border-color: color-mix(in srgb, var(--facet-focus) 48%, transparent);
+  color: var(--facet-focus);
 }
 
 #facet-controls button:focus-visible {
-  outline: 2px solid var(--facet-cyan);
+  outline: 2px solid var(--facet-focus);
   outline-offset: 2px;
 }
 
@@ -344,19 +344,19 @@ body {
 #facet-controls button:disabled {
   opacity: 0.4;
   cursor: default;
-  color: var(--facet-ink-faint);
+  color: var(--facet-text-faint);
 }
 #facet-controls button:disabled:hover {
   border-color: var(--facet-rule);
-  color: var(--facet-ink-faint);
+  color: var(--facet-text-faint);
 }
 
 /* Latched state for the pan/zoom mode toggle — the only toolbar
    button with persistent on/off state rather than a momentary action. */
 #facet-controls button[aria-pressed="true"] {
-  background: var(--facet-cyan);
-  color: var(--facet-navy-2);
-  border-color: var(--facet-cyan);
+  background: var(--facet-focus);
+  color: var(--facet-surface-raised);
+  border-color: var(--facet-focus);
 }
 
 .facet-export {
@@ -372,10 +372,10 @@ body {
   gap: 4px;
   min-width: 120px;
   padding: 6px;
-  border: 1px solid var(--facet-rule);
+  border: 1px solid var(--facet-rule-semantic);
   border-radius: 6px;
-  background: var(--facet-navy-2);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  background: var(--facet-surface-raised);
+  box-shadow: 0 8px 24px var(--facet-shadow-export);
 }
 
 #facet-export-menu[hidden] {
@@ -396,8 +396,8 @@ body {
   margin-left: 10px;
   height: 24px;
   padding: 0 11px;
-  border: 1px solid rgba(255, 117, 127, 0.45);
-  background: rgba(255, 117, 127, 0.1);
+  border: 1px solid var(--facet-fail-border);
+  background: var(--facet-fail-fill);
   color: var(--facet-error);
   border-radius: 999px;
   font-family: var(--facet-font-mono);

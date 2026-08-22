@@ -17,9 +17,22 @@
   --facet-navy-3: #232330;
   --facet-ink: #e9eaf0;
   --facet-ink-dim: #b6b7c2;
-  --facet-ink-faint: #6a6b78;
+  --facet-ink-faint: #a6a8b5;
   --facet-rule: #2e2e3a;
   --facet-error: #ff6e6e;
+
+  /* Semantic shell surfaces and content roles. */
+  --facet-surface: var(--facet-navy);
+  --facet-surface-raised: var(--facet-navy-2);
+  --facet-surface-stage: #101018;
+  --facet-surface-control: var(--facet-navy-3);
+  --facet-text: var(--facet-ink);
+  --facet-text-muted: var(--facet-ink-dim);
+  --facet-text-faint: var(--facet-ink-faint);
+  --facet-rule-semantic: var(--facet-rule);
+  --facet-focus: var(--facet-cyan);
+  --facet-link: var(--facet-cyan);
+  --facet-shadow-export: rgba(0, 0, 0, 0.28);
 
   /* Spacing scale (4px base) */
   --facet-space-1: 4px;
@@ -38,4 +51,22 @@
     "Space Grotesk", "Geist", "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --facet-font-mono: "JetBrains Mono", "Geist Mono", "SF Mono", "Menlo", "Consolas", monospace;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --facet-cyan: #075985;
+  --facet-amber: #9a3412;
+  --facet-navy: #f8fafc;
+  --facet-navy-2: #ffffff;
+  --facet-navy-3: #e2e8f0;
+  --facet-ink: #172033;
+  --facet-ink-dim: #334155;
+  --facet-ink-faint: #475569;
+  --facet-rule: #cbd5e1;
+  --facet-error: #b91c1c;
+  --facet-surface-stage: #f1f5f9;
+  --facet-focus: #075985;
+  --facet-link: #075985;
+  --facet-shadow-export: rgba(15, 23, 42, 0.2);
 }

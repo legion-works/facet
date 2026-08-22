@@ -13,20 +13,37 @@
   --facet-ok: #c3e88d; /* green-400  · ansi-green   */
   --facet-fail: #ff757f; /* red-400    · ansi-red     */
   --facet-partial: #ffc777; /* amber-300  · ansi-yellow  */
-  --facet-inert: #737aa2; /* neutral-500· bright-black */
+  --facet-inert: #a9b8e8; /* neutral-500· bright-black */
   --facet-tamper-ink: #16161e;
 
   /* Skins: border at 45% alpha, fill at 10% */
   --facet-ok-border: rgba(195, 232, 141, 0.45);
-  --facet-ok-fill: rgba(195, 232, 141, 0.1);
+  --facet-ok-fill: transparent;
   --facet-fail-border: rgba(255, 117, 127, 0.45);
-  --facet-fail-fill: rgba(255, 117, 127, 0.1);
+  --facet-fail-fill: transparent;
   --facet-partial-border: rgba(255, 199, 119, 0.45);
-  --facet-partial-fill: rgba(255, 199, 119, 0.1);
+  --facet-partial-fill: transparent;
   --facet-inert-border: rgba(115, 122, 162, 0.38);
-  --facet-inert-fill: rgba(115, 122, 162, 0.1);
+  --facet-inert-fill: transparent;
   --facet-glow-danger:
     0 0 0 1px rgba(255, 117, 127, 0.4), 0 8px 32px -8px rgba(255, 117, 127, 0.55);
+}
+
+[data-theme="light"] {
+  --facet-ok: #166534;
+  --facet-fail: #b91c1c;
+  --facet-partial: #9a3412;
+  --facet-inert: #475569;
+  --facet-tamper-ink: #ffffff;
+  --facet-ok-border: rgba(22, 101, 52, 0.5);
+  --facet-ok-fill: transparent;
+  --facet-fail-border: rgba(185, 28, 28, 0.5);
+  --facet-fail-fill: transparent;
+  --facet-partial-border: rgba(154, 52, 18, 0.5);
+  --facet-partial-fill: transparent;
+  --facet-inert-border: rgba(71, 85, 105, 0.45);
+  --facet-inert-fill: transparent;
+  --facet-glow-danger: 0 0 0 1px rgba(185, 28, 28, 0.35), 0 8px 32px -8px rgba(185, 28, 28, 0.25);
 }
 
 /*

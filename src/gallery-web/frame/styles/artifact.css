@@ -7991,6 +7991,13 @@
     }
   }
 }
+[data-theme="winter"] {
+  --color-legion-ink: #172033;
+  --color-legion-muted: #334155;
+  --color-legion-cyan: #075985;
+  --color-legion-paper: #ffffff;
+  --color-legion-line: #64748b;
+}
 @layer base {
   :where(:root),
   :root:has(input.theme-controller[value="night"]:checked),
@@ -8016,6 +8023,70 @@
     --color-warning-content: oklch(16.648% 0.027 82.95);
     --color-error: oklch(71.785% 0.17 13.118);
     --color-error-content: oklch(14.357% 0.034 13.118);
+    --radius-selector: 1rem;
+    --radius-field: 0.5rem;
+    --radius-box: 1rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+  }
+  :root:has(input.theme-controller[value="night"]:checked),
+  [data-theme="night"] {
+    color-scheme: dark;
+    --color-base-100: oklch(20.768% 0.039 265.754);
+    --color-base-200: oklch(19.314% 0.037 265.754);
+    --color-base-300: oklch(17.86% 0.034 265.754);
+    --color-base-content: oklch(84.153% 0.007 265.754);
+    --color-primary: oklch(75.351% 0.138 232.661);
+    --color-primary-content: oklch(15.07% 0.027 232.661);
+    --color-secondary: oklch(68.011% 0.158 276.934);
+    --color-secondary-content: oklch(13.602% 0.031 276.934);
+    --color-accent: oklch(72.36% 0.176 350.048);
+    --color-accent-content: oklch(14.472% 0.035 350.048);
+    --color-neutral: oklch(27.949% 0.036 260.03);
+    --color-neutral-content: oklch(85.589% 0.007 260.03);
+    --color-info: oklch(68.455% 0.148 237.251);
+    --color-info-content: oklch(0% 0 0);
+    --color-success: oklch(78.452% 0.132 181.911);
+    --color-success-content: oklch(15.69% 0.026 181.911);
+    --color-warning: oklch(83.242% 0.139 82.95);
+    --color-warning-content: oklch(16.648% 0.027 82.95);
+    --color-error: oklch(71.785% 0.17 13.118);
+    --color-error-content: oklch(14.357% 0.034 13.118);
+    --radius-selector: 1rem;
+    --radius-field: 0.5rem;
+    --radius-box: 1rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 0;
+    --noise: 0;
+  }
+  :root:has(input.theme-controller[value="winter"]:checked),
+  [data-theme="winter"] {
+    color-scheme: light;
+    --color-base-100: oklch(100% 0 0);
+    --color-base-200: oklch(97.466% 0.011 259.822);
+    --color-base-300: oklch(93.268% 0.016 262.751);
+    --color-base-content: oklch(41.886% 0.053 255.824);
+    --color-primary: oklch(56.86% 0.255 257.57);
+    --color-primary-content: oklch(91.372% 0.051 257.57);
+    --color-secondary: oklch(42.551% 0.161 282.339);
+    --color-secondary-content: oklch(88.51% 0.032 282.339);
+    --color-accent: oklch(59.939% 0.191 335.171);
+    --color-accent-content: oklch(11.988% 0.038 335.171);
+    --color-neutral: oklch(19.616% 0.063 257.651);
+    --color-neutral-content: oklch(83.923% 0.012 257.651);
+    --color-info: oklch(88.127% 0.085 214.515);
+    --color-info-content: oklch(17.625% 0.017 214.515);
+    --color-success: oklch(80.494% 0.077 197.823);
+    --color-success-content: oklch(16.098% 0.015 197.823);
+    --color-warning: oklch(89.172% 0.045 71.47);
+    --color-warning-content: oklch(17.834% 0.009 71.47);
+    --color-error: oklch(73.092% 0.11 20.076);
+    --color-error-content: oklch(14.618% 0.022 20.076);
     --radius-selector: 1rem;
     --radius-field: 0.5rem;
     --radius-box: 1rem;

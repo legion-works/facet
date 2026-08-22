@@ -8,6 +8,16 @@
   --color-legion-line: #444a73;
 }
 
+[data-theme="winter"] {
+  --color-legion-ink: #172033;
+  --color-legion-muted: #334155;
+  --color-legion-cyan: #075985;
+  --color-legion-paper: #ffffff;
+  --color-legion-line: #64748b;
+}
+
 @plugin "daisyui" {
-  themes: night --default;
+  themes:
+    night --default,
+    winter;
 }

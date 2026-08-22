@@ -2,8 +2,8 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: transparent;
-  color: #c8d3f5;
+  background: var(--facet-frame-surface);
+  color: var(--facet-frame-text);
   font:
     14px/1.55 ui-sans-serif,
     system-ui,
@@ -11,6 +11,36 @@ body {
     "Segoe UI",
     Roboto,
     sans-serif;
+}
+
+:root {
+  --facet-frame-surface: #151823;
+  --facet-frame-stage: #151823;
+  --facet-frame-text: #c8d3f5;
+  --facet-frame-muted: #a9b8e8;
+  --facet-frame-faint: #737aa2;
+  --facet-frame-focus: #82aaff;
+  --facet-frame-link: #82aaff;
+  --facet-frame-code: #c3e88d;
+  --facet-frame-code-surface: #1e2030;
+  --facet-frame-rule: #2f334d;
+  --facet-frame-quote: #a9b8e8;
+  --facet-frame-quote-rule: #444a73;
+}
+
+[data-theme="winter"] {
+  --facet-frame-surface: #ffffff;
+  --facet-frame-stage: #f8fafc;
+  --facet-frame-text: #172033;
+  --facet-frame-muted: #334155;
+  --facet-frame-faint: #475569;
+  --facet-frame-focus: #075985;
+  --facet-frame-link: #075985;
+  --facet-frame-code: #166534;
+  --facet-frame-code-surface: #f1f5f9;
+  --facet-frame-rule: #cbd5e1;
+  --facet-frame-quote: #334155;
+  --facet-frame-quote-rule: #64748b;
 }
 
 #artifact {
@@ -102,7 +132,7 @@ body {
 }
 
 #artifact [data-facet-diagram-region][data-facet-diagram-engaged="true"] {
-  outline-color: #82aaff;
+  outline-color: var(--facet-frame-focus);
 }
 
 #artifact [data-facet-diagram-region] > svg {
@@ -111,13 +141,13 @@ body {
 }
 
 #artifact a {
-  color: #82aaff;
+  color: var(--facet-frame-link);
 }
 
 #artifact code,
 #artifact pre {
-  color: #c3e88d;
-  background: #1e2030;
+  color: var(--facet-frame-code);
+  background: var(--facet-frame-code-surface);
   border-radius: 4px;
 }
 
@@ -137,17 +167,17 @@ body {
 #artifact th,
 #artifact td {
   padding: 4px 8px;
-  border: 1px solid #2f334d;
+  border: 1px solid var(--facet-frame-rule);
 }
 
 #artifact blockquote {
   margin: 0 0 0 8px;
   padding-left: 12px;
-  color: #a9b8e8;
-  border-left: 3px solid #444a73;
+  color: var(--facet-frame-quote);
+  border-left: 3px solid var(--facet-frame-quote-rule);
 }
 
 #artifact hr {
   border: 0;
-  border-top: 1px solid #2f334d;
+  border-top: 1px solid var(--facet-frame-rule);
 }

@@ -25,24 +25,28 @@ test("gallery HTML renders daisyUI variants outside the documented recommendatio
   try {
     const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
     target = await browser.launch();
-    await navigateToArtifact(
-      target,
-      client,
-      "html",
-      [
-        '<section class="card p-4">',
-        '<div class="stats"><div class="stat"><span class="stat-title">verified</span><strong class="stat-value">42</strong></div></div>',
-        '<button class="btn">plain</button><button class="btn btn-primary">primary</button>',
-        '<span class="badge">queued</span><span class="badge badge-success">ready</span>',
-        "</section>",
-      ].join(""),
-    );
-    const world = await artifactWorld(target);
-    const styles = (await target.session.send("Runtime.evaluate", {
-      contextId: world,
-      returnByValue: true,
-      expression: `(() => {
-          const stats = document.querySelector('.stats');
+    for (const theme of ["night", "winter"] as const) {
+      await navigateToArtifact(
+        target,
+        client,
+        "html",
+        [
+          '<section class="card p-4">',
+          '<div class="stats"><div class="stat"><span class="stat-title">verified</span><strong class="stat-value">42</strong></div></div>',
+          '<button class="btn">plain</button><button class="btn btn-primary">primary</button>',
+          '<span class="badge">queued</span><span class="badge badge-success">ready</span>',
+          "</section>",
+        ].join(""),
+        undefined,
+        { slug: `gallery-daisyui-library-${theme}` },
+      );
+      const world = await artifactWorld(target);
+      const styles = (await target.session.send("Runtime.evaluate", {
+        contextId: world,
+        returnByValue: true,
+        expression: `(() => {
+          document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+           const stats = document.querySelector('.stats');
           const buttons = document.querySelectorAll('.btn');
           const badge = document.querySelector('.badge-success');
           if (stats === null || buttons.length !== 2 || badge === null) throw new Error('daisyUI fixture missing');
@@ -53,21 +57,22 @@ test("gallery HTML renders daisyUI variants outside the documented recommendatio
             successBadgeBackground: getComputedStyle(badge).backgroundColor,
           };
         })()`,
-    })) as {
-      result?: {
-        value?: {
-          statsDisplay: string;
-          plainButtonBackground: string;
-          primaryButtonBackground: string;
-          successBadgeBackground: string;
+      })) as {
+        result?: {
+          value?: {
+            statsDisplay: string;
+            plainButtonBackground: string;
+            primaryButtonBackground: string;
+            successBadgeBackground: string;
+          };
         };
       };
-    };
-    const observed = styles.result?.value;
-    expect(observed).toBeDefined();
-    expect(observed!.statsDisplay).not.toBe("block");
-    expect(observed!.primaryButtonBackground).not.toBe(observed!.plainButtonBackground);
-    expect(observed!.successBadgeBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
+      const observed = styles.result?.value;
+      expect(observed).toBeDefined();
+      expect(observed!.statsDisplay).not.toBe("block");
+      expect(observed!.primaryButtonBackground).not.toBe(observed!.plainButtonBackground);
+      expect(observed!.successBadgeBackground).not.toMatch(/^rgba?\(0, 0, 0, 0\)$/);
+    }
   } finally {
     await target?.close();
     await service.stop();
