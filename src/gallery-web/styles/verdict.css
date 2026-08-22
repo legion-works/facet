@@ -8,44 +8,6 @@
  * vision. Only `tampered` is filled and glowing — nothing animates.
  */
 
-:root {
-  /* Verdict hues */
-  --facet-ok: #c3e88d; /* green-400  · ansi-green   */
-  --facet-fail: #ff757f; /* red-400    · ansi-red     */
-  --facet-partial: #ffc777; /* amber-300  · ansi-yellow  */
-  --facet-inert: #a9b8e8; /* neutral-500· bright-black */
-  --facet-tamper-ink: #16161e;
-
-  /* Skins: border at 45% alpha, fill at 10% */
-  --facet-ok-border: rgba(195, 232, 141, 0.45);
-  --facet-ok-fill: transparent;
-  --facet-fail-border: rgba(255, 117, 127, 0.45);
-  --facet-fail-fill: transparent;
-  --facet-partial-border: rgba(255, 199, 119, 0.45);
-  --facet-partial-fill: transparent;
-  --facet-inert-border: rgba(115, 122, 162, 0.38);
-  --facet-inert-fill: transparent;
-  --facet-glow-danger:
-    0 0 0 1px rgba(255, 117, 127, 0.4), 0 8px 32px -8px rgba(255, 117, 127, 0.55);
-}
-
-[data-theme="light"] {
-  --facet-ok: #166534;
-  --facet-fail: #b91c1c;
-  --facet-partial: #9a3412;
-  --facet-inert: #475569;
-  --facet-tamper-ink: #ffffff;
-  --facet-ok-border: rgba(22, 101, 52, 0.5);
-  --facet-ok-fill: transparent;
-  --facet-fail-border: rgba(185, 28, 28, 0.5);
-  --facet-fail-fill: transparent;
-  --facet-partial-border: rgba(154, 52, 18, 0.5);
-  --facet-partial-fill: transparent;
-  --facet-inert-border: rgba(71, 85, 105, 0.45);
-  --facet-inert-fill: transparent;
-  --facet-glow-danger: 0 0 0 1px rgba(185, 28, 28, 0.35), 0 8px 32px -8px rgba(185, 28, 28, 0.25);
-}
-
 /*
  * Verdict badge.
  *   <span class="facet-verdict" data-status="ok">ok<span class="tier">· T1</span></span>
@@ -187,9 +149,9 @@
   height: 24px;
   padding: 0 10px;
   border-radius: 6px;
-  border: 1px solid rgba(169, 177, 214, 0.28);
-  background: rgba(169, 177, 214, 0.06);
-  color: var(--facet-ink);
+  border: 1px solid var(--facet-tier-border);
+  background: var(--facet-tier-fill);
+  color: var(--facet-text);
   font-family: var(--facet-font-mono);
   font-size: 11px;
   font-weight: 600;
@@ -200,9 +162,9 @@
   opacity: 0.75;
 }
 .facet-tier[data-tier="1"] {
-  border-color: rgba(134, 225, 252, 0.45);
-  background: rgba(134, 225, 252, 0.08);
-  color: var(--facet-cyan);
+  border-color: var(--facet-tier-strong-border);
+  background: var(--facet-tier-strong-fill);
+  color: var(--facet-focus);
 }
 .facet-tier[data-tier="2"] {
   border-style: dashed;

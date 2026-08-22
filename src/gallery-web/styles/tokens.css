@@ -33,6 +33,28 @@
   --facet-focus: var(--facet-cyan);
   --facet-link: var(--facet-cyan);
   --facet-shadow-export: rgba(0, 0, 0, 0.28);
+  --facet-live-ok: #c3e88d;
+  --facet-live-partial: #ffc777;
+  --facet-ok: #c3e88d;
+  --facet-fail: #ff757f;
+  --facet-partial: #ffc777;
+  --facet-inert: #a9b8e8;
+  --facet-tamper-ink: #16161e;
+  --facet-ok-border: color-mix(in srgb, var(--facet-ok) 45%, transparent);
+  --facet-ok-fill: transparent;
+  --facet-fail-border: color-mix(in srgb, var(--facet-fail) 45%, transparent);
+  --facet-fail-fill: transparent;
+  --facet-partial-border: color-mix(in srgb, var(--facet-partial) 45%, transparent);
+  --facet-partial-fill: transparent;
+  --facet-inert-border: color-mix(in srgb, var(--facet-inert) 38%, transparent);
+  --facet-inert-fill: transparent;
+  --facet-glow-danger:
+    0 0 0 1px color-mix(in srgb, var(--facet-fail) 40%, transparent),
+    0 8px 32px -8px color-mix(in srgb, var(--facet-fail) 55%, transparent);
+  --facet-tier-border: color-mix(in srgb, var(--facet-ink) 28%, transparent);
+  --facet-tier-fill: color-mix(in srgb, var(--facet-ink) 6%, transparent);
+  --facet-tier-strong-border: color-mix(in srgb, var(--facet-cyan) 45%, transparent);
+  --facet-tier-strong-fill: color-mix(in srgb, var(--facet-cyan) 8%, transparent);
 
   /* Spacing scale (4px base) */
   --facet-space-1: 4px;
@@ -69,4 +91,22 @@
   --facet-focus: #075985;
   --facet-link: #075985;
   --facet-shadow-export: rgba(15, 23, 42, 0.2);
+  --facet-live-ok: #166534;
+  --facet-live-partial: #9a3412;
+  --facet-ok: #166534;
+  --facet-fail: #b91c1c;
+  --facet-partial: #9a3412;
+  --facet-inert: #475569;
+  --facet-tamper-ink: #ffffff;
+  --facet-ok-border: color-mix(in srgb, var(--facet-ok) 50%, transparent);
+  --facet-fail-border: color-mix(in srgb, var(--facet-fail) 50%, transparent);
+  --facet-partial-border: color-mix(in srgb, var(--facet-partial) 50%, transparent);
+  --facet-inert-border: color-mix(in srgb, var(--facet-inert) 45%, transparent);
+  --facet-tier-border: color-mix(in srgb, var(--facet-inert) 45%, transparent);
+  --facet-tier-fill: color-mix(in srgb, var(--facet-inert) 8%, transparent);
+  --facet-tier-strong-border: color-mix(in srgb, var(--facet-cyan) 50%, transparent);
+  --facet-tier-strong-fill: color-mix(in srgb, var(--facet-cyan) 8%, transparent);
+  --facet-glow-danger:
+    0 0 0 1px color-mix(in srgb, var(--facet-fail) 35%, transparent),
+    0 8px 32px -8px color-mix(in srgb, var(--facet-fail) 25%, transparent);
 }

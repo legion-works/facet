@@ -210,7 +210,7 @@ body {
 #facet-expired .head {
   font-weight: 600;
   font-size: 15px;
-  color: var(--facet-ink);
+  color: var(--facet-text);
 }
 #facet-expired .sub {
   font-size: 13px;
@@ -297,10 +297,10 @@ body {
   color: var(--facet-text-faint);
 }
 #facet-live[data-state="live"] .dot {
-  color: var(--facet-ok, #c3e88d);
+  color: var(--facet-live-ok);
 }
 #facet-live[data-state="connecting"] .dot {
-  color: var(--facet-partial, #ffc777);
+  color: var(--facet-live-partial);
 }
 
 #facet-controls .spacer {
@@ -347,7 +347,7 @@ body {
   color: var(--facet-text-faint);
 }
 #facet-controls button:disabled:hover {
-  border-color: var(--facet-rule);
+  border-color: var(--facet-rule-semantic);
   color: var(--facet-text-faint);
 }
 

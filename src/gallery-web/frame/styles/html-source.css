@@ -1,19 +1,19 @@
 @import "tailwindcss" source(none);
 
 @theme {
-  --color-legion-ink: #c8d3f5;
-  --color-legion-muted: #a9b8e8;
-  --color-legion-cyan: #86e1fc;
-  --color-legion-paper: #151823;
-  --color-legion-line: #444a73;
+  --color-legion-ink: var(--facet-frame-text);
+  --color-legion-muted: var(--facet-frame-muted);
+  --color-legion-cyan: var(--facet-frame-link);
+  --color-legion-paper: var(--facet-frame-surface);
+  --color-legion-line: var(--facet-frame-rule);
 }
 
 [data-theme="winter"] {
-  --color-legion-ink: #172033;
-  --color-legion-muted: #334155;
-  --color-legion-cyan: #075985;
-  --color-legion-paper: #ffffff;
-  --color-legion-line: #64748b;
+  --color-legion-ink: var(--facet-frame-text);
+  --color-legion-muted: var(--facet-frame-muted);
+  --color-legion-cyan: var(--facet-frame-link);
+  --color-legion-paper: var(--facet-frame-surface);
+  --color-legion-line: var(--facet-frame-rule);
 }
 
 @plugin "daisyui" {
