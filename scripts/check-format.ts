@@ -51,7 +51,9 @@ const defaultDeps: FormatCheckDeps = {
     execFileSync("git", ["ls-files", "-z"]).toString().split("\0").filter(Boolean),
   pathExists: existsSync,
   invoke: (paths) =>
-    spawnSync(FORMATTER_EXECUTABLE, ["--check", ...paths], { stdio: "inherit" }).status ?? 1,
+    spawnSync(process.execPath, [FORMATTER_EXECUTABLE, "--check", ...paths], {
+      stdio: "inherit",
+    }).status ?? 1,
 };
 
 export function runFormatCheck(
