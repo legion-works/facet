@@ -129,7 +129,20 @@ export interface ArtifactCaptureBounds {
   readonly scale: number;
 }
 
-type ScreenshotCapture = (session: VerifierCdpSession) => Promise<CapturedEvidenceImage | null>;
+interface ArtifactCaptureMeasurement {
+  readonly width: number;
+  readonly height: number;
+}
+
+interface BoundedScreenshotCapture {
+  readonly bounds: ArtifactCaptureBounds;
+  readonly source: ArtifactCaptureMeasurement;
+}
+
+type ScreenshotCapture = (
+  session: VerifierCdpSession,
+  bounds?: BoundedScreenshotCapture,
+) => Promise<CapturedEvidenceImage | null>;
 
 /** Test-only hook for pinning the screenshot transport without changing verifier logic. */
 export interface Tier1RunnerTestHooks {
@@ -750,13 +763,12 @@ export async function configureTier1Viewport(session: VerifierCdpSession): Promi
   return configureTier1ViewportBounds(session, {
     width: TIER1_VIEWPORT_WIDTH,
     height: TIER1_VIEWPORT_HEIGHT,
-    scale: 1,
   });
 }
 
 async function configureTier1ViewportBounds(
   session: VerifierCdpSession,
-  bounds: ArtifactCaptureBounds,
+  bounds: ArtifactCaptureMeasurement,
 ): Promise<void> {
   await session.send("Emulation.setDeviceMetricsOverride", {
     width: bounds.width,
@@ -794,6 +806,13 @@ export async function measureArtifactCaptureBounds(
   session: VerifierCdpSession,
   executionContextId: number,
 ): Promise<ArtifactCaptureBounds> {
+  return boundCaptureSize(await measureArtifactCaptureSize(session, executionContextId));
+}
+
+async function measureArtifactCaptureSize(
+  session: VerifierCdpSession,
+  executionContextId: number,
+): Promise<ArtifactCaptureMeasurement> {
   const measured = (await session.send("Runtime.evaluate", {
     contextId: executionContextId,
     returnByValue: true,
@@ -819,16 +838,28 @@ export async function measureArtifactCaptureBounds(
     typeof value.height !== "number"
   )
     throw new Error("artifact capture bounds are unavailable");
-  return boundCaptureSize({ width: value.width, height: value.height });
+  return { width: Math.ceil(value.width), height: Math.ceil(value.height) };
 }
 
-export async function captureScreenshotWithFallback(
+export async function captureBoundedScreenshot(
   session: VerifierCdpSession,
+  bounded?: BoundedScreenshotCapture,
 ): Promise<CapturedEvidenceImage | null> {
   const shot = (await session.send("Page.captureScreenshot", {
     format: "webp",
     quality: TIER1_SCREENSHOT_WEBP_QUALITY,
     captureBeyondViewport: true,
+    ...(bounded === undefined || bounded.bounds.scale === 1
+      ? {}
+      : {
+          clip: {
+            x: 0,
+            y: 0,
+            width: bounded.source.width,
+            height: bounded.source.height,
+            scale: bounded.bounds.scale,
+          },
+        }),
   })) as { data?: string };
   if (typeof shot.data !== "string" || shot.data.length === 0) return null;
   if (shot.data.length > (TIER1_SCREENSHOT_CAP_BYTES * 4) / 3 + 4) return null;
@@ -841,6 +872,7 @@ interface ScreenshotRetryOptions {
   readonly attempts?: number;
   readonly timeoutMs?: number;
   readonly capture?: ScreenshotCapture;
+  readonly bounds?: BoundedScreenshotCapture;
 }
 
 function screenshotFailureMessage(error: unknown): string {
@@ -874,10 +906,10 @@ export async function captureScreenshotWithRetry(
 }> {
   const attempts = options.attempts ?? TIER1_SCREENSHOT_CAPTURE_ATTEMPTS;
   const timeoutMs = options.timeoutMs ?? TIER1_SCREENSHOT_CAPTURE_TIMEOUT_MS;
-  const capture = options.capture ?? captureScreenshotWithFallback;
+  const capture = options.capture ?? captureBoundedScreenshot;
   let failure: unknown = new Error("screenshot capture returned no data");
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const pendingCapture = capture(session);
+    const pendingCapture = capture(session, options.bounds);
     try {
       const screenshot = await withTimeout(pendingCapture, timeoutMs);
       if (screenshot !== null) return { screenshot, screenshotError: null };
@@ -930,22 +962,29 @@ async function captureEvidence(
       awaitPromise: true,
       returnByValue: true,
     });
-    const initialBounds = await measureArtifactCaptureBounds(
+    const initialSize = await measureArtifactCaptureSize(
       target.session,
       options.executionContextId,
     );
-    await configureTier1ViewportBounds(target.session, initialBounds);
+    await configureTier1ViewportBounds(target.session, initialSize);
     await target.session.send("Runtime.evaluate", {
       contextId: options.executionContextId,
       expression: "new Promise(requestAnimationFrame)",
       awaitPromise: true,
       returnByValue: true,
     });
-    await measureArtifactCaptureBounds(target.session, options.executionContextId);
+    const finalSize = await measureArtifactCaptureSize(target.session, options.executionContextId);
+    if (finalSize.width > initialSize.width || finalSize.height > initialSize.height)
+      throw new Error("artifact grew after viewport resize");
+    const bounds = boundCaptureSize(finalSize);
+    const captureOptions = { bounds: { bounds, source: finalSize } };
     const capture =
       captureScreenshot === undefined
-        ? await captureScreenshotWithRetry(target.session)
-        : await captureScreenshotWithRetry(target.session, { capture: captureScreenshot });
+        ? await captureScreenshotWithRetry(target.session, captureOptions)
+        : await captureScreenshotWithRetry(target.session, {
+            ...captureOptions,
+            capture: captureScreenshot,
+          });
     screenshotError = capture.screenshotError;
     const screenshot = capture.screenshot;
     if (screenshot !== null) {

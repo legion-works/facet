@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import {
   boundCaptureSize,
+  captureBoundedScreenshot,
   captureScreenshotWithRetry,
-  captureScreenshotWithFallback,
   configureTier1Viewport,
 } from "../../src/validation/tier1/runner";
 import { Tier1ResultSchema } from "../../src/shared/contracts/validation";
@@ -187,9 +187,9 @@ describe("Tier 1 screenshot evidence", () => {
       if (value === oversized) decodedOversizedPayload = true;
       return decode(value, encoding);
     };
-    let result: Awaited<ReturnType<typeof captureScreenshotWithFallback>>;
+    let result: Awaited<ReturnType<typeof captureBoundedScreenshot>>;
     try {
-      result = await captureScreenshotWithFallback(session);
+      result = await captureBoundedScreenshot(session);
     } finally {
       bufferSpy.from = decode;
     }
@@ -199,6 +199,31 @@ describe("Tier 1 screenshot evidence", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.params?.captureBeyondViewport).toBe(true);
     expect(calls[0]?.params).toMatchObject({ format: "webp", quality: 82 });
+  });
+
+  test("scales the full artifact clip when the axis cap binds", async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+    const session = {
+      send: async <T = unknown>(method: string, params?: Record<string, unknown>) => {
+        calls.push(params === undefined ? { method } : { method, params });
+        return { data: Buffer.from("scaled capture").toString("base64") } as T;
+      },
+      on: () => {},
+      off: () => {},
+      detach: async () => {},
+    };
+
+    await captureBoundedScreenshot(session, {
+      bounds: { width: 4096, height: 227, scale: 4096 / 9000 },
+      source: { width: 9000, height: 500 },
+    });
+
+    expect(calls[0]?.params).toMatchObject({
+      clip: { x: 0, y: 0, width: 9000, height: 500, scale: 4096 / 9000 },
+      format: "webp",
+      quality: 82,
+      captureBeyondViewport: true,
+    });
   });
 
   test("retries a bounded screenshot capture before recording it as unavailable", async () => {

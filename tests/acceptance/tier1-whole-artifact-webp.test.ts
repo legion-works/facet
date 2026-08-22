@@ -41,12 +41,13 @@ test("Tier 1 stores bounded whole-artifact WebP evidence without clipping either
   const image = sharp(readFileSync(screenshotPath), { animated: true });
   const metadata = await image.metadata();
   const decoded = await image.raw().toBuffer({ resolveWithObject: true });
-
+  const red = includesColor(decoded.data, decoded.info.channels, 255, 0, 0);
+  const blue = includesColor(decoded.data, decoded.info.channels, 0, 0, 255);
   expect(metadata.format).toBe("webp");
   expect(metadata.width).toBeGreaterThan(1280);
   expect(metadata.width).toBeLessThanOrEqual(4096);
   expect(metadata.height).toBeLessThanOrEqual(4096);
   expect(decoded.info.width * decoded.info.height).toBeLessThanOrEqual(8_388_608);
-  expect(includesColor(decoded.data, decoded.info.channels, 255, 0, 0)).toBe(true);
-  expect(includesColor(decoded.data, decoded.info.channels, 0, 0, 255)).toBe(true);
+  expect(red).toBe(true);
+  expect(blue).toBe(true);
 }, 90_000);

@@ -380,8 +380,8 @@ export async function dispatchGalleryWheel(
 /**
  * Capture a full-page PNG of the top document and write it to disk,
  * creating parent directories as needed. Mirrors the capture shape
- * `captureScreenshotWithFallback` uses in the Tier 1 runner, without
- * the oversized-payload fallback path — geometry-gate screenshots are
+ * `captureBoundedScreenshot` uses in the Tier 1 runner, without the
+ * bounded evidence size checks — geometry-gate screenshots are
  * bounded by the fixed 1280x720 / 1920x1080 viewports.
  */
 export async function captureGalleryScreenshot(target: GalleryTarget, path: string): Promise<void> {
