@@ -71,5 +71,10 @@ export const TIER1_SCREENSHOT_MAX_PIXELS = 8_388_608;
 /** Static evidence uses WebP at this quality. */
 export const TIER1_SCREENSHOT_WEBP_QUALITY = 82;
 
+/** Animated evidence samples four frames at fixed browser-time intervals. */
+export const TIER1_ANIMATION_FRAME_COUNT = 4;
+export const TIER1_ANIMATION_FRAME_INTERVAL_MS = 150;
+export const TIER1_ANIMATION_WEBP_QUALITIES = [82, 70, 55] as const;
+
 /** Encoded evidence bytes may not exceed this cap. */
 export const TIER1_SCREENSHOT_CAP_BYTES = 8 * 1024 * 1024;

@@ -3,10 +3,12 @@ import { describe, expect, test } from "bun:test";
 import {
   boundCaptureSize,
   captureBoundedScreenshot,
+  captureEvidenceScreenshot,
   captureScreenshotWithRetry,
   configureTier1Viewport,
+  hasDeclaredAnimation,
 } from "../../src/validation/tier1/runner";
-import { Tier1ResultSchema } from "../../src/shared/contracts/validation";
+import { Tier1ResultSchema, type Tier1Input } from "../../src/shared/contracts/validation";
 import {
   TIER1_SCREENSHOT_CAP_BYTES,
   TIER1_SCREENSHOT_MAX_AXIS_PX,
@@ -152,6 +154,52 @@ describe("Tier 1 screenshot evidence", () => {
     expect(calls[0]!.startsWith("Emulation.setDeviceMetricsOverride")).toBe(true);
   });
 
+  test("declares static evidence animated only when the artifact frame has active animations", async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+    const session = {
+      send: async <T = unknown>(method: string, params?: Record<string, unknown>) => {
+        calls.push(params === undefined ? { method } : { method, params });
+        return { result: { value: true } } as T;
+      },
+      on: () => {},
+      off: () => {},
+      detach: async () => {},
+    };
+
+    const declared = await hasDeclaredAnimation({ execution: "static" } as Tier1Input, session, 41);
+
+    expect(declared).toBe(true);
+    expect(calls).toEqual([
+      {
+        method: "Runtime.evaluate",
+        params: {
+          contextId: 41,
+          returnByValue: true,
+          expression:
+            "document.getAnimations().some(a => a.playState === 'running' || a.playState === 'pending')",
+        },
+      },
+    ]);
+  });
+
+  test("declares interactive evidence animated without changing the artifact frame", async () => {
+    let calls = 0;
+    const session = {
+      send: async <T = unknown>() => {
+        calls += 1;
+        return {} as T;
+      },
+      on: () => {},
+      off: () => {},
+      detach: async () => {},
+    };
+
+    expect(
+      await hasDeclaredAnimation({ execution: "interactive" } as Tier1Input, session, 41),
+    ).toBe(true);
+    expect(calls).toBe(0);
+  });
+
   test("bounds whole-artifact capture dimensions without clipping a fitting artifact", () => {
     expect(boundCaptureSize({ width: 3000, height: 700 })).toEqual({
       width: 3000,
@@ -224,6 +272,31 @@ describe("Tier 1 screenshot evidence", () => {
       quality: 82,
       captureBeyondViewport: true,
     });
+  });
+
+  test("uses one static capture when the artifact does not declare animation", async () => {
+    let captureCalls = 0;
+    const session = {
+      send: async <T = unknown>() => ({}) as T,
+      on: () => {},
+      off: () => {},
+      detach: async () => {},
+    };
+
+    const result = await captureEvidenceScreenshot(session, {
+      animated: false,
+      bounds: {
+        bounds: { width: 3000, height: 700, scale: 1 },
+        source: { width: 3000, height: 700 },
+      },
+      captureStatic: async () => {
+        captureCalls += 1;
+        return { bytes: Buffer.from("static screenshot"), format: "webp" };
+      },
+    });
+
+    expect(captureCalls).toBe(1);
+    expect(result.screenshot?.format).toBe("webp");
   });
 
   test("retries a bounded screenshot capture before recording it as unavailable", async () => {

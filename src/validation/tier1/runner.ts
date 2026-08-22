@@ -63,6 +63,9 @@ import {
 import { probeProtocolGetDocument, probeProtocolSnapshot } from "./protocol-probe";
 import { probeIsolatedCounts } from "./isolated-probe";
 import {
+  TIER1_ANIMATION_FRAME_COUNT,
+  TIER1_ANIMATION_FRAME_INTERVAL_MS,
+  TIER1_ANIMATION_WEBP_QUALITIES,
   TIER1_RENDER_BARRIER_MS,
   TIER1_SCREENSHOT_CAPTURE_ATTEMPTS,
   TIER1_SCREENSHOT_CAP_BYTES,
@@ -74,6 +77,7 @@ import {
   TIER1_VIEWPORT_WIDTH,
   TSX_STABILITY_WINDOW_MS,
 } from "./limits";
+import { encodeAnimatedWebpWithinCap } from "./webp";
 import { type VerifierCdpSession, type VerifierTarget } from "./browser-process";
 import { countsDiffer, deriveVerdict, type PageShim } from "./verdict";
 import { readPidStartTimeTicks } from "../../shared/util/process";
@@ -358,6 +362,7 @@ async function runTier1Attempt(
     const captured = await captureEvidence(
       target,
       {
+        input,
         screenshotPath,
         consolePath,
         observationPath,
@@ -868,6 +873,98 @@ export async function captureBoundedScreenshot(
   return { bytes, format: "webp" };
 }
 
+async function captureBoundedPngScreenshot(
+  session: VerifierCdpSession,
+  bounded?: BoundedScreenshotCapture,
+): Promise<Buffer | null> {
+  const shot = (await session.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: true,
+    ...(bounded === undefined || bounded.bounds.scale === 1
+      ? {}
+      : {
+          clip: {
+            x: 0,
+            y: 0,
+            width: bounded.source.width,
+            height: bounded.source.height,
+            scale: bounded.bounds.scale,
+          },
+        }),
+  })) as { data?: string };
+  if (typeof shot.data !== "string" || shot.data.length === 0) return null;
+  return Buffer.from(shot.data, "base64");
+}
+
+export async function hasDeclaredAnimation(
+  input: Tier1Input,
+  session: VerifierCdpSession,
+  executionContextId: number,
+): Promise<boolean> {
+  if (input.execution === "interactive") return true;
+  const evaluated = (await session.send("Runtime.evaluate", {
+    contextId: executionContextId,
+    returnByValue: true,
+    expression:
+      "document.getAnimations().some(a => a.playState === 'running' || a.playState === 'pending')",
+  })) as { result?: { value?: unknown } };
+  return evaluated.result?.value === true;
+}
+
+async function captureAnimatedScreenshot(
+  session: VerifierCdpSession,
+  bounds?: BoundedScreenshotCapture,
+): Promise<CapturedEvidenceImage | null> {
+  if (bounds === undefined) return null;
+  const frames: Buffer[] = [];
+  for (let index = 0; index < TIER1_ANIMATION_FRAME_COUNT; index += 1) {
+    const frame = await captureBoundedPngScreenshot(session, bounds);
+    if (frame === null) return null;
+    frames.push(frame);
+    if (index < TIER1_ANIMATION_FRAME_COUNT - 1) {
+      await session.send("Runtime.evaluate", {
+        contextId: undefined,
+        expression: `new Promise(resolve => setTimeout(resolve, ${TIER1_ANIMATION_FRAME_INTERVAL_MS}))`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+    }
+  }
+  const bytes = await encodeAnimatedWebpWithinCap(frames, {
+    width: bounds.bounds.width,
+    height: bounds.bounds.height,
+    delayMs: TIER1_ANIMATION_FRAME_INTERVAL_MS,
+    qualities: TIER1_ANIMATION_WEBP_QUALITIES,
+    capBytes: TIER1_SCREENSHOT_CAP_BYTES,
+  });
+  return bytes === null ? null : { bytes, format: "webp" };
+}
+
+export async function captureEvidenceScreenshot(
+  session: VerifierCdpSession,
+  options: {
+    readonly animated: boolean;
+    readonly bounds: BoundedScreenshotCapture;
+    readonly captureStatic?: ScreenshotCapture;
+  },
+): Promise<{
+  readonly screenshot: CapturedEvidenceImage | null;
+  readonly screenshotError: ScreenshotError | null;
+}> {
+  if (options.animated) {
+    return captureScreenshotWithRetry(session, {
+      bounds: options.bounds,
+      capture: captureAnimatedScreenshot,
+    });
+  }
+  return options.captureStatic === undefined
+    ? captureScreenshotWithRetry(session, { bounds: options.bounds })
+    : captureScreenshotWithRetry(session, {
+        bounds: options.bounds,
+        capture: options.captureStatic,
+      });
+}
+
 interface ScreenshotRetryOptions {
   readonly attempts?: number;
   readonly timeoutMs?: number;
@@ -935,6 +1032,7 @@ export async function captureScreenshotWithRetry(
 async function captureEvidence(
   target: VerifierTarget,
   options: {
+    readonly input: Tier1Input;
     readonly screenshotPath: string;
     readonly consolePath: string;
     readonly observationPath: string;
@@ -949,12 +1047,21 @@ async function captureEvidence(
   let screenshotFormat: EvidenceImageFormat | null = null;
   let screenshotError: ScreenshotError | null = null;
   try {
-    // Emulate reduced-motion so animations resolve to their final
-    // frame; document.fonts.ready ensures webfont glyphs have laid
-    // out before the screenshot fires (byte-determinism pre-flight).
+    const animated = await hasDeclaredAnimation(
+      options.input,
+      target.session,
+      options.executionContextId,
+    );
+    // Static evidence resolves reduced motion deterministically; animated
+    // evidence restores no-preference after the verdict has been derived.
     await target.session.send("Emulation.setEmulatedMedia", {
       features: [{ name: "prefers-reduced-motion", value: "reduce" }],
     });
+    if (animated) {
+      await target.session.send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
+      });
+    }
     await target.session.send("Runtime.evaluate", {
       expression:
         "(async()=>{if(document.fonts&&document.fonts.ready){await document.fonts.ready;}" +
@@ -978,13 +1085,11 @@ async function captureEvidence(
       throw new Error("artifact grew after viewport resize");
     const bounds = boundCaptureSize(finalSize);
     const captureOptions = { bounds: { bounds, source: finalSize } };
-    const capture =
-      captureScreenshot === undefined
-        ? await captureScreenshotWithRetry(target.session, captureOptions)
-        : await captureScreenshotWithRetry(target.session, {
-            ...captureOptions,
-            capture: captureScreenshot,
-          });
+    const capture = await captureEvidenceScreenshot(target.session, {
+      animated,
+      bounds: captureOptions.bounds,
+      ...(captureScreenshot === undefined ? {} : { captureStatic: captureScreenshot }),
+    });
     screenshotError = capture.screenshotError;
     const screenshot = capture.screenshot;
     if (screenshot !== null) {
