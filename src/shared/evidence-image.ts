@@ -26,6 +26,12 @@ export function mediaTypeForEvidenceImage(format: EvidenceImageFormat): "image/p
   return format === "png" ? "image/png" : "image/webp";
 }
 
+export function evidenceImageFormatForMediaType(mediaType: string): EvidenceImageFormat | null {
+  if (mediaType === "image/png") return "png";
+  if (mediaType === "image/webp") return "webp";
+  return null;
+}
+
 export function extensionForEvidenceImage(format: EvidenceImageFormat): ".png" | ".webp" {
   return format === "png" ? ".png" : ".webp";
 }

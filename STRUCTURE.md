@@ -68,6 +68,8 @@ Recent gallery export, favicon, and evidence additions: `src/shared/export.ts` o
 
 Recent WebP evidence + v9 `screenshot_format` additions: `src/shared/evidence-image.ts` owns `EvidenceImageFormatSchema`, `sniffEvidenceImageFormat`, `mediaTypeForEvidenceImage`, and `extensionForEvidenceImage`; `src/validation/tier1/webp.ts` exports `encodeAnimatedWebp` and `encodeAnimatedWebpWithinCap`. `src/validation/tier1/runner.ts` exports `captureBoundedScreenshot` and `captureBoundedScreenshotParams`, and captures whole-artifact evidence through `captureEvidenceScreenshot`; `src/validation/tier1/limits.ts` owns `TIER1_SCREENSHOT_MAX_AXIS_PX`, `TIER1_SCREENSHOT_MAX_PIXELS`, `TIER1_SCREENSHOT_WEBP_QUALITY`, `TIER1_ANIMATION_FRAME_COUNT`, `TIER1_ANIMATION_FRAME_INTERVAL_MS`, and `TIER1_ANIMATION_WEBP_QUALITIES`. `src/service/store/schema.ts` exports `V9_SCHEMA_FRAGMENT`, which adds `render_runs.screenshot_format`; `scripts/verify-operator-migration.ts` accepts `--source` and `--copy`.
 
+Recent gallery theming additions: `src/gallery-web/theme.ts` exports `GalleryThemeMode`, `ResolvedGalleryTheme`, `GalleryMatchMedia`, `isGalleryThemeMode`, `isResolvedGalleryTheme`, `resolveGalleryTheme`, and `galleryDataTheme`; `GallerySession` and `FrameRenderPayload` carry tolerant, validated theme fields. `src/gallery-web/app.ts` owns `#facet-theme-toggle` and the single serialized swap queue shared by revision swaps and theme rerenders; shell themes serialize as `dark`/`light`, while frame themes map through `galleryDataTheme` to daisyUI `night`/`winter`. Theme styles live in `src/gallery-web/styles/tokens.css`, `frame.css`, and the dual-theme artifact stylesheet.
+
 ## Export slot
 
 - Shared contracts: `ExportRequestSchema`, `ExportResultSchema`, and

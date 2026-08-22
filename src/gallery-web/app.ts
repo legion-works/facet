@@ -28,7 +28,10 @@ import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
 import type { VerdictObserved } from "../shared/contracts/validation";
 import type { ObservedCountKey } from "../shared/contracts/observed-counts";
-import type { EvidenceImageFormat } from "../shared/evidence-image";
+import {
+  evidenceImageFormatForMediaType,
+  type EvidenceImageFormat,
+} from "../shared/evidence-image";
 import {
   clampZoom,
   EMPTY_VIEW_STATE,
@@ -655,7 +658,6 @@ export interface RevisionEvent {
 
 type GallerySwapEvent = RevisionEvent & {
   readonly kind: "revision";
-  readonly previousExportState: GalleryExportState | null;
 };
 
 /**
@@ -795,8 +797,7 @@ export async function fetchGalleryEvidence(
   }
   if (!response.ok) throw new Error(`Gallery evidence fetch failed (${response.status})`);
   const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
-  const renderFormat =
-    mediaType === "image/png" ? "png" : mediaType === "image/webp" ? "webp" : null;
+  const renderFormat = mediaType === undefined ? null : evidenceImageFormatForMediaType(mediaType);
   if (renderFormat === null)
     throw new Error("Gallery evidence response has unsupported content type");
   return { bytes: new Uint8Array(await response.arrayBuffer()), renderFormat };
@@ -1413,13 +1414,12 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     fetchImpl: fetch,
     onState: updateLiveState,
     onCommit: (event) => {
-      const previousExportState = displayedExportState;
       exportMenu?.clear();
       updateGalleryStatus("swapping");
       updateSwapBar("start");
       updateGalleryFavicon("unverified");
       updateGalleryVerdict(null);
-      swaps?.enqueue({ kind: "revision", ...event, previousExportState });
+      swaps?.enqueue({ kind: "revision", ...event });
     },
     onClose: (event) => {
       // `lease_expired` (the per-lease TTL firing server-side) and a

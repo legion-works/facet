@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -49,42 +49,46 @@ function assertTableRowsHaveNoUnescapedCellPipes(document: string): void {
   }
 }
 
-test("export documentation describes WebP evidence and legacy PNG compatibility", () => {
-  const exportReference = readReference("export.md");
+describe("gallery evidence documentation", () => {
+  test("export documentation describes WebP evidence and legacy PNG compatibility", () => {
+    const exportReference = readReference("export.md");
 
-  expect(exportReference).toMatch(
-    /serves the stored bytes,.*never starts a renderer or.*reruns validation/is,
-  );
-  expect(exportReference).toMatch(/\.webp/);
-  expect(exportReference).toMatch(/\.png/);
-  expect(exportReference).toMatch(/backward compatible/i);
-  expect(exportReference).toMatch(/renderFormat/);
-  expect(exportReference).toMatch(/detected PNG or WebP format/i);
-  expect(exportReference).toMatch(
-    /Render sidecars additionally require `renderFormat`;[\s\S]*source sidecars omit `renderFormat`/,
-  );
-  assertTableRowsHaveNoUnescapedCellPipes(exportReference);
-});
+    expect(exportReference).toMatch(
+      /serves the stored bytes,.*never starts a renderer or.*reruns validation/is,
+    );
+    expect(exportReference).toMatch(/\.webp/);
+    expect(exportReference).toMatch(/\.png/);
+    expect(exportReference).toMatch(/backward compatible/i);
+    expect(exportReference).toMatch(/renderFormat/);
+    expect(exportReference).toMatch(/detected PNG or WebP format/i);
+    expect(exportReference).toMatch(
+      /Render sidecars additionally require `renderFormat`;[\s\S]*source sidecars omit `renderFormat`/,
+    );
+    assertTableRowsHaveNoUnescapedCellPipes(exportReference);
+  });
 
-test("validation documentation names whole-artifact bounds and animation semantics", () => {
-  const validationReference = readReference("validation.md");
+  test("validation documentation names whole-artifact bounds and animation semantics", () => {
+    const validationReference = readReference("validation.md");
 
-  expect(validationReference).toMatch(/4096/);
-  expect(validationReference).toMatch(/8,?388,?608|8388608/);
-  expect(validationReference).toMatch(/8 MiB/);
-  expect(validationReference).toMatch(
-    /declares animated-capture eligibility|animated evidence|multi-frame WebP/i,
-  );
-  expect(validationReference).toMatch(/interactive TSX.*declares.*animated-?capture eligibility/is);
-  expect(validationReference).toMatch(/Tier 2.*display|Tier 1.*dark.*structural parity/is);
-  assertTableRowsHaveNoUnescapedCellPipes(validationReference);
-});
+    expect(validationReference).toMatch(/4096/);
+    expect(validationReference).toMatch(/8,?388,?608|8388608/);
+    expect(validationReference).toMatch(/8 MiB/);
+    expect(validationReference).toMatch(
+      /declares animated-capture eligibility|animated evidence|multi-frame WebP/i,
+    );
+    expect(validationReference).toMatch(
+      /interactive TSX.*declares.*animated-?capture eligibility/is,
+    );
+    expect(validationReference).toMatch(/Tier 2.*display|Tier 1.*dark.*structural parity/is);
+    assertTableRowsHaveNoUnescapedCellPipes(validationReference);
+  });
 
-test("CLI documentation covers render format and gallery theme scope", () => {
-  const cliReference = readReference("cli.md");
+  test("CLI documentation covers render format and gallery theme scope", () => {
+    const cliReference = readReference("cli.md");
 
-  expect(cliReference).toMatch(/render.*\.webp|\.webp.*render/is);
-  expect(cliReference).toMatch(/renderFormat/);
-  expect(cliReference).toMatch(/theme/i);
-  assertTableRowsHaveNoUnescapedCellPipes(cliReference);
+    expect(cliReference).toMatch(/render.*\.webp|\.webp.*render/is);
+    expect(cliReference).toMatch(/renderFormat/);
+    expect(cliReference).toMatch(/theme/i);
+    assertTableRowsHaveNoUnescapedCellPipes(cliReference);
+  });
 });

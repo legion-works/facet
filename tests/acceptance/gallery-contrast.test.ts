@@ -8,6 +8,7 @@ import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
+import { galleryDataTheme } from "../../src/gallery-web/theme";
 
 /** Shared color-contrast math (WCAG relative-luminance ratio) evaluated inside the artifact's isolated world. */
 const CONTRAST_HELPERS = `
@@ -146,7 +147,7 @@ test("gallery HTML cards keep readable text in both resolved themes", async () =
         contextId: ledgerWorld,
         returnByValue: true,
         expression: `(() => {
-          document.documentElement.dataset.theme = ${JSON.stringify(theme === "dark" ? "night" : "winter")};
+           document.documentElement.dataset.theme = ${JSON.stringify(galleryDataTheme(theme))};
            ${CONTRAST_HELPERS}
            const alert = document.querySelector('.alert');
            if (alert === null) throw new Error('release ledger alert missing');
@@ -196,7 +197,7 @@ test("gallery HTML cards keep readable text in both resolved themes", async () =
         contextId: fleetWorld,
         returnByValue: true,
         expression: `(() => {
-          document.documentElement.dataset.theme = ${JSON.stringify(theme === "dark" ? "night" : "winter")};
+           document.documentElement.dataset.theme = ${JSON.stringify(galleryDataTheme(theme))};
            ${CONTRAST_HELPERS}
            const cards = Array.from(document.querySelectorAll('.bg-legion-paper, .bg-legion-ink'));
           if (cards.length === 0) throw new Error('fleet dashboard worker cards missing');

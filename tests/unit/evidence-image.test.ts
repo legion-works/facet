@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   extensionForEvidenceImage,
+  evidenceImageFormatForMediaType,
   mediaTypeForEvidenceImage,
   sniffEvidenceImageFormat,
 } from "../../src/shared/evidence-image";
@@ -26,6 +27,9 @@ describe("evidence image contract", () => {
     expect(mediaTypeForEvidenceImage("webp")).toBe("image/webp");
     expect(extensionForEvidenceImage("png")).toBe(".png");
     expect(extensionForEvidenceImage("webp")).toBe(".webp");
+    expect(evidenceImageFormatForMediaType("image/png")).toBe("png");
+    expect(evidenceImageFormatForMediaType("image/webp")).toBe("webp");
+    expect(evidenceImageFormatForMediaType("image/jpeg")).toBeNull();
   });
 
   test("requires the nullable screenshotFormat key on render runs", () => {
