@@ -17,7 +17,9 @@ payload in the CLI envelope; the HTTP/API contract always retains it.
 `source` exports the exact bytes stored for the selected revision. For TSX that
 is the immutable `.tsx` source, not the derived compiled bundle. `render`
 exports the stored Tier 1 screenshot for that revision. Render export reads
-retained evidence; it never starts a renderer or reruns validation.
+retained evidence; it serves the stored bytes, never starts a renderer or
+reruns validation. The detected PNG or WebP format is preserved. Legacy `.png`
+evidence remains backward compatible and can still be read and exported.
 
 Both formats carry the selected revision and its stored verdict in the
 sidecar. A missing render screenshot is an `evidence_unavailable` error.
@@ -30,7 +32,8 @@ sidecar. A missing render screenshot is an `evidence_unavailable` error.
 | `source` | SVG                 | `.svg`    |
 | `source` | chart               | `.json`   |
 | `source` | TSX                 | `.tsx`    |
-| `render` | any supported type  | `.png`    |
+| `render` | new evidence        | `.webp`   |
+| `render` | legacy evidence     | `.png`    |
 
 The default name is `<slug>-<revisionSha prefix><extension>`.
 
@@ -60,10 +63,12 @@ output content untouched.
 
 ## Sidecar
 
-Every successful export writes a sidecar. It contains:
+Every successful export writes a sidecar. All sidecars contain:
 
 `artifactId`, `slug`, `revisionSha`, `artifactType`, `renderer`, `verdict`,
-`format`, and `exportedAt`.
+`format`, and `exportedAt`. Render sidecars additionally require `renderFormat`;
+source sidecars omit `renderFormat`. It is the detected stored evidence format
+(`webp` for new captures, `png` for legacy captures).
 
 There is no flag to suppress the sidecar. A successful artifact file without
 its sidecar is not a valid export.

@@ -82,6 +82,10 @@ test("gallery keeps Markdown Mermaid labels intact and confines an engaged diagr
   try {
     const client = new FacetClient({ baseUrl: service.url, installToken: service.installToken });
     target = await browser.launch();
+    // Ambient headless color-scheme is not a test input; pin the dark tokens asserted below.
+    await target.session.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-color-scheme", value: "dark" }],
+    });
     await navigateToArtifact(target, client, "markdown", markdownSource);
     const world = await artifactWorld(target);
     const result = (await target.session.send("Runtime.evaluate", {

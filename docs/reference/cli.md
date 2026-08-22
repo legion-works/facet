@@ -27,6 +27,7 @@ Errors use the same top level with `ok: false` and
 | `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                                                        |
 | `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`, `--include-bytes`                         |
 |               | `--format source` writes `.md` / `.mmd` / `.svg` / `.json` / `.html` to match the type                                 |
+|               | `--format render` writes detected evidence as `.webp` (new) or `.png` (legacy); the sidecar records `renderFormat`     |
 
 `publish --file -` reads bytes from stdin. `--json` is shorthand for
 `--format json` on meta commands. Verb stdout is always a JSON envelope;
@@ -59,6 +60,11 @@ Tier 0 verdict even when its `status` is `error`. `read-back --tier 1` and
 revision-bound verdict. If the pinned browser or its network namespace is
 unavailable, visual read-back records a Tier 1 `error` verdict with a typed
 `tier1_*` code.
+
+Gallery theme modes are `system`, `dark`, and `light`. The selected mode is
+session-persistent and changes Tier 2 display; Tier 1 remains dark for
+structural parity. Interactive TSX declares animated-capture eligibility; the
+mode does not assert that its visuals always change.
 
 `promote` reads its operator bearer from `FACET_PROMOTE_TOKEN` or, by default,
 `FACET_HOME/secrets/promote.token`. Neither source is accepted as an argv flag

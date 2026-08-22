@@ -57,10 +57,10 @@ The reasoning: when structure is changing between two observation snapshots, the
 
 ## Evidence captured per tier
 
-| tier | evidence retained                                                                                                                                                                                                                                                                                                                  |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | DB row only (expected + observed JSON, status, timing). No on-disk evidence.                                                                                                                                                                                                                                                       |
-| 1    | DB row + per-run directory under `<evidence>/tier1/<revisionSha>/<runId>/`: `screenshot.png`, `console.txt`, `protocol-observation.json`. Screenshots use a deterministic 1280×800 viewport; capture requests the full artifact with `captureBeyondViewport`, then falls back to viewport-only when the PNG exceeds the 8 MiB cap. |
+| tier | evidence retained                                                                                                                                                                                                                                                                                                     |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | DB row only (expected + observed JSON, status, timing). No on-disk evidence.                                                                                                                                                                                                                                          |
+| 1    | DB row + per-run directory under `<evidence>/tier1/<revisionSha>/<runId>/`: `screenshot.webp` for new captures, legacy `screenshot.png` when retained, `console.txt`, and `protocol-observation.json`. Captures cover the whole artifact within the 4096-pixel axis, 8,388,608-pixel total, and 8 MiB encoded limits. |
 
 The evidence root is the XDG state path `paths.evidence` (or the
 `FACET_HOME/evidence` override). Every directory the runner creates is
@@ -69,11 +69,17 @@ permissions.
 
 Tier 1 capture happens AFTER the verdict is derived so the
 `partial:layout_unverified`, `partial:opaque_content`, `partial:external_resources`, and `partial:unstable` screenshot mandates are honored. The runner
-uses a deterministic 1280×800 viewport, requests full-artifact capture
-with `captureBeyondViewport`, and falls back to viewport-only when the
-PNG exceeds the 8 MiB cap. Before capture it emulates
-`prefers-reduced-motion: reduce` and awaits `document.fonts.ready`; these
-pre-flights keep repeated captures byte-identical (perf-spike finding).
+measures the whole artifact, bounds each axis at 4096 pixels and the total at
+8,388,608 pixels, and encodes evidence under the 8 MiB cap. New captures are
+WebP; legacy PNG evidence remains readable and exportable. Before static
+capture it emulates `prefers-reduced-motion: reduce` and awaits
+`document.fonts.ready`; these pre-flights keep repeated captures byte-identical.
+
+Interactive TSX declares animated-capture eligibility; it does not imply that
+the component is always visibly changing. CSS/Web Animations are probed, and
+eligible captures may contain multiple WebP frames. Static artifacts retain a
+single frame. A capture that cannot fit the whole artifact within any bound is
+unavailable rather than silently clipped.
 
 Levels 0–2 record Tier 0 on publish. A Tier 1 run is explicit: visual
 read-back records it on demand, then reuses the revision-bound result. A
@@ -146,6 +152,10 @@ is observed through CDP snapshot, `getDocument`, and isolated-world channels at
 the render barrier and after the one-second stability window. There is no SSR or
 hydration expectation. `partial:unstable` records a changed structure; channel
 divergence remains `tampered`.
+
+Theme switching affects gallery Tier 2 display only. Tier 1 structural
+verdicts and captures remain dark-theme parity behavior so counts and layout
+comparisons are stable across display preferences.
 
 ## Retention policy
 
