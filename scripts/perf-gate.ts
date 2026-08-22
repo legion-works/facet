@@ -392,16 +392,8 @@ async function main(): Promise<void> {
         `max-of-${browserExit.sampleCount}; fresh browser per sample, close includes PID and profile disappearance`,
       );
     } catch (error) {
-      // A CDP transport wedge is a KNOWN defect of the pinned runtime
-      // (oven-sh/bun#37230: killing a child spawned with stdio pipes beyond
-      // fd 2 closes an fd belonging to an in-flight operation — exactly the
-      // --remote-debugging-pipe shape). Verified on this host: the full
-      // harness wedges 2/2 on Bun 1.3.14 and completes 1/1 clean on
-      // 1.4.0-canary. Browser budgets are RECORDED, not enforced, so a wedge
-      // must not take the ENFORCED browser-free budgets down with it — that
-      // would make an upstream runtime bug look like a Facet regression.
-      // Expect this branch to stop firing after the 1.4.0 bump; if it still
-      // fires, we have a second, unknown problem.
+      // Keep the fallback so a future runtime regression cannot masquerade as
+      // a Facet regression; Bun 1.4.0 fixed oven-sh/bun#37230.
       const detail = error instanceof Error ? error.message : String(error);
       const wedged = detail.includes("CDP transport wedged") || detail.includes("ECONNRESET");
       if (!wedged) throw error;
@@ -409,11 +401,10 @@ async function main(): Promise<void> {
         if (metrics.some((metric) => metric.name === name)) continue;
         metrics.push({
           name,
-          observed: `UNMEASURED: transport wedged (oven-sh/bun#37230 on Bun 1.3.14)`,
+          observed: `UNMEASURED: transport wedged (oven-sh/bun#37230)`,
           status: "skipped",
           enforced: false,
-          method:
-            "known upstream runtime defect \u2014 fixed on the 1.4.0 line; re-measure after the pin bump",
+          method: "known upstream runtime defect \u2014 fixed on the 1.4.0 line",
         });
       }
     }

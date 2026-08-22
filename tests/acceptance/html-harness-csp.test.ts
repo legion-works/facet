@@ -1,8 +1,6 @@
 /**
- * This test stays separate because Bun 1.3.14 reuses a poisoned file
- * descriptor after a five-entry CDP-pipe child exits (oven-sh/bun#37230).
- * Keep one direct CDP-pipe spawn per process; remove this split when the pin
- * moves to Bun 1.4.0 or newer.
+ * This test stays separate to preserve direct CDP-pipe coverage for regressions
+ * of the fd-reuse bug fixed in Bun 1.4.0 (oven-sh/bun#37230).
  */
 import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";

@@ -5,7 +5,7 @@ Date: 2026-08-08
 Pre-commit HEAD: `dde2d7518dcbc9aebcba50f3f938c1d9b84e3b85` · this document is
 part of the following commit.
 
-Runtime: Bun 1.3.14 · active gate browser `chrome-headless-shell 151.0.7922.77`
+Runtime: Bun 1.4.0 · active gate browser `chrome-headless-shell 151.0.7922.77`
 
 ## Gates
 
@@ -52,7 +52,7 @@ harness starts real detached services, samples `/proc` for their PIDs, opens a w
 launches a fresh netns-wrapped browser for every cold read-back and exit sample, and baseline-diffs
 browser PIDs and profile directories after real cycles.
 
-Measured on the 16-core development host (Bun 1.3.14):
+Measured on the 16-core development host (Bun 1.4.0):
 
 | Measurement                        | Min / median / p95 / max             | Budget and purpose                                                                                                                                                                                    |
 | ---------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -110,10 +110,9 @@ dormancy, `revision committed → SSE delivered` (1.00 ms on BOTH hosts, because
 path — the clearest evidence the split is real), and zombie cleanup. Publish→visible remains recorded
 on every machine until code-splitting creates enough headroom for a credible non-flapping gate.
 
-Browser measurements on the pinned runtime additionally hit oven-sh/bun#37230: the harness wedges
-2/2 on Bun 1.3.14 and completes 1/1 clean on 1.4.0-canary. A wedge records UNMEASURED instead of
-aborting the run, so an upstream runtime defect cannot masquerade as a Facet regression. Expect those
-discards to reach zero after the 1.4.0 bump; if they do not, a second unknown defect exists.
+Bun 1.4.0 fixes oven-sh/bun#37230, the fd-reuse defect that previously wedged browser measurements.
+The fallback still records UNMEASURED instead of aborting if a future transport wedge occurs, so an
+upstream runtime defect cannot masquerade as a Facet regression.
 
 TSX compiler and interactive authority measurements are recorded separately in
 [tsx-measurements.md](tsx-measurements.md). Static compilation measured

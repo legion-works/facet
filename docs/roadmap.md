@@ -62,9 +62,8 @@ cleanup. Publish→visible remains recorded-not-enforced, but for a DIFFERENT re
 that status was set: it is now MET, not missed. The frame code-split (af46b64) cut fresh-frame
 load+parse from ~119 ms to ~8 ms and took p95 from 354 ms to 253 ms — 47 ms inside the
 commitment. The remaining blocker is measurement, not performance: publish→visible needs a
-browser, and on the pinned Bun 1.3.14 the CDP transport wedges every time (3/3), so the number
-is only reproducible on the 1.4.0 line. Enforcement is therefore gated on the Bun bump rather
-on than any Facet change — re-measure and enforce when 1.4.0 ships stable.
+browser, and the former Bun 1.3.14 pin made the CDP transport wedge every time (3/3). Bun 1.4.0
+fixes oven-sh/bun#37230, so re-measure and enforce on the new stable pin.
 ✦ DONE (af46b64) — Code-split the 8.55 MB fresh-frame bootstrap bundle. Type-specific static
 entries: markdown 8,553,143 B → 60,788 B initial static graph (140×), svg → 14,326 B (597×);
 only chart still carries the Vega runtime, and only chart artifacts pay for it. Gallery and

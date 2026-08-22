@@ -73,7 +73,7 @@ A screenshot is evidence of pixels. It is not evidence that the page's own repor
 
 ## Quickstart
 
-Requires Bun `1.3.14`.
+Requires Bun `1.4.0` or newer. Bun 1.4.0 fixes oven-sh/bun#37230, the fd-reuse bug that affected CDP-pipe browser runs.
 
 ```sh
 bun install
@@ -100,7 +100,7 @@ Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) 
 
 ## Status
 
-Facet is a young, single-maintainer project. It targets local and single-operator workflows: the service binds to loopback, has no user-account authentication by design, and still protects routes with install/operator bearer capabilities. Interfaces may shift before 1.0. The publish-to-visible performance path is recorded rather than enforced on Bun `1.3.14` because its CDP transport wedges; re-measurement is gated on the Bun `1.4.0` line.
+Facet is a young, single-maintainer project. It targets local and single-operator workflows: the service binds to loopback, has no user-account authentication by design, and still protects routes with install/operator bearer capabilities. Interfaces may shift before 1.0. The publish-to-visible performance path is recorded rather than enforced while the Bun 1.3.14 pin wedged its CDP transport; Bun 1.4.0 fixes oven-sh/bun#37230, so the path is ready for re-measurement.
 
 ## License
 

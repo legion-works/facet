@@ -32,7 +32,7 @@ jobs:
       # v2.0.2 — 735343b667d3e6f658f44d0eca948eb6282f2b76
       - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.0
       - run: bun install --frozen-lockfile
       - run: bun run build
       - name: build release archives and pinned browser manifest
