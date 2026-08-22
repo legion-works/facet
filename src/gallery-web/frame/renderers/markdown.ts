@@ -73,7 +73,7 @@ export async function renderMarkdown(ctx: RenderContext, bytes: Uint8Array): Pro
     const region = document.createElement("div");
     region.setAttribute("data-facet-diagram-region", "true");
     region.tabIndex = 0;
-    await renderMermaidInto!(region, source);
+    await renderMermaidInto!(region, source, ctx.theme);
     if (region.firstElementChild !== null) pre.replaceWith(region);
     else pre.remove();
   }

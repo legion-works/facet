@@ -45,6 +45,7 @@ import {
 } from "./router-guards";
 import type { FacetLogger } from "../shared/logging/logger";
 import { buildFrameDocument } from "../gallery-web/frame-html";
+import { isResolvedGalleryTheme } from "../gallery-web/theme";
 import { ARTIFACT_TYPES } from "../shared/contracts/artifact-types";
 import { ArtifactTypeSchema } from "../shared/contracts/artifact";
 import { latestStoredVerdict } from "./stored-verdict";
@@ -404,6 +405,16 @@ export function buildRouter(deps: RouterDeps): {
             },
           });
         }
+        const theme = url.searchParams.get("theme") ?? "dark";
+        if (!isResolvedGalleryTheme(theme)) {
+          return new Response("Invalid frame theme", {
+            status: 400,
+            headers: {
+              "cache-control": "no-store",
+              "content-type": "text/plain; charset=utf-8",
+            },
+          });
+        }
         try {
           await ensureGalleryBuild();
         } catch (error) {
@@ -419,6 +430,7 @@ export function buildRouter(deps: RouterDeps): {
           buildFrameDocument({
             artifactType: artifactType.data,
             runtimeUrl: `${FRAME_RUNTIME_PREFIX}${artifactType.data}.js`,
+            theme,
           }),
           {
             status: 200,

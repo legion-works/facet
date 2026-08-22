@@ -119,9 +119,14 @@ describe("gallery shell — frame document generation", () => {
     const document = buildFrameDocument({
       artifactType: "markdown",
       runtimeUrl: RUNTIME_URL,
+      theme: "light",
     });
     const charsetIdx = document.indexOf('<meta charset="utf-8">');
     expect(charsetIdx).toBeGreaterThanOrEqual(0);
+    expect(document).toContain('<html data-theme="winter">');
+    expect(document.indexOf('data-theme="winter"')).toBeLessThan(
+      document.indexOf("/gallery/frame/frame.css"),
+    );
     expect(document).toContain('<main id="artifact" data-facet-artifact-type="markdown"></main>');
     expect(document).not.toContain("Content-Security-Policy");
     expect(document).toContain('<link rel="stylesheet" href="/gallery/frame/frame.css">');
@@ -132,7 +137,9 @@ describe("gallery shell — frame document generation", () => {
     const document = buildFrameDocument({
       artifactType: "markdown",
       runtimeUrl: RUNTIME_URL,
+      theme: "dark",
     });
+    expect(document).toContain('<html data-theme="night">');
     expect(document).toContain(`<script type="module" src="${RUNTIME_URL}">`);
     expect(document).not.toContain("nonce=");
     expect(document).toContain("</script>");
@@ -146,6 +153,7 @@ describe("gallery shell — frame document generation", () => {
     const document = buildFrameDocument({
       artifactType: "markdown",
       runtimeUrl: RUNTIME_URL,
+      theme: "dark",
     });
     expect(document).not.toContain(ARTIFACT_SENTINEL);
     // Defensive: exactly ONE <script tag in the document — the trusted runtime.
@@ -160,6 +168,7 @@ describe("gallery shell — frame document generation", () => {
     const document = buildFrameDocument({
       artifactType: "markdown",
       runtimeUrl: tricky,
+      theme: "dark",
     });
     expect(document).toContain("https://example.test/bootstrap.js?a=1&amp;b=2");
     expect(document.match(/<\/script>/g)?.length ?? 0).toBe(1);
@@ -384,7 +393,11 @@ describe("gallery shell — frame attributes type contract", () => {
 
 describe("gallery shell — ordinary frame document", () => {
   test("frame document stays source-byte free without nonce or handshake parameters", () => {
-    const document = buildFrameDocument({ artifactType: "markdown", runtimeUrl: RUNTIME_URL });
+    const document = buildFrameDocument({
+      artifactType: "markdown",
+      runtimeUrl: RUNTIME_URL,
+      theme: "dark",
+    });
     expect(document).not.toContain("nonce=");
     expect(document).not.toContain("handshake=");
     expect(document).not.toContain(ARTIFACT_SENTINEL);
@@ -517,19 +530,27 @@ function fakeRenderResult(
 }
 
 describe("gallery shell — real swap execution (direct frame promises)", () => {
-  const SOURCE = { artifactType: "markdown", renderer: "svg", bytes: new Uint8Array([1, 2, 3]) };
+  const SOURCE = {
+    artifactType: "markdown",
+    renderer: "svg",
+    bytes: new Uint8Array([1, 2, 3]),
+    theme: "dark" as const,
+  };
 
   test("seamless swap: new frame renders BEFORE the old frame is removed", async () => {
     const { dom, frames } = createFakeFrameDom();
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
+      theme: "light",
       dom,
     });
+    expect(next.attrs.src).toContain("theme=light");
     const nextFrame = frames[1]!;
     installFakeFrameApi(nextFrame, { viewMode: "native", observed: fakeObservedCounts() });
 
@@ -575,10 +596,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     // oxlint-disable-next-line no-underscore-dangle
@@ -610,10 +633,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     const recording = createRecordingHost();
     const first = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const second = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     // Source bytes remain off the document URL across frame replacements.
@@ -643,6 +668,7 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     };
     const seed = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const swapOne = await replaceArtifactFrame({
@@ -651,7 +677,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
       dom,
       host: recording.host,
       viewState: { zoom: 1 },
-      source: { artifactType: "markdown", renderer: "svg", bytes: new Uint8Array([1]) },
+      source: {
+        artifactType: "markdown",
+        renderer: "svg",
+        bytes: new Uint8Array([1]),
+        theme: "dark",
+      },
       readyTimeoutMs: 2_000,
     });
     expect(swapOne.failedNewFrameReady).toBe(false);
@@ -662,7 +693,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
       dom,
       host: recording.host,
       viewState: { zoom: 1 },
-      source: { artifactType: "markdown", renderer: "svg", bytes: new Uint8Array([2]) },
+      source: {
+        artifactType: "markdown",
+        renderer: "svg",
+        bytes: new Uint8Array([2]),
+        theme: "dark",
+      },
       readyTimeoutMs: 2_000,
     });
     expect(swapTwo.failedNewFrameReady).toBe(false);
@@ -678,10 +714,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     // The frame loads but its render rejects.
@@ -719,10 +757,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     // oxlint-disable-next-line no-underscore-dangle
@@ -752,10 +792,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     // No load event at all.
@@ -782,10 +824,12 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const next = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     // The frame loads, but its render promise never settles.
@@ -815,6 +859,7 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
     const recording = createRecordingHost();
     const current = createArtifactFrame({
       artifactType: "markdown",
+      theme: "dark",
       dom,
     });
     const fetched: { artifactId: string; revisionSha: string }[] = [];
@@ -826,6 +871,7 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
       {
         dom,
         host: recording.host,
+        theme: "light",
         fetchRevision: async (artifactId, revisionSha) => {
           fetched.push({ artifactId, revisionSha });
           return {
@@ -859,9 +905,18 @@ describe("gallery shell — real swap execution (direct frame promises)", () => 
       sourceBytes: bytes,
     });
     expect(frame).not.toBe(current);
-    expect(frames[1]!.receivedPayloads).toEqual([
-      { artifactType: "markdown", renderer: "svg", bytes },
+    expect(result.executedSteps).toEqual([
+      "build-new",
+      "load-new",
+      "render-new",
+      "swap",
+      "apply-view-state",
+      "remove-old",
     ]);
+    expect(frames[1]!.receivedPayloads).toEqual([
+      { artifactType: "markdown", renderer: "svg", bytes, theme: "light" },
+    ]);
+    expect(frame.attrs.src).toContain("theme=light");
     // View state is preserved through the frame's own render result, not the host.
     expect(frame.renderResult?.readViewState()).toEqual({ zoom: 2, panX: 0, panY: 0 });
     expect(recording.mounted.has(current.frameId)).toBe(false);

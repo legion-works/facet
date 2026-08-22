@@ -72,11 +72,13 @@ test("diagram regions switch the active region only after the newly entered regi
 });
 
 test("installs a one-shot direct frame API that resolves renderer observations", async () => {
+  let receivedTheme: unknown;
   installGalleryFrameApi(
     createRendererRegistry([
       [
         "markdown",
-        async () => {
+        async (ctx) => {
+          receivedTheme = Reflect.get(ctx, "theme");
           shimDocument.getElementById("artifact")!.textContent = "rendered";
         },
       ],
@@ -91,6 +93,7 @@ test("installs a one-shot direct frame API that resolves renderer observations",
       artifactType: "markdown",
       renderer: "missing" as unknown as "svg",
       bytes: new Uint8Array([1]),
+      theme: "dark",
     }),
   ).rejects.toThrow(/missing a supported renderer/);
 
@@ -98,15 +101,18 @@ test("installs a one-shot direct frame API that resolves renderer observations",
     artifactType: "markdown",
     renderer: "svg",
     bytes: new Uint8Array([1, 2, 3]),
+    theme: "light",
   });
 
   expect(result.observed.errorCount).toBe(0);
+  expect(receivedTheme).toBe("light");
   expect(result.applyViewState).toBeTypeOf("function");
   await expect(
     api!.render({
       artifactType: "markdown",
       renderer: "svg",
       bytes: new Uint8Array([4, 5, 6]),
+      theme: "light",
     }),
   ).rejects.toThrow(/already rendered/);
 });
@@ -135,6 +141,7 @@ for (const [artifactType, expected] of [
       artifactType,
       renderer: "svg",
       bytes: new Uint8Array([1]),
+      theme: "dark",
       ...(artifactType === "tsx" ? { execution: "static" as const } : {}),
     });
     expect(result.defaultGestureMode).toBe(expected);
@@ -153,6 +160,7 @@ test("setGestureMode toggles the frame between native and panzoom, independent o
     artifactType: "markdown",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
   expect(result.gestureMode()).toBe("native");
   result.setGestureMode("panzoom");
@@ -213,6 +221,7 @@ test("gesture listeners are installed only in panzoom mode and fully removed in 
     artifactType: "markdown",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
 
   // A fresh document artifact render defaults to native — zero gesture
@@ -274,6 +283,7 @@ test("default panzoom mode suppresses pointer-events on a raw SVG artifact root,
     artifactType: "svg",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
 
   // svg is a STANDALONE_DIAGRAM_TYPES entry — panzoom is the default,
@@ -316,6 +326,7 @@ test("panzoom mode suppresses pointer-events on every top-level rendered sibling
     artifactType: "markdown",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
 
   const container = shim.document.getElementById("artifact")!;
@@ -365,6 +376,7 @@ test("applyViewState scales a viewBox-less SVG artifact root through the CSS-fal
     artifactType: "svg",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
 
   result.applyViewState({ zoom: 2, panX: 0, panY: 0 });
@@ -404,6 +416,7 @@ test("panzoom wheel zooms around the cursor and pointer drag updates pan state",
     artifactType: "svg",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
 
   const wheel = eventWith<WheelEvent>(shim, "wheel", {
@@ -465,6 +478,7 @@ test("native diagram regions require activation before wheel and drag gestures e
     artifactType: "markdown",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
   const region = container.firstElementChild as HTMLElement;
   const svg = region.firstElementChild as SVGElement;
@@ -535,6 +549,7 @@ test("outside click and Escape dismiss an engaged diagram region, while reset cl
     artifactType: "markdown",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
   const region = container.firstElementChild as HTMLElement;
   region.dispatchEvent(eventWith<PointerEvent>(shim, "pointerenter", {}));
@@ -581,6 +596,7 @@ test("applyViewState sizes a parsed SVG viewBox and clamps negative scroll offse
     artifactType: "svg",
     renderer: "svg",
     bytes: new Uint8Array([1]),
+    theme: "dark",
   });
   result.applyViewState({ zoom: 1.5, panX: 30, panY: -10 });
   const svg = container.firstElementChild as SVGElement;

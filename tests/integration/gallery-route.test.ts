@@ -239,6 +239,10 @@ describe("GET /gallery", () => {
     expect(document).not.toContain("Content-Security-Policy");
     expect(document).not.toMatch(/<style[\s>]/i);
 
+    const lightFrame = await fetch(`${service.url}/gallery/frame?type=markdown&theme=light`);
+    expect(lightFrame.status).toBe(200);
+    expect(await lightFrame.text()).toContain('<html data-theme="winter">');
+
     const htmlFrame = await fetch(`${service.url}/gallery/frame?type=html`);
     expect(htmlFrame.status).toBe(200);
     const htmlDocument = await htmlFrame.text();
@@ -256,6 +260,8 @@ describe("GET /gallery", () => {
     expect(document).not.toContain("artifact.css");
     const invalidType = await fetch(`${service.url}/gallery/frame?type=pdf`);
     expect(invalidType.status).toBe(400);
+    const invalidTheme = await fetch(`${service.url}/gallery/frame?type=markdown&theme=purple`);
+    expect(invalidTheme.status).toBe(400);
 
     const runtime = await fetch(`${service.url}/gallery/frame/runtime/markdown.js`);
     expect(runtime.status).toBe(200);

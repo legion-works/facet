@@ -8,6 +8,8 @@
  * surface.
  */
 
+import { galleryDataTheme, type ResolvedGalleryTheme } from "./theme";
+
 /**
  * Frame element attributes. The shell applies these to every iframe it
  * creates.
@@ -28,15 +30,19 @@ export function buildFrameAttributes(src = "/gallery/frame"): FrameAttributes {
   };
 }
 
-export function buildFrameDocument(options: { artifactType: string; runtimeUrl: string }): string {
-  const { artifactType, runtimeUrl } = options;
+export function buildFrameDocument(options: {
+  artifactType: string;
+  runtimeUrl: string;
+  theme: ResolvedGalleryTheme;
+}): string {
+  const { artifactType, runtimeUrl, theme } = options;
   const escapedRuntimeUrl = runtimeUrl
     .replaceAll("&", "&amp;")
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
   return (
-    "<!doctype html><html><head>" +
+    `<!doctype html><html data-theme="${galleryDataTheme(theme)}"><head>` +
     `<meta charset="utf-8"><link rel="stylesheet" href="/gallery/frame/frame.css">` +
     (artifactType === "html" || artifactType === "tsx"
       ? `<link rel="stylesheet" href="/gallery/frame/artifact.css">`

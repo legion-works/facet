@@ -127,12 +127,14 @@ let registry: typeof import("../../src/gallery-web/frame/renderers/registry");
 let markdown: typeof import("../../src/gallery-web/frame/renderers/markdown");
 let svg: typeof import("../../src/gallery-web/frame/renderers/svg");
 let chart: typeof import("../../src/gallery-web/frame/renderers/chart");
+let mermaid: typeof import("../../src/gallery-web/frame/renderers/mermaid");
 
 beforeAll(async () => {
   registry = await import("../../src/gallery-web/frame/renderers/registry");
   markdown = await import("../../src/gallery-web/frame/renderers/markdown");
   svg = await import("../../src/gallery-web/frame/renderers/svg");
   chart = await import("../../src/gallery-web/frame/renderers/chart");
+  mermaid = await import("../../src/gallery-web/frame/renderers/mermaid");
 });
 
 describe("markdown renderer — raw HTML is DATA, never elements", () => {
@@ -162,7 +164,7 @@ describe("markdown renderer — raw HTML is DATA, never elements", () => {
   test("renderMarkdown attaches the escaped document to the container", async () => {
     const container = freshContainer();
     await markdown.renderMarkdown(
-      { container },
+      { container, theme: "dark" },
       new TextEncoder().encode("# Hi\n\n<script>alert(1)</script>"),
     );
     expect(container.querySelector("h1")).not.toBeNull();
@@ -452,12 +454,15 @@ describe("svg renderer — sanitize BEFORE import", () => {
 
   test("renderSvgDocument imports the clean fixture and strips the hostile one", async () => {
     const container = freshContainer();
-    await svg.renderSvgDocument({ container }, readBytes(FIXTURES.svgClean));
+    await svg.renderSvgDocument({ container, theme: "dark" }, readBytes(FIXTURES.svgClean));
     expect(container.querySelectorAll("svg").length).toBe(1);
     expect(container.querySelector("circle")).not.toBeNull();
 
     const hostileContainer = freshContainer();
-    await svg.renderSvgDocument({ container: hostileContainer }, readBytes(FIXTURES.svgHostile));
+    await svg.renderSvgDocument(
+      { container: hostileContainer, theme: "dark" },
+      readBytes(FIXTURES.svgHostile),
+    );
     expect(hostileContainer.querySelectorAll("script").length).toBe(0);
     expect(hostileContainer.querySelectorAll("svg").length).toBe(1);
   });
@@ -466,7 +471,7 @@ describe("svg renderer — sanitize BEFORE import", () => {
     const container = freshContainer();
     let caught: unknown = null;
     try {
-      await svg.renderSvgDocument({ container }, new TextEncoder().encode("<<<>>>"));
+      await svg.renderSvgDocument({ container, theme: "dark" }, new TextEncoder().encode("<<<>>>"));
     } catch (error) {
       caught = error;
     }
@@ -477,6 +482,42 @@ describe("svg renderer — sanitize BEFORE import", () => {
 });
 
 describe("chart renderer — loader disabled, zero marks is an error", () => {
+  test("Facet defaults fill missing config while authored config wins", () => {
+    const source = {
+      mark: "bar",
+      data: { values: [{ x: "A", y: 1 }] },
+      encoding: { x: { field: "x", type: "nominal" }, y: { field: "y", type: "quantitative" } },
+      config: { background: "#f0c" },
+    };
+    const themed = chart.withFacetChartTheme(source, "light") as {
+      readonly config: { readonly background: string; readonly style: Record<string, unknown> };
+    };
+
+    expect(source.config.background).toBe("#f0c");
+    expect(themed.config.background).toBe("#f0c");
+    expect(themed.config.style["guide-label"]).toEqual({ fill: "#172033" });
+
+    const defaults = chart.withFacetChartTheme(
+      {
+        mark: "bar",
+        data: { values: [{ x: "A", y: 1 }] },
+        encoding: { x: { field: "x", type: "nominal" }, y: { field: "y", type: "quantitative" } },
+      },
+      "dark",
+    ) as {
+      readonly config: { readonly background: string; readonly style: Record<string, unknown> };
+    };
+    expect(defaults.config.background).toBe("#151823");
+    expect(defaults.config.style["guide-label"]).toEqual({ fill: "#c8d3f5" });
+  });
+
+  test("light Mermaid initialization disables dark mode in its fresh frame", () => {
+    expect(mermaid.mermaidInitializeConfig("light")).toMatchObject({
+      theme: "default",
+      darkMode: false,
+    });
+  });
+
   test("countVegaMarks counts role-mark data groups, not axes", () => {
     expect(chart.countVegaMarks('<g class="mark-rect role-mark">')).toBe(1);
     expect(
@@ -492,7 +533,7 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
 
   test("explicit svg renderer preserves the sanitized SVG import path", async () => {
     const container = freshContainer();
-    await chart.renderChart({ container }, readBytes(FIXTURES.chartBarline), "svg");
+    await chart.renderChart({ container, theme: "dark" }, readBytes(FIXTURES.chartBarline), "svg");
     expect(container.querySelectorAll("svg").length).toBe(1);
     expect(container.querySelectorAll("canvas").length).toBe(0);
     const svgText = container.innerHTML;
@@ -501,7 +542,11 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
 
   test("canvas renderer attaches one canvas to the artifact container", async () => {
     const container = freshContainer();
-    await chart.renderChart({ container }, readBytes(FIXTURES.chartBarline), "canvas");
+    await chart.renderChart(
+      { container, theme: "dark" },
+      readBytes(FIXTURES.chartBarline),
+      "canvas",
+    );
     expect(container.querySelectorAll("canvas").length).toBe(1);
     expect(container.querySelectorAll("svg").length).toBe(0);
   }, 20_000);
@@ -510,7 +555,7 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
     const container = freshContainer();
     let caught: unknown = null;
     try {
-      await chart.renderChart({ container }, readBytes(FIXTURES.chartExternal));
+      await chart.renderChart({ container, theme: "dark" }, readBytes(FIXTURES.chartExternal));
     } catch (error) {
       caught = error;
     }
@@ -523,7 +568,7 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
     const container = freshContainer();
     let caught: unknown = null;
     try {
-      await chart.renderChart({ container }, readBytes(FIXTURES.chartZeroMarks));
+      await chart.renderChart({ container, theme: "dark" }, readBytes(FIXTURES.chartZeroMarks));
     } catch (error) {
       caught = error;
     }
@@ -536,7 +581,7 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
     const container = freshContainer();
     let caught: unknown = null;
     try {
-      await chart.renderChart({ container }, new TextEncoder().encode("{not json"));
+      await chart.renderChart({ container, theme: "dark" }, new TextEncoder().encode("{not json"));
     } catch (error) {
       caught = error;
     }
@@ -583,8 +628,8 @@ describe("renderer registry — dispatch contract", () => {
     try {
       await registry.dispatchRender(
         reg,
-        { container: freshContainer() },
-        { artifactType: "html", renderer: "svg", bytes: new Uint8Array() },
+        { container: freshContainer(), theme: "dark" },
+        { artifactType: "html", renderer: "svg", bytes: new Uint8Array(), theme: "dark" },
       );
     } catch (error) {
       caught = error;
@@ -606,11 +651,12 @@ describe("renderer registry — dispatch contract", () => {
     await expect(
       registry.dispatchRender(
         reg,
-        { container: freshContainer() },
+        { container: freshContainer(), theme: "dark" },
         {
           artifactType: "chart",
           renderer: "webgl" as never,
           bytes: new Uint8Array(),
+          theme: "dark",
         },
       ),
     ).rejects.toMatchObject({ code: "invalid_request" });

@@ -4,6 +4,7 @@ import { HTML_STRUCTURAL_GROUPS } from "../../../shared/html/policy";
 import type { VerdictObserved } from "../../../shared/contracts/validation";
 import type { ObservedCountKey } from "../../../shared/contracts/observed-counts";
 import { isTsxExecutionMode, type TsxExecutionMode } from "../../../shared/tsx/execution";
+import type { ResolvedGalleryTheme } from "../../theme";
 
 export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/artifact-types";
 
@@ -21,6 +22,7 @@ export { ARTIFACT_TYPES, type ArtifactType } from "../../../shared/contracts/art
 
 export interface RenderContext {
   readonly container: HTMLElement;
+  readonly theme: ResolvedGalleryTheme;
   readonly nonce?: string;
 }
 
@@ -228,6 +230,7 @@ export async function dispatchRender(
     readonly artifactType: string;
     readonly renderer: RendererKind;
     readonly bytes: Uint8Array;
+    readonly theme: ResolvedGalleryTheme;
     readonly execution?: TsxExecutionMode;
   },
 ): Promise<void> {

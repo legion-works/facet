@@ -1,4 +1,5 @@
 import { isTsxExecutionMode, type TsxExecutionMode } from "../../shared/tsx/execution";
+import { isResolvedGalleryTheme } from "../theme";
 
 import { validateRenderer } from "./renderer-validation";
 import {
@@ -271,6 +272,7 @@ function validatePayload(value: unknown): {
   readonly artifactType: string;
   readonly renderer: ReturnType<typeof validateRenderer>;
   readonly bytes: Uint8Array;
+  readonly theme: FrameRenderPayload["theme"];
   readonly execution?: TsxExecutionMode;
 } {
   if (value === null || typeof value !== "object") {
@@ -279,6 +281,9 @@ function validatePayload(value: unknown): {
   const payload = value as Record<string, unknown>;
   if (typeof payload.artifactType !== "string") {
     throw new FacetRenderError("artifact payload is missing artifactType", "invalid_request");
+  }
+  if (!isResolvedGalleryTheme(payload.theme)) {
+    throw new FacetRenderError("artifact payload has invalid theme", "invalid_request");
   }
   if (typeof payload.bytes !== "string" && !isUint8Array(payload.bytes)) {
     throw new FacetRenderError("artifact payload is missing bytes", "invalid_request");
@@ -290,6 +295,7 @@ function validatePayload(value: unknown): {
     artifactType: payload.artifactType,
     renderer: validateRenderer(payload.renderer),
     bytes: decodePayloadBytes(payload.bytes),
+    theme: payload.theme,
     ...(payload.execution === undefined ? {} : { execution: payload.execution }),
   };
 }
@@ -409,7 +415,7 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
       const validated = validatePayload(payload);
       rendered = true;
       try {
-        await dispatchRender(registry, { container }, validated);
+        await dispatchRender(registry, { container, theme: validated.theme }, validated);
       } catch (error) {
         appendRenderError(container, error instanceof Error ? error.message : String(error));
         throw error;

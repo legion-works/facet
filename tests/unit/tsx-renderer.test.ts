@@ -65,8 +65,13 @@ describe("TSX renderer", () => {
     const actual = freshContainer();
     const expected = freshContainer();
 
-    await html.renderHtml({ container: expected }, bytes);
-    await tsx.renderTsx({ container: actual, nonce: "n-static" }, bytes, "svg", "static");
+    await html.renderHtml({ container: expected, theme: "dark" }, bytes);
+    await tsx.renderTsx(
+      { container: actual, nonce: "n-static", theme: "dark" },
+      bytes,
+      "svg",
+      "static",
+    );
 
     expect(actual.innerHTML).toBe(expected.innerHTML);
     expect(actual.querySelectorAll("[data-facet-renderer-root='true']")).toHaveLength(1);
@@ -91,7 +96,12 @@ describe("TSX renderer", () => {
     };
     (tsx as TsxRendererWithTestRuntime).setTsxModuleRuntimeForTests?.(runtime);
 
-    await tsx.renderTsx({ container, nonce: "n-interactive" }, bytes, "svg", "interactive");
+    await tsx.renderTsx(
+      { container, nonce: "n-interactive", theme: "dark" },
+      bytes,
+      "svg",
+      "interactive",
+    );
 
     expect(container.querySelector("iframe")).toBeNull();
     expect(container.children).toHaveLength(1);
@@ -117,7 +127,7 @@ describe("TSX renderer", () => {
     (tsx as TsxRendererWithTestRuntime).setTsxModuleRuntimeForTests?.(runtime);
 
     await expect(
-      tsx.renderTsx({ container, nonce: "n-failing" }, bytes, "svg", "interactive"),
+      tsx.renderTsx({ container, nonce: "n-failing", theme: "dark" }, bytes, "svg", "interactive"),
     ).rejects.toThrow("module evaluation failed");
     expect(revoked).toEqual(["blob:facet-failing-module"]);
     expect(container.querySelector("[data-facet-error='true']")?.textContent).toBe(
@@ -134,7 +144,7 @@ describe("TSX renderer", () => {
     });
 
     await tsx.renderTsx(
-      { container, nonce: "n-events" },
+      { container, nonce: "n-events", theme: "dark" },
       new TextEncoder().encode("export default {};"),
       "svg",
       "interactive",
@@ -153,7 +163,7 @@ describe("TSX renderer", () => {
     (tsx as TsxRendererWithTestRuntime).setTsxModuleRuntimeForTests?.(undefined);
 
     await tsx.renderTsx(
-      { container, nonce: "n-browser-runtime" },
+      { container, nonce: "n-browser-runtime", theme: "dark" },
       new TextEncoder().encode("export default {};"),
       "svg",
       "interactive",

@@ -28,22 +28,19 @@
 
 import mermaid from "mermaid";
 
+import type { ResolvedGalleryTheme } from "../../theme";
 import { FacetRenderError, type RenderContext, decodeArtifactBytes } from "./registry";
 import { importSanitizedSvgText } from "./svg";
 
 let initialized = false;
 
-function ensureMermaidInitialized(): void {
-  if (initialized) return;
-  initialized = true;
-  mermaid.initialize({
+export function mermaidInitializeConfig(theme: ResolvedGalleryTheme) {
+  return {
     startOnLoad: false,
-    securityLevel: "loose",
+    securityLevel: "loose" as const,
     suppressErrorRendering: true,
-    // The stage is dark. Mermaid's default (light) theme paints edges
-    // #333 and label text near-black — invisible here.
-    theme: "dark",
-    darkMode: true,
+    theme: theme === "dark" ? ("dark" as const) : ("default" as const),
+    darkMode: theme === "dark",
     // htmlLabels OFF at EVERY level that can re-enable it. An HTML label
     // is emitted inside a `<foreignObject>`, which the SVG import path
     // strips as an XSS vector — so an HTML label renders as an EMPTY
@@ -51,7 +48,13 @@ function ensureMermaidInitialized(): void {
     htmlLabels: false,
     flowchart: { htmlLabels: false },
     class: { htmlLabels: false },
-  });
+  };
+}
+
+function ensureMermaidInitialized(theme: ResolvedGalleryTheme): void {
+  if (initialized) return;
+  initialized = true;
+  mermaid.initialize(mermaidInitializeConfig(theme));
 }
 
 let renderCounter = 0;
@@ -61,8 +64,12 @@ let renderCounter = 0;
  * `mermaid.render()` completion BEFORE the SVG crosses the sanitized
  * import path — the direct render promise depends on this barrier.
  */
-export async function renderMermaidInto(container: HTMLElement, source: string): Promise<void> {
-  ensureMermaidInitialized();
+export async function renderMermaidInto(
+  container: HTMLElement,
+  source: string,
+  theme: ResolvedGalleryTheme,
+): Promise<void> {
+  ensureMermaidInitialized(theme);
   renderCounter += 1;
   const id = `facet-mermaid-${renderCounter}-${crypto.randomUUID()}`;
   let svg: string;
@@ -109,5 +116,5 @@ function restoreNaturalSize(el: Element | null): void {
 
 /** Render a standalone mermaid artifact (artifactType "mermaid"). */
 export async function renderMermaidDocument(ctx: RenderContext, bytes: Uint8Array): Promise<void> {
-  await renderMermaidInto(ctx.container, decodeArtifactBytes(bytes));
+  await renderMermaidInto(ctx.container, decodeArtifactBytes(bytes), ctx.theme);
 }

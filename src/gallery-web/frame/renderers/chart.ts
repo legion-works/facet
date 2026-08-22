@@ -17,6 +17,7 @@ import { View, loader, parse, type Loader } from "vega";
 import { expressionInterpreter } from "vega-interpreter";
 
 import type { Renderer } from "../../../shared/contracts/renderers";
+import type { ResolvedGalleryTheme } from "../../theme";
 import { FacetRenderError, type RenderContext, decodeArtifactBytes } from "./registry";
 import { importSanitizedSvgText } from "./svg";
 
@@ -91,6 +92,42 @@ export function compiledSpecHasExternalUrl(spec: unknown): boolean {
   );
 }
 
+const FACET_CHART_CONFIG: Readonly<
+  Record<ResolvedGalleryTheme, Readonly<Record<string, unknown>>>
+> = {
+  dark: {
+    background: "#151823",
+    style: {
+      "guide-label": { fill: "#c8d3f5" },
+      "guide-title": { fill: "#c8d3f5" },
+    },
+  },
+  light: {
+    background: "#ffffff",
+    style: {
+      "guide-label": { fill: "#172033" },
+      "guide-title": { fill: "#172033" },
+    },
+  },
+};
+
+export function withFacetChartTheme(spec: unknown, theme: ResolvedGalleryTheme): unknown {
+  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return spec;
+  const source = spec as Readonly<Record<string, unknown>>;
+  const authoredConfig = source.config;
+  return {
+    ...source,
+    config: {
+      ...FACET_CHART_CONFIG[theme],
+      ...(authoredConfig !== null &&
+      typeof authoredConfig === "object" &&
+      !Array.isArray(authoredConfig)
+        ? authoredConfig
+        : {}),
+    },
+  };
+}
+
 /** Render a chart artifact (artifactType "chart"): Vega-Lite JSON bytes. */
 export async function renderChart(
   ctx: RenderContext,
@@ -107,7 +144,7 @@ export async function renderChart(
   }
   let compiled: { spec: unknown };
   try {
-    compiled = compile(spec as never);
+    compiled = compile(withFacetChartTheme(spec, ctx.theme) as never);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new FacetRenderError(`vega-lite compile failed: ${message}`, "chart_compile_error");

@@ -41,6 +41,7 @@ import {
   type ViewState,
 } from "./view-state";
 import type { FrameRenderPayload, GestureMode } from "./frame/frame-payload";
+import type { ResolvedGalleryTheme } from "./theme";
 import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 import { faviconTint, renderFavicon } from "./favicon";
 import { exportMenuStateFrom, type GalleryExportState } from "./export";
@@ -279,6 +280,7 @@ type FrameObserved = Pick<VerdictObserved, ObservedCountKey | "html" | "errorCou
 
 export interface CreateArtifactFrameOptions {
   readonly artifactType: string;
+  readonly theme: ResolvedGalleryTheme;
   /** Legacy direct callers omit this; revision source fetches always make it explicit. */
   readonly renderer?: string;
   readonly frameUrl?: string;
@@ -381,6 +383,7 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
   const frameUrl = new URL(options.frameUrl ?? "/gallery/frame", `http://${dom.hostname}`);
   frameUrl.searchParams.set("type", options.artifactType);
   frameUrl.searchParams.set("renderer", options.renderer ?? "svg");
+  frameUrl.searchParams.set("theme", options.theme);
   const attrs = buildFrameAttributes(frameUrl.toString());
   const element = dom.document.createElement("iframe");
   element.setAttribute("referrerpolicy", attrs.referrerpolicy);
@@ -611,6 +614,7 @@ interface GalleryEvidenceResponse {
 export interface SwapToRevisionDeps {
   readonly dom: ShellDom;
   readonly host: FrameHost;
+  readonly theme: ResolvedGalleryTheme;
   readonly frameUrl?: string;
   /** Fetch the exact revision bytes the SSE event named. */
   readonly fetchRevision: (artifactId: string, revisionSha: string) => Promise<RevisionFetchResult>;
@@ -649,6 +653,7 @@ export async function swapToRevision(
   const next = createArtifactFrame({
     artifactType: revision.artifactType,
     renderer: revision.renderer,
+    theme: deps.theme,
     dom: deps.dom,
     ...(deps.frameUrl === undefined ? {} : { frameUrl: deps.frameUrl }),
   });
@@ -662,6 +667,7 @@ export async function swapToRevision(
       artifactType: revision.artifactType,
       renderer: revision.renderer,
       bytes: revision.bytes,
+      theme: deps.theme,
       ...(revision.execution === undefined ? {} : { execution: revision.execution }),
     },
     ...(deps.onProgress === undefined ? {} : { onProgress: deps.onProgress }),
@@ -1116,6 +1122,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   let current = createArtifactFrame({
     artifactType: source.artifactType,
     renderer: source.renderer,
+    theme: "dark",
     frameUrl,
     dom,
   });
@@ -1128,6 +1135,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       artifactType: source.artifactType,
       renderer: source.renderer,
       bytes: source.bytes,
+      theme: "dark",
       ...(source.execution === undefined ? {} : { execution: source.execution }),
     },
     DEFAULT_READY_TIMEOUT_MS,
@@ -1171,6 +1179,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       {
         dom,
         host,
+        theme: "dark",
         frameUrl,
         fetchRevision: (_artifactId, revisionSha) =>
           fetchGallerySource(baseUrl, handoff, revisionSha, fetch),

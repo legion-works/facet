@@ -6,6 +6,7 @@
  */
 
 import type { TsxExecutionMode } from "../../shared/tsx/execution";
+import type { ResolvedGalleryTheme } from "../theme";
 import type { SvgViewBox } from "./view-box";
 
 /**
@@ -19,6 +20,7 @@ export interface FrameRenderPayload {
   readonly artifactType: string;
   readonly renderer: string;
   readonly bytes: Uint8Array;
+  readonly theme: ResolvedGalleryTheme;
   readonly execution?: TsxExecutionMode;
 }
 

@@ -41,7 +41,7 @@ describe("HTML frame renderer", () => {
   test("keeps safe HTML beneath the frame-owned root while stripping executable markup", async () => {
     const container = freshContainer();
     await html.renderHtml(
-      { container },
+      { container, theme: "dark" },
       new TextEncoder().encode(`
         <!doctype html><html><body>
         <script id="denied-script">window.facetCompromised = true;</script>

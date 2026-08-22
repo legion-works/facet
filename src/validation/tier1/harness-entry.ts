@@ -178,11 +178,12 @@ async function renderArtifact(
   }
   await dispatchRender(
     registry,
-    { container, nonce },
+    { container, nonce, theme: "dark" },
     {
       artifactType,
       renderer,
       bytes: artifactBytes,
+      theme: "dark",
       ...(execution === undefined ? {} : { execution }),
     },
   );
