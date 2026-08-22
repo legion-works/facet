@@ -14,7 +14,6 @@ import { tmpdir } from "node:os";
 
 import type { Artifact, Revision } from "../../src/shared/contracts/artifact";
 import type { ExportResult } from "../../src/shared/contracts/commands/results";
-import { ExportSidecarSchema } from "../../src/shared/contracts/commands/results";
 import type { Verdict } from "../../src/shared/contracts/validation";
 import {
   buildExportRequest,
@@ -326,8 +325,18 @@ describe("buildExportSidecar", () => {
     });
 
     expect(Object.keys(sidecar).toSorted()).toEqual(
-      Object.keys(ExportSidecarSchema.shape).toSorted(),
+      [
+        "artifactId",
+        "slug",
+        "revisionSha",
+        "artifactType",
+        "renderer",
+        "verdict",
+        "format",
+        "exportedAt",
+      ].toSorted(),
     );
+    expect(sidecar).not.toHaveProperty("renderFormat");
 
     expect(JSON.stringify(sidecar)).toBe(
       JSON.stringify({

@@ -229,3 +229,16 @@ export function validExportResult() {
     },
   };
 }
+
+export function validRenderExportResult() {
+  const source = validExportResult();
+  return {
+    ...source,
+    format: "render" as const,
+    sidecar: {
+      ...source.sidecar,
+      format: "render" as const,
+      renderFormat: "webp" as const,
+    },
+  };
+}

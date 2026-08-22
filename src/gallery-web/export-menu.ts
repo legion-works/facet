@@ -7,6 +7,7 @@ import {
   sourceFilename,
   type GalleryExportState,
 } from "./export";
+import { mediaTypeForEvidenceImage } from "../shared/evidence-image";
 
 export interface GalleryExportMenuOptions {
   readonly document: Document;
@@ -80,7 +81,12 @@ export function installGalleryExportMenu(
   });
   render?.addEventListener("click", () => {
     if (state?.renderBytes == null) return;
-    downloadBlob(document, renderFilename(state), state.renderBytes, "image/png");
+    downloadBlob(
+      document,
+      renderFilename(state),
+      state.renderBytes,
+      mediaTypeForEvidenceImage(state.renderFormat ?? "png"),
+    );
   });
   sidecar?.addEventListener("click", () => {
     if (state === null) return;

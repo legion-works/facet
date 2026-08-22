@@ -7,6 +7,11 @@ import {
   type ExportResult,
 } from "../shared/contracts/commands";
 import type { Artifact, Revision } from "../shared/contracts/artifact";
+import {
+  mediaTypeForEvidenceImage,
+  sniffEvidenceImageFormat,
+  type EvidenceImageFormat,
+} from "../shared/evidence-image";
 import { buildExportSidecar } from "../shared/export";
 import { FacetError } from "../shared/errors/facet-error";
 import { now } from "../shared/util/time";
@@ -105,7 +110,12 @@ export function readStoredRenderEvidence(input: {
   readonly repository: ArtifactRepository;
   readonly artifact: Artifact;
   readonly revision: Revision;
-}): { bytes: Uint8Array; verdict: ReturnType<typeof verdictFromStoredRun> } {
+}): {
+  bytes: Uint8Array;
+  format: EvidenceImageFormat;
+  mediaType: ReturnType<typeof mediaTypeForEvidenceImage>;
+  verdict: ReturnType<typeof verdictFromStoredRun>;
+} {
   const run = input.repository.listRenderRuns({ revisionId: input.revision.id, tier: 1 })[0];
   if (run === undefined || run.screenshotPath === null) {
     throw evidenceUnavailable(input.artifact, input.revision);
@@ -118,8 +128,13 @@ export function readStoredRenderEvidence(input: {
       input.artifact,
       input.revision,
     );
+    const bytes = new Uint8Array(readFileSync(screenshotPath));
+    // File bytes are authoritative because pre-v9 rows have no stored format.
+    const format = sniffEvidenceImageFormat(bytes) ?? run.screenshotFormat ?? "png";
     return {
-      bytes: new Uint8Array(readFileSync(screenshotPath)),
+      bytes,
+      format,
+      mediaType: mediaTypeForEvidenceImage(format),
       verdict: verdictFromStoredRun(input.revision, run),
     };
   } catch (cause) {
@@ -195,6 +210,7 @@ export function exportStoredRender(input: {
       renderer: revision.renderer,
       verdict: evidence.verdict,
       format: "render",
+      renderFormat: evidence.format,
       exportedAt: input.exportedAt ?? now(),
     }),
   });

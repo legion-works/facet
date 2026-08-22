@@ -1,4 +1,5 @@
 import { buildExportSidecar, extensionForExport } from "../shared/export";
+import type { EvidenceImageFormat } from "../shared/evidence-image";
 import type { ArtifactType } from "../shared/contracts/artifact-types";
 import type { Renderer } from "../shared/contracts/artifact";
 import type { ExportSidecar } from "../shared/contracts/commands/results";
@@ -14,6 +15,7 @@ export interface GalleryExportState {
   readonly sourceBytes: Uint8Array;
   readonly verdict: Verdict | null;
   readonly renderBytes: Uint8Array | null;
+  readonly renderFormat: EvidenceImageFormat | null;
 }
 
 export interface DownloadBlobUrlRuntime {
@@ -55,16 +57,19 @@ export function exportMenuStateFrom(
     | "verdict"
   >,
   renderBytes: Uint8Array | null,
+  renderFormat: EvidenceImageFormat | null,
 ): GalleryExportState {
-  return { ...revision, renderBytes };
+  return { ...revision, renderBytes, renderFormat };
 }
 
 export function sourceFilename(state: Pick<GalleryExportState, "slug" | "artifactType">): string {
   return `${state.slug}${extensionForExport("source", state.artifactType)}`;
 }
 
-export function renderFilename(state: Pick<GalleryExportState, "slug" | "artifactType">): string {
-  return `${state.slug}${extensionForExport("render", state.artifactType)}`;
+export function renderFilename(
+  state: Pick<GalleryExportState, "slug" | "artifactType" | "renderFormat">,
+): string {
+  return `${state.slug}${extensionForExport("render", state.artifactType, state.renderFormat ?? "png")}`;
 }
 
 export function sidecarFilename(state: Pick<GalleryExportState, "slug">): string {

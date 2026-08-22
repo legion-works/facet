@@ -201,6 +201,7 @@ async function publishTsx(
 }
 
 const SENTINEL_CONSOLE = "facet-sentinel-evidence-9b1c";
+const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
 /**
  * Tier 1 runner that returns a verdict whose artifactId/revisionSha
@@ -249,7 +250,10 @@ function buildStubTier1(input: {
     mkdirSync(runDir, { recursive: true });
     const screenshotPath = input.withScreenshot === false ? null : join(runDir, "screenshot.png");
     if (screenshotPath !== null) {
-      const payload = input.sentinelInScreenshot === true ? SENTINEL_CONSOLE : "png-bytes";
+      const payload = new Uint8Array([
+        ...PNG_SIGNATURE,
+        ...(input.sentinelInScreenshot === true ? new TextEncoder().encode(SENTINEL_CONSOLE) : []),
+      ]);
       writeFileSyncCompat(screenshotPath, payload);
     }
     const consolePath = join(runDir, "console.txt");
@@ -280,7 +284,7 @@ function buildStubTier1(input: {
   };
 }
 
-function writeFileSyncCompat(path: string, content: string): void {
+function writeFileSyncCompat(path: string, content: string | Uint8Array): void {
   // Bun.write keeps the path in the parent's file system view (the
   // service resolves its own FACET_HOME); the same call is used by
   // both the test stub and the production runner so byte semantics

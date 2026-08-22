@@ -28,6 +28,7 @@ import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
 import type { VerdictObserved } from "../shared/contracts/validation";
 import type { ObservedCountKey } from "../shared/contracts/observed-counts";
+import type { EvidenceImageFormat } from "../shared/evidence-image";
 import {
   clampZoom,
   EMPTY_VIEW_STATE,
@@ -604,6 +605,7 @@ export interface RevisionFetchResult {
 
 interface GalleryEvidenceResponse {
   readonly bytes: Uint8Array | null;
+  readonly renderFormat: EvidenceImageFormat | null;
 }
 
 export interface SwapToRevisionDeps {
@@ -755,11 +757,16 @@ export async function fetchGalleryEvidence(
       "code" in body.error
         ? body.error.code
         : undefined;
-    if (code === "evidence_unavailable") return { bytes: null };
+    if (code === "evidence_unavailable") return { bytes: null, renderFormat: null };
     throw new Error(`Gallery evidence fetch failed (${response.status})`);
   }
   if (!response.ok) throw new Error(`Gallery evidence fetch failed (${response.status})`);
-  return { bytes: new Uint8Array(await response.arrayBuffer()) };
+  const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
+  const renderFormat =
+    mediaType === "image/png" ? "png" : mediaType === "image/webp" ? "webp" : null;
+  if (renderFormat === null)
+    throw new Error("Gallery evidence response has unsupported content type");
+  return { bytes: new Uint8Array(await response.arrayBuffer()), renderFormat };
 }
 
 function setGalleryTitle(document: Document, artifactTitle: string | null): void {
@@ -1149,6 +1156,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         verdict: source.verdict ?? null,
       },
       initialEvidence.bytes,
+      initialEvidence.renderFormat,
     ),
   );
   let displayedExportState = exportMenu!.getState();
@@ -1203,6 +1211,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
                 verdict: revision.verdict ?? null,
               },
               evidence.bytes,
+              evidence.renderFormat,
             ),
           );
           displayedExportState = exportMenu!.getState();

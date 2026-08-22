@@ -578,7 +578,7 @@ export function buildRouter(deps: RouterDeps): {
           });
           return new Response(evidence.bytes, {
             status: 200,
-            headers: { "content-type": "image/png", "cache-control": "no-store" },
+            headers: { "content-type": evidence.mediaType, "cache-control": "no-store" },
           });
         } catch (error) {
           if (error instanceof FacetError && error.code === "evidence_unavailable") {

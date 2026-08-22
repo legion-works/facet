@@ -33,6 +33,7 @@ import {
   validCreateResult,
   validExportRequest,
   validExportResult,
+  validRenderExportResult,
   validInstantiateRequest,
   validInstantiateResult,
   validListRequest,
@@ -185,6 +186,24 @@ describe("command round-trips", () => {
   test("export request and result round-trip", () => {
     expect(ExportRequestSchema.parse(validExportRequest())).toEqual(validExportRequest());
     expect(ExportResultSchema.parse(validExportResult())).toEqual(validExportResult());
+    expect(ExportResultSchema.parse(validRenderExportResult())).toEqual(validRenderExportResult());
+  });
+
+  test("render export sidecars require renderFormat and source export sidecars omit it", () => {
+    const render = validRenderExportResult();
+    expect(
+      ExportResultSchema.safeParse({
+        ...render,
+        sidecar: { ...render.sidecar, renderFormat: undefined },
+      }).success,
+    ).toBe(false);
+    const source = validExportResult();
+    expect(
+      ExportResultSchema.safeParse({
+        ...source,
+        sidecar: { ...source.sidecar, renderFormat: "png" },
+      }).success,
+    ).toBe(false);
   });
 
   test("export request defaults format to source and accepts an optional revisionSha", () => {

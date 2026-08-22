@@ -74,7 +74,7 @@ export const TIER1_SCREENSHOT_WEBP_QUALITY = 82;
 /** Animated evidence samples four frames at fixed browser-time intervals. */
 export const TIER1_ANIMATION_FRAME_COUNT = 4;
 export const TIER1_ANIMATION_FRAME_INTERVAL_MS = 150;
-export const TIER1_ANIMATION_WEBP_QUALITIES = [82, 70, 55] as const;
+export const TIER1_ANIMATION_WEBP_QUALITIES = [TIER1_SCREENSHOT_WEBP_QUALITY, 70, 55] as const;
 
-/** Encoded evidence bytes may not exceed this cap. */
+/** Whole-artifact evidence above this cap after scaling and quality fallback is screenshot_unavailable. */
 export const TIER1_SCREENSHOT_CAP_BYTES = 8 * 1024 * 1024;

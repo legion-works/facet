@@ -247,7 +247,6 @@ async function runTier1Attempt(
   const runEvidenceDir = ensureOwnerOnlyDirectory(
     join(evidenceRoot, "tier1", input.revisionSha, runId),
   );
-  const screenshotPath = join(runEvidenceDir, "screenshot.webp");
   const consolePath = join(runEvidenceDir, "console.txt");
   const observationPath = join(runEvidenceDir, "protocol-observation.json");
 
@@ -363,7 +362,7 @@ async function runTier1Attempt(
       target,
       {
         input,
-        screenshotPath,
+        screenshotDir: runEvidenceDir,
         consolePath,
         observationPath,
         firstProtocolObservation: firstObservation.protocol,
@@ -751,19 +750,7 @@ interface EvidenceCapture {
   readonly consolePath: string;
 }
 
-/**
- * Capture screenshot + bounded console summary + protocol observation
- * to the per-run evidence directory. Always succeeds at writing the
- * console summary + observation JSON (pure filesystem IO); the screenshot
- * may fail when the browser transport is wedged or the page is closed
- * — those failures land as `null` rather than throwing so the verdict
- * can still be recorded.
- *
- * Determinism: emulate prefers-reduced-motion + await
- * `document.fonts.ready` BEFORE `Page.captureScreenshot`. Without the
- * two, two runs over the same artifact differ byte-for-byte in font
- * loading order + animation timing (perf-spike finding).
- */
+/** Apply the pinned Tier 1 viewport before artifact observation. */
 export async function configureTier1Viewport(session: VerifierCdpSession): Promise<void> {
   return configureTier1ViewportBounds(session, {
     width: TIER1_VIEWPORT_WIDTH,
@@ -1043,7 +1030,7 @@ async function captureEvidence(
   target: VerifierTarget,
   options: {
     readonly input: Tier1Input;
-    readonly screenshotPath: string;
+    readonly screenshotDir: string;
     readonly consolePath: string;
     readonly observationPath: string;
     readonly firstProtocolObservation: ProtocolObservation;
@@ -1062,8 +1049,8 @@ async function captureEvidence(
       target.session,
       options.executionContextId,
     );
-    // Static evidence resolves reduced motion deterministically; animated
-    // evidence restores no-preference after the verdict has been derived.
+    // Animated evidence restores no-preference so captured frames reflect live motion;
+    // static evidence keeps reduced motion for determinism.
     await target.session.send("Emulation.setEmulatedMedia", {
       features: [{ name: "prefers-reduced-motion", value: "reduce" }],
     });
@@ -1103,8 +1090,8 @@ async function captureEvidence(
     screenshotError = capture.screenshotError;
     const screenshot = capture.screenshot;
     if (screenshot !== null) {
-      writeFileSync(options.screenshotPath, screenshot.bytes);
-      screenshotPath = options.screenshotPath;
+      screenshotPath = join(options.screenshotDir, `screenshot.${screenshot.format}`);
+      writeFileSync(screenshotPath, screenshot.bytes);
       screenshotFormat = screenshot.format;
     }
   } catch (error) {

@@ -1,6 +1,7 @@
 import type { ArtifactType } from "./contracts/artifact-types";
 import type { ExportFormat, ExportSidecar } from "./contracts/commands";
 import { ExportSidecarSchema } from "./contracts/commands/results";
+import { extensionForEvidenceImage, type EvidenceImageFormat } from "./evidence-image";
 
 const SOURCE_EXTENSION_BY_ARTIFACT = {
   markdown: ".md",
@@ -14,8 +15,11 @@ const SOURCE_EXTENSION_BY_ARTIFACT = {
 export function extensionForExport(
   format: ExportFormat,
   artifactType: ArtifactType,
-): ".md" | ".svg" | ".json" | ".html" | ".tsx" | ".png" {
-  return format === "render" ? ".png" : SOURCE_EXTENSION_BY_ARTIFACT[artifactType];
+  renderFormat?: EvidenceImageFormat,
+): ".md" | ".svg" | ".json" | ".html" | ".tsx" | ".png" | ".webp" {
+  return format === "render"
+    ? extensionForEvidenceImage(renderFormat ?? "png")
+    : SOURCE_EXTENSION_BY_ARTIFACT[artifactType];
 }
 
 export function buildExportSidecar(input: ExportSidecar): ExportSidecar {

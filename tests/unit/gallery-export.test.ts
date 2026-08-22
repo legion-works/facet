@@ -49,6 +49,7 @@ function state(overrides: Partial<GalleryExportState> = {}): GalleryExportState 
     sourceBytes: new Uint8Array([35, 32, 101, 120, 97, 109, 112, 108, 101]),
     verdict,
     renderBytes: new Uint8Array([137, 80, 78, 71]),
+    renderFormat: "png",
     ...overrides,
   };
 }
@@ -74,13 +75,70 @@ describe("gallery export helpers", () => {
     expect(sourceFilename(state({ artifactType: "tsx" }))).toBe("example-slug.tsx");
   });
 
+  test("uses the evidence response media type for WebP render downloads", () => {
+    const { document, window } = exportMenuDom();
+    let blob: Blob | undefined;
+    setDownloadBlobUrlForTests({
+      createObjectURL: (next) => {
+        blob = next;
+        return "blob:gallery-webp";
+      },
+      revokeObjectURL: () => {},
+    });
+    try {
+      const controller = installGalleryExportMenu({ document, isExpired: () => false });
+      const webpState: GalleryExportState = {
+        ...state({ renderBytes: new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]) }),
+        renderFormat: "webp",
+      };
+      controller.setState(webpState);
+      (document.getElementById("facet-export-render") as HTMLButtonElement).dispatchEvent(
+        new window.Event("click"),
+      );
+      expect(renderFilename(webpState)).toBe("example-slug.webp");
+      expect(blob?.type).toBe("image/webp");
+    } finally {
+      setDownloadBlobUrlForTests(undefined);
+    }
+  });
+
+  test("reads the evidence response content type", async () => {
+    const handoff = {
+      authorization: "Bearer token",
+      artifactId: "artifact-1",
+      revisionSha,
+      lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
+      headers: new Headers(),
+    };
+    const evidence = await fetchGalleryEvidence(
+      "http://127.0.0.1:43123",
+      handoff,
+      revisionSha,
+      (async () =>
+        new Response(new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80]), {
+          headers: { "content-type": "image/webp" },
+        })) as unknown as typeof fetch,
+    );
+    expect(evidence).toMatchObject({ renderFormat: "webp" });
+  });
+
   test("builds a schema-parsed source sidecar and preserves optional verdict fields", () => {
     const result = buildGallerySidecar(state(), "2026-08-17T01:02:03.000Z");
     expect(result).not.toBeNull();
     const parsed = ExportSidecarSchema.parse(result);
     expect(Object.keys(parsed).toSorted()).toEqual(
-      Object.keys(ExportSidecarSchema.shape).toSorted(),
+      [
+        "artifactId",
+        "slug",
+        "revisionSha",
+        "artifactType",
+        "renderer",
+        "verdict",
+        "format",
+        "exportedAt",
+      ].toSorted(),
     );
+    expect(parsed).not.toHaveProperty("renderFormat");
     expect(parsed.format).toBe("source");
     expect(parsed.verdict).toEqual(verdict);
   });

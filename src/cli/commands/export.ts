@@ -80,7 +80,11 @@ export function resolveExportPaths(
   outFlag: string | undefined,
   cwd: string,
 ): ExportPaths {
-  const extension = extensionForExport(result.format, result.sidecar.artifactType);
+  const extension = extensionForExport(
+    result.format,
+    result.sidecar.artifactType,
+    result.sidecar.renderFormat,
+  );
   const artifactPath =
     outFlag === undefined
       ? resolve(cwd, `${derivedSlug(result)}-${result.sidecar.revisionSha.slice(0, 7)}${extension}`)

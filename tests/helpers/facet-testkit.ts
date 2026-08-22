@@ -25,6 +25,7 @@ import {
 import { startFacetService, type RunningService } from "../../src/service/server";
 import { openDatabase } from "../../src/service/store/database";
 import { ArtifactRepository } from "../../src/service/store/repository";
+import type { EvidenceImageFormat } from "../../src/shared/evidence-image";
 import { ACCEPTANCE_TEST_BUDGET_MS } from "../../src/shared/config/limits";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "./stub-tier0-runner";
@@ -336,7 +337,10 @@ export async function readStoredRenderRunsForTests(input: {
   readonly revisionSha: string;
   readonly productionTier0?: boolean;
 }): Promise<
-  readonly { readonly compiledPath?: string | null; readonly screenshotFormat?: string | null }[]
+  readonly {
+    readonly compiledPath?: string | null;
+    readonly screenshotFormat?: EvidenceImageFormat | null;
+  }[]
 > {
   const current = await ensureEnv(undefined, 0, input.productionTier0 ?? false);
   const db = openDatabase({ databasePath: join(current.envDir, "facet.sqlite") });

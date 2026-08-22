@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { Tier1ResultSchema, VerdictSchema } from "../validation";
 import { ArtifactTypeSchema, RendererSchema } from "../artifact";
+import { EvidenceImageFormatSchema } from "../../evidence-image";
 import { ExportFormatSchema } from "./requests";
 
 import {
@@ -117,16 +118,26 @@ export const PinResultSchema = BaseResultSchema.extend({
 });
 export type PinResult = z.infer<typeof PinResultSchema>;
 
-export const ExportSidecarSchema = z.object({
-  artifactId: z.string().min(1),
-  slug: z.string().min(1),
-  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
-  artifactType: ArtifactTypeSchema,
-  renderer: RendererSchema,
-  verdict: VerdictSchema,
-  format: ExportFormatSchema,
-  exportedAt: z.string().datetime({ offset: true }),
-});
+export const ExportSidecarSchema = z
+  .object({
+    artifactId: z.string().min(1),
+    slug: z.string().min(1),
+    revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
+    artifactType: ArtifactTypeSchema,
+    renderer: RendererSchema,
+    verdict: VerdictSchema,
+    format: ExportFormatSchema,
+    renderFormat: EvidenceImageFormatSchema.optional(),
+    exportedAt: z.string().datetime({ offset: true }),
+  })
+  .superRefine((value, context) => {
+    if (value.format === "render" && value.renderFormat === undefined) {
+      context.addIssue({ code: "custom", message: "render exports require renderFormat" });
+    }
+    if (value.format === "source" && value.renderFormat !== undefined) {
+      context.addIssue({ code: "custom", message: "source exports must omit renderFormat" });
+    }
+  });
 export type ExportSidecar = z.infer<typeof ExportSidecarSchema>;
 
 function isBase64(value: string): boolean {
