@@ -1001,6 +1001,7 @@ export interface GalleryRuntime {
   readonly history: History;
   readonly HTMLElement: typeof HTMLElement;
   readonly fetch: typeof fetch;
+  readonly currentResolvedTheme?: () => ResolvedGalleryTheme;
 }
 
 function browserGalleryRuntime(): GalleryRuntime {
@@ -1009,6 +1010,7 @@ function browserGalleryRuntime(): GalleryRuntime {
 
 export async function startGallery(runtime = browserGalleryRuntime()): Promise<void> {
   const { window, document, history, HTMLElement, fetch } = runtime;
+  const currentResolvedTheme = runtime.currentResolvedTheme ?? (() => "dark" as const);
   let expired = false;
   const updateGalleryStatus = (status: string): void => {
     if (!expired) setGalleryStatus(document, status);
@@ -1122,7 +1124,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   let current = createArtifactFrame({
     artifactType: source.artifactType,
     renderer: source.renderer,
-    theme: "dark",
+    theme: currentResolvedTheme(),
     frameUrl,
     dom,
   });
@@ -1135,7 +1137,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       artifactType: source.artifactType,
       renderer: source.renderer,
       bytes: source.bytes,
-      theme: "dark",
+      theme: currentResolvedTheme(),
       ...(source.execution === undefined ? {} : { execution: source.execution }),
     },
     DEFAULT_READY_TIMEOUT_MS,
@@ -1179,7 +1181,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       {
         dom,
         host,
-        theme: "dark",
+        theme: currentResolvedTheme(),
         frameUrl,
         fetchRevision: (_artifactId, revisionSha) =>
           fetchGallerySource(baseUrl, handoff, revisionSha, fetch),

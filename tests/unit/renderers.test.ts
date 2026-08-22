@@ -481,6 +481,15 @@ describe("svg renderer — sanitize BEFORE import", () => {
   });
 });
 
+describe("Mermaid renderer", () => {
+  test("light Mermaid initialization disables dark mode in its fresh frame", () => {
+    expect(mermaid.mermaidInitializeConfig("light")).toMatchObject({
+      theme: "default",
+      darkMode: false,
+    });
+  });
+});
+
 describe("chart renderer — loader disabled, zero marks is an error", () => {
   test("Facet defaults fill missing config while authored config wins", () => {
     const source = {
@@ -509,13 +518,6 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
     };
     expect(defaults.config.background).toBe("#151823");
     expect(defaults.config.style["guide-label"]).toEqual({ fill: "#c8d3f5" });
-  });
-
-  test("light Mermaid initialization disables dark mode in its fresh frame", () => {
-    expect(mermaid.mermaidInitializeConfig("light")).toMatchObject({
-      theme: "default",
-      darkMode: false,
-    });
   });
 
   test("countVegaMarks counts role-mark data groups, not axes", () => {

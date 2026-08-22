@@ -567,6 +567,30 @@ describe("gallery shell startup", () => {
     expect(harness.requests.some(({ url }) => url.endsWith("/api/v1/gallery/release"))).toBe(false);
   });
 
+  test("threads the shell resolved theme through initial and revision-swap frames", async () => {
+    const harness = createRuntime();
+    (
+      harness.runtime as unknown as {
+        currentResolvedTheme: () => "dark" | "light";
+      }
+    ).currentResolvedTheme = () => "light";
+
+    await startGallery(harness.runtime);
+
+    const initialFrame = harness.frames[0]!;
+    expect(new URL(initialFrame.getAttribute("src")!).searchParams.get("theme")).toBe("light");
+    expect(initialFrame.receivedPayloads).toEqual([expect.objectContaining({ theme: "light" })]);
+
+    harness.emitCommitted({ revisionSha: "b2".padEnd(64, "b"), revisionNumber: 2 });
+    await waitFor(
+      () => harness.frames.length === 2 && harness.frames[1]!.receivedPayloads.length === 1,
+    );
+
+    const swappedFrame = harness.frames[1]!;
+    expect(new URL(swappedFrame.getAttribute("src")!).searchParams.get("theme")).toBe("light");
+    expect(swappedFrame.receivedPayloads).toEqual([expect.objectContaining({ theme: "light" })]);
+  });
+
   test("keeps render disabled without stored evidence and enables it after a completed revision swap", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);
