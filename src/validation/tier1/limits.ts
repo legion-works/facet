@@ -62,5 +62,14 @@ export const TIER1_SCREENSHOT_CAPTURE_ATTEMPTS = 2;
 export const TIER1_VIEWPORT_WIDTH = 1280;
 export const TIER1_VIEWPORT_HEIGHT = 800;
 
-/** Full-page evidence above this size falls back to the viewport capture. */
+/** Maximum CSS axis length for a whole-artifact evidence image. */
+export const TIER1_SCREENSHOT_MAX_AXIS_PX = 4096;
+
+/** Maximum decoded pixel count for a whole-artifact evidence image. */
+export const TIER1_SCREENSHOT_MAX_PIXELS = 8_388_608;
+
+/** Static evidence uses WebP at this quality. */
+export const TIER1_SCREENSHOT_WEBP_QUALITY = 82;
+
+/** Encoded evidence bytes may not exceed this cap. */
 export const TIER1_SCREENSHOT_CAP_BYTES = 8 * 1024 * 1024;

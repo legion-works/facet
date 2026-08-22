@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  boundCaptureSize,
   captureScreenshotWithRetry,
   captureScreenshotWithFallback,
   configureTier1Viewport,
@@ -8,6 +9,8 @@ import {
 import { Tier1ResultSchema } from "../../src/shared/contracts/validation";
 import {
   TIER1_SCREENSHOT_CAP_BYTES,
+  TIER1_SCREENSHOT_MAX_AXIS_PX,
+  TIER1_SCREENSHOT_MAX_PIXELS,
   TIER1_VIEWPORT_HEIGHT,
   TIER1_VIEWPORT_WIDTH,
 } from "../../src/validation/tier1/limits";
@@ -149,14 +152,26 @@ describe("Tier 1 screenshot evidence", () => {
     expect(calls[0]!.startsWith("Emulation.setDeviceMetricsOverride")).toBe(true);
   });
 
-  test("falls back to viewport-only capture when the full screenshot exceeds the cap", async () => {
+  test("bounds whole-artifact capture dimensions without clipping a fitting artifact", () => {
+    expect(boundCaptureSize({ width: 3000, height: 700 })).toEqual({
+      width: 3000,
+      height: 700,
+      scale: 1,
+    });
+
+    const bounded = boundCaptureSize({ width: 9000, height: 9000 });
+    expect(bounded.width).toBeLessThanOrEqual(TIER1_SCREENSHOT_MAX_AXIS_PX);
+    expect(bounded.height).toBeLessThanOrEqual(TIER1_SCREENSHOT_MAX_AXIS_PX);
+    expect(bounded.width * bounded.height).toBeLessThanOrEqual(TIER1_SCREENSHOT_MAX_PIXELS);
+  });
+
+  test("records an unavailable screenshot when a whole capture exceeds the cap", async () => {
     const oversized = "A".repeat(Math.ceil((TIER1_SCREENSHOT_CAP_BYTES * 4) / 3) + 5);
-    const viewportOnly = Buffer.from("viewport screenshot").toString("base64");
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
     const session = {
       send: async <T = unknown>(method: string, params?: Record<string, unknown>) => {
         calls.push(params === undefined ? { method } : { method, params });
-        return { data: calls.length === 1 ? oversized : viewportOnly } as T;
+        return { data: oversized } as T;
       },
       on: () => {},
       off: () => {},
@@ -172,18 +187,18 @@ describe("Tier 1 screenshot evidence", () => {
       if (value === oversized) decodedOversizedPayload = true;
       return decode(value, encoding);
     };
-    let result: Buffer | null;
+    let result: Awaited<ReturnType<typeof captureScreenshotWithFallback>>;
     try {
       result = await captureScreenshotWithFallback(session);
     } finally {
       bufferSpy.from = decode;
     }
 
-    expect(result).toEqual(Buffer.from("viewport screenshot"));
+    expect(result).toBeNull();
     expect(decodedOversizedPayload).toBe(false);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     expect(calls[0]?.params?.captureBeyondViewport).toBe(true);
-    expect(calls[1]?.params?.captureBeyondViewport).toBe(false);
+    expect(calls[0]?.params).toMatchObject({ format: "webp", quality: 82 });
   });
 
   test("retries a bounded screenshot capture before recording it as unavailable", async () => {
@@ -200,12 +215,15 @@ describe("Tier 1 screenshot evidence", () => {
       capture: async () => {
         attempts += 1;
         if (attempts === 1) throw new Error("first capture failed");
-        return Buffer.from("recovered screenshot");
+        return { bytes: Buffer.from("recovered screenshot"), format: "webp" };
       },
     });
 
     expect(attempts).toBe(2);
-    expect(result.screenshot).toEqual(Buffer.from("recovered screenshot"));
+    expect(result.screenshot).toEqual({
+      bytes: Buffer.from("recovered screenshot"),
+      format: "webp",
+    });
     expect(result.screenshotError).toBeNull();
   });
 
@@ -220,7 +238,7 @@ describe("Tier 1 screenshot evidence", () => {
     const result = await captureScreenshotWithRetry(session, {
       attempts: 2,
       timeoutMs: 25,
-      capture: async () => new Promise<Buffer>(() => {}),
+      capture: async () => new Promise<never>(() => {}),
     });
 
     expect(performance.now() - startedAt).toBeLessThan(200);

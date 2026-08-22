@@ -147,7 +147,10 @@ async function startAcceptanceService(
       : createTier1RunnerForTests({
           captureScreenshot:
             screenshotMode === "deterministic"
-              ? async () => Buffer.from("facet-test-screenshot")
+              ? async () => ({
+                  bytes: Buffer.from("facet-test-screenshot"),
+                  format: "webp" as const,
+                })
               : async () => {
                   throw new Error("forced screenshot failure");
                 },

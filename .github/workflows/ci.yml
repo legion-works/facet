@@ -318,6 +318,7 @@ jobs:
           - tsx-runtime-egress.test.ts
           - tsx-screenshot-evidence.test.ts
           - tsx-static.test.ts
+          - tier1-whole-artifact-webp.test.ts
     name: acceptance-tier1 (${{ matrix.test }})
     steps:
       # v4.2.2 — 11bd71901bbe5b1630ceea73d27597364c9af683

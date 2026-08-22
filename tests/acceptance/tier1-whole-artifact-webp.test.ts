@@ -1,0 +1,52 @@
+import { existsSync, readFileSync } from "node:fs";
+
+import { expect, test } from "bun:test";
+import sharp from "sharp";
+
+import { publishFixture } from "../helpers/facet-testkit";
+
+const FIXTURE_PATH = `${import.meta.dir}/../fixtures/tsx/animated-wide-evidence.tsx`;
+
+function includesColor(
+  pixels: Buffer,
+  channels: number,
+  red: number,
+  green: number,
+  blue: number,
+): boolean {
+  for (let offset = 0; offset < pixels.length; offset += channels) {
+    if (
+      Math.abs(pixels[offset]! - red) <= 12 &&
+      Math.abs(pixels[offset + 1]! - green) <= 12 &&
+      Math.abs(pixels[offset + 2]! - blue) <= 12
+    )
+      return true;
+  }
+  return false;
+}
+
+test("Tier 1 stores bounded whole-artifact WebP evidence without clipping either edge", async () => {
+  const published = await publishFixture({
+    fixturePath: FIXTURE_PATH,
+    artifactType: "tsx",
+    execution: "static",
+    slug: "tier1-whole-artifact-webp",
+    productionTier0: true,
+  });
+  expect(published.tier1Status).toBe("ok");
+  expect(published.tier1ScreenshotPath).not.toBeNull();
+  const screenshotPath = published.tier1ScreenshotPath!;
+  expect(existsSync(screenshotPath)).toBe(true);
+
+  const image = sharp(readFileSync(screenshotPath), { animated: true });
+  const metadata = await image.metadata();
+  const decoded = await image.raw().toBuffer({ resolveWithObject: true });
+
+  expect(metadata.format).toBe("webp");
+  expect(metadata.width).toBeGreaterThan(1280);
+  expect(metadata.width).toBeLessThanOrEqual(4096);
+  expect(metadata.height).toBeLessThanOrEqual(4096);
+  expect(decoded.info.width * decoded.info.height).toBeLessThanOrEqual(8_388_608);
+  expect(includesColor(decoded.data, decoded.info.channels, 255, 0, 0)).toBe(true);
+  expect(includesColor(decoded.data, decoded.info.channels, 0, 0, 255)).toBe(true);
+}, 90_000);

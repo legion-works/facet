@@ -41,6 +41,7 @@ import {
   type Tier1Input,
   type Tier1Result,
 } from "../../shared/contracts/validation";
+import type { EvidenceImageFormat } from "../../shared/evidence-image";
 import {
   HTML_OBSERVED_COUNT_KEYS,
   type ObservedCountKey,
@@ -66,6 +67,9 @@ import {
   TIER1_SCREENSHOT_CAPTURE_ATTEMPTS,
   TIER1_SCREENSHOT_CAP_BYTES,
   TIER1_SCREENSHOT_CAPTURE_TIMEOUT_MS,
+  TIER1_SCREENSHOT_MAX_AXIS_PX,
+  TIER1_SCREENSHOT_MAX_PIXELS,
+  TIER1_SCREENSHOT_WEBP_QUALITY,
   TIER1_VIEWPORT_HEIGHT,
   TIER1_VIEWPORT_WIDTH,
   TSX_STABILITY_WINDOW_MS,
@@ -114,7 +118,18 @@ interface ShimCapture {
   readonly renderComplete: boolean;
 }
 
-type ScreenshotCapture = (session: VerifierCdpSession) => Promise<Buffer | null>;
+export interface CapturedEvidenceImage {
+  readonly bytes: Buffer;
+  readonly format: EvidenceImageFormat;
+}
+
+export interface ArtifactCaptureBounds {
+  readonly width: number;
+  readonly height: number;
+  readonly scale: number;
+}
+
+type ScreenshotCapture = (session: VerifierCdpSession) => Promise<CapturedEvidenceImage | null>;
 
 /** Test-only hook for pinning the screenshot transport without changing verifier logic. */
 export interface Tier1RunnerTestHooks {
@@ -215,7 +230,7 @@ async function runTier1Attempt(
   const runEvidenceDir = ensureOwnerOnlyDirectory(
     join(evidenceRoot, "tier1", input.revisionSha, runId),
   );
-  const screenshotPath = join(runEvidenceDir, "screenshot.png");
+  const screenshotPath = join(runEvidenceDir, "screenshot.webp");
   const consolePath = join(runEvidenceDir, "console.txt");
   const observationPath = join(runEvidenceDir, "protocol-observation.json");
 
@@ -336,6 +351,7 @@ async function runTier1Attempt(
         firstProtocolObservation: firstObservation.protocol,
         protocolObservation,
         pageShim: shim.pageShim,
+        executionContextId: isolated.executionContextId,
       },
       hooks.captureScreenshot,
     );
@@ -361,6 +377,9 @@ async function runTier1Attempt(
         discriminativeErrors: observed.discriminativeErrors,
       },
       screenshotPath: captured.screenshotPath,
+      ...(captured.screenshotFormat === null
+        ? {}
+        : { screenshotFormat: captured.screenshotFormat }),
       consolePath: captured.consolePath,
       ...(status.startsWith("partial:") && captured.screenshotError !== null
         ? { screenshotError: captured.screenshotError }
@@ -702,6 +721,7 @@ async function waitForStabilityObservation(
 
 interface EvidenceCapture {
   readonly screenshotPath: string | null;
+  readonly screenshotFormat: EvidenceImageFormat | null;
   readonly screenshotError: ScreenshotError | null;
   /**
    * Console summary path. The bounded console write is pure
@@ -727,40 +747,94 @@ interface EvidenceCapture {
  * loading order + animation timing (perf-spike finding).
  */
 export async function configureTier1Viewport(session: VerifierCdpSession): Promise<void> {
-  await session.send("Emulation.setDeviceMetricsOverride", {
+  return configureTier1ViewportBounds(session, {
     width: TIER1_VIEWPORT_WIDTH,
     height: TIER1_VIEWPORT_HEIGHT,
+    scale: 1,
+  });
+}
+
+async function configureTier1ViewportBounds(
+  session: VerifierCdpSession,
+  bounds: ArtifactCaptureBounds,
+): Promise<void> {
+  await session.send("Emulation.setDeviceMetricsOverride", {
+    width: bounds.width,
+    height: bounds.height,
     deviceScaleFactor: 1,
     mobile: false,
   });
 }
 
+export function boundCaptureSize(input: {
+  readonly width: number;
+  readonly height: number;
+}): ArtifactCaptureBounds {
+  if (
+    !Number.isFinite(input.width) ||
+    !Number.isFinite(input.height) ||
+    input.width <= 0 ||
+    input.height <= 0
+  )
+    throw new Error("artifact capture bounds are invalid");
+  const scale = Math.min(
+    1,
+    TIER1_SCREENSHOT_MAX_AXIS_PX / input.width,
+    TIER1_SCREENSHOT_MAX_AXIS_PX / input.height,
+    Math.sqrt(TIER1_SCREENSHOT_MAX_PIXELS / (input.width * input.height)),
+  );
+  return {
+    width: Math.max(1, Math.floor(input.width * scale)),
+    height: Math.max(1, Math.floor(input.height * scale)),
+    scale,
+  };
+}
+
+export async function measureArtifactCaptureBounds(
+  session: VerifierCdpSession,
+  executionContextId: number,
+): Promise<ArtifactCaptureBounds> {
+  const measured = (await session.send("Runtime.evaluate", {
+    contextId: executionContextId,
+    returnByValue: true,
+    expression: [
+      "(function(){",
+      "  var container=document.getElementById('artifact');",
+      "  if(!container) return null;",
+      "  var containerRect=container.getBoundingClientRect();",
+      "  var child=container.firstElementChild;",
+      "  var childRect=child ? child.getBoundingClientRect() : containerRect;",
+      "  return {",
+      "    width:Math.max(container.scrollWidth,childRect.right-containerRect.left),",
+      "    height:Math.max(container.scrollHeight,childRect.bottom-containerRect.top)",
+      "  };",
+      "})()",
+    ].join("\n"),
+  })) as { result: { value?: { width?: unknown; height?: unknown } | null } };
+  const value = measured.result.value;
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value.width !== "number" ||
+    typeof value.height !== "number"
+  )
+    throw new Error("artifact capture bounds are unavailable");
+  return boundCaptureSize({ width: value.width, height: value.height });
+}
+
 export async function captureScreenshotWithFallback(
   session: VerifierCdpSession,
-): Promise<Buffer | null> {
-  const capture = async (
-    captureBeyondViewport: boolean,
-  ): Promise<{ readonly screenshot: Buffer | null; readonly oversized: boolean }> => {
-    const shot = (await session.send("Page.captureScreenshot", {
-      format: "png",
-      captureBeyondViewport,
-    })) as { data?: string };
-    if (typeof shot.data !== "string" || shot.data.length === 0)
-      return { screenshot: null, oversized: false };
-    if (shot.data.length > (TIER1_SCREENSHOT_CAP_BYTES * 4) / 3 + 4)
-      return { screenshot: null, oversized: true };
-    return { screenshot: Buffer.from(shot.data, "base64"), oversized: false };
-  };
-
-  const fullScreenshot = await capture(true);
-  if (
-    !fullScreenshot.oversized &&
-    (fullScreenshot.screenshot === null ||
-      fullScreenshot.screenshot.byteLength <= TIER1_SCREENSHOT_CAP_BYTES)
-  ) {
-    return fullScreenshot.screenshot;
-  }
-  return (await capture(false)).screenshot;
+): Promise<CapturedEvidenceImage | null> {
+  const shot = (await session.send("Page.captureScreenshot", {
+    format: "webp",
+    quality: TIER1_SCREENSHOT_WEBP_QUALITY,
+    captureBeyondViewport: true,
+  })) as { data?: string };
+  if (typeof shot.data !== "string" || shot.data.length === 0) return null;
+  if (shot.data.length > (TIER1_SCREENSHOT_CAP_BYTES * 4) / 3 + 4) return null;
+  const bytes = Buffer.from(shot.data, "base64");
+  if (bytes.byteLength > TIER1_SCREENSHOT_CAP_BYTES) return null;
+  return { bytes, format: "webp" };
 }
 
 interface ScreenshotRetryOptions {
@@ -795,7 +869,7 @@ export async function captureScreenshotWithRetry(
   session: VerifierCdpSession,
   options: ScreenshotRetryOptions = {},
 ): Promise<{
-  readonly screenshot: Buffer | null;
+  readonly screenshot: CapturedEvidenceImage | null;
   readonly screenshotError: ScreenshotError | null;
 }> {
   const attempts = options.attempts ?? TIER1_SCREENSHOT_CAPTURE_ATTEMPTS;
@@ -835,10 +909,12 @@ async function captureEvidence(
     readonly firstProtocolObservation: ProtocolObservation;
     readonly protocolObservation: ProtocolObservation;
     readonly pageShim: PageShim | null;
+    readonly executionContextId: number;
   },
   captureScreenshot?: ScreenshotCapture,
 ): Promise<EvidenceCapture> {
   let screenshotPath: string | null = null;
+  let screenshotFormat: EvidenceImageFormat | null = null;
   let screenshotError: ScreenshotError | null = null;
   try {
     // Emulate reduced-motion so animations resolve to their final
@@ -854,6 +930,18 @@ async function captureEvidence(
       awaitPromise: true,
       returnByValue: true,
     });
+    const initialBounds = await measureArtifactCaptureBounds(
+      target.session,
+      options.executionContextId,
+    );
+    await configureTier1ViewportBounds(target.session, initialBounds);
+    await target.session.send("Runtime.evaluate", {
+      contextId: options.executionContextId,
+      expression: "new Promise(requestAnimationFrame)",
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    await measureArtifactCaptureBounds(target.session, options.executionContextId);
     const capture =
       captureScreenshot === undefined
         ? await captureScreenshotWithRetry(target.session)
@@ -861,8 +949,9 @@ async function captureEvidence(
     screenshotError = capture.screenshotError;
     const screenshot = capture.screenshot;
     if (screenshot !== null) {
-      writeFileSync(options.screenshotPath, screenshot);
+      writeFileSync(options.screenshotPath, screenshot.bytes);
       screenshotPath = options.screenshotPath;
+      screenshotFormat = screenshot.format;
     }
   } catch (error) {
     screenshotError = {
@@ -891,5 +980,5 @@ async function captureEvidence(
     ),
     "utf8",
   );
-  return { screenshotPath, screenshotError, consolePath: options.consolePath };
+  return { screenshotPath, screenshotFormat, screenshotError, consolePath: options.consolePath };
 }
