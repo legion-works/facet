@@ -983,6 +983,7 @@ export interface SerializedSwapQueue<T> {
  */
 export function createSerializedSwapQueue<T>(
   run: (event: T) => Promise<void>,
+  mergePending: (pending: T, next: T) => T = (_pending, next) => next,
 ): SerializedSwapQueue<T> {
   let inFlight: Promise<void> | null = null;
   let pending: T | null = null;
@@ -1008,7 +1009,7 @@ export function createSerializedSwapQueue<T>(
   return {
     enqueue(event: T): void {
       if (closed) return;
-      pending = event;
+      pending = pending === null ? event : mergePending(pending, event);
       if (inFlight === null) {
         tail = drain().catch(() => undefined);
       }
@@ -1050,7 +1051,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   let requestedThemeMode: GalleryThemeMode = "system";
   const matchMedia = runtime.matchMedia;
   const currentResolvedTheme =
-    runtime.currentResolvedTheme ?? (() => resolveGalleryTheme(themeMode, matchMedia));
+    runtime.currentResolvedTheme ?? (() => resolveGalleryTheme(requestedThemeMode, matchMedia));
   let expired = false;
   const updateGalleryStatus = (status: string): void => {
     if (!expired) setGalleryStatus(document, status);
@@ -1075,8 +1076,6 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   let swaps: SerializedSwapQueue<GallerySwapEvent | ThemeRerenderEvent> | null = null;
   type ThemeRerenderEvent = {
     readonly kind: "theme";
-    readonly mode: GalleryThemeMode;
-    readonly resolvedTheme: ResolvedGalleryTheme;
     readonly generation: number;
   };
   let removeThemePreferenceListener: () => void = noOp;
@@ -1245,6 +1244,13 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       theme: mode,
     });
   };
+  const commitTheme = (mode: GalleryThemeMode, resolvedTheme: ResolvedGalleryTheme): void => {
+    if (mode !== requestedThemeMode) return;
+    const modeChanged = themeMode !== mode;
+    themeMode = mode;
+    document.documentElement.dataset.theme = resolvedTheme;
+    if (modeChanged) persistTheme(mode);
+  };
   const rerenderCurrentRevision = async (
     nextResolvedTheme: ResolvedGalleryTheme,
     themeGeneration: number,
@@ -1279,17 +1285,13 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     if (!canCommit() || result.cancelled || result.failedNewFrameReady) return;
     current = next;
     activeFrame = next;
-    themeMode = nextMode;
-    document.documentElement.dataset.theme = nextResolvedTheme;
-    persistTheme(nextMode);
+    commitTheme(nextMode, nextResolvedTheme);
     syncPanZoomToggle();
     syncZoomButtons();
   };
-  const queueThemeRerender = (mode: GalleryThemeMode): void => {
+  const queueThemeRerender = (): void => {
     swaps?.enqueue({
       kind: "theme",
-      mode,
-      resolvedTheme: resolveGalleryTheme(mode, matchMedia),
       generation,
     });
   };
@@ -1310,7 +1312,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       if (query === null || query === undefined || typeof query.addEventListener !== "function")
         return;
       preferenceQuery = query;
-      preferenceListener = () => queueThemeRerender("system");
+      preferenceListener = () => queueThemeRerender();
       query.addEventListener("change", preferenceListener);
     } catch {
       removeThemePreferenceListener();
@@ -1323,88 +1325,96 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     requestedThemeMode = nextGalleryThemeMode(requestedThemeMode);
     updateThemeToggle(requestedThemeMode);
     syncThemePreferenceListener();
-    queueThemeRerender(requestedThemeMode);
+    queueThemeRerender();
   });
-  swaps = createSerializedSwapQueue<GallerySwapEvent | ThemeRerenderEvent>((event) => {
-    if (event.kind === "theme") {
-      return rerenderCurrentRevision(event.resolvedTheme, event.generation, event.mode).catch(
-        (error: unknown) => {
-          if (!expired) updateGalleryError(error instanceof Error ? error.message : String(error));
-        },
-      );
-    }
-    return swapToRevision(
-      {
-        dom,
-        host,
-        theme: currentResolvedTheme(),
-        frameUrl,
-        fetchRevision: (_artifactId, revisionSha) =>
-          fetchGallerySource(baseUrl, handoff, revisionSha, fetch),
-        onProgress: updateSwapBar,
-      },
-      current,
-      event,
-      current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
-    )
-      .then(async ({ frame, result, revision }) => {
-        if (!result.failedNewFrameReady) updateGalleryTitle(revision.title);
-        updateGalleryFavicon(
-          result.failedNewFrameReady ? "unverified" : (revision.verdict?.status ?? "unverified"),
+  swaps = createSerializedSwapQueue<GallerySwapEvent | ThemeRerenderEvent>(
+    (event) => {
+      if (event.kind === "theme") {
+        const mode = requestedThemeMode;
+        return rerenderCurrentRevision(currentResolvedTheme(), event.generation, mode).catch(
+          (error: unknown) => {
+            if (!expired)
+              updateGalleryError(error instanceof Error ? error.message : String(error));
+          },
         );
-        if (expired) return;
-        current = frame;
-        activeFrame = frame;
-        source = revision;
-        syncPanZoomToggle();
-        syncZoomButtons();
-        if (!result.failedNewFrameReady) {
-          const evidence = await fetchGalleryEvidence(
-            baseUrl,
-            handoff,
-            revision.revisionSha,
-            fetch,
+      }
+      const revisionThemeMode = requestedThemeMode;
+      const revisionTheme = currentResolvedTheme();
+      return swapToRevision(
+        {
+          dom,
+          host,
+          theme: revisionTheme,
+          frameUrl,
+          fetchRevision: (_artifactId, revisionSha) =>
+            fetchGallerySource(baseUrl, handoff, revisionSha, fetch),
+          onProgress: updateSwapBar,
+        },
+        current,
+        event,
+        current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
+      )
+        .then(async ({ frame, result, revision }) => {
+          if (!result.failedNewFrameReady) updateGalleryTitle(revision.title);
+          updateGalleryFavicon(
+            result.failedNewFrameReady ? "unverified" : (revision.verdict?.status ?? "unverified"),
           );
           if (expired) return;
-          exportMenu!.setState(
-            exportMenuStateFrom(
-              {
-                artifactId: revision.artifactId,
-                revisionSha: revision.revisionSha,
-                slug: revision.slug,
-                title: revision.title,
-                artifactType: revision.artifactType as GalleryExportState["artifactType"],
-                renderer: revision.renderer as GalleryExportState["renderer"],
-                sourceBytes: revision.sourceBytes,
-                verdict: revision.verdict ?? null,
-              },
-              evidence.bytes,
-              evidence.renderFormat,
-            ),
-          );
-          displayedExportState = exportMenu!.getState();
-          if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
-          updateGalleryVerdict(revision.verdict ?? null);
-          updateGalleryStatus("displayed");
-          updateSwapBar("complete");
-        } else {
-          exportMenu!.setState(displayedExportState);
+          current = frame;
+          activeFrame = frame;
+          source = revision;
+          commitTheme(revisionThemeMode, revisionTheme);
+          syncPanZoomToggle();
+          syncZoomButtons();
+          if (!result.failedNewFrameReady) {
+            const evidence = await fetchGalleryEvidence(
+              baseUrl,
+              handoff,
+              revision.revisionSha,
+              fetch,
+            );
+            if (expired) return;
+            exportMenu!.setState(
+              exportMenuStateFrom(
+                {
+                  artifactId: revision.artifactId,
+                  revisionSha: revision.revisionSha,
+                  slug: revision.slug,
+                  title: revision.title,
+                  artifactType: revision.artifactType as GalleryExportState["artifactType"],
+                  renderer: revision.renderer as GalleryExportState["renderer"],
+                  sourceBytes: revision.sourceBytes,
+                  verdict: revision.verdict ?? null,
+                },
+                evidence.bytes,
+                evidence.renderFormat,
+              ),
+            );
+            displayedExportState = exportMenu!.getState();
+            if (revisionLabel !== null) revisionLabel.textContent = event.revisionSha.slice(0, 12);
+            updateGalleryVerdict(revision.verdict ?? null);
+            updateGalleryStatus("displayed");
+            updateSwapBar("complete");
+          } else {
+            exportMenu!.setState(displayedExportState);
+            updateSwapBar("failed");
+            updateGalleryVerdict(null);
+            updateGalleryStatus("displayed");
+          }
+        })
+        .catch((error: unknown) => {
+          if (expired) return;
+          if (error instanceof GallerySessionExpiredError) {
+            expireSession();
+            return;
+          }
           updateSwapBar("failed");
-          updateGalleryVerdict(null);
           updateGalleryStatus("displayed");
-        }
-      })
-      .catch((error: unknown) => {
-        if (expired) return;
-        if (error instanceof GallerySessionExpiredError) {
-          expireSession();
-          return;
-        }
-        updateSwapBar("failed");
-        updateGalleryStatus("displayed");
-        updateGalleryError(error instanceof Error ? error.message : String(error));
-      });
-  });
+          updateGalleryError(error instanceof Error ? error.message : String(error));
+        });
+    },
+    (pending, next) => (pending.kind === "revision" && next.kind === "theme" ? pending : next),
+  );
   const stream = connectRevisionStream({
     baseUrl,
     bearer: handoff.authorization.replace(/^Bearer\s+/i, ""),

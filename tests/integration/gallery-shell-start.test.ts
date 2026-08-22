@@ -1271,6 +1271,80 @@ describe("gallery shell startup", () => {
     expect(new TextDecoder().decode(payload.bytes)).toContain(revisionSha.slice(0, 8));
   });
 
+  test("a later revision preserves a pending theme intent from an in-flight revision", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    let releaseFirstRevision!: () => void;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseFirstRevision = () =>
+            resolve(makeFakeRenderResult("native", harness.defaultObserved));
+        }),
+    });
+    const newestSha = "c3".padEnd(64, "c");
+    harness.emitCommitted({ revisionSha: "b2".padEnd(64, "b"), revisionNumber: 2 });
+    await waitFor(() => harness.frames.length === 2);
+
+    harness.elements.get("facet-theme-toggle")?.click();
+    harness.pendingFrameConfigs.push({ viewMode: "native", observed: harness.defaultObserved });
+    harness.emitCommitted({ revisionSha: newestSha, revisionNumber: 3 });
+    releaseFirstRevision();
+
+    await waitFor(
+      () => harness.frames.length >= 3 && harness.frames[2]!.receivedPayloads.length === 1,
+    );
+
+    const current = harness.frames[2]!;
+    expect(new URL(current.getAttribute("src")!).searchParams.get("theme")).toBe("dark");
+    expect(
+      new TextDecoder().decode((current.receivedPayloads[0] as { bytes: Uint8Array }).bytes),
+    ).toContain(newestSha.slice(0, 8));
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe("dark");
+  });
+
+  test("a later theme intent preserves a pending revision behind an in-flight revision", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    let releaseFirstRevision!: () => void;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseFirstRevision = () =>
+            resolve(makeFakeRenderResult("native", harness.defaultObserved));
+        }),
+    });
+    const newestSha = "c3".padEnd(64, "c");
+    harness.emitCommitted({ revisionSha: "b2".padEnd(64, "b"), revisionNumber: 2 });
+    await waitFor(() => harness.frames.length === 2);
+
+    harness.pendingFrameConfigs.push({ viewMode: "native", observed: harness.defaultObserved });
+    harness.emitCommitted({ revisionSha: newestSha, revisionNumber: 3 });
+    harness.elements.get("facet-theme-toggle")?.click();
+    releaseFirstRevision();
+
+    await waitFor(
+      () => harness.frames.length >= 3 && harness.frames[2]!.receivedPayloads.length === 1,
+    );
+
+    const current = harness.frames[2]!;
+    expect(new URL(current.getAttribute("src")!).searchParams.get("theme")).toBe("dark");
+    expect(
+      new TextDecoder().decode((current.receivedPayloads[0] as { bytes: Uint8Array }).bytes),
+    ).toContain(newestSha.slice(0, 8));
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe("dark");
+  });
+
   test("a failed new frame sets the favicon to unverified grey", async () => {
     const harness = createRuntime("native", {
       status: "ok",
