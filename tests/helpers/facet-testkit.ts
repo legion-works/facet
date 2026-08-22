@@ -332,7 +332,9 @@ export async function readStoredRenderRunsForTests(input: {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly productionTier0?: boolean;
-}): Promise<readonly { readonly compiledPath?: string | null }[]> {
+}): Promise<
+  readonly { readonly compiledPath?: string | null; readonly screenshotFormat?: string | null }[]
+> {
   const current = await ensureEnv(undefined, 0, input.productionTier0 ?? false);
   const db = openDatabase({ databasePath: join(current.envDir, "facet.sqlite") });
   try {
@@ -342,7 +344,10 @@ export async function readStoredRenderRunsForTests(input: {
       throw new Error("published acceptance revision is missing from the store");
     return ([0, 1] as const)
       .flatMap((tier) => repository.listRenderRuns({ revisionId: revision.id, tier }))
-      .map((run) => ({ compiledPath: run.compiledPath ?? null }));
+      .map((run) => ({
+        compiledPath: run.compiledPath ?? null,
+        screenshotFormat: run.screenshotFormat ?? null,
+      }));
   } finally {
     db.close();
   }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { TSX_EXECUTION_MODES } from "../tsx/execution";
 import { ARTIFACT_TYPES } from "./artifact-types";
 import { RENDERERS } from "./renderers";
+import { EvidenceImageFormatSchema } from "../evidence-image";
 
 export { ARTIFACT_TYPES, type ArtifactType } from "./artifact-types";
 export { RENDERERS, type Renderer } from "./renderers";
@@ -63,6 +64,7 @@ export const RenderRunSchema = z.object({
   expectedJson: z.string(),
   observedJson: z.string(),
   screenshotPath: z.string().nullable(),
+  screenshotFormat: EvidenceImageFormatSchema.nullable().optional(),
   consolePath: z.string().nullable(),
   /**
    * TSX compiled-bundle evidence (D7). The compiled bundle is derived

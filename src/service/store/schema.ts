@@ -211,3 +211,8 @@ DROP TABLE revisions;
 ALTER TABLE revisions_v8 RENAME TO revisions;
 ALTER TABLE render_runs ADD COLUMN compiled_path TEXT;
 `;
+
+export const V9_SCHEMA_FRAGMENT = `
+ALTER TABLE render_runs ADD COLUMN screenshot_format TEXT
+  CHECK(screenshot_format IN ('png','webp'));
+`;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EvidenceImageFormatSchema } from "../evidence-image";
 
 import { ArtifactTypeSchema, RendererSchema } from "./artifact";
 import { HTML_OBSERVED_COUNT_KEYS, OBSERVED_COUNT_KEYS } from "./observed-counts";
@@ -263,6 +264,7 @@ export type Tier1AvailabilityProbe = () => IsolationProbeResult | Promise<Isolat
 export const Tier1ResultSchema = Tier0ResultSchema.extend({
   tier: z.literal(1),
   screenshotPath: z.string().nullable(),
+  screenshotFormat: EvidenceImageFormatSchema.optional(),
   consolePath: z.string().nullable(),
   screenshotError: ScreenshotErrorSchema.optional(),
 }).refine(

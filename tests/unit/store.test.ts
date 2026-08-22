@@ -248,7 +248,7 @@ describe("artifact store", () => {
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
     // Migration recorded.
     expect(db.query("SELECT MAX(version) AS max FROM schema_migrations").get()).toEqual({
-      max: 8,
+      max: 9,
     });
     // Pre-arc row reads back: the legacy observed_json is enriched with
     // the missing counters (V7 backfill) but the row still maps to a
@@ -298,6 +298,7 @@ describe("artifact store", () => {
       { version: 6 },
       { version: 7 },
       { version: 8 },
+      { version: 9 },
     ]);
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
 
@@ -540,6 +541,42 @@ describe("artifact store", () => {
       promotedBy: "test",
     });
     expect(template.revisionId).toBe(revision.id);
+  });
+
+  test("records and reads the screenshot format", () => {
+    const { repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "mermaid",
+      source: new Uint8Array([1]),
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status: "ok",
+      expected: { nodes: 1 },
+      observed: { nodes: 1 },
+      screenshotPath: "/tmp/evidence.webp",
+      screenshotFormat: "webp",
+    });
+    expect(
+      repository.listRenderRuns({ revisionId: revision.id, tier: 1 })[0]?.screenshotFormat,
+    ).toBe("webp");
+  });
+
+  test("v9 adds nullable screenshot format without changing rows", () => {
+    const { db } = makeV5Store();
+    const before = tableCounts(db);
+    runMigrations(db);
+    const after = tableCounts(db);
+    expect(after).toEqual(before);
+    expect(
+      (db.query("PRAGMA table_info(render_runs)").all() as Array<{ name: string }>).some(
+        (row) => row.name === "screenshot_format",
+      ),
+    ).toBe(true);
+    expect(db.query("SELECT screenshot_format FROM render_runs").all()).toEqual([]);
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
   });
 
   test("render-run writes re-harden recreated SQLite sidecars", () => {

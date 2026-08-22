@@ -19,6 +19,7 @@ import type {
   ScreenshotError,
   TsxExecutionMode,
 } from "../../shared/contracts/validation";
+import type { EvidenceImageFormat } from "../../shared/evidence-image";
 import { DEFAULT_LIST_LIMIT } from "../../shared/config/limits";
 import { now } from "../../shared/util/time";
 import { asStoreError, FacetStoreError, hardenDatabaseFiles } from "./database";
@@ -65,6 +66,7 @@ interface RenderRunInput {
   readonly expected: unknown;
   readonly observed: unknown;
   readonly screenshotPath?: string | null;
+  readonly screenshotFormat?: EvidenceImageFormat | null;
   readonly consolePath?: string | null;
   readonly screenshotError?: ScreenshotError | null;
   readonly insecure?: InsecureMarker | null;
@@ -313,10 +315,26 @@ export class ArtifactRepository {
 
   listRenderRuns(input: { revisionId: string; tier: 0 | 1 }): RenderRun[] {
     const hasCompiledPath = renderRunHasColumn(this.db, "compiled_path");
+    const hasScreenshotFormat = renderRunHasColumn(this.db, "screenshot_format");
     try {
-      const selectSql = hasCompiledPath
-        ? "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, compiled_path, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC"
-        : "SELECT id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, started_at, finished_at FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC";
+      const columns = [
+        "id",
+        "revision_id",
+        "tier",
+        "status",
+        "expected_json",
+        "observed_json",
+        "screenshot_path",
+        ...(hasScreenshotFormat ? ["screenshot_format"] : []),
+        "console_path",
+        "screenshot_error_json",
+        "insecure_json",
+        "retained",
+        ...(hasCompiledPath ? ["compiled_path"] : []),
+        "started_at",
+        "finished_at",
+      ];
+      const selectSql = `SELECT ${columns.join(", ")} FROM render_runs WHERE revision_id = ? AND tier = ? ORDER BY finished_at DESC`;
       const rows = this.db.query(selectSql).all(input.revisionId, input.tier) as Array<{
         id: string;
         revision_id: string;
@@ -325,6 +343,7 @@ export class ArtifactRepository {
         expected_json: string;
         observed_json: string;
         screenshot_path: string | null;
+        screenshot_format?: EvidenceImageFormat | null;
         console_path: string | null;
         screenshot_error_json: string | null;
         insecure_json: string | null;
@@ -342,6 +361,7 @@ export class ArtifactRepository {
           expectedJson: row.expected_json,
           observedJson: row.observed_json,
           screenshotPath: row.screenshot_path,
+          screenshotFormat: hasScreenshotFormat ? (row.screenshot_format ?? null) : null,
           consolePath: row.console_path,
           screenshotErrorJson: row.screenshot_error_json,
           insecureJson: row.insecure_json,
@@ -570,12 +590,14 @@ export class ArtifactRepository {
     const finishedAt = input.finishedAt ?? now();
     const retained = input.retained ?? false;
     const compiledPath = input.compiledPath ?? null;
+    const screenshotFormat = input.screenshotFormat ?? null;
     // The `compiled_path` column lands in the v8 migration. Detect it
     // so the v6-rollback test (which records runs against a v5
     // schema) keeps its semantics: the rollback assertion is about
     // the v6 transaction, not about whether the record path itself
     // needed v8.
     const hasCompiledPath = renderRunHasColumn(this.db, "compiled_path");
+    const hasScreenshotFormat = renderRunHasColumn(this.db, "screenshot_format");
     const value: {
       id: string;
       revisionId: string;
@@ -584,6 +606,7 @@ export class ArtifactRepository {
       expectedJson: string;
       observedJson: string;
       screenshotPath: string | null;
+      screenshotFormat: EvidenceImageFormat | null;
       consolePath: string | null;
       screenshotErrorJson: string | null;
       insecureJson: string | null;
@@ -599,6 +622,7 @@ export class ArtifactRepository {
       expectedJson: JSON.stringify(input.expected),
       observedJson: JSON.stringify(input.observed),
       screenshotPath: input.screenshotPath ?? null,
+      screenshotFormat,
       consolePath: input.consolePath ?? null,
       screenshotErrorJson:
         input.screenshotError === null || input.screenshotError === undefined
@@ -613,9 +637,6 @@ export class ArtifactRepository {
       finishedAt,
     };
     if (hasCompiledPath) value.compiledPath = compiledPath;
-    const compiledColumnValue: string | null = hasCompiledPath
-      ? (value.compiledPath ?? null)
-      : null;
     let artifactIdForCleanup: string | null = null;
     try {
       // Validate BEFORE the INSERT, not after: `render_runs` has no unique
@@ -627,48 +648,45 @@ export class ArtifactRepository {
       // INSERT, so the catch's cleanup-on-failure is only ever reached
       // when no row was written.
       const parsed = RenderRunSchema.parse(value);
-      if (hasCompiledPath) {
-        this.db
-          .query(
-            "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, compiled_path, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          )
-          .run(
-            value.id,
-            value.revisionId,
-            value.tier,
-            value.status,
-            value.expectedJson,
-            value.observedJson,
-            value.screenshotPath,
-            value.consolePath,
-            value.screenshotErrorJson,
-            value.insecureJson,
-            value.retained ? 1 : 0,
-            compiledColumnValue,
-            value.startedAt,
-            value.finishedAt,
-          );
-      } else {
-        this.db
-          .query(
-            "INSERT INTO render_runs(id, revision_id, tier, status, expected_json, observed_json, screenshot_path, console_path, screenshot_error_json, insecure_json, retained, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          )
-          .run(
-            value.id,
-            value.revisionId,
-            value.tier,
-            value.status,
-            value.expectedJson,
-            value.observedJson,
-            value.screenshotPath,
-            value.consolePath,
-            value.screenshotErrorJson,
-            value.insecureJson,
-            value.retained ? 1 : 0,
-            value.startedAt,
-            value.finishedAt,
-          );
-      }
+      const columns = [
+        "id",
+        "revision_id",
+        "tier",
+        "status",
+        "expected_json",
+        "observed_json",
+        "screenshot_path",
+        ...(hasScreenshotFormat ? ["screenshot_format"] : []),
+        "console_path",
+        "screenshot_error_json",
+        "insecure_json",
+        "retained",
+        ...(hasCompiledPath ? ["compiled_path"] : []),
+        "started_at",
+        "finished_at",
+      ];
+      const values = [
+        value.id,
+        value.revisionId,
+        value.tier,
+        value.status,
+        value.expectedJson,
+        value.observedJson,
+        value.screenshotPath,
+        ...(hasScreenshotFormat ? [value.screenshotFormat] : []),
+        value.consolePath,
+        value.screenshotErrorJson,
+        value.insecureJson,
+        value.retained ? 1 : 0,
+        ...(hasCompiledPath ? [value.compiledPath ?? null] : []),
+        value.startedAt,
+        value.finishedAt,
+      ];
+      this.db
+        .query(
+          `INSERT INTO render_runs(${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+        )
+        .run(...values);
       const ownerRow = this.db
         .query("SELECT artifact_id FROM revisions WHERE id = ?")
         .get(input.revisionId) as { artifact_id: string } | null;

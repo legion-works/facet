@@ -294,6 +294,9 @@ function recordTier1Run(
     expected: enriched.expected,
     observed: enriched.observed,
     ...(enriched.screenshotPath !== null ? { screenshotPath: enriched.screenshotPath } : {}),
+    ...(enriched.screenshotFormat !== undefined
+      ? { screenshotFormat: enriched.screenshotFormat }
+      : {}),
     ...(enriched.consolePath !== null ? { consolePath: enriched.consolePath } : {}),
     ...(enriched.screenshotError !== undefined
       ? { screenshotError: enriched.screenshotError }

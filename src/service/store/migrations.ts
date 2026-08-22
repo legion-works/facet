@@ -11,6 +11,7 @@ import {
   V6_SCHEMA_FRAGMENT,
   V7_SCHEMA_FRAGMENT,
   V8_SCHEMA_FRAGMENT,
+  V9_SCHEMA_FRAGMENT,
 } from "./schema";
 
 export interface MigrationOptions {
@@ -102,6 +103,12 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
       db.exec(V8_SCHEMA_FRAGMENT);
     },
     requiresForeignKeyDisable: true,
+  },
+  {
+    version: 9,
+    apply: (db) => {
+      db.exec(V9_SCHEMA_FRAGMENT);
+    },
   },
 ];
 

@@ -94,6 +94,35 @@ describe("Tier 1 screenshot evidence", () => {
     expect(() => Tier1ResultSchema.parse(result)).not.toThrow();
   });
 
+  test("accepts legacy results without screenshotFormat and rejects invalid formats", () => {
+    const result = {
+      tier: 1 as const,
+      status: "ok" as const,
+      artifactId: "artifact",
+      revisionSha: "0".repeat(64),
+      expected: {
+        rendererRootSvgCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+        externalImageCount: 0,
+      },
+      observed: {
+        rendererRootSvgCount: 0,
+        graphCount: 0,
+        mermaidNodeCount: 0,
+        visibleSvgCount: 0,
+        opaqueRegionCount: 0,
+        externalImageCount: 0,
+        errorCount: 0,
+      },
+      screenshotPath: null,
+      consolePath: null,
+    };
+    expect(() => Tier1ResultSchema.parse(result)).not.toThrow();
+    expect(() => Tier1ResultSchema.parse({ ...result, screenshotFormat: "gif" })).toThrow();
+  });
+
   test("sets the deterministic viewport before render ingress", async () => {
     const calls: string[] = [];
     const session = {
