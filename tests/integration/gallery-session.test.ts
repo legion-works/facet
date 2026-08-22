@@ -68,7 +68,8 @@ describe("gallery session persistence", () => {
 
   test("normalizes legacy and unknown theme values to system without discarding a live lease", () => {
     const legacy = new MemoryStorage();
-    legacy.setItem("facet:gallery-session", JSON.stringify(makeSession()));
+    const { theme: _theme, ...legacySession } = makeSession();
+    legacy.setItem("facet:gallery-session", JSON.stringify(legacySession));
     expect((readPersistedSession(legacy) as unknown as { theme?: string } | null)?.theme).toBe(
       "system",
     );

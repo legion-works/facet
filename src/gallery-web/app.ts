@@ -654,6 +654,7 @@ export interface RevisionEvent {
 }
 
 type GallerySwapEvent = RevisionEvent & {
+  readonly kind: "revision";
   readonly previousExportState: GalleryExportState | null;
 };
 
@@ -1070,13 +1071,13 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     expired ? undefined : setSwapBar(document, window, state);
   const updateZoomButtons = (zoom: number): void => setZoomButtonState(document, zoom);
   let exportMenu: GalleryExportMenuController | null = null;
-  let swaps: SerializedSwapQueue<GallerySwapEvent> | null = null;
+  let swaps: SerializedSwapQueue<GallerySwapEvent | ThemeRerenderEvent> | null = null;
   type ThemeRerenderEvent = {
+    readonly kind: "theme";
     readonly mode: GalleryThemeMode;
     readonly resolvedTheme: ResolvedGalleryTheme;
     readonly generation: number;
   };
-  let themeRerenders: SerializedSwapQueue<ThemeRerenderEvent> | null = null;
   let removeThemePreferenceListener: () => void = noOp;
   let generation = 0;
   let activeFrame: CreatedArtifactFrame | null = null;
@@ -1089,7 +1090,6 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     exportMenu?.sync();
     activeFrame?.renderResult?.setGestureMode("native");
     swaps?.close();
-    themeRerenders?.close();
     removeThemePreferenceListener();
     clearSession(window.sessionStorage);
     renderSessionExpired(
@@ -1272,6 +1272,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         theme: nextResolvedTheme,
         ...(source.execution === undefined ? {} : { execution: source.execution }),
       },
+      onProgress: updateSwapBar,
       canCommit,
     });
     if (!canCommit() || result.cancelled || result.failedNewFrameReady) return;
@@ -1284,7 +1285,8 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     syncZoomButtons();
   };
   const queueThemeRerender = (mode: GalleryThemeMode): void => {
-    themeRerenders?.enqueue({
+    swaps?.enqueue({
+      kind: "theme",
       mode,
       resolvedTheme: resolveGalleryTheme(mode, matchMedia),
       generation,
@@ -1313,13 +1315,6 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       removeThemePreferenceListener();
     }
   };
-  themeRerenders = createSerializedSwapQueue<ThemeRerenderEvent>((event) =>
-    rerenderCurrentRevision(event.resolvedTheme, event.generation, event.mode).catch(
-      (error: unknown) => {
-        if (!expired) updateGalleryError(error instanceof Error ? error.message : String(error));
-      },
-    ),
-  );
   updateThemeToggle(requestedThemeMode);
   syncThemePreferenceListener();
   themeToggle?.addEventListener("click", () => {
@@ -1329,8 +1324,15 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     syncThemePreferenceListener();
     queueThemeRerender(requestedThemeMode);
   });
-  swaps = createSerializedSwapQueue<GallerySwapEvent>((event) =>
-    swapToRevision(
+  swaps = createSerializedSwapQueue<GallerySwapEvent | ThemeRerenderEvent>((event) => {
+    if (event.kind === "theme") {
+      return rerenderCurrentRevision(event.resolvedTheme, event.generation, event.mode).catch(
+        (error: unknown) => {
+          if (!expired) updateGalleryError(error instanceof Error ? error.message : String(error));
+        },
+      );
+    }
+    return swapToRevision(
       {
         dom,
         host,
@@ -1352,6 +1354,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         if (expired) return;
         current = frame;
         activeFrame = frame;
+        source = revision;
         syncPanZoomToggle();
         syncZoomButtons();
         if (!result.failedNewFrameReady) {
@@ -1399,8 +1402,8 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
         updateSwapBar("failed");
         updateGalleryStatus("displayed");
         updateGalleryError(error instanceof Error ? error.message : String(error));
-      }),
-  );
+      });
+  });
   const stream = connectRevisionStream({
     baseUrl,
     bearer: handoff.authorization.replace(/^Bearer\s+/i, ""),
@@ -1416,7 +1419,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       updateSwapBar("start");
       updateGalleryFavicon("unverified");
       updateGalleryVerdict(null);
-      swaps?.enqueue({ ...event, previousExportState });
+      swaps?.enqueue({ kind: "revision", ...event, previousExportState });
     },
     onClose: (event) => {
       // `lease_expired` (the per-lease TTL firing server-side) and a
@@ -1449,7 +1452,6 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     // releases the lease when the TTL fires, which is the only path
     // that lets "refresh the tab" reach the same displayed canvas.
     stream.close();
-    themeRerenders?.close();
     removeThemePreferenceListener();
     if (zoomButtonPoll !== undefined) clearInterval(zoomButtonPoll);
   };

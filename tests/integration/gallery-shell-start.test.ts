@@ -743,6 +743,34 @@ describe("gallery shell startup", () => {
     expect(harness.elements.get("facet-canvas")?.children.filter(isIframe)).toHaveLength(1);
   });
 
+  test("terminal expiry between theme render success and frame commit never restores session state", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    const swapBar = harness.elements.get("facet-swapbar")?.querySelector<FakeElement>(".bar");
+    if (swapBar === null || swapBar === undefined) throw new Error("theme swap bar missing");
+    const style = new Proxy(swapBar.style, {
+      set(target, property, value) {
+        target[property as string] = value as string;
+        if (property === "width" && value === "80%") harness.emitStreamClose("lease_expired");
+        return true;
+      },
+    });
+    (swapBar as unknown as { style: Record<string, string> }).style = style;
+
+    harness.elements.get("facet-theme-toggle")?.click();
+    await waitFor(
+      () => harness.elements.get("facet-status-line")?.textContent === "session expired",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(harness.sessionStorage.getItem("facet:gallery-session")).toBeNull();
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe("light");
+    expect(harness.elements.get("facet-canvas")?.children.filter(isIframe)).toHaveLength(1);
+  });
+
   test("theme swaps preserve the current frame view state and unmount the old frame", async () => {
     const harness = createRuntime();
     const viewState = { zoom: 2.4, panX: 45, panY: -18 };
@@ -1209,6 +1237,38 @@ describe("gallery shell startup", () => {
     expect(harness.frames[2]!.receivedPayloads).toHaveLength(1);
     const payload = harness.frames[2]!.receivedPayloads[0] as { bytes: Uint8Array };
     expect(new TextDecoder().decode(payload.bytes)).toContain(newestSha.slice(0, 8));
+  });
+
+  test("queues a theme rerender behind a deferred revision swap and leaves one current frame", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    let releaseRevisionRender: (() => void) | null = null;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseRevisionRender = () =>
+            resolve(makeFakeRenderResult("native", harness.defaultObserved));
+        }),
+    });
+
+    const revisionSha = "b2".padEnd(64, "b");
+    harness.emitCommitted({ revisionSha, revisionNumber: 2 });
+    await waitFor(() => releaseRevisionRender !== null);
+    harness.elements.get("facet-theme-toggle")?.click();
+    releaseRevisionRender!();
+
+    await waitFor(() => harness.frames.length === 3);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    const canvas = harness.elements.get("facet-canvas")!;
+    expect(canvas.children.filter(isIframe)).toHaveLength(1);
+    const current = canvas.children.filter(isIframe)[0] as FakeIframe;
+    expect(current).toBe(harness.frames[2]!);
+    expect(new URL(current.getAttribute("src")!).searchParams.get("theme")).toBe("dark");
+    const payload = current.receivedPayloads[0] as { bytes: Uint8Array };
+    expect(new TextDecoder().decode(payload.bytes)).toContain(revisionSha.slice(0, 8));
   });
 
   test("a failed new frame sets the favicon to unverified grey", async () => {
