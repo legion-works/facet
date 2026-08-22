@@ -328,7 +328,7 @@ function createRuntime(
       }
       if (revisionSha === "a".repeat(64))
         return Response.json({ error: { code: "evidence_unavailable" } }, { status: 404 });
-      return new Response(new Uint8Array([137, 80, 78, 71]), {
+      return new Response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), {
         status: 200,
         headers: { "content-type": "image/png" },
       });

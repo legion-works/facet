@@ -24,6 +24,7 @@ import { exportStoredRender, readStoredRenderEvidence } from "../../src/service/
 
 const PNG_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
 const WEBP_BYTES = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 69, 66, 80, 1, 2, 3, 4]);
+const GARBAGE_BYTES = new Uint8Array([0, 1, 2, 3, 4, 5]);
 
 function seedRevision(
   repository: ArtifactRepository,
@@ -271,6 +272,58 @@ describe("exportStoredRender — legacy evidence root tolerance", () => {
       expect(resolveExportPaths(result, undefined, "/tmp/facet-cwd").artifactPath).toEndWith(
         ".webp",
       );
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses unsniffable legacy evidence instead of mislabeling it as PNG", () => {
+    const dir = mkdtempSync(join(tmpdir(), "facet-export-unsniffable-"));
+    const canonical = join(dir, "state", "evidence");
+    mkdirSync(canonical, { recursive: true });
+    const db = openDatabase(join(dir, "facet.sqlite"));
+    runMigrations(db);
+    try {
+      const repository = new ArtifactRepository(db, { evidenceRoot: canonical });
+      const seed = seedRevision(repository, "unsniffable-legacy");
+      const revision = repository.getRevisionBySha(seed.artifactId, seed.revisionSha);
+      const artifact = repository.getArtifactById(seed.artifactId);
+      if (revision === null || artifact === null) throw new Error("missing seeded record");
+      const screenshotPath = join(
+        canonical,
+        seed.artifactId,
+        seed.revisionSha,
+        "run-1",
+        "screenshot.bin",
+      );
+      mkdirSync(join(canonical, seed.artifactId, seed.revisionSha, "run-1"), { recursive: true });
+      writeFileSync(screenshotPath, GARBAGE_BYTES);
+      repository.recordRenderRun({
+        revisionId: revision.id,
+        tier: 1,
+        status: "ok",
+        expected: {},
+        observed: { rendererRootSvgCount: 1 },
+        screenshotPath,
+      });
+
+      expect(() => readStoredRenderEvidence({ repository, artifact, revision })).toThrow(
+        /evidence_unavailable|Screenshot evidence unavailable/,
+      );
+      expect(() =>
+        exportStoredRender({
+          repository,
+          command: {
+            command: "export",
+            requestId: "unsniffable-export",
+            artifactId: seed.artifactId,
+            revisionSha: seed.revisionSha,
+            format: "render",
+          },
+          requestId: "unsniffable-export",
+        }),
+      ).toThrow(/evidence_unavailable|Screenshot evidence unavailable/);
     } finally {
       db.close();
       rmSync(dir, { recursive: true, force: true });

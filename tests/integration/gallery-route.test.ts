@@ -405,13 +405,19 @@ describe("GET /gallery", () => {
       bytes: new TextEncoder().encode("graph TD\n E-->F").buffer as ArrayBuffer,
       slug: "evidence-c",
     });
+    const corrupt = await publishArtifact(client, {
+      artifactType: "mermaid",
+      bytes: new TextEncoder().encode("graph TD\n G-->H").buffer as ArrayBuffer,
+      slug: "evidence-corrupt",
+    });
 
     const db = openDatabase({ databasePath: dbPath });
     runMigrations(db);
     const repository = new ArtifactRepository(db, { evidenceRoot });
     const firstRevision = repository.getRevisionBySha(first.artifactId, first.revisionSha);
     const secondRevision = repository.getRevisionBySha(second.artifactId, second.revisionSha);
-    if (firstRevision === null || secondRevision === null)
+    const corruptRevision = repository.getRevisionBySha(corrupt.artifactId, corrupt.revisionSha);
+    if (firstRevision === null || secondRevision === null || corruptRevision === null)
       throw new Error("missing seeded revision");
     const expectedPngBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 7, 8, 9]);
     const expectedWebpBytes = new Uint8Array([
@@ -439,6 +445,17 @@ describe("GET /gallery", () => {
       recursive: true,
     });
     writeFileSync(webpPath, expectedWebpBytes);
+    const corruptPath = join(
+      evidenceRoot,
+      corrupt.artifactId,
+      corrupt.revisionSha,
+      "run-1",
+      "screenshot.bin",
+    );
+    mkdirSync(join(evidenceRoot, corrupt.artifactId, corrupt.revisionSha, "run-1"), {
+      recursive: true,
+    });
+    writeFileSync(corruptPath, new Uint8Array([0, 1, 2, 3, 4, 5]));
     repository.recordRenderRun({
       revisionId: firstRevision.id,
       tier: 1,
@@ -446,6 +463,15 @@ describe("GET /gallery", () => {
       expected: {},
       observed: { rendererRootSvgCount: 1 },
       screenshotPath,
+      retained: true,
+    });
+    repository.recordRenderRun({
+      revisionId: corruptRevision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: { rendererRootSvgCount: 1 },
+      screenshotPath: corruptPath,
       retained: true,
     });
     repository.recordRenderRun({
@@ -485,6 +511,7 @@ describe("GET /gallery", () => {
     const firstHandoff = await openDisplay(first.artifactId, first.revisionSha);
     const secondHandoff = await openDisplay(second.artifactId, second.revisionSha);
     const thirdHandoff = await openDisplay(third.artifactId, third.revisionSha);
+    const corruptHandoff = await openDisplay(corrupt.artifactId, corrupt.revisionSha);
     const evidenceUrl = `${service.url}/api/v1/gallery/evidence?revisionSha=`;
     const headersFor = evidenceHeadersFor;
 
@@ -511,6 +538,11 @@ describe("GET /gallery", () => {
     });
     expect(missingEvidence.status).toBe(404);
     expect((await missingEvidence.json()).error.code).toBe("evidence_unavailable");
+    const corruptEvidence = await fetch(`${evidenceUrl}${corrupt.revisionSha}`, {
+      headers: headersFor(corruptHandoff, corrupt.artifactId),
+    });
+    expect(corruptEvidence.status).toBe(404);
+    expect((await corruptEvidence.json()).error.code).toBe("evidence_unavailable");
     const happy = await fetch(`${evidenceUrl}${first.revisionSha}`, {
       headers: headersFor(firstHandoff, first.artifactId),
     });

@@ -48,7 +48,7 @@ function state(overrides: Partial<GalleryExportState> = {}): GalleryExportState 
     renderer: "svg",
     sourceBytes: new Uint8Array([35, 32, 101, 120, 97, 109, 112, 108, 101]),
     verdict,
-    renderBytes: new Uint8Array([137, 80, 78, 71]),
+    renderBytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
     renderFormat: "png",
     ...overrides,
   };

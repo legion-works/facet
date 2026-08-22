@@ -129,8 +129,9 @@ export function readStoredRenderEvidence(input: {
       input.revision,
     );
     const bytes = new Uint8Array(readFileSync(screenshotPath));
-    // File bytes are authoritative because pre-v9 rows have no stored format.
-    const format = sniffEvidenceImageFormat(bytes) ?? run.screenshotFormat ?? "png";
+    // File bytes are authoritative; an unknown signature is unavailable evidence, not PNG.
+    const format = sniffEvidenceImageFormat(bytes);
+    if (format === null) throw evidenceUnavailable(input.artifact, input.revision);
     return {
       bytes,
       format,
