@@ -41,7 +41,12 @@ import {
   type ViewState,
 } from "./view-state";
 import type { FrameRenderPayload, GestureMode } from "./frame/frame-payload";
-import type { ResolvedGalleryTheme } from "./theme";
+import {
+  resolveGalleryTheme,
+  type GalleryMatchMedia,
+  type GalleryThemeMode,
+  type ResolvedGalleryTheme,
+} from "./theme";
 import type { TsxExecutionMode, Verdict } from "../shared/contracts/validation";
 import { faviconTint, renderFavicon } from "./favicon";
 import { exportMenuStateFrom, type GalleryExportState } from "./export";
@@ -77,10 +82,17 @@ export interface BootstrapHandoff {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly lease: { readonly leaseId: string; readonly expiresAt: number };
+  readonly theme: GalleryThemeMode;
   readonly headers: Headers;
 }
 
 class GallerySessionExpiredError extends Error {}
+
+const noOp = (): void => undefined;
+
+function nextGalleryThemeMode(mode: GalleryThemeMode): GalleryThemeMode {
+  return mode === "system" ? "dark" : mode === "dark" ? "light" : "system";
+}
 
 function isLeaseUnauthorized(response: Response): boolean {
   return response.status === 401;
@@ -145,18 +157,19 @@ export async function resolveGalleryBootstrap(
     });
     if (isLeaseUnauthorized(response)) return { outcome: "expired", reason: "invalid" };
     if (!response.ok) throw new Error(`Gallery bootstrap failed (${response.status})`);
-    const payload = (await response.json()) as Omit<BootstrapHandoff, "headers">;
+    const payload = (await response.json()) as Omit<BootstrapHandoff, "headers" | "theme">;
     const headers = new Headers({
       authorization: payload.authorization,
       "x-gallery-lease": payload.lease.leaseId,
       "x-gallery-artifact": payload.artifactId,
     });
-    const session: BootstrapHandoff = { ...payload, headers };
+    const session: BootstrapHandoff = { ...payload, theme: "system", headers };
     const persisted: GallerySession = {
       authorization: payload.authorization,
       artifactId: payload.artifactId,
       revisionSha: payload.revisionSha,
       lease: payload.lease,
+      theme: "system",
     };
     persistSession(options.storage, persisted);
     return { outcome: "bootstrapped", session, storage: options.storage };
@@ -188,6 +201,7 @@ export async function resolveGalleryBootstrap(
     artifactId: persisted.artifactId,
     revisionSha: persisted.revisionSha,
     lease: persisted.lease,
+    theme: persisted.theme,
     headers,
   };
   return { outcome: "reused", session, storage: options.storage };
@@ -219,13 +233,13 @@ export async function consumeBootstrapHandoff(options: {
     body: JSON.stringify({ token }),
   });
   if (!response.ok) throw new Error(`Gallery bootstrap failed (${response.status})`);
-  const payload = (await response.json()) as Omit<BootstrapHandoff, "headers">;
+  const payload = (await response.json()) as Omit<BootstrapHandoff, "headers" | "theme">;
   const headers = new Headers({
     authorization: payload.authorization,
     "x-gallery-lease": payload.lease.leaseId,
     "x-gallery-artifact": payload.artifactId,
   });
-  return { ...payload, headers };
+  return { ...payload, theme: "system", headers };
 }
 
 export async function releaseDisplayLease(options: {
@@ -478,11 +492,14 @@ export interface ReplaceArtifactFrameOptions {
   /** Per-barrier wait window (load, then render). */
   readonly readyTimeoutMs?: number;
   readonly onProgress?: (state: "ready" | "complete") => void;
+  /** Reject a completed replacement before it mutates the visible frame. */
+  readonly canCommit?: () => boolean;
 }
 
 export interface ReplaceArtifactFrameResult {
   readonly executedSteps: readonly SwapPlanStep["name"][];
   readonly failedNewFrameReady: boolean;
+  readonly cancelled?: boolean;
 }
 
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
@@ -577,6 +594,11 @@ export async function replaceArtifactFrame(
     return { executedSteps: executed, failedNewFrameReady: true };
   }
 
+  if (options.canCommit?.() === false) {
+    host.unmount(next.frameId);
+    return { executedSteps: executed, failedNewFrameReady: false, cancelled: true };
+  }
+
   // Render succeeded: swap → apply-view-state → remove-old, in order.
   // The viewState passed in options is the caller's preserved state
   // (read from the current frame before the swap started).
@@ -586,6 +608,10 @@ export async function replaceArtifactFrame(
   // (or the perf instrumentation) that keys on the bar width must be
   // able to observe the barrier passing.
   await Promise.resolve();
+  if (options.canCommit?.() === false) {
+    host.unmount(next.frameId);
+    return { executedSteps: executed, failedNewFrameReady: false, cancelled: true };
+  }
   for (const step of plan.slice(3)) runStep(step);
   options.onProgress?.("complete");
   return { executedSteps: executed, failedNewFrameReady: false };
@@ -1002,15 +1028,27 @@ export interface GalleryRuntime {
   readonly HTMLElement: typeof HTMLElement;
   readonly fetch: typeof fetch;
   readonly currentResolvedTheme?: () => ResolvedGalleryTheme;
+  readonly matchMedia?: GalleryMatchMedia;
 }
 
 function browserGalleryRuntime(): GalleryRuntime {
-  return { window, document, history, HTMLElement, fetch };
+  return {
+    window,
+    document,
+    history,
+    HTMLElement,
+    fetch,
+    matchMedia: window.matchMedia.bind(window),
+  };
 }
 
 export async function startGallery(runtime = browserGalleryRuntime()): Promise<void> {
   const { window, document, history, HTMLElement, fetch } = runtime;
-  const currentResolvedTheme = runtime.currentResolvedTheme ?? (() => "dark" as const);
+  let themeMode: GalleryThemeMode = "system";
+  let requestedThemeMode: GalleryThemeMode = "system";
+  const matchMedia = runtime.matchMedia;
+  const currentResolvedTheme =
+    runtime.currentResolvedTheme ?? (() => resolveGalleryTheme(themeMode, matchMedia));
   let expired = false;
   const updateGalleryStatus = (status: string): void => {
     if (!expired) setGalleryStatus(document, status);
@@ -1033,15 +1071,26 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   const updateZoomButtons = (zoom: number): void => setZoomButtonState(document, zoom);
   let exportMenu: GalleryExportMenuController | null = null;
   let swaps: SerializedSwapQueue<GallerySwapEvent> | null = null;
+  type ThemeRerenderEvent = {
+    readonly mode: GalleryThemeMode;
+    readonly resolvedTheme: ResolvedGalleryTheme;
+    readonly generation: number;
+  };
+  let themeRerenders: SerializedSwapQueue<ThemeRerenderEvent> | null = null;
+  let removeThemePreferenceListener: () => void = noOp;
+  let generation = 0;
   let activeFrame: CreatedArtifactFrame | null = null;
   const expireSession = (): void => {
     if (expired) return;
+    generation += 1;
     setGalleryFavicon(document, "expired");
     expired = true;
     exportMenu?.close();
     exportMenu?.sync();
     activeFrame?.renderResult?.setGestureMode("native");
     swaps?.close();
+    themeRerenders?.close();
+    removeThemePreferenceListener();
     clearSession(window.sessionStorage);
     renderSessionExpired(
       document,
@@ -1080,6 +1129,8 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     return;
   }
   const handoff = bootstrap.session;
+  themeMode = handoff.theme;
+  requestedThemeMode = handoff.theme;
   exportMenu = installGalleryExportMenu({ document, isExpired: () => expired });
   const title = document.getElementById("facet-title");
   const revisionLabel = document.getElementById("facet-revision");
@@ -1171,11 +1222,113 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   );
   let displayedExportState = exportMenu!.getState();
   host.setVisibility(current.frameId, true);
+  document.documentElement.dataset.theme = currentResolvedTheme();
   updateGalleryTitle(source.title);
   updateGalleryFavicon(source.verdict?.status ?? "unverified");
   updateGalleryVerdict(source.verdict ?? null);
   updateGalleryStatus("displayed");
   updateLiveState("live");
+  const themeToggle = document.getElementById("facet-theme-toggle");
+  const updateThemeToggle = (mode: GalleryThemeMode): void => {
+    if (themeToggle === null) return;
+    themeToggle.textContent = `theme: ${mode}`;
+    themeToggle.setAttribute("aria-label", `theme: ${mode}`);
+    themeToggle.dataset.themeMode = mode;
+  };
+  const persistTheme = (mode: GalleryThemeMode): void => {
+    persistSession(window.sessionStorage, {
+      authorization: handoff.authorization,
+      artifactId: handoff.artifactId,
+      revisionSha: handoff.revisionSha,
+      lease: handoff.lease,
+      theme: mode,
+    });
+  };
+  const rerenderCurrentRevision = async (
+    nextResolvedTheme: ResolvedGalleryTheme,
+    themeGeneration: number,
+    nextMode: GalleryThemeMode,
+  ): Promise<void> => {
+    const canCommit = (): boolean =>
+      themeGeneration === generation && nextMode === requestedThemeMode;
+    if (!canCommit()) return;
+    const next = createArtifactFrame({
+      artifactType: source.artifactType,
+      renderer: source.renderer,
+      theme: nextResolvedTheme,
+      frameUrl,
+      dom,
+    });
+    const result = await replaceArtifactFrame({
+      current,
+      next,
+      dom,
+      host,
+      viewState: current.renderResult?.readViewState() ?? EMPTY_VIEW_STATE,
+      source: {
+        artifactType: source.artifactType,
+        renderer: source.renderer,
+        bytes: source.bytes,
+        theme: nextResolvedTheme,
+        ...(source.execution === undefined ? {} : { execution: source.execution }),
+      },
+      canCommit,
+    });
+    if (!canCommit() || result.cancelled || result.failedNewFrameReady) return;
+    current = next;
+    activeFrame = next;
+    themeMode = nextMode;
+    document.documentElement.dataset.theme = nextResolvedTheme;
+    persistTheme(nextMode);
+    syncPanZoomToggle();
+    syncZoomButtons();
+  };
+  const queueThemeRerender = (mode: GalleryThemeMode): void => {
+    themeRerenders?.enqueue({
+      mode,
+      resolvedTheme: resolveGalleryTheme(mode, matchMedia),
+      generation,
+    });
+  };
+  let preferenceQuery: MediaQueryList | null = null;
+  let preferenceListener: ((event: MediaQueryListEvent) => void) | null = null;
+  removeThemePreferenceListener = (): void => {
+    if (preferenceQuery !== null && preferenceListener !== null) {
+      preferenceQuery.removeEventListener("change", preferenceListener);
+    }
+    preferenceQuery = null;
+    preferenceListener = null;
+  };
+  const syncThemePreferenceListener = (): void => {
+    removeThemePreferenceListener();
+    if (requestedThemeMode !== "system" || matchMedia === undefined || matchMedia === null) return;
+    try {
+      const query = matchMedia("(prefers-color-scheme: dark)") as MediaQueryList | null | undefined;
+      if (query === null || query === undefined || typeof query.addEventListener !== "function")
+        return;
+      preferenceQuery = query;
+      preferenceListener = () => queueThemeRerender("system");
+      query.addEventListener("change", preferenceListener);
+    } catch {
+      removeThemePreferenceListener();
+    }
+  };
+  themeRerenders = createSerializedSwapQueue<ThemeRerenderEvent>((event) =>
+    rerenderCurrentRevision(event.resolvedTheme, event.generation, event.mode).catch(
+      (error: unknown) => {
+        if (!expired) updateGalleryError(error instanceof Error ? error.message : String(error));
+      },
+    ),
+  );
+  updateThemeToggle(requestedThemeMode);
+  syncThemePreferenceListener();
+  themeToggle?.addEventListener("click", () => {
+    if (expired) return;
+    requestedThemeMode = nextGalleryThemeMode(requestedThemeMode);
+    updateThemeToggle(requestedThemeMode);
+    syncThemePreferenceListener();
+    queueThemeRerender(requestedThemeMode);
+  });
   swaps = createSerializedSwapQueue<GallerySwapEvent>((event) =>
     swapToRevision(
       {
@@ -1296,6 +1449,8 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     // releases the lease when the TTL fires, which is the only path
     // that lets "refresh the tab" reach the same displayed canvas.
     stream.close();
+    themeRerenders?.close();
+    removeThemePreferenceListener();
     if (zoomButtonPoll !== undefined) clearInterval(zoomButtonPoll);
   };
   window.addEventListener("beforeunload", shutdown, { once: true });

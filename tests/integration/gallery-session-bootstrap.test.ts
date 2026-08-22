@@ -29,6 +29,7 @@ function makeSession(overrides: Partial<GallerySession> = {}): GallerySession {
     artifactId: "artifact-1",
     revisionSha: "a".repeat(64),
     lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
+    theme: "system",
     ...overrides,
   };
 }

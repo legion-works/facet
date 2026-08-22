@@ -27,6 +27,8 @@
  * never reach a URL.
  */
 
+import { isGalleryThemeMode, type GalleryThemeMode } from "./theme";
+
 export const GALLERY_SESSION_STORAGE_KEY = "facet:gallery-session";
 
 export interface GallerySession {
@@ -34,6 +36,7 @@ export interface GallerySession {
   readonly artifactId: string;
   readonly revisionSha: string;
   readonly lease: { readonly leaseId: string; readonly expiresAt: number };
+  readonly theme: GalleryThemeMode;
 }
 
 /**
@@ -66,7 +69,13 @@ export function readPersistedSession(storage: SessionStorageLike): GallerySessio
     return null;
   }
   if (!isGallerySession(parsed)) return null;
-  return parsed;
+  return {
+    authorization: parsed.authorization,
+    artifactId: parsed.artifactId,
+    revisionSha: parsed.revisionSha,
+    lease: parsed.lease,
+    theme: isGalleryThemeMode(parsed.theme) ? parsed.theme : "system",
+  };
 }
 
 export type SessionValidation =
@@ -81,7 +90,9 @@ export function validatePersistedSession(
   return { valid: true, session };
 }
 
-function isGallerySession(value: unknown): value is GallerySession {
+function isGallerySession(
+  value: unknown,
+): value is Omit<GallerySession, "theme"> & { readonly theme?: unknown } {
   if (value === null || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   if (typeof record["authorization"] !== "string") return false;

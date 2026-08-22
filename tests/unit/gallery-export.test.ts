@@ -108,6 +108,7 @@ describe("gallery export helpers", () => {
       artifactId: "artifact-1",
       revisionSha,
       lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
+      theme: "system" as const,
       headers: new Headers(),
     };
     const evidence = await fetchGalleryEvidence(
@@ -188,6 +189,7 @@ describe("gallery export helpers", () => {
       artifactId: "artifact-1",
       revisionSha,
       lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
+      theme: "system" as const,
       headers: new Headers(),
     };
     const result = await fetchGallerySource(
@@ -217,6 +219,7 @@ describe("gallery export helpers", () => {
       artifactId: "artifact-1",
       revisionSha,
       lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
+      theme: "system" as const,
       headers: new Headers(),
     };
     await expect(

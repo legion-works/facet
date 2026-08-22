@@ -89,10 +89,35 @@ test("gallery HTML cards keep readable text in both resolved themes", async () =
         undefined,
         { slug: `gallery-contrast-release-ledger-${theme}` },
       );
+      const selectedTheme = (await target.session.send("Runtime.evaluate", {
+        returnByValue: true,
+        awaitPromise: true,
+        expression: `new Promise((resolve, reject) => {
+          const toggle = document.getElementById('facet-theme-toggle');
+          if (toggle === null) {
+            reject(new Error('theme toggle missing'));
+            return;
+          }
+          for (let index = 0; index < ${theme === "dark" ? 1 : 2}; index += 1) toggle.click();
+          const deadline = Date.now() + 7000;
+          const inspect = () => {
+            if (document.documentElement.dataset.theme === ${JSON.stringify(theme)}) {
+              resolve(document.documentElement.dataset.theme);
+              return;
+            }
+            if (Date.now() >= deadline) {
+              reject(new Error('theme toggle did not settle'));
+              return;
+            }
+            setTimeout(inspect, 25);
+          };
+          inspect();
+        })`,
+      })) as { result?: { value?: string } };
+      expect(selectedTheme.result?.value).toBe(theme);
       const shellColors = (await target.session.send("Runtime.evaluate", {
         returnByValue: true,
         expression: `(() => {
-          document.documentElement.dataset.theme = ${JSON.stringify(theme)};
           ${CONTRAST_HELPERS}
           const selectors = ['#facet-status .title', '#facet-status .revision', '#facet-status-line', '#facet-verdict', '#facet-live'];
           const elements = selectors.map((selector) => document.querySelector(selector));

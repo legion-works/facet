@@ -12,6 +12,7 @@ import { galleryBrowser } from "../helpers/gallery-live";
 interface GalleryShellState {
   readonly status: string;
   readonly revision: string;
+  readonly theme: string;
   readonly iframeCount: number;
   readonly fragment: string;
   readonly sessionStorageEmpty: boolean;
@@ -42,6 +43,7 @@ async function readShellState(
           resolve({
             status,
             revision: document.querySelector('#facet-revision')?.textContent ?? '',
+            theme: document.documentElement.dataset.theme ?? '',
             iframeCount,
             fragment: window.location.hash,
             sessionStorageEmpty: window.sessionStorage.getItem('facet:gallery-session') === null,
@@ -111,6 +113,34 @@ test("gallery refresh survives without re-issuing the bootstrap token", async ()
     expect(before.revision).toContain(published.revisionSha.slice(0, 7));
     expect(before.fragment).toBe("");
 
+    const selectedTheme = (await target.session.send("Runtime.evaluate", {
+      returnByValue: true,
+      awaitPromise: true,
+      expression: `new Promise((resolve, reject) => {
+        const toggle = document.getElementById('facet-theme-toggle');
+        if (toggle === null) {
+          reject(new Error('theme toggle missing'));
+          return;
+        }
+        toggle.click();
+        const deadline = Date.now() + 7000;
+        const inspect = () => {
+          const session = JSON.parse(window.sessionStorage.getItem('facet:gallery-session') ?? '{}');
+          if (document.documentElement.dataset.theme === 'dark' && session.theme === 'dark') {
+            resolve('dark');
+            return;
+          }
+          if (Date.now() >= deadline) {
+            reject(new Error('theme toggle did not settle'));
+            return;
+          }
+          setTimeout(inspect, 25);
+        };
+        inspect();
+      })`,
+    })) as { result?: { value?: string } };
+    expect(selectedTheme.result?.value).toBe("dark");
+
     await target.session.send("Page.navigate", {
       url: `${baseUrl}${galleryPath}`,
     });
@@ -118,6 +148,7 @@ test("gallery refresh survives without re-issuing the bootstrap token", async ()
     expect(after.status).toBe("displayed");
     expect(after.expiredVisible).toBe(false);
     expect(after.revision).toBe(before.revision);
+    expect(after.theme).toBe("dark");
     expect(after.iframeCount).toBe(1);
     expect(after.fragment).toBe("");
 

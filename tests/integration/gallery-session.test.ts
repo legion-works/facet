@@ -30,6 +30,7 @@ function makeSession(overrides: Partial<GallerySession> = {}): GallerySession {
     artifactId: "artifact-1",
     revisionSha: "a".repeat(64),
     lease: { leaseId: "lease-1", expiresAt: Date.now() + 60_000 },
+    theme: "system",
     ...overrides,
   };
 }
@@ -63,6 +64,36 @@ describe("gallery session persistence", () => {
       JSON.stringify({ artifactId: "artifact-1", revisionSha: "a".repeat(64) }),
     );
     expect(readPersistedSession(storage)).toBeNull();
+  });
+
+  test("normalizes legacy and unknown theme values to system without discarding a live lease", () => {
+    const legacy = new MemoryStorage();
+    legacy.setItem("facet:gallery-session", JSON.stringify(makeSession()));
+    expect((readPersistedSession(legacy) as unknown as { theme?: string } | null)?.theme).toBe(
+      "system",
+    );
+
+    const unknown = new MemoryStorage();
+    unknown.setItem("facet:gallery-session", JSON.stringify({ ...makeSession(), theme: "sepia" }));
+    const restored = readPersistedSession(unknown) as unknown as {
+      authorization: string;
+      lease: { leaseId: string };
+      theme?: string;
+    } | null;
+    expect(restored).not.toBeNull();
+    expect(restored?.authorization).toBe("Bearer session-token");
+    expect(restored?.lease.leaseId).toBe("lease-1");
+    expect(restored?.theme).toBe("system");
+  });
+
+  test("round-trips each supported gallery theme mode", () => {
+    for (const theme of ["system", "dark", "light"] as const) {
+      const storage = new MemoryStorage();
+      persistSession(storage, { ...makeSession(), theme } as unknown as GallerySession);
+      expect((readPersistedSession(storage) as unknown as { theme?: string } | null)?.theme).toBe(
+        theme,
+      );
+    }
   });
 
   test("validatePersistedSession accepts a session whose lease is still in the future", () => {

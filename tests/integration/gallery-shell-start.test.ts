@@ -3,7 +3,12 @@ import { parseHTML } from "linkedom";
 
 import { startGallery, type GalleryRuntime } from "../../src/gallery-web/app";
 import { countPageShim } from "../../src/gallery-web/frame/renderers/registry";
-import { EMPTY_VIEW_STATE, MAX_ZOOM, MIN_ZOOM } from "../../src/gallery-web/view-state";
+import {
+  EMPTY_VIEW_STATE,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  type ViewState,
+} from "../../src/gallery-web/view-state";
 import {
   installFakeFrameApi,
   makeFakeRenderResult,
@@ -182,6 +187,9 @@ interface GalleryHarness {
   emitCommitted(event: { readonly revisionSha: string; readonly revisionNumber: number }): void;
   /** Push a `stream:close` SSE event into the live stream. */
   emitStreamClose(reason: string): void;
+  /** Notify the shell's prefers-color-scheme listener. */
+  emitColorSchemeChange(matches: boolean): void;
+  readonly colorSchemeListeners: Set<Listener>;
   readonly sessionStorage: { getItem(key: string): string | null };
 }
 
@@ -220,6 +228,7 @@ function createRuntime(
     "facet-zoom-out",
     "facet-zoom-reset",
     "facet-panzoom-toggle",
+    "facet-theme-toggle",
     "facet-export",
     "facet-export-toggle",
     "facet-export-menu",
@@ -241,6 +250,7 @@ function createRuntime(
   const pendingFrameConfigs: FakeFrameConfig[] = [];
   const document = {
     title: "facet gallery",
+    documentElement: new FakeElement(),
     getElementById: (id: string) => elements.get(id) ?? null,
     createElement: (tag: string) => {
       if (tag === "canvas") return new FakeCanvasElement();
@@ -255,6 +265,16 @@ function createRuntime(
   };
   (globalThis as Record<string, unknown>).document = document;
   const windowListeners = new Map<string, Listener>();
+  const colorSchemeListeners = new Set<Listener>();
+  let colorSchemeMatches = false;
+  const matchMedia = (_query: string) => ({
+    get matches(): boolean {
+      return colorSchemeMatches;
+    },
+    addEventListener: (_type: string, listener: Listener) => colorSchemeListeners.add(listener),
+    removeEventListener: (_type: string, listener: Listener) =>
+      colorSchemeListeners.delete(listener),
+  });
   const sessionStorageData = new Map<string, string>();
   const sessionStorage = {
     getItem: (key: string) =>
@@ -346,6 +366,7 @@ function createRuntime(
       },
       HTMLElement: FakeElement,
       fetch: fetchImpl,
+      matchMedia,
     } as unknown as GalleryRuntime,
     elements,
     requests,
@@ -373,6 +394,11 @@ function createRuntime(
       };
       streamController?.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`));
     },
+    emitColorSchemeChange(matches) {
+      colorSchemeMatches = matches;
+      for (const listener of colorSchemeListeners) listener({ matches });
+    },
+    colorSchemeListeners,
     sessionStorage,
   };
 }
@@ -589,6 +615,178 @@ describe("gallery shell startup", () => {
     const swappedFrame = harness.frames[1]!;
     expect(new URL(swappedFrame.getAttribute("src")!).searchParams.get("theme")).toBe("light");
     expect(swappedFrame.receivedPayloads).toEqual([expect.objectContaining({ theme: "light" })]);
+  });
+
+  test("system mode falls back to dark when matchMedia is unavailable", async () => {
+    const harness = createRuntime();
+    delete (harness.runtime as unknown as { matchMedia?: unknown }).matchMedia;
+    await startGallery(harness.runtime);
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe("dark");
+  });
+
+  test("theme toolbar cycles system, dark, and light while persisting the selected mode", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+
+    const toggle = harness.elements.get("facet-theme-toggle")!;
+    expect(toggle.textContent).toBe("theme: system");
+    expect(toggle.dataset["themeMode"]).toBe("system");
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe("light");
+    expect(harness.colorSchemeListeners.size).toBe(1);
+
+    toggle.click();
+    await waitFor(
+      () =>
+        (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+          .dataset["theme"] === "dark",
+    );
+    expect(toggle.textContent).toBe("theme: dark");
+    expect(toggle.dataset["themeMode"]).toBe("dark");
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe("dark");
+    expect(JSON.parse(harness.sessionStorage.getItem("facet:gallery-session") ?? "{}").theme).toBe(
+      "dark",
+    );
+    expect(harness.colorSchemeListeners.size).toBe(0);
+
+    toggle.click();
+    await waitFor(
+      () =>
+        (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+          .dataset["theme"] === "light",
+    );
+    expect(toggle.textContent).toBe("theme: light");
+    expect(JSON.parse(harness.sessionStorage.getItem("facet:gallery-session") ?? "{}").theme).toBe(
+      "light",
+    );
+
+    toggle.click();
+    await waitFor(
+      () =>
+        JSON.parse(harness.sessionStorage.getItem("facet:gallery-session") ?? "{}").theme ===
+        "system",
+    );
+    expect(toggle.textContent).toBe("theme: system");
+    expect(JSON.parse(harness.sessionStorage.getItem("facet:gallery-session") ?? "{}").theme).toBe(
+      "system",
+    );
+    expect(harness.colorSchemeListeners.size).toBe(1);
+
+    harness.emitColorSchemeChange(true);
+    await waitFor(
+      () =>
+        (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+          .dataset["theme"] === "dark",
+    );
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe("dark");
+
+    harness.emitStreamClose("lease_expired");
+    await waitFor(
+      () => harness.elements.get("facet-status-line")?.textContent === "session expired",
+    );
+    expect(harness.colorSchemeListeners.size).toBe(0);
+  });
+
+  test("terminal expiry prevents a deferred theme swap from restoring gallery state", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    let releaseRender: (() => void) | null = null;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseRender = () => resolve(makeFakeRenderResult("native", harness.defaultObserved));
+        }),
+    });
+    const toggle = harness.elements.get("facet-theme-toggle")!;
+    toggle.click();
+    await waitFor(
+      () => harness.elements.get("facet-canvas")?.children.filter(isIframe).length === 2,
+    );
+    await waitFor(() => releaseRender !== null);
+
+    const favicon = harness.elements.get("facet-favicon") as FakeLinkElement;
+    harness.emitStreamClose("lease_expired");
+    await waitFor(
+      () => harness.elements.get("facet-status-line")?.textContent === "session expired",
+    );
+    const terminalFaviconWrites = favicon.hrefWrites;
+    const terminalTheme = (harness.runtime.document as unknown as { documentElement: FakeElement })
+      .documentElement.dataset["theme"];
+    releaseRender!();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(harness.elements.get("facet-status-line")?.textContent).toBe("session expired");
+    expect(harness.elements.get("facet-revision")?.textContent).toBe("aaaaaaaaaaaa");
+    expect(harness.elements.get("facet-artifact-title")?.textContent).toBe("Initial title");
+    expect((harness.runtime.document as unknown as { title: string }).title).toBe(
+      "Initial title · facet",
+    );
+    expect(harness.sessionStorage.getItem("facet:gallery-session")).toBeNull();
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe(terminalTheme);
+    expect(favicon.hrefWrites).toBe(terminalFaviconWrites);
+    expect(harness.elements.get("facet-canvas")?.children.filter(isIframe)).toHaveLength(1);
+  });
+
+  test("theme swaps preserve the current frame view state and unmount the old frame", async () => {
+    const harness = createRuntime();
+    const viewState = { zoom: 2.4, panX: 45, panY: -18 };
+    const appliedViewState: { value: ViewState | null } = { value: null };
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: async () => ({
+        observed: harness.defaultObserved,
+        viewMode: "native",
+        applyViewState: () => {},
+        readViewState: () => ({ ...viewState }),
+        defaultGestureMode: "native",
+        gestureMode: () => "native",
+        setGestureMode: () => {},
+        resetDiagramRegions: () => {},
+      }),
+    });
+    await startGallery(harness.runtime);
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: async () => ({
+        observed: harness.defaultObserved,
+        viewMode: "native",
+        applyViewState: (next: ViewState) => {
+          appliedViewState.value = next;
+        },
+        readViewState: () => ({ ...viewState }),
+        defaultGestureMode: "native",
+        gestureMode: () => "native",
+        setGestureMode: () => {},
+        resetDiagramRegions: () => {},
+      }),
+    });
+
+    harness.elements.get("facet-theme-toggle")?.click();
+    await waitFor(() => appliedViewState.value !== null);
+    const restoredViewState = appliedViewState.value;
+    if (restoredViewState === null) throw new Error("theme swap never restored the view state");
+    expect(restoredViewState).toEqual(viewState);
+    expect(harness.elements.get("facet-canvas")?.children.filter(isIframe)).toEqual([
+      harness.frames[1]!,
+    ]);
   });
 
   test("keeps render disabled without stored evidence and enables it after a completed revision swap", async () => {
