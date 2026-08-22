@@ -1,5 +1,87 @@
 # Changelog
 
+## [1.7.0](https://github.com/legion-works/facet/compare/v1.6.0...v1.7.0) (2026-08-22)
+
+
+### Features
+
+* **export:** shared export primitives; artifact-titled gallery tab ([b91be67](https://github.com/legion-works/facet/commit/b91be67f7de090f2c68e21a8284b085d87eb4ea3))
+* **gallery:** browser export menu — source, render, sidecar ([fdfa931](https://github.com/legion-works/facet/commit/fdfa93180b794e33a042d67f3b2087bf226afede))
+* **gallery:** center artifacts with safe overflow and a readable measure ([0d6408c](https://github.com/legion-works/facet/commit/0d6408c21d28045854671fee40c4181121f4e5de))
+* **gallery:** confine embedded diagram pan/zoom to its region ([a6e123e](https://github.com/legion-works/facet/commit/a6e123e755d434d8558aff3e6a151954b7f22cea))
+* **gallery:** verdict-tinted dynamic favicon ([ae82550](https://github.com/legion-works/facet/commit/ae825509ba82abd412feabeed1ead2fae9948789))
+* **service:** lease-gated gallery evidence route ([4e245e4](https://github.com/legion-works/facet/commit/4e245e45858181a563fbc9b4ce9efa0518b4b039))
+* **templates:** add complex artifact examples ([ca85bfb](https://github.com/legion-works/facet/commit/ca85bfb04695dbb7f7ce41acbee823f6d37987eb))
+* **templates:** add SVG and HTML examples ([4de821c](https://github.com/legion-works/facet/commit/4de821ca3cdff61fbc9bab6d689792ad51ba3c73))
+* **templates:** facet-story interactive TSX — the dev-process showcase ([cb00f29](https://github.com/legion-works/facet/commit/cb00f295f1493d23893a26989a1f7d485acc4b30))
+
+
+### Bug Fixes
+
+* **auth:** serialize empty token recovery ([bf1a8e6](https://github.com/legion-works/facet/commit/bf1a8e610ddba7952c16e7eaa971e886cca45a90))
+* **boundaries:** accept CRLF continuations ([40819ae](https://github.com/legion-works/facet/commit/40819ae46d3ca5e60fafaa21a07c4a7a2c8c0d78))
+* **boundaries:** fail closed on backtick dynamic import specifiers ([8e01c74](https://github.com/legion-works/facet/commit/8e01c7453c8279a210665a068a6237670c1c31a7))
+* **boundaries:** lex imports without string confusion ([8968f65](https://github.com/legion-works/facet/commit/8968f658583999622ccb575e33a978b8eb378b14))
+* **boundaries:** scan whole-file text so a multiline dynamic import cannot bypass the guard ([8b9c351](https://github.com/legion-works/facet/commit/8b9c35132ecfc188c3d1cb65479b40840971ce2b))
+* Bun 1.4.0 runtime compatibility — formatter, TSX evidence, stress ([71d7410](https://github.com/legion-works/facet/commit/71d7410e26438970377f81643dbc71627270d5ae))
+* **ci:** host-independent mermaid viewBox assertions; empty-diff skip in changed-test-stress ([387336c](https://github.com/legion-works/facet/commit/387336c44cc72ee176b0c7fb367f3675c3484bc6))
+* **cli:** allow piped publish without file flag ([6dc6483](https://github.com/legion-works/facet/commit/6dc6483ba11aa2cada7a6216f191a4b89ff6214b))
+* **cli:** reclaim dead foreign locks ([85a6058](https://github.com/legion-works/facet/commit/85a60580edbff59b64e6111e801a5b9acdf187bf))
+* **cli:** recover revisions and project file exports ([bcebd27](https://github.com/legion-works/facet/commit/bcebd270344763b67402e3b4eb1335935b81cfde))
+* **cli:** reject invalid metadata formats ([83a0e6f](https://github.com/legion-works/facet/commit/83a0e6f477f20145fcee0d64e028179e142c413a))
+* **frame:** validate before latching render ([a5a8b3c](https://github.com/legion-works/facet/commit/a5a8b3cd523dfb6019d46efd808c8feff3df3608))
+* **gallery:** allow inline styles in the artifact frame CSP ([d85273a](https://github.com/legion-works/facet/commit/d85273a628b3bf7436178321c83d465c861464ae))
+* **gallery:** bug-hunt fix wave ([aa6778f](https://github.com/legion-works/facet/commit/aa6778ff5b85856e36b72974f180cf618aa8d554))
+* **gallery:** close the stale-export window during evidence fetch ([472f13d](https://github.com/legion-works/facet/commit/472f13d9d5ead1919eab3e18a65ef38e46d61975))
+* **gallery:** converge drift from the teardown arc ([ed6bf04](https://github.com/legion-works/facet/commit/ed6bf046607e6aa64735e3230cf6e841cb52a91e))
+* **gallery:** cover viewBox-less svg zoom; comment cleanup ([79e8430](https://github.com/legion-works/facet/commit/79e8430d3341bd5929ab9fb9115b996815335fae))
+* **gallery:** CSP on root fallback, branch lease-expiry close, suppress panzoom on all siblings ([af08b85](https://github.com/legion-works/facet/commit/af08b856b9715241b943d121279be4e25f3bddd0))
+* **gallery:** deliver TSX execution to initial frame ([0500702](https://github.com/legion-works/facet/commit/05007023e5d407407de5ddfff54f9a2731bb21c5))
+* **gallery:** expire terminal sessions safely ([a58c50e](https://github.com/legion-works/facet/commit/a58c50e3bbc8fc08cf839f6fd765cca6e8a315fa))
+* **gallery:** gate in-flight swap completion on terminal expiry ([fbc2043](https://github.com/legion-works/facet/commit/fbc2043cf3f253b5b43d95d8ca3d43bfa6c64f1c))
+* **gallery:** install/remove wheel+pointer listeners only in panzoom mode ([c4e4d18](https://github.com/legion-works/facet/commit/c4e4d18667c398d318f01078693b18b5cf9305c1))
+* **gallery:** keep mermaid labels in markdown fences ([0159b89](https://github.com/legion-works/facet/commit/0159b890551814046d129b3f1347eec60c7ae166))
+* **gallery:** keep zoom and pan in the frame document ([2a16e28](https://github.com/legion-works/facet/commit/2a16e288958cf52e5053ae549c2c30afb078873d))
+* **gallery:** legible worker-card contrast in the night theme ([b0a58d1](https://github.com/legion-works/facet/commit/b0a58d15098ad39b547aae6d14a39a1bb1caae76))
+* **gallery:** native scroll by default; pan/zoom toggle for documents, on by default for diagrams ([21d112f](https://github.com/legion-works/facet/commit/21d112f1788dcad6f622acbe08cef8b1a93172d6))
+* **gallery:** pan scrolls the container instead of moving the viewBox camera ([d57a7db](https://github.com/legion-works/facet/commit/d57a7db46cc87f1a865141f7b0931fb490fd3869))
+* **gallery:** preserve terminal shell state ([eee5586](https://github.com/legion-works/facet/commit/eee5586ba7d7ea5875093beecfcb0681d9fd6a2b))
+* **gallery:** preserve TSX source bytes in export; typed evidence 404; extract export menu ([a06a44e](https://github.com/legion-works/facet/commit/a06a44ef2b36bb9135768adc205218fe6399453a))
+* **gallery:** preserve visible artifact bounds ([9620afa](https://github.com/legion-works/facet/commit/9620afa371f09150c4e3b97561ef570a4c6be221))
+* **gallery:** refresh survives without re-issuing the bootstrap token ([f12d804](https://github.com/legion-works/facet/commit/f12d804867480954d87e593c6b16910618e5cf50))
+* **gallery:** render wide mermaid at natural size instead of squeezing to fit ([b3173fd](https://github.com/legion-works/facet/commit/b3173fdc8c122a2a9c22e79ad2f11b57d9310756))
+* **gallery:** restore artifact scrolling ([1892853](https://github.com/legion-works/facet/commit/1892853b3bb5659c41b79fc5b41677aba75aa434))
+* **gallery:** single-region engagement exclusivity + discriminating pins ([ffd435f](https://github.com/legion-works/facet/commit/ffd435f98f71a329f699b1b8d169ba6618758095))
+* **gallery:** style nested interactive TSX frames ([869cd8c](https://github.com/legion-works/facet/commit/869cd8c69cd83534b08ac08df7a8af8142f5064d))
+* **gallery:** the stage is the window — remove the inset artifact card ([782d5aa](https://github.com/legion-works/facet/commit/782d5aa1d12e8e003140a260e5f8bec8d4936c4f))
+* **gallery:** use dark vendored HTML theme ([d1a92c8](https://github.com/legion-works/facet/commit/d1a92c84b898c1771fed3258073689f48bf72be5))
+* **gallery:** vendor full daisyUI styles ([f2bb14f](https://github.com/legion-works/facet/commit/f2bb14f14206fa19f7ab384ecc93a3f1f6e05037))
+* **lifecycle,tier1,cli:** fail-closed orphan cleanup, remove stranded late-launch profile, reject verb-scoped --format ([e23e867](https://github.com/legion-works/facet/commit/e23e867fa81cde222ad060b7a3516f60b27be466))
+* **mermaid:** count composite state nodes by scope ([cf22c09](https://github.com/legion-works/facet/commit/cf22c099877527ae87fb49b5b7b4cf593e8b295f))
+* **mermaid:** match Tier 1 node counts ([b5831fd](https://github.com/legion-works/facet/commit/b5831fd8893d38ea340ee7404fea01fae4c0f235))
+* **paths:** thread the evidence root end-to-end; tolerate legacy XDG root ([6453eda](https://github.com/legion-works/facet/commit/6453eda6d56e2bdcecbb6497f12a0420366286f0))
+* **runtime:** enforce caps at wire boundaries ([43dc8fd](https://github.com/legion-works/facet/commit/43dc8fd275252ec9170aa12abb496caaa4bf2672))
+* **runtime:** tighten protocol and gesture guards ([caaf3fb](https://github.com/legion-works/facet/commit/caaf3fb50dad960369b6d1ec0595939545b9dffa))
+* **service:** converge SSE teardown; fire lease-release listeners ([3a2ad84](https://github.com/legion-works/facet/commit/3a2ad8484da081059293a307980ec1346347a24a))
+* **service:** keep SSE sockets alive through heartbeats ([c72177d](https://github.com/legion-works/facet/commit/c72177deb215dd5de17df52c14a4eb2b12a75329))
+* **service:** preserve evidence and build root shell ([2196508](https://github.com/legion-works/facet/commit/2196508283fac5747f31b87a4046412f0a94c85d))
+* **service:** renew leases from SSE heartbeats ([0acdd76](https://github.com/legion-works/facet/commit/0acdd7663e1d39a62e68c97846719a97b94cdae1))
+* **service:** return stored publish verdicts ([4bd41b9](https://github.com/legion-works/facet/commit/4bd41b9332451a8b2fb567b87124a14b0ee0c554))
+* **store:** reject cross-artifact promotion; validate render-run before insert ([437591f](https://github.com/legion-works/facet/commit/437591fbec5c4bbef0b9ce96a03865bd4c1a8abc))
+* **store:** serialize evidence ownership cleanup ([11b8e1b](https://github.com/legion-works/facet/commit/11b8e1bfed464bd280c5c4a3099e3af9ea6e11f1))
+* **template:** align story metrics and taxonomy ([72c9bcb](https://github.com/legion-works/facet/commit/72c9bcbf5dc0ff001bfba5d83e67026f042de205))
+* **tests:** isolate DOM shim from gallery globals ([b16220b](https://github.com/legion-works/facet/commit/b16220b46e45f2c1f340966c5cf984284975b4a6))
+* **tier1:** size the Markdown verifier frame ([1b6b146](https://github.com/legion-works/facet/commit/1b6b14684243b5c7cbdc3f58fd870b1b631035b0))
+* **tier1:** wait for browser exit before profile reuse ([9af867e](https://github.com/legion-works/facet/commit/9af867e472bddc28f44c9cebeb7ab1ffe7cae221))
+* **tokens:** create install token exclusively ([5f16202](https://github.com/legion-works/facet/commit/5f16202cae39072ae6fb3771d3f2b0b63021e404))
+* **tsx:** render starters with the Legion dark style vocabulary ([f863588](https://github.com/legion-works/facet/commit/f86358882e7f0cc6d0244a07307180bd21c37636))
+* **validation:** run Tier 1 on visual read-back ([46ae18f](https://github.com/legion-works/facet/commit/46ae18f8dceb6ce7eb5142ad070233ac3ab5177f))
+
+
+### Performance Improvements
+
+* **tsx:** select production React bundles ([37fd6c5](https://github.com/legion-works/facet/commit/37fd6c5845c9890eec0799fc5ad84d3706798947))
+
 ## [1.6.0](https://github.com/legion-works/facet/compare/v1.5.0...v1.6.0) (2026-08-13)
 
 
