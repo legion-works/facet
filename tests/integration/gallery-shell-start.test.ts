@@ -1345,6 +1345,47 @@ describe("gallery shell startup", () => {
     ).toBe("dark");
   });
 
+  test("a failed revision that absorbs a theme intent leaves the visible theme persisted", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    let releaseFirstRevision!: () => void;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseFirstRevision = () =>
+            resolve(makeFakeRenderResult("native", harness.defaultObserved));
+        }),
+    });
+    harness.emitCommitted({ revisionSha: "b2".padEnd(64, "b"), revisionNumber: 2 });
+    await waitFor(() => harness.frames.length === 2);
+
+    harness.elements.get("facet-theme-toggle")?.click();
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: async () =>
+        makeFakeRenderResult("native", { ...harness.defaultObserved, errorCount: 1 }),
+    });
+    harness.emitCommitted({ revisionSha: "c3".padEnd(64, "c"), revisionNumber: 3 });
+    releaseFirstRevision();
+
+    await waitFor(() => harness.frames.length >= 3);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(harness.elements.get("facet-canvas")?.children.filter(isIframe)).toEqual([
+      harness.frames[1]!,
+    ]);
+    expect(JSON.parse(harness.sessionStorage.getItem("facet:gallery-session") ?? "{}").theme).toBe(
+      "system",
+    );
+    expect(
+      (harness.runtime.document as unknown as { documentElement: FakeElement }).documentElement
+        .dataset["theme"],
+    ).toBe("light");
+  });
+
   test("a failed new frame sets the favicon to unverified grey", async () => {
     const harness = createRuntime("native", {
       status: "ok",

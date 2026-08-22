@@ -1360,13 +1360,13 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
             result.failedNewFrameReady ? "unverified" : (revision.verdict?.status ?? "unverified"),
           );
           if (expired) return;
-          current = frame;
-          activeFrame = frame;
-          source = revision;
-          commitTheme(revisionThemeMode, revisionTheme);
-          syncPanZoomToggle();
-          syncZoomButtons();
           if (!result.failedNewFrameReady) {
+            current = frame;
+            activeFrame = frame;
+            source = revision;
+            commitTheme(revisionThemeMode, revisionTheme);
+            syncPanZoomToggle();
+            syncZoomButtons();
             const evidence = await fetchGalleryEvidence(
               baseUrl,
               handoff,
