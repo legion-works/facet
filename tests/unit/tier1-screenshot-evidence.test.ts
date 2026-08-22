@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   boundCaptureSize,
   captureBoundedScreenshot,
+  captureBoundedScreenshotParams,
   captureEvidenceScreenshot,
   captureScreenshotWithRetry,
   configureTier1Viewport,
@@ -272,6 +273,20 @@ describe("Tier 1 screenshot evidence", () => {
       quality: 82,
       captureBeyondViewport: true,
     });
+  });
+
+  test("uses the static whole-artifact clip for animated PNG frames", () => {
+    const bounded = {
+      bounds: { width: 4096, height: 227, scale: 4096 / 9000 },
+      source: { width: 9000, height: 500 },
+    };
+
+    const staticCapture = captureBoundedScreenshotParams("webp", bounded);
+    const animatedFrame = captureBoundedScreenshotParams("png", bounded);
+
+    expect(animatedFrame.clip).toEqual(staticCapture.clip);
+    expect(animatedFrame).toMatchObject({ format: "png", captureBeyondViewport: true });
+    expect(staticCapture).toMatchObject({ format: "webp", quality: 82 });
   });
 
   test("uses one static capture when the artifact does not declare animation", async () => {

@@ -850,22 +850,10 @@ export async function captureBoundedScreenshot(
   session: VerifierCdpSession,
   bounded?: BoundedScreenshotCapture,
 ): Promise<CapturedEvidenceImage | null> {
-  const shot = (await session.send("Page.captureScreenshot", {
-    format: "webp",
-    quality: TIER1_SCREENSHOT_WEBP_QUALITY,
-    captureBeyondViewport: true,
-    ...(bounded === undefined || bounded.bounds.scale === 1
-      ? {}
-      : {
-          clip: {
-            x: 0,
-            y: 0,
-            width: bounded.source.width,
-            height: bounded.source.height,
-            scale: bounded.bounds.scale,
-          },
-        }),
-  })) as { data?: string };
+  const shot = (await session.send(
+    "Page.captureScreenshot",
+    captureBoundedScreenshotParams("webp", bounded),
+  )) as { data?: string };
   if (typeof shot.data !== "string" || shot.data.length === 0) return null;
   if (shot.data.length > (TIER1_SCREENSHOT_CAP_BYTES * 4) / 3 + 4) return null;
   const bytes = Buffer.from(shot.data, "base64");
@@ -873,12 +861,24 @@ export async function captureBoundedScreenshot(
   return { bytes, format: "webp" };
 }
 
-async function captureBoundedPngScreenshot(
-  session: VerifierCdpSession,
+export function captureBoundedScreenshotParams(
+  format: "png" | "webp",
   bounded?: BoundedScreenshotCapture,
-): Promise<Buffer | null> {
-  const shot = (await session.send("Page.captureScreenshot", {
-    format: "png",
+): {
+  readonly format: "png" | "webp";
+  readonly quality?: number;
+  readonly captureBeyondViewport: true;
+  readonly clip?: {
+    readonly x: 0;
+    readonly y: 0;
+    readonly width: number;
+    readonly height: number;
+    readonly scale: number;
+  };
+} {
+  return {
+    format,
+    ...(format === "webp" ? { quality: TIER1_SCREENSHOT_WEBP_QUALITY } : {}),
     captureBeyondViewport: true,
     ...(bounded === undefined || bounded.bounds.scale === 1
       ? {}
@@ -891,7 +891,17 @@ async function captureBoundedPngScreenshot(
             scale: bounded.bounds.scale,
           },
         }),
-  })) as { data?: string };
+  };
+}
+
+async function captureBoundedPngScreenshot(
+  session: VerifierCdpSession,
+  bounded?: BoundedScreenshotCapture,
+): Promise<Buffer | null> {
+  const shot = (await session.send(
+    "Page.captureScreenshot",
+    captureBoundedScreenshotParams("png", bounded),
+  )) as { data?: string };
   if (typeof shot.data !== "string" || shot.data.length === 0) return null;
   return Buffer.from(shot.data, "base64");
 }

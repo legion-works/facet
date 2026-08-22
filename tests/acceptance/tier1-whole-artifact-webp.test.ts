@@ -5,7 +5,7 @@ import sharp from "sharp";
 
 import { publishFixture } from "../helpers/facet-testkit";
 
-const FIXTURE_PATH = `${import.meta.dir}/../fixtures/tsx/animated-wide-evidence.tsx`;
+const FIXTURE_PATH = `${import.meta.dir}/../fixtures/svg-animated-wide-evidence.svg`;
 
 function includesColor(
   pixels: Buffer,
@@ -28,8 +28,8 @@ function includesColor(
 test("Tier 1 stores bounded whole-artifact WebP evidence without clipping either edge", async () => {
   const published = await publishFixture({
     fixturePath: FIXTURE_PATH,
-    artifactType: "tsx",
-    execution: "interactive",
+    artifactType: "svg",
+    execution: "static",
     slug: "tier1-whole-artifact-webp",
     productionTier0: true,
   });
