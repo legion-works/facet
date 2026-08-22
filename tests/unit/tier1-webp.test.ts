@@ -37,7 +37,7 @@ describe("Tier 1 animated WebP encoding", () => {
         pngFrame([0, 255, 0, 255]),
         pngFrame([0, 0, 255, 255]),
       ]),
-      { width: 4, height: 4, delayMs: 150, quality: 82 },
+      { delayMs: 150, quality: 82 },
     );
 
     const metadata = await sharp(encoded, { animated: true }).metadata();
@@ -50,14 +50,10 @@ describe("Tier 1 animated WebP encoding", () => {
   test("reduces WebP quality when the first animated encoding exceeds the evidence cap", async () => {
     const frames = await Promise.all([noiseFrame(1), noiseFrame(2), noiseFrame(3), noiseFrame(4)]);
     const at82 = await encodeAnimatedWebp(frames, {
-      width: 256,
-      height: 256,
       delayMs: 150,
       quality: 82,
     });
     const at70 = await encodeAnimatedWebp(frames, {
-      width: 256,
-      height: 256,
       delayMs: 150,
       quality: 70,
     });
@@ -65,8 +61,6 @@ describe("Tier 1 animated WebP encoding", () => {
 
     expect(at70.byteLength).toBeLessThanOrEqual(capBytes);
     const encoded = await encodeAnimatedWebpWithinCap(frames, {
-      width: 256,
-      height: 256,
       delayMs: 150,
       qualities: [82, 70],
       capBytes,
@@ -84,8 +78,8 @@ describe("Tier 1 animated WebP encoding", () => {
       .toBuffer();
 
     await expect(
-      encodeAnimatedWebp([smaller, wider], { width: 4, height: 4, delayMs: 150, quality: 82 }),
-    ).rejects.toThrow("animated WebP frame dimensions do not match capture bounds");
+      encodeAnimatedWebp([smaller, wider], { delayMs: 150, quality: 82 }),
+    ).rejects.toThrow("animated WebP frames do not share dimensions");
   });
 
   test("keeps Sharp outside the byte-dumb service boundary", () => {

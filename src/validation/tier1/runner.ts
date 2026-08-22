@@ -398,9 +398,7 @@ async function runTier1Attempt(
         ? {}
         : { screenshotFormat: captured.screenshotFormat }),
       consolePath: captured.consolePath,
-      ...(status.startsWith("partial:") && captured.screenshotError !== null
-        ? { screenshotError: captured.screenshotError }
-        : {}),
+      ...(captured.screenshotError !== null ? { screenshotError: captured.screenshotError } : {}),
     });
     return result;
   } catch (error) {
@@ -928,8 +926,6 @@ async function captureAnimatedScreenshot(
     }
   }
   const bytes = await encodeAnimatedWebpWithinCap(frames, {
-    width: bounds.bounds.width,
-    height: bounds.bounds.height,
     delayMs: TIER1_ANIMATION_FRAME_INTERVAL_MS,
     qualities: TIER1_ANIMATION_WEBP_QUALITIES,
     capBytes: TIER1_SCREENSHOT_CAP_BYTES,
@@ -948,18 +944,19 @@ export async function captureEvidenceScreenshot(
   readonly screenshot: CapturedEvidenceImage | null;
   readonly screenshotError: ScreenshotError | null;
 }> {
+  if (options.captureStatic !== undefined) {
+    return captureScreenshotWithRetry(session, {
+      bounds: options.bounds,
+      capture: options.captureStatic,
+    });
+  }
   if (options.animated) {
     return captureScreenshotWithRetry(session, {
       bounds: options.bounds,
       capture: captureAnimatedScreenshot,
     });
   }
-  return options.captureStatic === undefined
-    ? captureScreenshotWithRetry(session, { bounds: options.bounds })
-    : captureScreenshotWithRetry(session, {
-        bounds: options.bounds,
-        capture: options.captureStatic,
-      });
+  return captureScreenshotWithRetry(session, { bounds: options.bounds });
 }
 
 interface ScreenshotRetryOptions {

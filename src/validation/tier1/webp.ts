@@ -1,8 +1,6 @@
 import sharp from "sharp";
 
 export interface AnimatedWebpOptions {
-  readonly width: number;
-  readonly height: number;
   readonly delayMs: number;
   readonly quality: number;
 }
@@ -20,8 +18,14 @@ export async function encodeAnimatedWebp(
   const metadata = await Promise.all(
     frames.map((frame) => sharp(frame, { limitInputPixels: true }).metadata()),
   );
-  if (metadata.some(({ width, height }) => width !== options.width || height !== options.height))
-    throw new Error("animated WebP frame dimensions do not match capture bounds");
+  const width = metadata[0]?.width;
+  const height = metadata[0]?.height;
+  if (
+    width === undefined ||
+    height === undefined ||
+    metadata.some((frame) => frame.width !== width || frame.height !== height)
+  )
+    throw new Error("animated WebP frames do not share dimensions");
   const decoded = await Promise.all(
     frames.map(async (frame) => {
       const result = await sharp(frame, { limitInputPixels: true })
@@ -32,16 +36,16 @@ export async function encodeAnimatedWebp(
     }),
   );
   if (decoded.some(({ info }) => info.channels !== 4))
-    throw new Error("animated WebP frame dimensions do not match capture bounds");
-  if (!Number.isSafeInteger(options.height * frames.length))
+    throw new Error("animated WebP frames must decode as RGBA");
+  if (!Number.isSafeInteger(height * frames.length))
     throw new Error("animated WebP frame stack is too tall");
 
   return sharp(Buffer.concat(decoded.map(({ bytes }) => bytes)), {
     raw: {
-      width: options.width,
-      height: options.height * frames.length,
+      width,
+      height: height * frames.length,
       channels: 4,
-      pageHeight: options.height,
+      pageHeight: height,
     },
   })
     .webp({
