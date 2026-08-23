@@ -150,15 +150,15 @@ describe("export CLI helpers", () => {
     const result = validExportResultFor("markdown");
     expect(resolveExportPaths(result, undefined, "/tmp/facet-cwd")).toEqual({
       artifactPath: "/tmp/facet-cwd/source-artifact-aaaaaaa.md",
-      sidecarPath: "/tmp/facet-cwd/source-artifact-aaaaaaa.facet.json",
+      sidecarPath: "/tmp/facet-cwd/source-artifact-aaaaaaa.md.facet.json",
     });
     expect(resolveExportPaths(result, "nested/custom.bin", "/tmp/facet-cwd")).toEqual({
       artifactPath: "/tmp/facet-cwd/nested/custom.bin",
-      sidecarPath: "/tmp/facet-cwd/nested/custom.facet.json",
+      sidecarPath: "/tmp/facet-cwd/nested/custom.bin.facet.json",
     });
     expect(resolveExportPaths(result, "/tmp/custom.svg", "/tmp/facet-cwd")).toEqual({
       artifactPath: "/tmp/custom.svg",
-      sidecarPath: "/tmp/custom.facet.json",
+      sidecarPath: "/tmp/custom.svg.facet.json",
     });
     expect(resolveExportPaths(result, "extensionless", "/tmp/facet-cwd").sidecarPath).toBe(
       "/tmp/facet-cwd/extensionless.facet.json",

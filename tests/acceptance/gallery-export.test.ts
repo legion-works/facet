@@ -142,7 +142,7 @@ describe("gallery export", () => {
       const sidecarDownload = await waitForBrowserDownload(target, downloadPath, () =>
         click(target!, "facet-export-sidecar"),
       );
-      expect(sidecarDownload.suggestedFilename).toBe("gallery-export.facet.json");
+      expect(sidecarDownload.suggestedFilename).toBe("gallery-export.svg.facet.json");
       const sidecar = ExportSidecarSchema.parse(
         JSON.parse(readFileSync(sidecarDownload.path, "utf8")),
       );

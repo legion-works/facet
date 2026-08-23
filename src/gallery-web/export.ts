@@ -1,4 +1,8 @@
-import { buildExportSidecar, extensionForExport } from "../shared/export";
+import {
+  buildExportSidecar,
+  extensionForExport,
+  sidecarFilenameForArtifact,
+} from "../shared/export";
 import type { EvidenceImageFormat } from "../shared/evidence-image";
 import type { ArtifactType } from "../shared/contracts/artifact-types";
 import type { Renderer } from "../shared/contracts/artifact";
@@ -72,8 +76,8 @@ export function renderFilename(
   return `${state.slug}${extensionForExport("render", state.artifactType, state.renderFormat ?? "png")}`;
 }
 
-export function sidecarFilename(state: Pick<GalleryExportState, "slug">): string {
-  return `${state.slug}.facet.json`;
+export function sidecarFilename(state: Pick<GalleryExportState, "slug" | "artifactType">): string {
+  return sidecarFilenameForArtifact(sourceFilename(state));
 }
 
 export function buildGallerySidecar(

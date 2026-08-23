@@ -45,12 +45,12 @@ The default name is `<slug>-<revisionSha prefix><extension>`.
 
 ## `--out` and sidecar names
 
-`--out` sets the artifact path. The sidecar replaces the artifact extension
-with `.facet.json`:
+`--out` sets the artifact path. The sidecar appends `.facet.json` to the full
+artifact filename:
 
 ```sh
 facet export art-123 --out exports/chart.json
-# writes exports/chart.json and exports/chart.facet.json
+# writes exports/chart.json and exports/chart.json.facet.json
 ```
 
 An extensionless path gets `.facet.json` appended:

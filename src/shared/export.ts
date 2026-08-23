@@ -22,6 +22,10 @@ export function extensionForExport(
     : SOURCE_EXTENSION_BY_ARTIFACT[artifactType];
 }
 
+export function sidecarFilenameForArtifact(artifactPath: string): string {
+  return `${artifactPath}.facet.json`;
+}
+
 export function buildExportSidecar(input: ExportSidecar): ExportSidecar {
   return ExportSidecarSchema.parse(input);
 }

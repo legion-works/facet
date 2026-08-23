@@ -1032,7 +1032,7 @@ describe("cli contract — wire", () => {
       const expectedPath = join(exportCwd, `seeded-render-${seeded.revisionSha.slice(0, 7)}.png`);
       const expectedSidecarPath = join(
         exportCwd,
-        `seeded-render-${seeded.revisionSha.slice(0, 7)}.facet.json`,
+        `seeded-render-${seeded.revisionSha.slice(0, 7)}.png.facet.json`,
       );
       expect(readFileSync(expectedPath)).toEqual(Buffer.from(screenshot));
       expect(JSON.parse(readFileSync(expectedSidecarPath, "utf8"))).toEqual(
@@ -1074,7 +1074,7 @@ describe("cli contract — wire", () => {
       expect(envelope.ok).toBe(false);
       if (!envelope.ok) expect(envelope.error.code).toBe("evidence_unavailable");
       expect(existsSync(outputPath)).toBe(false);
-      expect(existsSync(outputPath.replace(/\.png$/, ".facet.json"))).toBe(false);
+      expect(existsSync(`${outputPath}.facet.json`)).toBe(false);
     } finally {
       process.chdir(originalCwd);
     }
@@ -1116,7 +1116,7 @@ describe("cli contract — wire", () => {
       if (!exported.ok) throw new Error("export must succeed");
       expect(exported.data["command"]).toBe("export");
       const artifactPath = join(exportCwd, `cli-export-${revisionSha.slice(0, 7)}.md`);
-      const sidecarPath = join(exportCwd, `cli-export-${revisionSha.slice(0, 7)}.facet.json`);
+      const sidecarPath = join(exportCwd, `cli-export-${revisionSha.slice(0, 7)}.md.facet.json`);
       expect(readFileSync(artifactPath, "utf8")).toBe(source);
       expect(JSON.parse(readFileSync(sidecarPath, "utf8"))).toEqual(exported.data["sidecar"]);
       expect(exported.data["paths"]).toEqual({ artifactPath, sidecarPath });
@@ -1133,6 +1133,65 @@ describe("cli contract — wire", () => {
       const inline = parseStdoutEnvelope(inlineIo.stdoutBuf.value);
       if (!inline.ok) throw new Error("inline export must succeed");
       expect(inline.data["bytes"]).toBe(Buffer.from(source).toString("base64"));
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  test("keeps source and render exports with one shared stem in the same directory", async () => {
+    const { env, home } = makeEnv("export-shared-stem");
+    const seeded = seedRenderEvidence(
+      home,
+      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 11, 12, 13]),
+    );
+    const originalCwd = process.cwd();
+    const exportCwd = join(scratchRoot, `export-shared-stem-cwd-${crypto.randomUUID()}`);
+    mkdirSync(exportCwd, { recursive: true });
+    process.chdir(exportCwd);
+    try {
+      const sourceIo = makeIo();
+      const sourceExit = await runCli(
+        [
+          "export",
+          seeded.artifactId,
+          "--revision",
+          seeded.revisionSha,
+          "--format",
+          "source",
+          "--out",
+          "doc.md",
+        ],
+        { ...sourceIo, env },
+      );
+      expect(sourceExit.code).toBe(0);
+      const renderIo = makeIo();
+      const renderExit = await runCli(
+        [
+          "export",
+          seeded.artifactId,
+          "--revision",
+          seeded.revisionSha,
+          "--format",
+          "render",
+          "--out",
+          "doc.webp",
+        ],
+        { ...renderIo, env },
+      );
+      expect(renderExit.code).toBe(0);
+      expect(parseStdoutEnvelope(renderIo.stdoutBuf.value)).toMatchObject({ ok: true });
+      expect(readFileSync(join(exportCwd, "doc.md"))).toEqual(Buffer.from([9, 8, 7, 6]));
+      expect(readFileSync(join(exportCwd, "doc.webp"))).toEqual(
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 11, 12, 13]),
+      );
+      const sourceSidecar = JSON.parse(readFileSync(join(exportCwd, "doc.md.facet.json"), "utf8"));
+      const renderSidecar = JSON.parse(
+        readFileSync(join(exportCwd, "doc.webp.facet.json"), "utf8"),
+      );
+      expect(sourceSidecar.format).toBe("source");
+      expect(sourceSidecar).not.toHaveProperty("renderFormat");
+      expect(renderSidecar.format).toBe("render");
+      expect(renderSidecar.renderFormat).toBe("png");
     } finally {
       process.chdir(originalCwd);
     }
@@ -1192,7 +1251,7 @@ describe("cli contract — wire", () => {
       if (!published.ok) throw new Error("publish must succeed");
       const revisionSha = (published.data["revision"] as { sha256: string }).sha256;
       const artifactPath = join(exportCwd, "requested.md");
-      const sidecarPath = join(exportCwd, "requested.facet.json");
+      const sidecarPath = join(exportCwd, "requested.md.facet.json");
 
       const first = makeIo();
       await runCli(["export", artifactId, "--out", artifactPath], { ...first, env });
@@ -1288,7 +1347,7 @@ describe("cli contract — wire", () => {
         const out = testCase.flags[1];
         if (typeof out !== "string") throw new Error("missing matrix output path");
         expect(existsSync(out)).toBe(true);
-        expect(existsSync(out.replace(/\.artifact$/, ".facet.json"))).toBe(true);
+        expect(existsSync(`${out}.facet.json`)).toBe(true);
         expect(parseStdoutEnvelope(exportIo.stdoutBuf.value).ok).toBe(true);
       }
     } finally {

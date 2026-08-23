@@ -8,12 +8,12 @@
 
 import { existsSync, mkdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import type { ExportRequest } from "../../shared/contracts/commands/requests";
 import { ExportRequestSchema } from "../../shared/contracts/commands/requests";
 import type { ExportResult } from "../../shared/contracts/commands/results";
-import { extensionForExport } from "../../shared/export";
+import { extensionForExport, sidecarFilenameForArtifact } from "../../shared/export";
 import { FacetError } from "../../shared/errors/facet-error";
 import { generateRequestId } from "../../shared/util/time";
 
@@ -42,13 +42,7 @@ export function buildExportRequest(
 }
 
 export { extensionForExport } from "../../shared/export";
-
-function sidecarPathForArtifact(path: string): string {
-  const extension = extname(path);
-  return extension.length === 0
-    ? `${path}.facet.json`
-    : `${path.slice(0, -extension.length)}.facet.json`;
-}
+export { sidecarFilenameForArtifact } from "../../shared/export";
 
 function sanitizeDerivedNamePart(value: string): string {
   return value
@@ -89,7 +83,7 @@ export function resolveExportPaths(
     outFlag === undefined
       ? resolve(cwd, `${derivedSlug(result)}-${result.sidecar.revisionSha.slice(0, 7)}${extension}`)
       : resolve(cwd, outFlag);
-  return { artifactPath, sidecarPath: sidecarPathForArtifact(artifactPath) };
+  return { artifactPath, sidecarPath: sidecarFilenameForArtifact(artifactPath) };
 }
 
 export function writeExportFiles(

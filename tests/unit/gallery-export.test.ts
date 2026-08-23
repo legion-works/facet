@@ -70,7 +70,7 @@ describe("gallery export helpers", () => {
   test("derive source, render, and sidecar filenames from the displayed revision", () => {
     expect(sourceFilename(state())).toBe("example-slug.md");
     expect(renderFilename(state())).toBe("example-slug.png");
-    expect(sidecarFilename(state())).toBe("example-slug.facet.json");
+    expect(sidecarFilename(state())).toBe("example-slug.md.facet.json");
     expect(sourceFilename(state({ artifactType: "chart" }))).toBe("example-slug.json");
     expect(sourceFilename(state({ artifactType: "tsx" }))).toBe("example-slug.tsx");
   });
