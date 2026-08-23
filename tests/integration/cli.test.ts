@@ -27,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import packageJson from "../../package.json" with { type: "json" };
 
 import { FACET_SCHEMA_VERSION, FacetEnvelopeSchema } from "../../src/shared/contracts/envelope";
 import { FacetError } from "../../src/shared/errors/facet-error";
@@ -359,6 +360,22 @@ describe("cli contract — surface", () => {
     const exit = await runCli(["--version", "--format", "json"], { ...io, env });
     expect(exit.code).toBe(0);
     expect(parseStdoutEnvelope(io.stdoutBuf.value).ok).toBe(true);
+  });
+
+  test("version command reports the release package version", async () => {
+    const { env } = makeEnv("version-release");
+    const textIo = makeIo();
+    const textExit = await runCli(["--version"], { ...textIo, env });
+    const jsonIo = makeIo();
+    const jsonExit = await runCli(["--version", "--format", "json"], { ...jsonIo, env });
+
+    expect(textExit.code).toBe(0);
+    expect(textIo.stdoutBuf.value).toBe(`facet ${packageJson.version} (facet.v1)\n`);
+    expect(jsonExit.code).toBe(0);
+    expect(parseStdoutEnvelope(jsonIo.stdoutBuf.value)).toMatchObject({
+      ok: true,
+      data: { version: packageJson.version },
+    });
   });
 
   test("export usage errors exit 64 before service startup", async () => {

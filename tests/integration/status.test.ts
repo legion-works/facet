@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import packageJson from "../../package.json" with { type: "json" };
 import { tmpdir } from "node:os";
 
 import { collectFacetStatus } from "../../src/cli/commands/status";
@@ -155,6 +156,7 @@ describe("facet status", () => {
     expect(status.evidenceBytes).toBe(8);
     expect(status.activeLeases).toBe(2);
     expect(status.activeJobs).toBe(1);
+    expect(status.version).toBe(packageJson.version);
   });
 
   test("stale pid reuse is dormant when start time does not match", () => {

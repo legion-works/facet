@@ -9,6 +9,7 @@ import type { StatusRequest } from "../../shared/contracts/commands/requests";
 import { FACET_SCHEMA_VERSION } from "../../shared/contracts/envelope";
 import type { FacetRuntimePaths } from "../../shared/config/paths";
 import { evidenceBytesAcross, resolveEvidenceReadRoots } from "../../shared/config/evidence-read";
+import { FACET_VERSION } from "../../shared/version";
 import { readLiveMetadata } from "../service-metadata";
 
 export interface FacetStatusOptions {
@@ -96,7 +97,7 @@ export function collectFacetStatus(
     activeJobs: options.activeJobs ?? 0,
     browserJobs: options.browserJobs ?? 0,
     idleDeadline: options.idleDeadline ?? null,
-    version: "0.1.0",
+    version: FACET_VERSION,
     contractVersion: FACET_SCHEMA_VERSION,
   };
 }

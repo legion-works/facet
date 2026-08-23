@@ -27,6 +27,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { FACET_SCHEMA_VERSION, okEnvelope, type FacetEnvelope } from "../shared/contracts/envelope";
 import type { CommandRequest, CommandResult } from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
+import { FACET_VERSION } from "../shared/version";
 
 import { parseArgs, renderHelp, type ParsedCommand } from "./parser";
 import { buildVersionEnvelope, buildUsageError, printEnvelope, EXIT_CODES } from "./output";
@@ -255,9 +256,9 @@ export async function runCli(
   }
   if (parsed.kind === "version") {
     if (parsed.format === "json") {
-      printEnvelope(io.stdout, buildVersionEnvelope("0.1.0", FACET_SCHEMA_VERSION));
+      printEnvelope(io.stdout, buildVersionEnvelope(FACET_VERSION, FACET_SCHEMA_VERSION));
     } else {
-      io.stdout.write(`facet 0.1.0 (${FACET_SCHEMA_VERSION})\n`);
+      io.stdout.write(`facet ${FACET_VERSION} (${FACET_SCHEMA_VERSION})\n`);
     }
     return { code: EXIT_CODES.OK, spawnedPid: null };
   }
