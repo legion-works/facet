@@ -12,6 +12,14 @@ Any shell, CSP, sandbox, token, or network-boundary change requires evidence fro
 
 The `security-egress` job requires the named self-hosted Linux runner because hosted CI does not reliably provide user namespaces. If that runner is offline, pull requests touching security paths are correctly blocked until it returns; this is intentional fail-closed behavior. Maintainers must not relabel the check optional to unblock a change — move or repair the runner instead.
 
+Before release:
+
+- Run `bun test tests/unit/gallery-evidence-docs.test.ts`.
+- Confirm `skills/facet/SKILL.md` remains below 150 lines and its frontmatter contains `name` plus a trigger-focused `description`.
+- When README gallery behavior changes, regenerate screenshots through the recorded current process or mark them stale; never silently retain outdated captures.
+- Confirm docs table validation and `bun run format:check` pass.
+- Confirm migrations and schema references say v9. Keep release assets pinned to Bun 1.4.0 and browser `151.0.7922.77` unless a separate product arc changes them.
+
 ## Coverage posture
 
 The release bar is 90% aggregate lines and functions, enforced in CI by summing `coverage/lcov.info`. Bun has no aggregate mode, so its configured 70% lines/statements and 65% functions thresholds are only per-file anti-rot floors. The lower function floor accommodates the cross-process acceptance harness entrypoint while still catching files that rot to near-zero coverage. The five validation files that execute inside the netns subprocess or drive a separate browser process are excluded because Bun's in-process instrumentation cannot observe those instructions: `sandbox/netns.ts`, `tier0/runner.ts`, `tier1/browser-process.ts`, `tier1/cdp-pipe.ts`, and `tier1/runner.ts`. Browser-runtime files `gallery-web/sse-client.ts`, `gallery-web/frame/renderers/mermaid.ts`, and `gallery-web/frame/renderers/registry.ts` are likewise excluded because they execute browser-only streaming/runtime dispatch. These paths remain covered by the required security-egress, gallery-SSE integration, gate-forgery, and adversarial-render acceptance gates. Test helpers are excluded as infrastructure; pure Tier 0 parsers and in-process security code remain measured.

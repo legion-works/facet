@@ -24,9 +24,8 @@ recovery families are rejected (`html_encoding_unsupported`,
 via the frame-owned `data-facet-renderer-root` wrapper. See
 [HTML reference](reference/html.md) and
 [Structure](../STRUCTURE.md) for the policy / vocabulary / parser /
-renderer surface. Executable HTML, React/TSX artifacts, and
-artifact-supplied JavaScript remain out of scope and tracked under v2
-items below.
+renderer surface. Executable HTML and artifact-supplied JavaScript remain
+out of scope and tracked under v2 items below.
 ✓ DONE — Verdict path for structurally opaque content — the prerequisite for HTML mode,
 not a follow-up to it. Every observable a verdict is built from today
 (`rendererRootSvgCount`, `graphCount`, `mermaidNodeCount`, `visibleSvgCount`,
@@ -40,7 +39,13 @@ honestly (`partial:opaque_content`, with a mandatory `screenshotPath` or typed
 `screenshotError` marker) rather than asserting a structural claim the run could not check.
 Same principle as Insecure mode: a verdict must never claim a trust property the run
 did not have.
-• Screenshot policy tuning
+✓ DONE — Screenshot policy tuning — Tier 1 evidence uses WebP and captures
+the whole artifact scaled rather than clipped within a 4096-pixel axis,
+8,388,608 decoded-pixel, and 8 MiB encoded-byte cap. Interactive TSX is
+animation-eligible without a probe; static artifacts require live CSS or
+Web Animations before animated capture. v9 metadata records the result,
+while an unavailable capture returns the honest `screenshot_unavailable`
+path.
 ✓ DONE — Export slot — source and stored-render byte exports with a mandatory sidecar.
 • Browser pin upgrades
 ✓ DONE — Insecure mode — explicit opt-in relaxation tiers (`FACET_INSECURE=1|2|3`) with forced-floor composition, loud startup/envelope/CLI/gallery disclosure, and explicit `insecure` verdict markers. L1 removes Tier 1 netns isolation, L2 removes both validator netns layers, and L3 skips validation entirely. Levels are boot-only; no per-request escalation.
@@ -63,7 +68,9 @@ that status was set: it is now MET, not missed. The frame code-split (af46b64) c
 load+parse from ~119 ms to ~8 ms and took p95 from 354 ms to 253 ms — 47 ms inside the
 commitment. The remaining blocker is measurement, not performance: publish→visible needs a
 browser, and the former Bun 1.3.14 pin made the CDP transport wedge every time (3/3). Bun 1.4.0
-fixes oven-sh/bun#37230, so re-measure and enforce on the new stable pin.
+fixes oven-sh/bun#37230's fd-reuse failure, and runtime-scoped evidence now
+exists. Publish→visible remains recorded-not-enforced (`record-only` in
+`scripts/perf/budgets.ts`); its measurement is current, but it is not a gate.
 ✦ DONE (af46b64) — Code-split the 8.55 MB fresh-frame bootstrap bundle. Type-specific static
 entries: markdown 8,553,143 B → 60,788 B initial static graph (140×), svg → 14,326 B (597×);
 only chart still carries the Vega runtime, and only chart artifacts pay for it. Gallery and
@@ -98,9 +105,11 @@ art and is commercially licensed), so there is no structural surface for protoco
 probes to observe — the rejection above is a measured conclusion, not an assumption.
 • Animations — sequenced after HTML/React artifacts ship. Animated artifacts
 (CSS/SVG animation, transitions, animated charts) on top of the HTML/TSX mode.
-Verification note for design time: verdicts observe structure at a point in time,
-so an animated artifact verifies its static structure; animation fidelity is
-display-layer only unless a timeline probe is designed.
+Shipped prerequisite: Tier 1 evidence can preserve live CSS animation and
+interactive TSX as animated WebP. This is evidence capture, not a general
+animation surface; animation fidelity remains unvalidated. Verdicts observe
+structure at a point in time, so an animated artifact verifies its static
+structure unless a timeline probe is designed.
 • Forms `FormBridge`
 • Arbitrary npm for TSX artifacts
 • Split `src/validation/tier0/tsx/ast-policy.ts` and

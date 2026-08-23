@@ -5,6 +5,8 @@ Date: 2026-08-08
 Pre-commit HEAD: `dde2d7518dcbc9aebcba50f3f938c1d9b84e3b85` · this document is
 part of the following commit.
 
+Historical point-in-time gate; do not use its counts as current repository status. Current TSX runtime evidence is in `tsx-measurements.md`; current evidence format/limits are in `../reference/validation.md`.
+
 Runtime: Bun 1.4.0 · active gate browser `chrome-headless-shell 151.0.7922.77`
 
 ## Gates
