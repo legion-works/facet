@@ -177,17 +177,13 @@ export async function resolveGalleryBootstrap(
     };
     persistSession(options.storage, persisted);
     if (replacedSession !== null && replacedSession.lease.leaseId !== payload.lease.leaseId) {
-      try {
-        await releaseDisplayLease({
-          baseUrl: url.origin,
-          authorization: replacedSession.authorization,
-          artifactId: replacedSession.artifactId,
-          leaseId: replacedSession.lease.leaseId,
-          fetchImpl: fetcher,
-        });
-      } catch {
-        // The new bootstrap lease is already persisted; a stale lease may expire naturally.
-      }
+      void releaseDisplayLease({
+        baseUrl: url.origin,
+        authorization: replacedSession.authorization,
+        artifactId: replacedSession.artifactId,
+        leaseId: replacedSession.lease.leaseId,
+        fetchImpl: fetcher,
+      }).catch(noOp);
     }
     return { outcome: "bootstrapped", session, storage: options.storage };
   }

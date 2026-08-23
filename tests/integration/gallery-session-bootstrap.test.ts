@@ -112,6 +112,50 @@ describe("resolveGalleryBootstrap", () => {
     expect(releaseHeaders.get("x-gallery-artifact")).toBe("artifact-a");
   });
 
+  test("does not wait for an old lease release before bootstrapping the new artifact", async () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      GALLERY_SESSION_STORAGE_KEY,
+      JSON.stringify(
+        makeSession({
+          artifactId: "artifact-a",
+          lease: { leaseId: "lease-a", expiresAt: Date.now() + 60_000 },
+        }),
+      ),
+    );
+    let releaseStarted = false;
+    const neverRelease = new Promise<Response>(() => undefined);
+    const fetchImpl = (async (input: URL | RequestInfo) => {
+      if (String(input).endsWith("/bootstrap"))
+        return Response.json({
+          authorization: "Bearer session-b",
+          artifactId: "artifact-b",
+          revisionSha: "b".repeat(64),
+          lease: { leaseId: "lease-b", expiresAt: Date.now() + 60_000 },
+        });
+      releaseStarted = true;
+      return neverRelease;
+    }) as typeof fetch;
+
+    const result = await Promise.race([
+      resolveGalleryBootstrap({
+        location: "http://127.0.0.1:43123/gallery#bootstrap=artifact-b-token",
+        storage,
+        fetchImpl,
+        validateLease: async () => true,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("old lease release blocked bootstrap")), 100),
+      ),
+    ]);
+
+    expect(releaseStarted).toBe(true);
+    expect(result).toMatchObject({
+      outcome: "bootstrapped",
+      session: { artifactId: "artifact-b", revisionSha: "b".repeat(64) },
+    });
+  });
+
   test("maps a consumed bootstrap token 401 to the typed expired outcome", async () => {
     const result = await resolveGalleryBootstrap({
       location: "http://127.0.0.1:43123/gallery#bootstrap=consumed-token",

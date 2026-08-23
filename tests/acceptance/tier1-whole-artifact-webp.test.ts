@@ -25,6 +25,11 @@ function includesColor(
   return false;
 }
 
+function pixelAt(pixels: Buffer, channels: number, x: number, y: number, width: number) {
+  const offset = (y * width + x) * channels;
+  return [pixels[offset]!, pixels[offset + 1]!, pixels[offset + 2]!] as const;
+}
+
 describe("Tier 1 whole-artifact WebP capture", () => {
   test("Tier 1 stores bounded whole-artifact WebP evidence without clipping either edge", async () => {
     const published = await publishFixture({
@@ -45,6 +50,7 @@ describe("Tier 1 whole-artifact WebP capture", () => {
     const frameLength = decoded.info.width * (metadata.pageHeight ?? 0) * decoded.info.channels;
     const red = includesColor(decoded.data, decoded.info.channels, 255, 0, 0);
     const blue = includesColor(decoded.data, decoded.info.channels, 0, 0, 255);
+    const corner = pixelAt(decoded.data, decoded.info.channels, 0, 0, decoded.info.width);
     expect(metadata.format).toBe("webp");
     expect(metadata.width).toBeGreaterThan(1280);
     expect(metadata.width).toBeLessThanOrEqual(4096);
@@ -59,5 +65,8 @@ describe("Tier 1 whole-artifact WebP capture", () => {
     expect(decoded.info.width * decoded.info.height).toBeLessThanOrEqual(8_388_608);
     expect(red).toBe(true);
     expect(blue).toBe(true);
+    expect(corner[0]).toBeLessThan(60);
+    expect(corner[1]).toBeLessThan(60);
+    expect(corner[2]).toBeLessThan(70);
   }, 90_000);
 });
