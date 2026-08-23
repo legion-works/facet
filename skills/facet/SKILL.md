@@ -1,64 +1,92 @@
 ---
 name: facet
-description: Use when creating, publishing, rendering, validating, or inspecting artifacts, diagrams, charts, SVG, Markdown, or gallery output with Facet.
+description: Use when creating, publishing, validating, exporting, or inspecting Facet artifacts, diagrams, charts, SVG, Markdown, or gallery output; when choosing between Markdown, Mermaid, SVG, chart, HTML, and TSX; or when a Facet CLI envelope or typed error needs interpretation.
 ---
 
 # Facet
 
-Facet is the CLI seam for artifact storage and verification. Keep artifact
-bytes separate from host capabilities.
+Facet stores and verifies artifact bytes through a versioned CLI envelope. Keep
+artifact bytes separate from host capabilities.
 
-## Workflow
+## Choose the artifact type
 
-1. Run `facet status` before work. Dormant is healthy; `--start` is explicit.
-2. Create with `facet create --project-id <id> --slug <slug> --title <title>`.
-3. Publish bytes through stdin:
+| Need                     | Type                           | Why                                                                                         |
+| ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------- |
+| Prose or mixed documents | Markdown                       | Portable authored content.                                                                  |
+| One diagram              | Mermaid                        | A single declarative diagram.                                                               |
+| Authored vector output   | SVG                            | Precise vector output under the SVG contract.                                               |
+| Data visualization       | chart                          | Vega-Lite data visualization; `svg` is default, `canvas` only when chosen for the chart.    |
+| Static semantic report   | HTML                           | Static semantic report with vendored styles.                                                |
+| Component composition    | TSX: `static` \| `interactive` | Use `static` by default; use `interactive` only when runtime state or behavior is required. |
+
+## Publish and check
+
+1. Check status. Start only when needed: `facet status --start`.
+2. Create or reuse an artifact: `facet create --project-id <id> --slug <slug> --title <title>`.
+3. Publish source bytes with one of these forms:
 
    ```sh
-   printf '%s' "$SOURCE" | facet publish --artifact-id <id> --type markdown --file -
+   facet publish --artifact-id <id> --type markdown --file path/to/source.md
+   facet publish --artifact-id <id> --type markdown --file -
+   printf '%s' "$SOURCE" | facet publish --artifact-id <id> --type markdown
    ```
 
-4. Read back at default Tier 0. Escalate with `facet read-back --tier visual`.
-5. Use `facet open --artifact-id <id> --revision-sha <sha>` for human inspection.
-6. Read back the exact `revision.sha256` returned by publish. Never substitute a
-   latest revision lookup.
+4. For every publish response, branch on top-level `ok`. If it is true, separately inspect `data.verdict.status`, `tier`, `artifactId`, and `revisionSha`. `ok: true` only confirms command transport; `status: "error"` is a stored validation result, not a transport refusal.
+5. Read back Tier 0/latest by default: `facet read-back --artifact-id <id>`. Omit `--revision-sha` for the latest revision; pass its SHA only to pin reproducible read-back. Request `--tier 1` or `--tier visual` only when browser-backed evidence is needed.
 
-Tier 0 is the default. Tier 1 is explicit and browser-backed. `open` is Tier 2
-display, not automated verification.
+## Execution and evidence
 
-## Envelope
+`--execution static|interactive` applies to TSX only. `static` is the default;
+`interactive` is for client runtime state or behavior. Verdicts carry execution
+only for TSX. Interactive TSX is animation-eligible without probing; static
+artifacts become animation-eligible only after live CSS or Web Animations are
+detected.
 
-Success:
+Gallery display defaults to `system`; users may select `dark` or `light`, and
+the tab persists that choice. Tier 1 stays dark for deterministic parity.
 
-```json
-{
-  "schemaVersion": "facet.v1",
-  "requestId": "req-…",
-  "ok": true,
-  "data": { "command": "status", "state": "dormant" }
-}
-```
+## Export
 
-Refusal:
+Use `facet export <artifactId> --format source` for stored source, or
+`--format render` for retained Tier 1 evidence. Exports write local artifact and
+mandatory sidecar paths plus byte count by default. Use `--include-bytes` only
+when an envelope consumer genuinely needs base64 bytes. Render export preserves
+the detected evidence format:
 
-```json
-{
-  "schemaVersion": "facet.v1",
-  "requestId": "req-…",
-  "ok": false,
-  "error": { "code": "invalid_request", "message": "…", "retryable": false }
-}
-```
+- detected WebP for new captures;
+- detected PNG for legacy captures.
 
-Branch on `ok` and `error.code`. A typed refusal is still a valid envelope and
-normally exits 0. Exit 64 means the invocation could not be parsed; exit 70
-means an unhandled internal failure.
+## Promotion
+
+Promotion is operator-only. The CLI discovers the token from
+`FACET_PROMOTE_TOKEN`, then `FACET_HOME/secrets/promote.token`; never put a
+token on argv.
+
+## Error quick reference
+
+| Error                    | Do next                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `invalid_request`        | Correct the command flags, artifact type, or source bytes, then retry.                                           |
+| `artifact_not_found`     | List or create the artifact, then use its returned ID.                                                           |
+| `revision_not_found`     | Omit the SHA for latest, or replace it with a returned revision SHA.                                             |
+| `duplicate_revision`     | Use `error.details.revisionSha` as the existing revision SHA; do not republish identical bytes.                  |
+| `evidence_unavailable`   | Request Tier 1 evidence for that revision before a render export, or export source instead.                      |
+| `output_unwritable`      | Choose a writable `--out` path, resolve collisions, or use `--force` deliberately.                               |
+| `tier0_*`                | Repair the Tier 0 worker or its environment; a returned `status: "error"` is a verdict, not this envelope error. |
+| `tier1_*`                | Repair browser-backed validation availability, then retry the requested Tier 1 read-back.                        |
+| `screenshot_unavailable` | Inspect `Verdict.screenshotError`; it is a degraded stored verdict field, not an envelope error.                 |
 
 ## Boundaries
 
-• Never inline secrets into artifact content, notes, commands, or fixtures.
-• Promotion is operator-only; do not attempt to bypass its capability check.
-• Keep adapter logic CLI-only. Do not call HTTP routes or read runtime paths.
-• Preserve stdout exactly so callers can parse the versioned envelope.
+- Promotion is operator-only. Secrets never enter artifacts, notes, or argv.
+- The service is byte-dumb: do not call loopback routes, import renderers, or
+  parse artifact bytes outside the documented CLI workflow.
+- Do not run `facet open` as an agent: it launches local `xdg-open` for human
+  display on the operator's desktop. Ensure the service is active with
+  `facet status --start`, then use the documented [Steel/browser workflow](../../docs/guides/agents.md)
+  or ask a human to inspect.
+- Preserve stdout exactly so callers can parse the versioned envelope.
 
-→ [Agent workflow](../../docs/guides/agents.md) · [CLI reference](../../docs/reference/cli.md)
+## Deeper reference
+
+→ [Agent workflow](../../docs/guides/agents.md) · [CLI](../../docs/reference/cli.md) · [Export](../../docs/reference/export.md) · [Validation](../../docs/reference/validation.md) · [HTML](../../docs/reference/html.md) · [TSX](../../docs/reference/tsx.md) · [Security](../../docs/reference/security.md)

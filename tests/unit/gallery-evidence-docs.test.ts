@@ -4,17 +4,16 @@ import { join } from "node:path";
 
 const repositoryRoot = join(import.meta.dir, "../..");
 
+function readRepositoryFile(path: string): string {
+  return readFileSync(join(repositoryRoot, path), "utf8");
+}
+
 function readReference(name: string): string {
-  return readFileSync(join(repositoryRoot, "docs/reference", name), "utf8");
+  return readRepositoryFile(join("docs/reference", name));
 }
 
 function unescapedPipeCount(line: string): number {
-  let count = 0;
-  for (let index = 0; index < line.length; index += 1) {
-    if (line[index] !== "|" || line[index - 1] === "\\") continue;
-    count += 1;
-  }
-  return count;
+  return line.match(/(?<!\\)\|/g)?.length ?? 0;
 }
 
 function assertTableRowsHaveNoUnescapedCellPipes(document: string): void {
@@ -90,5 +89,14 @@ describe("gallery evidence documentation", () => {
     expect(cliReference).toMatch(/renderFormat/);
     expect(cliReference).toMatch(/theme/i);
     assertTableRowsHaveNoUnescapedCellPipes(cliReference);
+  });
+
+  test("canonical Facet skill teaches verdict inspection and operator promotion", () => {
+    const skill = readRepositoryFile("skills/facet/SKILL.md");
+
+    expect(skill).toMatch(/publish response[\s\S]*verdict[\s\S]*status.*error/i);
+    expect(skill).toMatch(/FACET_PROMOTE_TOKEN[\s\S]*FACET_HOME\/secrets\/promote\.token/i);
+    expect(skill).toMatch(/operator-only/i);
+    expect(skill).toMatch(/do not run `?facet open`?.*agent/is);
   });
 });
