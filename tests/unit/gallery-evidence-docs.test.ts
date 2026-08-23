@@ -99,4 +99,12 @@ describe("gallery evidence documentation", () => {
     expect(skill).toMatch(/operator-only/i);
     expect(skill).toMatch(/do not run `?facet open`?.*agent/is);
   });
+
+  test("README names current publish verdict and WebP evidence behavior", () => {
+    const readme = readRepositoryFile("README.md");
+
+    expect(readme).toMatch(/publish envelope[\s\S]*verdict/i);
+    expect(readme).toMatch(/WebP[\s\S]*whole artifact/i);
+    expect(readme).toMatch(/system[\s\S]*dark[\s\S]*light|system[\s\S]*light[\s\S]*dark/i);
+  });
 });
