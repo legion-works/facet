@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.1](https://github.com/legion-works/facet/compare/v1.7.0...v1.7.1) (2026-08-23)
+
+
+### Bug Fixes
+
+* **export:** bind sidecar filename to the exported file — closes [#20](https://github.com/legion-works/facet/issues/20) ([149857c](https://github.com/legion-works/facet/commit/149857c6f98ca31abed2f7c469c5650484f53801))
+* **gallery:** keep lease cleanup off bootstrap path ([c99ea55](https://github.com/legion-works/facet/commit/c99ea55a026d82afc86f75fed23d7db9fcc039de))
+* **gallery:** replace persisted session for bootstrap ([c97ae12](https://github.com/legion-works/facet/commit/c97ae12755cbadbf423216c9c1db5cac0b348e84))
+* **open:** report launch state and default latest revision ([a4db90d](https://github.com/legion-works/facet/commit/a4db90df93b17d18fd6674e86bc6451aa79f03c4))
+* **tier1:** embed gallery frame chrome styles ([cffc371](https://github.com/legion-works/facet/commit/cffc371919a07aa8705ded3614b5ad3f472c7115))
+* **version:** derive release version from package ([43d611c](https://github.com/legion-works/facet/commit/43d611cea51501c5a8618466ddeea566352c525a))
+
 ## [1.7.0](https://github.com/legion-works/facet/compare/v1.6.0...v1.7.0) (2026-08-23)
 
 
