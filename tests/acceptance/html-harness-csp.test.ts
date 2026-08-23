@@ -11,6 +11,13 @@ import { buildHarnessSrcdoc } from "../../src/validation/tier1/harness";
 import { resolveLauncher } from "../../src/validation/tier1/launcher";
 import { PuppeteerTier1Browser } from "../../src/validation/tier1/cdp-pipe";
 
+test("Tier 1 harness embeds the gallery frame and artifact styles", async () => {
+  const harness = await buildHarnessSrcdoc("html");
+
+  expect(harness.srcdoc).toContain("--facet-frame-surface: #151823");
+  expect(harness.srcdoc).toContain("--font-sans:");
+});
+
 test("Tier 1 harness CSP allows HTTPS images and blocks cleartext HTTP images", async () => {
   const directory = await mkdtemp(join(tmpdir(), "facet-html-csp-"));
   const launcher = resolveLauncher();

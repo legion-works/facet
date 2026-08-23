@@ -21,6 +21,7 @@
 import { build } from "bun";
 
 import { ARTIFACT_TYPES, type ArtifactType } from "../../gallery-web/frame/renderers/registry";
+import frameChromeStyles from "../../gallery-web/frame/styles/frame.css" with { type: "text" };
 import { freshHarnessNonce } from "./nonce";
 import { frameBundlePlugins } from "../../shared/build/frame-bundle-plugins";
 import { FROZEN_CSP_TEMPLATE as HARNESS_CSP } from "../../shared/security/frozen-csp";
@@ -131,6 +132,7 @@ export async function buildHarnessSrcdoc(artifactType: string): Promise<{
     `<meta charset="utf-8">` +
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `<style>html,body,#artifact{margin:0;min-height:100%;background:transparent}</style>` +
+    `<style>${frameChromeStyles.replace(/<\/style/gi, "<\\/style")}</style>` +
     (styles.length === 0 ? "" : `<style>${styles.replace(/<\/style/gi, "<\\/style")}</style>`) +
     "</head><body>" +
     `<main id="artifact" data-facet-nonce="${nonce}"></main>` +
