@@ -56,6 +56,10 @@ describe("tier 2 display open", () => {
       artifactId: "artifact-1",
       revisionSha: "a".repeat(64),
     });
+    expect(buildOpenRequest({ "artifact-id": "artifact-1" })).toEqual(
+      expect.objectContaining({ command: "open", artifactId: "artifact-1" }),
+    );
+    expect(buildOpenRequest({ "artifact-id": "artifact-1" })).not.toHaveProperty("revisionSha");
     expect(() => buildOpenRequest({ "artifact-id": "", "revision-sha": "a".repeat(64) })).toThrow(
       expect.objectContaining({ code: "invalid_request" }),
     );
@@ -161,6 +165,9 @@ describe("tier 2 display open", () => {
       const frameUrl = opened.data.frameUrl as string;
       expect(new URL(frameUrl).hostname).toBe("127.0.0.1");
       expect(frameUrl).not.toContain(service.installToken);
+      const latest = await command({ command: "open", artifactId });
+      expect(latest.ok).toBe(true);
+      expect(latest.data.revisionSha).toBe(revisionSha);
       const handoff = await consumeBootstrapHandoff({ location: frameUrl });
       expect(handoff.headers.get("x-gallery-lease")).toBe(handoff.lease.leaseId);
       const replay = await fetch(`${service.url}/api/v1/gallery/bootstrap`, {

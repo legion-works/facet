@@ -1496,6 +1496,56 @@ describe("cli contract — wire", () => {
     expect(parseStdoutEnvelope(publishIo.stdoutBuf.value).ok).toBe(true);
   }, 30_000);
 
+  test("open resolves the latest revision and reports whether it launched", async () => {
+    const { env } = makeEnv("open-launch-state");
+    const createIo = makeIo();
+    await runCli(["create", "--project-id", "p", "--slug", "open", "--title", "Open"], {
+      ...createIo,
+      env,
+    });
+    const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+    if (!created.ok) throw new Error("create must succeed");
+    const artifactId = (created.data["artifact"] as { id: string }).id;
+    const publishIo = makeIo("# open\n");
+    await runCli(["publish", "--artifact-id", artifactId, "--type", "markdown"], {
+      ...publishIo,
+      env,
+    });
+    const published = parseStdoutEnvelope(publishIo.stdoutBuf.value);
+    if (!published.ok) throw new Error("publish must succeed");
+    const revisionSha = (published.data["revision"] as { sha256: string }).sha256;
+
+    const skippedIo = makeIo();
+    const skippedExit = await runCli(
+      ["open", "--artifact-id", artifactId, "--no-launch"],
+      { ...skippedIo, env },
+      {
+        openLauncher: () => {
+          throw new Error("--no-launch must not invoke the launcher");
+        },
+      },
+    );
+    const skipped = parseStdoutEnvelope(skippedIo.stdoutBuf.value);
+    expect(skippedExit.code).toBe(0);
+    expect(skipped).toMatchObject({
+      ok: true,
+      data: { command: "open", revisionSha, launched: false },
+    });
+
+    const failedIo = makeIo();
+    const failedExit = await runCli(
+      ["open", "--artifact-id", artifactId],
+      { ...failedIo, env },
+      { openLauncher: () => Promise.reject(new Error("launcher unavailable")) },
+    );
+    const failed = parseStdoutEnvelope(failedIo.stdoutBuf.value);
+    expect(failedExit.code).toBe(0);
+    expect(failed).toMatchObject({
+      ok: true,
+      data: { command: "open", revisionSha, launched: false },
+    });
+  }, 30_000);
+
   test("missing required inputs are aggregated into typed usage envelopes", async () => {
     // Builders that throw on missing args must throw a FacetError
     // with code="invalid_request" so the main catch passes the
@@ -1513,7 +1563,6 @@ describe("cli contract — wire", () => {
         label: "create missing --title",
         exitCode: 64,
       },
-      { args: ["open", "--artifact-id", "x"], label: "open missing --revision-sha", exitCode: 64 },
       { args: ["pin", "--pinned", "true"], label: "pin missing --revision-id", exitCode: 64 },
       {
         args: ["promote", "--revision-id", "r", "--name", "n"],

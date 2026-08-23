@@ -84,7 +84,8 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
   ],
   open: [
     { flag: "--artifact-id", takesValue: true, required: true },
-    { flag: "--revision-sha", takesValue: true, required: true },
+    { flag: "--revision-sha", takesValue: true },
+    { flag: "--no-launch", takesValue: false },
   ],
   promote: [
     { flag: "--artifact-id", takesValue: true },

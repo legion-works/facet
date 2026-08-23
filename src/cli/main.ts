@@ -221,10 +221,14 @@ async function executeVerb(
   }
   if (verb.verb === "open" && response.ok) {
     const openData = response.data as Extract<CommandResult, { command: "open" }>;
-    await launchDisplay(
-      { frameUrl: openData.frameUrl, installToken: resolved.installToken },
-      openLauncher,
-    );
+    const launched =
+      args["no-launch"] === true
+        ? false
+        : await launchDisplay(
+            { frameUrl: openData.frameUrl, installToken: resolved.installToken },
+            openLauncher,
+          );
+    return { ...response, data: { ...openData, launched } };
   }
   return response;
 }

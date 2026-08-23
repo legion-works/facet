@@ -30,7 +30,7 @@ function launchWithXdgOpen(url: string): void {
 export async function launchDisplay(
   result: DisplayOpenResult,
   launcher: OpenLauncher = launchWithXdgOpen,
-): Promise<void> {
+): Promise<boolean> {
   if (result.installToken !== undefined && result.frameUrl.includes(result.installToken)) {
     throw new FacetError("invalid_envelope", "Display URL contains the install token", {
       retryable: false,
@@ -42,7 +42,12 @@ export async function launchDisplay(
       retryable: false,
     });
   }
-  await launcher(result.frameUrl);
+  try {
+    await launcher(result.frameUrl);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function buildOpenRequest(args: Readonly<Record<string, string | boolean>>): OpenRequest {
@@ -53,7 +58,10 @@ export function buildOpenRequest(args: Readonly<Record<string, string | boolean>
       retryable: false,
     });
   }
-  if (typeof revisionSha !== "string" || !/^[a-f0-9]{64}$/.test(revisionSha)) {
+  if (
+    revisionSha !== undefined &&
+    (typeof revisionSha !== "string" || !/^[a-f0-9]{64}$/.test(revisionSha))
+  ) {
     throw new FacetError("invalid_request", "--revision-sha must be a 64-char hex sha256", {
       retryable: false,
     });
@@ -62,6 +70,6 @@ export function buildOpenRequest(args: Readonly<Record<string, string | boolean>
     command: "open",
     requestId: generateRequestId(),
     artifactId,
-    revisionSha,
+    ...(revisionSha === undefined ? {} : { revisionSha }),
   };
 }

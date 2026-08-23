@@ -86,6 +86,7 @@ export const OpenResultSchema = BaseResultSchema.extend({
   artifactId: z.string().min(1),
   revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   frameUrl: z.string().min(1),
+  launched: z.boolean(),
   /**
    * Out-of-band lease capability for the SSE route. The lease id is
    * never embedded in `frameUrl`; the client carries it via the

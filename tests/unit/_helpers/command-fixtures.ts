@@ -148,6 +148,7 @@ export function validOpenResult() {
     artifactId: "art-1",
     revisionSha: "a".repeat(64),
     frameUrl: "facet://frame/art-1/" + "a".repeat(64),
+    launched: true,
     lease: {
       leaseId: "lease-1",
       // Fixed timestamp so two `validOpenResult()` calls in the same

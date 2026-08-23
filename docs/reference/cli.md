@@ -21,7 +21,7 @@ Errors use the same top level with `ok: false` and
 | `list`        | `--project-id`, `--slug-prefix`, `--limit`                                                                             |
 | `read-back`   | `--artifact-id`, optional `--revision-sha` (latest when omitted), `--tier` (one of: `0` \| `1` \| `visual`)            |
 | `status`      | `--artifact-id`, `--start` (valueless start-then-inspect switch)                                                       |
-| `open`        | `--artifact-id`, `--revision-sha`                                                                                      |
+| `open`        | `--artifact-id`, optional `--revision-sha` (latest when omitted), `--no-launch`                                        |
 | `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`                                           |
 | `instantiate` | `--name`, `--new-slug`, `--project-id`                                                                                 |
 | `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                                                        |
@@ -38,6 +38,7 @@ printf '# Report\n' | facet publish --artifact-id art-123 --type markdown
 facet read-back --artifact-id art-123 --tier 0
 facet read-back --artifact-id art-123 --revision-sha <sha256> --tier 0
 facet read-back --artifact-id art-123 --tier visual  # launches the pinned headless browser
+facet open --artifact-id art-123 --no-launch
 facet export art-123 --format render --out exports/report.webp
 facet export art-123 --format render --out exports/report-with-bytes.webp --include-bytes
 ```
@@ -59,6 +60,11 @@ together in one typed usage envelope.
 returns the normal status envelope. With `--artifact-id`, status includes
 `latestRevisionSha`; `read-back --artifact-id <id>` uses that latest revision
 when `--revision-sha` is omitted.
+
+`open --artifact-id <id>` resolves the latest revision when no SHA is supplied.
+It returns `data.frameUrl` and `data.launched`; `--no-launch` leaves the URL
+available without invoking the desktop launcher, and a launcher failure reports
+`launched: false`.
 
 `publish --renderer` selects the renderer persisted with the revision. It
 defaults to `svg`; `canvas` is valid only for chart artifacts. An invalid

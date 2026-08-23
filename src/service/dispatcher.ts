@@ -602,11 +602,17 @@ export async function dispatch(
       };
     }
     case "open": {
-      const revision = deps.repository.getRevisionBySha(command.artifactId, command.revisionSha);
+      const revision =
+        command.revisionSha === undefined
+          ? deps.repository.getLatestRevision(command.artifactId)
+          : deps.repository.getRevisionBySha(command.artifactId, command.revisionSha);
       if (revision === null) {
         throw new FacetError("revision_not_found", "Revision not found", {
           retryable: false,
-          details: { artifactId: command.artifactId, revisionSha: command.revisionSha },
+          details: {
+            artifactId: command.artifactId,
+            ...(command.revisionSha === undefined ? {} : { revisionSha: command.revisionSha }),
+          },
         });
       }
       const lease = deps.leases.issue({ artifactId: command.artifactId, pid: process.pid });
@@ -616,13 +622,14 @@ export async function dispatch(
       // or browser history cannot leak the lease. The frameUrl only
       // identifies the artifact + revision; the SSE route takes the
       // lease id via `X-Gallery-Lease` header.
-      const frameUrl = `facet://frame/${command.artifactId}/${command.revisionSha}`;
+      const frameUrl = `facet://frame/${command.artifactId}/${revision.sha256}`;
       return {
         command: "open",
         requestId,
         artifactId: command.artifactId,
-        revisionSha: command.revisionSha,
+        revisionSha: revision.sha256,
         frameUrl,
+        launched: false,
         lease: {
           leaseId: lease.leaseId,
           expiresAt: lease.expiresAt,

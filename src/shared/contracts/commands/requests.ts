@@ -102,7 +102,10 @@ export type StatusRequest = z.infer<typeof StatusRequestSchema>;
 export const OpenRequestSchema = BaseRequestSchema.extend({
   command: z.literal("open"),
   artifactId: z.string().min(1),
-  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
+  revisionSha: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
 });
 export type OpenRequest = z.infer<typeof OpenRequestSchema>;
 
