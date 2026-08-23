@@ -124,8 +124,12 @@ cannot weaken the verdict.
 ## Vendored styling
 
 Styling comes exclusively from the frame's offline-vendored stylesheet.
-daisyUI ships every component from the pinned package with the `night` theme
-as the default. Tailwind utilities come from a deterministic corpus that
+certain gallery frames map resolved light/dark themes to daisyUI's `winter` and
+`night` themes. The gallery preference defaults to `system` and resolves from
+the user's light/dark preference; Tier 1 deliberately fixes dark/night parity
+for deterministic structural comparison. Artifact-authored HTML still cannot
+supply `<style>` or `style=`; gallery theming does not widen that policy.
+Tailwind utilities come from a deterministic corpus that
 covers the templates, this reference, and common layout, spacing, typography,
 and color classes.
 

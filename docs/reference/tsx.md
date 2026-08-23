@@ -76,11 +76,24 @@ durable errors, but outranks single-snapshot structural claims.
 
 ## Measurements and limits
 
-Measured determinism, compiler bytes, and nested-channel observations are in
-[TSX measurements](../verification/tsx-measurements.md). Interactive bundles
-explicitly select production React. They remain unminified so operators can
-audit emitted bundle bytes; the current measured bundle size, retention cost,
-and 2 MiB-cap headroom are derived in the evidence table.
+The supported Bun floor and CI pin is `1.4.0`; it includes the fd-reuse fix
+needed for reliable CDP-pipe operation. Measured determinism, compiler bytes,
+and nested-channel observations are in the separate [Bun 1.3.14](../verification/tsx-measurements.md#bun-1314)
+and [Bun 1.4.0](../verification/tsx-measurements.md#bun-140) tables. The
+evidence is runtime-scoped: do not treat hashes as invariant across Bun
+versions.
+
+Interactive TSX declares eligibility for animated WebP evidence without a
+probe. Static TSX, HTML, and SVG can become eligible when live CSS or Web
+Animations are detected. Eligibility does not assert visible motion.
+
+New retained screenshots are WebP and may contain multiple frames. Source
+export remains the original `.tsx` bytes, and the `execution` marker remains
+conditional on TSX responses.
+
+Interactive bundles explicitly select production React. They remain unminified
+so operators can audit emitted bundle bytes; the current measured bundle size,
+retention cost, and 2 MiB-cap headroom are derived in the evidence tables.
 
 ## Starters
 

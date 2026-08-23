@@ -12,15 +12,24 @@ service and gallery contract.
 | `POST` | `/api/v1/gallery/bootstrap`                                | Consume the one-shot `open` capability and return the artifact, revision, bearer, and lease. |   `200` |
 | `POST` | `/api/v1/gallery/release`                                  | Release a gallery lease.                                                                     |   `204` |
 | `GET`  | `/api/v1/gallery/source?revisionSha=<sha>`                 | Read source bytes and the latest stored verdict for the leased revision.                     |   `200` |
+| `GET`  | `/api/v1/gallery/evidence?revisionSha=<sha>`               | Read retained Tier 1 screenshot bytes for the leased revision without rerendering.           |   `200` |
 | `GET`  | `/gallery` and `/gallery/*`                                | Serve the built gallery shell and static assets.                                             |   `200` |
-| `GET`  | `/gallery/frame?nonce=<32 hex>&type=<type>`                | Return a frozen-CSP frame document for `markdown`, `mermaid`, `svg`, or `chart`.             |   `200` |
+| `GET`  | `/gallery/frame?nonce=<32 hex>&type=<type>&theme=<theme>`  | Return a frame document for `markdown`, `mermaid`, `svg`, `chart`, `html`, or `tsx`.         |   `200` |
 | `GET`  | `/gallery/frame/bootstrap/*` and `/gallery/frame/chunks/*` | Serve bundled frame scripts.                                                                 |   `200` |
 
 The gallery source route requires a non-empty `revisionSha`. It returns
 `artifactId`, the bound SHA, `artifactType`, `renderer`, UTF-8 `source`, and
-`verdict` (or `null`). The source and stream routes match both the lease ID and
-the artifact ID, preventing a valid lease for one artifact from reading
-another.
+`verdict` (or `null`); TSX source responses also carry `execution`.
+The source and stream routes match both the lease ID and the artifact ID,
+preventing a valid lease for one artifact from reading another.
+
+The evidence route requires the same lease and artifact headers as the source
+route. It serves retained screenshot bytes with a content type sniffed from
+the bytes: `image/webp` or `image/png`. `screenshot_format` metadata does not
+override the file signature, and the route never rerenders the artifact.
+
+`theme` is validated as `dark` or `light` when supplied. It selects resolved
+frame display state; it is not an authorization or validation control.
 
 ## Authentication
 
@@ -69,7 +78,8 @@ are not trusted as authorization.
 
 ## Status shape
 
-Status reports `state` (`dormant` or `active`), `process` (`pid`, `uptimeMs`,
+Status reports artifact-scoped `latestRevisionSha`, `revisionCount`,
+`pinnedCount`, and `templateCount` alongside `state` (`dormant` or `active`), `process` (`pid`, `uptimeMs`,
 `rssBytes`, `pssBytes`), `dbBytes`, `evidenceBytes`, `activeLeases`,
 `activeJobs`, `browserJobs`, `idleDeadline`, `version`, and `contractVersion`.
 Unavailable memory values are `null`; RSS from multiple processes is not summed.
