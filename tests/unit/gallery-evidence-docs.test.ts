@@ -91,6 +91,21 @@ describe("gallery evidence documentation", () => {
     assertTableRowsHaveNoUnescapedCellPipes(cliReference);
   });
 
+  test("CLI reference pins publish verdict and promote token sources", () => {
+    const cli = readReference("cli.md");
+
+    expect(cli).toMatch(/publish envelope[\s\S]*stored Tier 0 verdict[\s\S]*status.*error/is);
+    expect(cli).toMatch(/FACET_PROMOTE_TOKEN[\s\S]*FACET_HOME\/secrets\/promote\.token/is);
+  });
+
+  test("storage reference names schema v9 and WebP screenshot metadata", () => {
+    const storage = readReference("storage.md");
+
+    expect(storage).toMatch(/current schema is v9/i);
+    expect(storage).toMatch(/screenshot\.webp/);
+    expect(storage).toMatch(/screenshot_format/);
+  });
+
   test("canonical Facet skill teaches verdict inspection and operator promotion", () => {
     const skill = readRepositoryFile("skills/facet/SKILL.md");
 

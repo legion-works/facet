@@ -33,6 +33,24 @@ Errors use the same top level with `ok: false` and
 `--format json` on meta commands. Verb stdout is always a JSON envelope;
 `--format` applies only to meta commands and `export`.
 
+```sh
+printf '# Report\n' | facet publish --artifact-id art-123 --type markdown
+facet read-back --artifact-id art-123 --tier 0
+facet read-back --artifact-id art-123 --revision-sha <sha256> --tier 0
+facet read-back --artifact-id art-123 --tier visual  # launches the pinned headless browser
+facet export art-123 --format render --out exports/report.webp
+facet export art-123 --format render --out exports/report-with-bytes.webp --include-bytes
+```
+
+For file input, use the same publish request with `--file report.md` instead of
+the piped `--file -` form above. The read-back and render-export steps are still
+required before exporting Tier 1 evidence.
+
+The publish envelope carries the stored Tier 0 verdict, including when its
+`status` is `error`; callers must inspect `data.verdict` before treating the
+publication as usable. A duplicate publish returns `ok: false` with
+`duplicate_revision`; the existing SHA is in `error.details.revisionSha`.
+
 Every verb accepts `--help`. It prints its positional arguments and flags from
 the same command table used by the parser. Missing required inputs are reported
 together in one typed usage envelope.
@@ -60,6 +78,20 @@ Tier 0 verdict even when its `status` is `error`. `read-back --tier 1` and
 revision-bound verdict. If the pinned browser or its network namespace is
 unavailable, visual read-back records a Tier 1 `error` verdict with a typed
 `tier1_*` code.
+
+`screenshot_unavailable` is nested verdict evidence
+(`data.verdict.screenshotError`), not a top-level CLI error code. Common typed
+errors and next actions:
+
+| code                   | next action                                                                                                    |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `artifact_not_found`   | Check the artifact ID and list the project.                                                                    |
+| `revision_not_found`   | Omit the SHA for latest read-back or use an existing SHA.                                                      |
+| `duplicate_revision`   | Reuse `error.details.revisionSha`; no new revision was stored.                                                 |
+| `output_unwritable`    | Fix the output directory, permissions, or rename target.                                                       |
+| `evidence_unavailable` | Run Tier 1 again or inspect retention and evidence paths.                                                      |
+| `tier0_*`              | Inspect `error.details`; restore the Tier 0 worker, isolation, protocol, or runtime prerequisites named there. |
+| `tier1_*`              | Restore browser/network prerequisites and retry visual read-back.                                              |
 
 Gallery theme modes are `system`, `dark`, and `light`. The selected mode is
 session-persistent and changes Tier 2 display; Tier 1 remains dark for

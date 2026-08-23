@@ -78,8 +78,11 @@ capture it emulates `prefers-reduced-motion: reduce` and awaits
 Interactive TSX declares animated-capture eligibility; it does not imply that
 the component is always visibly changing. CSS/Web Animations are probed, and
 eligible captures may contain multiple WebP frames. Static artifacts retain a
-single frame. A capture that cannot fit the whole artifact within any bound is
-unavailable rather than silently clipped.
+single frame. Whole-artifact capture is downscaled to fit the axis,
+decoded-pixel, and encoded-size bounds; it is never clipped. If the complete
+image cannot fit the encoded cap, the verdict remains honest with
+`screenshotError.code = screenshot_unavailable` rather than claiming a partial
+capture.
 
 Levels 0–2 record Tier 0 on publish. A Tier 1 run is explicit: visual
 read-back records it on demand, then reuses the revision-bound result. A
@@ -197,14 +200,13 @@ Insecure execution conditions are metadata: every insecure-level verdict carries
 Level 3 additionally produces the `insecure:unvalidated` status.
 
 ```
-shared/contracts/validation.ts   canonical VerdictSchema + RenderStatus
-                                 + Tier1Result refine (partial-screenshot)
-shared/contracts/artifact.ts     RenderRunSchema adds `retained` and `screenshotErrorJson`
- service/store/schema.ts      V2_SCHEMA_FRAGMENT, V3_SCHEMA_FRAGMENT, V4_SCHEMA_FRAGMENT, V5_SCHEMA_FRAGMENT
- service/store/migrations.ts      additive v2, v3, v4, and v5 migrations
+shared/contracts/validation.ts   VerdictSchema, RenderStatus, and Tier 1 refinements
+shared/contracts/artifact.ts     RenderRunSchema and screenshot error metadata
+service/store/schema.ts          additive v2–v9 schema fragments
+service/store/migrations.ts      transactional migration application
 service/store/evidence-retention.ts
-                                 last-N cleanup + 0700 directory ensure
-service/store/repository.ts      recordRenderRun wires retention + cleanup-on-failure
-service/dispatcher.ts            passes screenshotPath/consolePath through
-validation/tier1/runner.ts       emits paths; captures post-verdict
+                                  last-N cleanup and 0700 directory enforcement
+service/store/repository.ts      render-run persistence and cleanup-on-failure
+service/dispatcher.ts            revision binding and screenshot-path handoff
+validation/tier1/runner.ts       post-verdict capture and evidence paths
 ```

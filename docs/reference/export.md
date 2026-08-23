@@ -9,8 +9,12 @@ facet export <artifactId> [--revision <sha>] [--format source|render] [--out <pa
 The default format is `source`. The command returns one JSON envelope on
 stdout and writes the exported bytes plus a mandatory sidecar locally. In
 file-output mode the CLI envelope reports `paths`, `byteCount`, and `sidecar`
-instead of duplicating base64 bytes. Pass `--include-bytes` to retain the wire
-payload in the CLI envelope; the HTTP/API contract always retains it.
+instead of duplicating base64 bytes. Without `--include-bytes`, file export
+writes both files and projects the envelope to `paths` and `byteCount`, omitting
+`bytes`. With `--include-bytes`, file export still writes both files but keeps
+the service wire payload: `bytes` is present and the CLI `paths` and `byteCount`
+projection is absent. Use the flag only for compatibility or debugging; omit
+it for ordinary file export.
 
 ## Source and render
 
@@ -21,8 +25,10 @@ retained evidence; it serves the stored bytes, never starts a renderer or
 reruns validation. The detected PNG or WebP format is preserved. Legacy `.png`
 evidence remains backward compatible and can still be read and exported.
 
-Both formats carry the selected revision and its stored verdict in the
-sidecar. A missing render screenshot is an `evidence_unavailable` error.
+Both formats carry the selected revision and its stored verdict in the sidecar.
+A missing render screenshot is an `evidence_unavailable` error. An unknown
+artifact returns `artifact_not_found`; a requested but unknown revision SHA
+returns `revision_not_found`.
 
 ## Default extensions
 
@@ -85,6 +91,13 @@ has no Tier 1 run, the run has no capture, retention evicted the evidence, or
 the recorded screenshot file is missing.
 
 It does not fall back to an older run or substitute source bytes.
+
+See [Validation](validation.md) for the nested `screenshot_unavailable`
+verdict evidence and [Storage](storage.md) for v9 `screenshot_format` metadata.
+
+Local directory creation, permission, staging, or rename failures return the
+typed `output_unwritable` error. Existing output remains untouched when a
+write cannot complete.
 
 ## Security boundary
 

@@ -23,7 +23,7 @@ the evidence root and every per-run evidence directory.
 ## Schema migrations
 
 `runMigrations` records applied versions in `schema_migrations` and applies
-additive fragments in order. The current schema is v8:
+additive fragments in order. The current schema is v9:
 
 | version | change                                                                                                                                                                 |
 | ------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,6 +35,7 @@ additive fragments in order. The current schema is v8:
 |      v6 | Adds static `html` revisions and HTML observations.                                                                                                                    |
 |      v7 | Backfills HTML observation defaults.                                                                                                                                   |
 |      v8 | Adds `tsx`, declared revision execution, and nullable `render_runs.compiled_path`.                                                                                     |
+|      v9 | Adds `render_runs.screenshot_format`, recorded as `png` or `webp` for retained evidence.                                                                               |
 
 Migrations are additive and transactional. Existing revisions are not rewritten
 when a later schema version is applied.
@@ -60,10 +61,18 @@ Tier 0 stores its row and, for successful TSX compilation, derived compiled
 bytes at `compiled_path`. Tier 1 stores the row plus a deterministic per-run directory:
 
 ```text
-<evidence>/<artifactId>/<revisionSha>/<runId>/
-├── screenshot.png
-└── console.txt
+<evidence>/tier1/<revisionSha>/<runId>/
+├── screenshot.webp
+├── console.txt
+└── protocol-observation.json
 ```
+
+New captures use `screenshot.webp`; legacy retained rows may keep
+`screenshot.png`. The v9 `render_runs.screenshot_format` value is `webp` or
+`png`, but bytes are authoritative on read and export: the service sniffs PNG
+and WebP signatures and treats unknown signatures as unavailable rather than
+trusting stale metadata. The service stores and serves bytes; it does not
+encode screenshots.
 
 The row also points to `protocol-observation.json` when present. The evidence
 root and each run directory are mode `0700`. `EVIDENCE_LAST_N_PER_ARTIFACT`
