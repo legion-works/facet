@@ -151,6 +151,7 @@ export async function resolveGalleryBootstrap(
   const liveToken = fragment.get("bootstrap");
 
   if (liveToken !== null && liveToken.length > 0) {
+    const replacedSession = readPersistedSession(options.storage);
     options.clearFragment?.();
     const fetcher = options.fetchImpl ?? fetch;
     const response = await fetcher(`${url.origin}/api/v1/gallery/bootstrap`, {
@@ -175,6 +176,19 @@ export async function resolveGalleryBootstrap(
       theme: "system",
     };
     persistSession(options.storage, persisted);
+    if (replacedSession !== null && replacedSession.lease.leaseId !== payload.lease.leaseId) {
+      try {
+        await releaseDisplayLease({
+          baseUrl: url.origin,
+          authorization: replacedSession.authorization,
+          artifactId: replacedSession.artifactId,
+          leaseId: replacedSession.lease.leaseId,
+          fetchImpl: fetcher,
+        });
+      } catch {
+        // The new bootstrap lease is already persisted; a stale lease may expire naturally.
+      }
+    }
     return { outcome: "bootstrapped", session, storage: options.storage };
   }
 

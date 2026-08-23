@@ -64,6 +64,54 @@ describe("resolveGalleryBootstrap", () => {
     expect(exchanges).toHaveLength(1);
   });
 
+  test("replaces a persisted session when a bootstrap token names a newer artifact", async () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      GALLERY_SESSION_STORAGE_KEY,
+      JSON.stringify(
+        makeSession({
+          artifactId: "artifact-a",
+          revisionSha: "a".repeat(64),
+          lease: { leaseId: "lease-a", expiresAt: Date.now() + 60_000 },
+        }),
+      ),
+    );
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, ...(init === undefined ? {} : { init }) });
+      if (url.endsWith("/bootstrap"))
+        return Response.json({
+          authorization: "Bearer session-b",
+          artifactId: "artifact-b",
+          revisionSha: "b".repeat(64),
+          lease: { leaseId: "lease-b", expiresAt: Date.now() + 60_000 },
+        });
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+
+    const result = await resolveGalleryBootstrap({
+      location: "http://127.0.0.1:43123/gallery#bootstrap=artifact-b-token",
+      storage,
+      fetchImpl,
+      validateLease: async () => true,
+    });
+
+    expect(result).toMatchObject({
+      outcome: "bootstrapped",
+      session: { artifactId: "artifact-b", revisionSha: "b".repeat(64) },
+    });
+    expect(JSON.parse(storage.getItem(GALLERY_SESSION_STORAGE_KEY) ?? "{}")).toMatchObject({
+      artifactId: "artifact-b",
+      revisionSha: "b".repeat(64),
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.url).toBe("http://127.0.0.1:43123/api/v1/gallery/release");
+    const releaseHeaders = new Headers(requests[1]?.init?.headers);
+    expect(releaseHeaders.get("x-gallery-lease")).toBe("lease-a");
+    expect(releaseHeaders.get("x-gallery-artifact")).toBe("artifact-a");
+  });
+
   test("maps a consumed bootstrap token 401 to the typed expired outcome", async () => {
     const result = await resolveGalleryBootstrap({
       location: "http://127.0.0.1:43123/gallery#bootstrap=consumed-token",
