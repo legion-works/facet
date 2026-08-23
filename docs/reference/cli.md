@@ -93,7 +93,7 @@ errors and next actions:
 | `tier0_*`              | Inspect `error.details`; restore the Tier 0 worker, isolation, protocol, or runtime prerequisites named there. |
 | `tier1_*`              | Restore browser/network prerequisites and retry visual read-back.                                              |
 
-Gallery theme modes are `system`, `dark`, and `light`. The selected mode is
+Gallery theme modes are `system` (the default), `dark`, and `light`. The selected mode is
 session-persistent and changes Tier 2 display; Tier 1 remains dark for
 structural parity. Interactive TSX declares animated-capture eligibility; the
 mode does not assert that its visuals always change.

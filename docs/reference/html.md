@@ -124,7 +124,7 @@ cannot weaken the verdict.
 ## Vendored styling
 
 Styling comes exclusively from the frame's offline-vendored stylesheet.
-certain gallery frames map resolved light/dark themes to daisyUI's `winter` and
+Gallery frames map resolved light/dark themes to daisyUI's `winter` and
 `night` themes. The gallery preference defaults to `system` and resolves from
 the user's light/dark preference; Tier 1 deliberately fixes dark/night parity
 for deterministic structural comparison. Artifact-authored HTML still cannot
