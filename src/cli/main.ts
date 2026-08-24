@@ -28,7 +28,7 @@ import { FACET_SCHEMA_VERSION, okEnvelope, type FacetEnvelope } from "../shared/
 import type { CommandRequest, CommandResult } from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
 import { FACET_VERSION } from "../shared/version";
-import { dispatchCompiledEntrypoint } from "../runtime/compiled-entrypoints";
+import { isCompiledEntrypointArg, isCompiledRuntime } from "../shared/build-mode";
 
 import { parseArgs, renderHelp, type ParsedCommand } from "./parser";
 import { buildVersionEnvelope, buildUsageError, printEnvelope, EXIT_CODES } from "./output";
@@ -407,17 +407,20 @@ export async function runCli(
 }
 
 /**
- * Real entrypoint. Reads `process.argv`, hands I/O to `runCli`,
- * and exits with the returned code. Kept as a one-liner so the
- * test surface (`runCli`) stays hermetic.
+ * Real entrypoint. Compiled hidden roles are resolved lazily so source CLI
+ * commands never evaluate validation's Tier 1 runtime graph.
  */
 async function main(): Promise<void> {
-  const compiledExit = await dispatchCompiledEntrypoint(process.argv.slice(2));
-  if (compiledExit !== null) {
-    process.exit(compiledExit);
-    return;
+  const argv = process.argv.slice(2);
+  if (isCompiledRuntime() && isCompiledEntrypointArg(argv)) {
+    const { dispatchCompiledEntrypoint } = await import("../runtime/compiled-entrypoints");
+    const compiledExit = await dispatchCompiledEntrypoint(argv);
+    if (compiledExit !== null) {
+      process.exit(compiledExit);
+      return;
+    }
   }
-  const exit = await runCli(process.argv.slice(2), {
+  const exit = await runCli(argv, {
     stdin: process.stdin as unknown as ReadableStream<Uint8Array>,
     stdout: {
       get isTTY() {

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { resolve as resolvePath } from "node:path";
 
 import { buildServiceSpawnArgs } from "../../src/cli/spawn-service";
 import {
@@ -69,3 +70,18 @@ test("keeps source service and Tier 0 runner paths explicit", () => {
     ["run", "/repo/src/worker-entry.ts"],
   );
 });
+
+test.each(["--facet-internal-service", "--facet-internal-tier0-worker"])(
+  "source CLI rejects hidden compiled role %s as usage",
+  async (role) => {
+    const child = Bun.spawn([process.execPath, "src/cli/main.ts", role], {
+      cwd: resolvePath(import.meta.dir, "../.."),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(child.stdout).text();
+
+    expect(await child.exited).toBe(64);
+    expect(stdout).toContain(`Unknown verb: '${role}'`);
+  },
+);

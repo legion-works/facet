@@ -120,9 +120,10 @@ function requireTier1RunnerPath(path: string | undefined): string {
 }
 
 async function loadModules(args: ParsedServiceArgs): Promise<ServiceRunnerModules> {
+  const tier1RunnerPath = requireTier1RunnerPath(args.tier1RunnerPath);
   return {
     tier0: await loadRequiredTier0Runner(args.tier0RunnerPath),
-    tier1: await loadTier1Runner(requireTier1RunnerPath(args.tier1RunnerPath)),
+    loadTier1: () => loadTier1Runner(tier1RunnerPath),
   };
 }
 

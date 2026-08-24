@@ -17,6 +17,10 @@ export function isCompiledRuntime(): boolean {
   return Bun.main.startsWith(BUN_COMPILED_FILESYSTEM_PREFIX);
 }
 
+export function isCompiledEntrypointArg(argv: readonly string[]): boolean {
+  return argv[0] === "--facet-internal-service" || argv[0] === "--facet-internal-tier0-worker";
+}
+
 export function buildTier0WorkerArgs(command: Tier0WorkerCommand): string[] {
   return command.mode === "compiled"
     ? ["--facet-internal-tier0-worker"]

@@ -20,7 +20,7 @@ function loadCompiledModules(
 ): Promise<ServiceRunnerModules> {
   return Promise.resolve({
     tier0: { factory: createTier0Runner, probe: probeTier0Isolation },
-    tier1: { factory: createTier1Runner, probe: probeTier1Availability },
+    loadTier1: () => Promise.resolve({ factory: createTier1Runner, probe: probeTier1Availability }),
   });
 }
 

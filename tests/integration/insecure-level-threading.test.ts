@@ -23,6 +23,7 @@ function makeFixture(): { home: string; records: string; runner: string; tier1: 
   const source = (kind: string) => `
 import { appendFileSync } from "node:fs";
 const records = ${JSON.stringify(records)};
+${kind === "Tier1" ? 'appendFileSync(records, JSON.stringify({ kind: "Tier1Module" }) + "\\n");' : ""}
 export function create${kind}Runner(level: number) {
   appendFileSync(records, JSON.stringify({ kind: ${JSON.stringify(kind)}, level }) + "\\n");
   return async () => ({ status: "ok", tier: ${kind === "Tier0" ? 0 : 1} });
@@ -106,6 +107,7 @@ describe("insecure level boot threading", () => {
       expect(result.code).toBe(0);
       const records = readFileSync(fixture.records, "utf8");
       expect(records).toContain(`{"kind":"Tier0","level":${level}}`);
+      expect(records).not.toContain('{"kind":"Tier1Module"}');
       expect(records).not.toContain(`{"kind":"Tier1","level":${level}}`);
     },
   );

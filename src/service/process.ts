@@ -47,7 +47,7 @@ export interface LoadedTier1Runner {
 
 export interface ServiceRunnerModules {
   readonly tier0: LoadedTier0Runner;
-  readonly tier1: LoadedTier1Runner;
+  readonly loadTier1: () => Promise<LoadedTier1Runner>;
 }
 
 export function parseServiceArgs(argv: readonly string[]): ParsedServiceArgs {
@@ -133,11 +133,14 @@ function requireProbe<T>(probe: T | undefined, label: string): T {
   });
 }
 
-function createLazyTier1Runner(factory: Tier1RunnerFactory, level: InsecureLevel): Tier1Runner {
-  let runner: Tier1Runner | undefined;
+function createLazyTier1Runner(
+  loadTier1: () => Promise<LoadedTier1Runner>,
+  level: InsecureLevel,
+): Tier1Runner {
+  let runner: Promise<Tier1Runner> | undefined;
   return async (input) => {
-    runner ??= factory(level);
-    return runner(input);
+    runner ??= loadTier1().then((tier1) => tier1.factory(level));
+    return runner.then((loaded) => loaded(input));
   };
 }
 
@@ -163,14 +166,16 @@ export async function runServiceProcess(
     const modules = await loadModules(args, env);
     let insecureLevel = forcedLevel;
     let insecureReason: string | null = null;
+    let tier1Module: LoadedTier1Runner | undefined;
     if (autoFallback && forcedLevel < 2) {
+      tier1Module = await modules.loadTier1();
       const tier0Probe = requireProbe(modules.tier0.probe, "Tier 0 isolation");
       const tier0 = await tier0Probe();
       if (!tier0.available) {
         insecureLevel = 2;
         insecureReason = `auto:${boundedProbeReason(tier0)}`;
       } else if (forcedLevel === 0) {
-        const tier1Probe = requireProbe(modules.tier1.probe, "Tier 1 availability");
+        const tier1Probe = requireProbe(tier1Module.probe, "Tier 1 availability");
         const tier1 = await tier1Probe();
         if (!tier1.available) {
           insecureLevel = 1;
@@ -190,7 +195,10 @@ export async function runServiceProcess(
       ...(args.evidencePath !== undefined ? { evidencePath: args.evidencePath } : {}),
       ...(args.idleTimeoutMs !== undefined ? { idleTimeoutMs: args.idleTimeoutMs } : {}),
       tier0Runner: modules.tier0.factory(insecureLevel),
-      tier1Runner: createLazyTier1Runner(modules.tier1.factory, insecureLevel),
+      tier1Runner: createLazyTier1Runner(
+        () => (tier1Module === undefined ? modules.loadTier1() : Promise.resolve(tier1Module)),
+        insecureLevel,
+      ),
       insecureLevel,
       insecureReason,
       logger,
