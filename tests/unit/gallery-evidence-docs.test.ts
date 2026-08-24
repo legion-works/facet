@@ -111,6 +111,9 @@ describe("gallery evidence documentation", () => {
     expect(mcp).toMatch(
       /facet_publish[\s\S]*facet_read_back[\s\S]*facet_status[\s\S]*facet_export[\s\S]*facet_open_url/i,
     );
+    expect(mcp).toMatch(/source-archive-only/i);
+    expect(mcp).toMatch(/do not ship a `facet-mcp` binary/i);
+    expect(mcp).toMatch(/facet_open_url[\s\S]*always adds `--no-launch`/i);
     assertTableRowsHaveNoUnescapedCellPipes(mcp);
   });
 

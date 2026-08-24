@@ -171,4 +171,27 @@ describe("facet MCP adapter", () => {
       await client.close();
     }
   });
+
+  test("maps schema-invalid publish inputs to typed MCP errors", async () => {
+    const home = newHome();
+    const client = await connect(home);
+    try {
+      for (const invalidInput of [
+        { artifactId: "missing-artifact", type: "not-a-type", sourceText: "# Invalid type" },
+        { artifactId: 42, type: "markdown", sourceText: "# Invalid artifact id" },
+      ]) {
+        const result = await client.callTool({ name: "facet_publish", arguments: invalidInput });
+        expect(result.isError).toBe(true);
+        const envelope = JSON.parse(textContent(result)) as {
+          ok: boolean;
+          error?: { code?: string; message?: string; retryable?: boolean; details?: unknown };
+        };
+        expect(envelope.ok).toBe(false);
+        expect(envelope.error).toMatchObject({ code: "invalid_request", retryable: false });
+        expect(envelope.error?.message).toBeString();
+      }
+    } finally {
+      await client.close();
+    }
+  });
 });

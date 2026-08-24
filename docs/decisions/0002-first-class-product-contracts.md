@@ -64,7 +64,7 @@ not exist. Rejected: treating missing-DB as pass ("it would be created on
 first start") — doctor's job is to verify the install can run, and an
 unprovable migration state is not a verified state.
 
-### mcpDistribution: release-binary
+### mcpDistribution: release-binary (superseded by amendment)
 
 Releases carry a separate `facet-mcp-linux-x64` asset. The adapter finds
 the CLI via `FACET_CLI` when set, defaulting to a sibling `facet` binary

@@ -1,20 +1,16 @@
 import { mkdirSync } from "node:fs";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z, ZodError } from "zod";
 
 import { buildFacetArgs, FacetBridgeError, invokeFacet } from "./cli-bridge";
 import {
   ExportToolSchema,
-  ExportToolShape,
   OpenUrlToolSchema,
-  OpenUrlToolShape,
   PublishToolSchema,
-  PublishToolShape,
   type PublishToolInput,
   ReadBackToolSchema,
-  ReadBackToolShape,
   StatusToolSchema,
-  StatusToolShape,
 } from "./tool-schemas";
 import { errEnvelope, type FacetEnvelope } from "../../shared/contracts/envelope";
 
@@ -23,6 +19,16 @@ function requestId(): string {
 }
 
 function errorEnvelope(cause: unknown): FacetEnvelope<never> {
+  if (cause instanceof ZodError) {
+    const issue = cause.issues[0];
+    const field = issue?.path.join(".") || "arguments";
+    return errEnvelope(requestId(), {
+      code: "invalid_request",
+      message: `Invalid MCP argument '${field}': ${issue?.message ?? "schema validation failed"}`,
+      retryable: false,
+      details: { field },
+    });
+  }
   const body =
     cause instanceof FacetBridgeError
       ? cause.body
@@ -34,6 +40,8 @@ function errorEnvelope(cause: unknown): FacetEnvelope<never> {
   return errEnvelope(requestId(), body);
 }
 
+const LooseToolInputSchema = z.record(z.unknown());
+
 function toolResult(envelope: FacetEnvelope<unknown>) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(envelope) }],
@@ -44,6 +52,18 @@ function toolResult(envelope: FacetEnvelope<unknown>) {
 async function invoke(args: readonly string[], options: { cwd?: string; stdin?: string } = {}) {
   try {
     return toolResult(await invokeFacet(args, options));
+  } catch (cause) {
+    return toolResult(errorEnvelope(cause));
+  }
+}
+
+async function withInput<T>(
+  args: unknown,
+  parse: (input: unknown) => T,
+  run: (input: T) => Promise<ReturnType<typeof toolResult>>,
+): Promise<ReturnType<typeof toolResult>> {
+  try {
+    return await run(parse(args));
   } catch (cause) {
     return toolResult(errorEnvelope(cause));
   }
@@ -77,13 +97,13 @@ export function createFacetMcpServer(): McpServer {
     {
       description:
         "Export source or stored render evidence into outDir. Check envelope.ok for transport success; a successful publish verdict remains a separate data.verdict.status decision.",
-      inputSchema: ExportToolShape,
+      inputSchema: LooseToolInputSchema,
     },
-    async (args) => {
-      const input = ExportToolSchema.parse(args);
-      mkdirSync(input.outDir, { recursive: true });
-      return invoke(buildFacetArgs("export", input), { cwd: input.outDir });
-    },
+    async (args) =>
+      withInput(args, ExportToolSchema.parse, async (input) => {
+        mkdirSync(input.outDir, { recursive: true });
+        return invoke(buildFacetArgs("export", input), { cwd: input.outDir });
+      }),
   );
 
   server.registerTool(
@@ -91,9 +111,12 @@ export function createFacetMcpServer(): McpServer {
     {
       description:
         "Return a Facet gallery frameUrl without launching a browser. This always invokes facet open --no-launch; agents must not launch desktop display.",
-      inputSchema: OpenUrlToolShape,
+      inputSchema: LooseToolInputSchema,
     },
-    async (args) => invoke(buildFacetArgs("open", OpenUrlToolSchema.parse(args))),
+    async (args) =>
+      withInput(args, OpenUrlToolSchema.parse, async (input) =>
+        invoke(buildFacetArgs("open", input)),
+      ),
   );
 
   server.registerTool(
@@ -101,17 +124,13 @@ export function createFacetMcpServer(): McpServer {
     {
       description:
         "Publish sourceText or a local file. Check envelope.ok separately from data.verdict.status: stored verdict status error is not a transport failure.",
-      inputSchema: PublishToolShape,
+      inputSchema: LooseToolInputSchema,
     },
-    async (args) => {
-      try {
-        const input = PublishToolSchema.parse(args);
+    async (args) =>
+      withInput(args, PublishToolSchema.parse, async (input) => {
         const source = publishSource(input);
         return invoke(buildFacetArgs("publish", { ...input, ...source }), source);
-      } catch (cause) {
-        return toolResult(errorEnvelope(cause));
-      }
-    },
+      }),
   );
 
   server.registerTool(
@@ -119,9 +138,12 @@ export function createFacetMcpServer(): McpServer {
     {
       description:
         "Read back the latest or revision-bound stored verdict at Tier 0, Tier 1, or visual. Tier 1 and visual need browser evidence; inspect envelope.ok before verdict status.",
-      inputSchema: ReadBackToolShape,
+      inputSchema: LooseToolInputSchema,
     },
-    async (args) => invoke(buildFacetArgs("read_back", ReadBackToolSchema.parse(args))),
+    async (args) =>
+      withInput(args, ReadBackToolSchema.parse, async (input) =>
+        invoke(buildFacetArgs("read_back", input)),
+      ),
   );
 
   server.registerTool(
@@ -129,9 +151,12 @@ export function createFacetMcpServer(): McpServer {
     {
       description:
         "Read Facet status. Set start only when activation is intended; envelope.ok reports command transport and never replaces verdict.status inspection.",
-      inputSchema: StatusToolShape,
+      inputSchema: LooseToolInputSchema,
     },
-    async (args) => invoke(buildFacetArgs("status", StatusToolSchema.parse(args))),
+    async (args) =>
+      withInput(args, StatusToolSchema.parse, async (input) =>
+        invoke(buildFacetArgs("status", input)),
+      ),
   );
 
   return server;
