@@ -86,7 +86,8 @@ token on argv.
   `facet status --start`, then use the documented [Steel/browser workflow](../../docs/guides/agents.md)
   or ask a human to inspect.
 - Preserve stdout exactly so callers can parse the versioned envelope.
+- Prefer MCP when the host already owns an MCP client; `facet_open_url` is safe because it always uses `--no-launch`.
 
 ## Deeper reference
 
-→ [Agent workflow](../../docs/guides/agents.md) · [CLI](../../docs/reference/cli.md) · [Export](../../docs/reference/export.md) · [Validation](../../docs/reference/validation.md) · [HTML](../../docs/reference/html.md) · [TSX](../../docs/reference/tsx.md) · [Security](../../docs/reference/security.md)
+→ [Agent workflow](../../docs/guides/agents.md) · [CLI](../../docs/reference/cli.md) · [MCP](../../docs/reference/mcp.md) · [Export](../../docs/reference/export.md) · [Validation](../../docs/reference/validation.md) · [HTML](../../docs/reference/html.md) · [TSX](../../docs/reference/tsx.md) · [Security](../../docs/reference/security.md)

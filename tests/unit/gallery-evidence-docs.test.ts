@@ -105,6 +105,15 @@ describe("gallery evidence documentation", () => {
     expect(cli).toMatch(/exits 1/i);
   });
 
+  test("MCP reference documents the five adapter tools", () => {
+    const mcp = readReference("mcp.md");
+
+    expect(mcp).toMatch(
+      /facet_publish[\s\S]*facet_read_back[\s\S]*facet_status[\s\S]*facet_export[\s\S]*facet_open_url/i,
+    );
+    assertTableRowsHaveNoUnescapedCellPipes(mcp);
+  });
+
   test("storage reference names schema v9 and WebP screenshot metadata", () => {
     const storage = readReference("storage.md");
 

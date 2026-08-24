@@ -28,8 +28,12 @@ Facet is a CLI contract. Agents should not call its loopback routes directly.
 The adapters in `src/harness-adapters/` forward argv and stdin to this CLI and
 return stdout unchanged. The same rule applies to tool wrappers.
 
+MCP hosts can use the source-archive adapter when shell transport is awkward.
+It returns the same envelope; inspect `ok` and `data.verdict.status` separately.
+`facet_open_url` is safe because it always adds `--no-launch`.
+
 Agents must never run `facet open`; it is Tier 2 human display. Ensure the
 service is active with `facet status --start`, then use the documented
 [Steel/browser workflow](../../skills/facet/SKILL.md#boundaries) or request human inspection.
 
-→ [CLI reference](../reference/cli.md) → [Architecture](../../ARCHITECTURE.md) → [Validation](../reference/validation.md) · [Storage](../reference/storage.md) · [Security](../reference/security.md) · [HTTP](../reference/http.md)
+→ [CLI reference](../reference/cli.md) → [MCP reference](../reference/mcp.md) → [Architecture](../../ARCHITECTURE.md) → [Validation](../reference/validation.md) · [Storage](../reference/storage.md) · [Security](../reference/security.md) · [HTTP](../reference/http.md)

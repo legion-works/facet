@@ -100,10 +100,14 @@ This checkout invocation needs no global link. It uses disposable runtime and ex
 
 Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) and is never the default. It weakens or skips validation by level, marks every affected verdict, and speaks loudly at startup, in envelopes, in the CLI, and in the gallery. `FACET_INSECURE_AUTO=1` permits startup probe fallback but never selects level 3. Restart after changing either environment variable.
 
+## MCP
+
+The source archive includes a stdio MCP adapter with five CLI-backed tools: publish, read-back, status, export, and a no-launch frame URL lookup. It requires Bun `1.4.0` and a checkout or source archive; Facet releases do not ship an MCP binary. See the [MCP reference](docs/reference/mcp.md) for OpenCode, Claude Code, and Codex registration.
+
 ## Documentation
 
 - [Agents](docs/guides/agents.md) — the CLI workflow and adapter boundary.
-- [CLI reference](docs/reference/cli.md) · [Export](docs/reference/export.md) · [HTML reference](docs/reference/html.md) · [TSX reference](docs/reference/tsx.md) · [HTTP surface](docs/reference/http.md) · [Storage reference](docs/reference/storage.md) · [Validation reference](docs/reference/validation.md) · [Security](docs/reference/security.md)
+- [CLI reference](docs/reference/cli.md) · [MCP reference](docs/reference/mcp.md) · [Export](docs/reference/export.md) · [HTML reference](docs/reference/html.md) · [TSX reference](docs/reference/tsx.md) · [HTTP surface](docs/reference/http.md) · [Storage reference](docs/reference/storage.md) · [Validation reference](docs/reference/validation.md) · [Security](docs/reference/security.md)
 - [Architecture](ARCHITECTURE.md) · [Structure](STRUCTURE.md) · [v1 ship gate](docs/verification/v1-ship-gate.md) · [Roadmap](docs/roadmap.md)
 - [Contributing](CONTRIBUTING.md)
 

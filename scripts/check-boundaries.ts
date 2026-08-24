@@ -141,6 +141,7 @@ export interface BoundaryRoots {
   readonly repoRoot: string;
   readonly serviceDir: string;
   readonly frameDir?: string;
+  readonly mcpAdapterDir?: string;
 }
 
 function walk(dir: string): string[] {
@@ -229,6 +230,32 @@ function checkFrameSpecifier(specifier: string): string | null {
     return "zod must not cross the gallery-frame boundary";
   }
   return null;
+}
+
+function checkMcpAdapterSpecifier(
+  specifier: string,
+  file: string,
+  repoRoot: string,
+): string | null {
+  if (!isRelativeSpecifier(specifier)) {
+    if (specifier.startsWith("node:")) return null;
+    const base = specifier.startsWith("@")
+      ? specifier.split("/").slice(0, 2).join("/")
+      : (specifier.split("/")[0] ?? specifier);
+    if (base === "@modelcontextprotocol/sdk" || base === "zod") return null;
+    return `package not on the MCP adapter allowlist: ${specifier}`;
+  }
+  const resolved = resolve(join(file, "..", specifier)).replace(/\\/g, "/");
+  const relativePath = relative(repoRoot, resolved).replace(/\\/g, "/");
+  if (
+    relativePath === "src/shared" ||
+    relativePath.startsWith("src/shared/") ||
+    relativePath === "src/harness-adapters/mcp" ||
+    relativePath.startsWith("src/harness-adapters/mcp/")
+  ) {
+    return null;
+  }
+  return `forbidden workspace import: ${specifier} (resolves to ${relativePath})`;
 }
 
 /** Preserve source offsets while masking comments and tracking executable code. */
@@ -570,6 +597,14 @@ export function runBoundaryCheck(roots: BoundaryRoots): Violation[] {
     }
   }
 
+  if (roots.mcpAdapterDir !== undefined && existsDir(roots.mcpAdapterDir)) {
+    for (const file of walk(roots.mcpAdapterDir)) {
+      violations.push(
+        ...scanFile(file, roots.repoRoot, (spec, f, rr) => checkMcpAdapterSpecifier(spec, f, rr)),
+      );
+    }
+  }
+
   return violations;
 }
 
@@ -577,10 +612,12 @@ export function main(): number {
   const REPO_ROOT = resolve(import.meta.dir, "..");
   const SERVICE_DIR = join(REPO_ROOT, "src/service");
   const FRAME_DIR = join(REPO_ROOT, "src/gallery-web/frame");
+  const MCP_ADAPTER_DIR = join(REPO_ROOT, "src/harness-adapters/mcp");
   const violations = runBoundaryCheck({
     repoRoot: REPO_ROOT,
     serviceDir: SERVICE_DIR,
     frameDir: FRAME_DIR,
+    mcpAdapterDir: MCP_ADAPTER_DIR,
   });
 
   if (violations.length === 0) {

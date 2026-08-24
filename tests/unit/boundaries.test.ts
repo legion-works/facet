@@ -12,12 +12,13 @@ function makeRoot(): BoundaryRoots {
   tempRoots.push(dir);
   const serviceDir = join(dir, "src", "service");
   const frameDir = join(dir, "src", "gallery-web", "frame");
+  const mcpAdapterDir = join(dir, "src", "harness-adapters", "mcp");
   // walk() does not require the dirs to pre-exist, but creating them
   // makes the on-disk layout match the real repo so workspace-path
   // probes resolve the same way.
   mkdirSync(serviceDir, { recursive: true });
   mkdirSync(frameDir, { recursive: true });
-  return { repoRoot: dir, serviceDir, frameDir };
+  return { repoRoot: dir, serviceDir, frameDir, mcpAdapterDir };
 }
 
 afterEach(() => {
@@ -35,6 +36,14 @@ function writeServiceFile(root: BoundaryRoots, name: string, body: string): stri
 
 function writeFrameFile(root: BoundaryRoots, name: string, body: string): string {
   const path = join(root.frameDir ?? "", name);
+  writeFileSync(path, body);
+  return path;
+}
+
+function writeMcpAdapterFile(root: BoundaryRoots, name: string, body: string): string {
+  const dir = root.mcpAdapterDir ?? join(root.repoRoot, "src", "harness-adapters", "mcp");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, name);
   writeFileSync(path, body);
   return path;
 }
@@ -423,5 +432,44 @@ describe("boundary check — clean surface", () => {
     );
     const v = runBoundaryCheck(root);
     expect(v).toHaveLength(0);
+  });
+});
+
+describe("boundary check — MCP adapter import surface", () => {
+  test("permits MCP SDK, Zod, Node builtins, and shared wire contracts", () => {
+    const root = makeRoot();
+    writeMcpAdapterFile(
+      root,
+      "server.ts",
+      [
+        'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";',
+        'import { z } from "zod";',
+        'import { resolve } from "node:path";',
+        'import { parseEnvelope } from "../../shared/contracts/envelope";',
+        "void McpServer; void z; void resolve; void parseEnvelope;",
+      ].join("\n"),
+    );
+
+    expect(runBoundaryCheck(root)).toHaveLength(0);
+  });
+
+  test("rejects MCP adapter imports from service, validation, and gallery", () => {
+    const root = makeRoot();
+    writeMcpAdapterFile(
+      root,
+      "forbidden.ts",
+      [
+        'import "../../../service/main";',
+        'import "../../../validation/tier0/runner";',
+        'import "../../../gallery-web/app";',
+      ].join("\n"),
+    );
+
+    const violations = runBoundaryCheck(root);
+    expect(violations.map((violation) => violation.specifier)).toEqual([
+      "../../../service/main",
+      "../../../validation/tier0/runner",
+      "../../../gallery-web/app",
+    ]);
   });
 });
