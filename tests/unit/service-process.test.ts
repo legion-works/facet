@@ -149,6 +149,45 @@ describe("runServiceProcess", () => {
     expect(await running).toBe(0);
   });
 
+  test("awaits service teardown after idle before returning", async () => {
+    const idle = deferred();
+    const teardownStarted = deferred();
+    const teardownFinished = deferred();
+    const ready = deferred();
+    let settled = false;
+    const hooks: ServiceProcessHooks = {
+      onSignal: () => {},
+      writeStderr: (line) => {
+        if (line.includes('"event":"service.ready"')) ready.resolve();
+      },
+      startService: async () => ({
+        port: 45123,
+        pid: 123,
+        url: "http://127.0.0.1:45123",
+        installToken: "install",
+        promoteToken: null,
+        stop: async () => {
+          teardownStarted.resolve();
+          await teardownFinished.promise;
+        },
+        waitUntilIdle: async () => idle.promise,
+      }),
+    };
+
+    const running = runServiceProcess([], {}, async () => modules(), hooks);
+    void running.then(() => {
+      settled = true;
+    });
+    await ready.promise;
+    idle.resolve();
+    await teardownStarted.promise;
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    teardownFinished.resolve();
+    expect(await running).toBe(0);
+  });
+
   test.each([
     {
       name: "Tier 0 isolation is unavailable",

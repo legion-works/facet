@@ -128,7 +128,7 @@ async function loadModules(args: ParsedServiceArgs): Promise<ServiceRunnerModule
 }
 
 async function main(): Promise<void> {
-  process.exit(await runServiceProcess(process.argv.slice(2), process.env, loadModules));
+  process.exitCode = await runServiceProcess(process.argv.slice(2), process.env, loadModules);
 }
 
 if (import.meta.main) {
