@@ -42,6 +42,8 @@ import { generateRequestId } from "../shared/util/time";
 export const EXIT_CODES = {
   /** Well-formed envelope on stdout (success OR typed error). */
   OK: 0,
+  /** Doctor completed and found one or more failing environment probes. */
+  DOCTOR_FAILED: 1,
   /**
    * Pre-parse usage error — unknown verb, bad flag, missing
    * required argument, or a malformed invocation the CLI cannot

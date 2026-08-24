@@ -27,6 +27,28 @@ describe("CLI presenter routing", () => {
 });
 
 describe("CLI presenter envelopes", () => {
+  test("doctor output lists probes and literal fixes", () => {
+    const envelope = okEnvelope("request-1", {
+      command: "doctor",
+      allPassed: false,
+      probes: [
+        { name: "bun", status: "pass", summary: "1.4.0", fixCommand: null, details: {} },
+        {
+          name: "database",
+          status: "fail",
+          summary: "database missing",
+          fixCommand: "facet status --start",
+          details: {},
+        },
+      ],
+    });
+    expect(presentEnvelope(envelope, plain)).toEqual([
+      "✓ bun · 1.4.0",
+      "✗ database · database missing",
+      "  fix       facet status --start",
+    ]);
+  });
+
   test("errors preserve the typed code, retryability, and message", () => {
     const envelope = errEnvelope(
       "request-1",

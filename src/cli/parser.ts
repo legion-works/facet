@@ -26,11 +26,11 @@ import { TSX_EXECUTION_MODES } from "../shared/tsx/execution";
  * (`--help`, `--version`); `verb !== null` for every v1 verb.
  */
 export type ParsedCommand =
-  | { readonly kind: "help"; readonly format: "text" | "json"; readonly verb?: CommandName }
+  | { readonly kind: "help"; readonly format: "text" | "json"; readonly verb?: CliVerb }
   | { readonly kind: "version"; readonly format: "text" | "json" }
   | {
       readonly kind: "verb";
-      readonly verb: CommandName;
+      readonly verb: CliVerb;
       readonly args: Readonly<Record<string, string | boolean>>;
       readonly format: "text" | "json";
       readonly jsonFlag: boolean;
@@ -40,6 +40,8 @@ export type ParsedCommand =
       readonly message: string;
       readonly details?: Readonly<Record<string, string>>;
     };
+
+export type CliVerb = CommandName | "doctor";
 
 /**
  * Per-verb flag surface. Each entry is the list of accepted flags
@@ -190,6 +192,7 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
   }
   const format = metaFormat;
   const jsonFlag = argv.includes("--json");
+  const localVerb = firstRaw === "doctor" ? ("doctor" as const) : undefined;
   const firstCommand = typeof firstRaw === "string" ? VERB_TO_COMMAND[firstRaw] : undefined;
   // `--format` is scoped to `--help`/`--version` metadata and to export's
   // source|render argument; every other verb used to have `--format` (and
@@ -215,7 +218,7 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
 
   const verb = first;
   if (verb === undefined) return { kind: "help", format };
-  const command = VERB_TO_COMMAND[verb];
+  const command = localVerb ?? VERB_TO_COMMAND[verb];
   if (command === undefined) {
     return { kind: "usage", message: `Unknown verb: '${verb}'` };
   }
@@ -223,6 +226,12 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
     return { kind: "help", format, verb: command };
   }
 
+  if (command === "doctor") {
+    if (stripped.slice(1).some((flag) => flag !== "--json")) {
+      return { kind: "usage", message: "doctor accepts only --json" };
+    }
+    return { kind: "verb", verb: "doctor", args: {}, format, jsonFlag };
+  }
   const flags = VERB_FLAGS[command];
   const args: Record<string, string | boolean> = {};
   for (let i = 1; i < stripped.length; i += 1) {
@@ -278,7 +287,18 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
  * asserts the verb list and the "stdout is JSON" line can never
  * silently fail when a new verb is added.
  */
-export function renderHelp(verb?: CommandName): string {
+export function renderHelp(verb?: CliVerb): string {
+  if (verb === "doctor") {
+    return [
+      "Usage: facet doctor [--json]",
+      "",
+      "Read-only environment diagnostics for Bun, browser, isolation, storage, permissions, and service state.",
+      "",
+      "Exit codes:",
+      "  0  all probes pass",
+      "  1  one or more probes fail",
+    ].join("\n");
+  }
   if (verb !== undefined) {
     const commandVerb = COMMAND_TO_VERB[verb];
     const positional = verb === "export" ? " <artifactId>" : "";

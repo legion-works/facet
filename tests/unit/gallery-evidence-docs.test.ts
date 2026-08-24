@@ -98,6 +98,13 @@ describe("gallery evidence documentation", () => {
     expect(cli).toMatch(/FACET_PROMOTE_TOKEN[\s\S]*FACET_HOME\/secrets\/promote\.token/is);
   });
 
+  test("CLI reference documents doctor", () => {
+    const cli = readReference("cli.md");
+    expect(cli).toMatch(/`doctor`/);
+    expect(cli).toMatch(/seven read-only probes/i);
+    expect(cli).toMatch(/exits 1/i);
+  });
+
   test("storage reference names schema v9 and WebP screenshot metadata", () => {
     const storage = readReference("storage.md");
 

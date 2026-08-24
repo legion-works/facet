@@ -25,7 +25,7 @@ import type { Readable } from "node:stream";
 import { existsSync, readFileSync } from "node:fs";
 
 import { FACET_SCHEMA_VERSION, okEnvelope, type FacetEnvelope } from "../shared/contracts/envelope";
-import type { CommandRequest, CommandResult } from "../shared/contracts/commands";
+import type { CommandRequest, CommandResult, CommandName } from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
 import { FACET_VERSION } from "../shared/version";
 import { isCompiledEntrypointArg, isCompiledRuntime } from "../shared/build-mode";
@@ -50,6 +50,7 @@ import { generateRequestId } from "../shared/util/time";
 import { buildPublishRequest, resolveSourceBytes } from "./commands/publish";
 import { buildExportRequest, resolveExportPaths, writeExportFiles } from "./commands/export";
 import { presentEnvelope, presenterCaps, shouldPresentPretty } from "./presenter";
+import { runDoctor } from "./commands/doctor";
 
 export interface CliIo {
   /** A standard Readable stream of bytes — the CLI reads source bytes for `publish` from here. */
@@ -133,7 +134,7 @@ async function readAllStdin(stdin: CliIo["stdin"]): Promise<Uint8Array> {
  * (caught by the caller and wrapped in a typed envelope).
  */
 async function executeVerb(
-  verb: ParsedCommand & { kind: "verb" },
+  verb: Extract<ParsedCommand, { kind: "verb" }> & { verb: CommandName },
   args: Readonly<Record<string, string | boolean>>,
   stdinBytes: Uint8Array,
   resolved: { baseUrl: string; installToken: string; promoteToken?: string },
@@ -276,6 +277,21 @@ export async function runCli(
     return { code: EXIT_CODES.USAGE, spawnedPid: null };
   }
 
+  if (parsed.kind === "verb" && parsed.verb === "doctor") {
+    const result = runDoctor({
+      paths: computeFacetPaths(
+        io.env.FACET_HOME === undefined ? {} : { facetHome: io.env.FACET_HOME },
+      ),
+    });
+    writeEnvelope(io, parsed, {
+      schemaVersion: FACET_SCHEMA_VERSION,
+      requestId: generateRequestId(),
+      ok: true,
+      data: result,
+    });
+    return { code: result.allPassed ? EXIT_CODES.OK : EXIT_CODES.DOCTOR_FAILED, spawnedPid: null };
+  }
+
   if (
     parsed.kind === "verb" &&
     parsed.verb === "status" &&
@@ -370,8 +386,9 @@ export async function runCli(
 
   // 5. Dispatch the verb.
   try {
+    const serviceVerb = parsed as Extract<ParsedCommand, { kind: "verb" }> & { verb: CommandName };
     const response = await executeVerb(
-      parsed,
+      serviceVerb,
       parsed.args,
       stdinBytes,
       {

@@ -28,6 +28,7 @@ Errors use the same top level with `ok: false` and
 | `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`, `--include-bytes`                         |
 |               | `--format source` writes `.md` / `.mmd` / `.svg` / `.json` / `.html` to match the type                                 |
 |               | `--format render` writes detected evidence as `.webp` (new) or `.png` (legacy); the sidecar records `renderFormat`     |
+| `doctor`      | no flags; read-only local environment diagnostics                                                                      |
 
 `publish --file -` reads bytes from stdin. `--json` is shorthand for
 `--format json` on meta commands. Verb stdout is always a JSON envelope;
@@ -52,9 +53,15 @@ The publish envelope carries the stored Tier 0 verdict, including when its
 publication as usable. A duplicate publish returns `ok: false` with
 `duplicate_revision`; the existing SHA is in `error.details.revisionSha`.
 
-Every verb accepts `--help`. It prints its positional arguments and flags from
-the same command table used by the parser. Missing required inputs are reported
+Every verb accepts `--help`. It prints its positional arguments and flags from the
+same command table used by the parser. Missing required inputs are reported
 together in one typed usage envelope.
+
+`doctor` runs seven read-only probes: the pinned Bun version, headless shell,
+network namespace support, database and migration version, token permissions,
+evidence-root permissions, and service lock state. Dormant with no lock is
+healthy; missing or stale state fails with a literal repair command. A failed
+probe still emits an `ok: true` envelope and exits 1.
 
 `status --start` takes no value: it starts the local service if needed, then
 returns the normal status envelope. With `--artifact-id`, status includes
@@ -120,11 +127,12 @@ INSECURE L1 — auto:tier 1 unavailable
 
 ## Exit codes
 
-| code | meaning                                       |
-| ---: | --------------------------------------------- |
-|    0 | Well-formed envelope, including typed refusal |
-|   64 | Usage error before a command can be built     |
-|   70 | Unhandled internal failure                    |
+| code | meaning                                         |
+| ---: | ----------------------------------------------- |
+|    0 | Well-formed envelope, including typed refusal   |
+|    1 | Doctor completed with one or more failed probes |
+|   64 | Usage error before a command can be built       |
+|   70 | Unhandled internal failure                      |
 
 ## Reserved surface
 

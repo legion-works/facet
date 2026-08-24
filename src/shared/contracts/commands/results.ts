@@ -5,6 +5,29 @@ import { ArtifactTypeSchema, RendererSchema } from "../artifact";
 import { EvidenceImageFormatSchema } from "../../evidence-image";
 import { ExportFormatSchema } from "./requests";
 
+export const DoctorProbeNameSchema = z.enum([
+  "bun",
+  "chrome-headless-shell",
+  "netns-userns",
+  "database",
+  "token-permissions",
+  "evidence-permissions",
+  "service-lock",
+]);
+export const DoctorProbeResultSchema = z.object({
+  name: DoctorProbeNameSchema,
+  status: z.enum(["pass", "fail"]),
+  summary: z.string(),
+  fixCommand: z.string().nullable(),
+  details: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
+});
+export const DoctorResultSchema = z.object({
+  command: z.literal("doctor"),
+  allPassed: z.boolean(),
+  probes: z.array(DoctorProbeResultSchema),
+});
+export type DoctorResult = z.infer<typeof DoctorResultSchema>;
+
 import {
   ArtifactEnvelopeSchema,
   BaseResultSchema,

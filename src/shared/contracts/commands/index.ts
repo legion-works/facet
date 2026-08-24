@@ -66,6 +66,9 @@ import {
   ExportSidecarSchema,
   ExportResultSchema,
   StatusResultSchema,
+  DoctorProbeNameSchema,
+  DoctorProbeResultSchema,
+  DoctorResultSchema,
   type CreateResult,
   type InstantiateResult,
   type ListResult,
@@ -77,6 +80,7 @@ import {
   type ExportSidecar,
   type ExportResult,
   type StatusResult,
+  type DoctorResult,
 } from "./results";
 import {
   checkArtifactTypeSupported,
@@ -161,6 +165,9 @@ export {
   PinResultSchema,
   ExportResultSchema,
   ExportSidecarSchema,
+  DoctorProbeNameSchema,
+  DoctorProbeResultSchema,
+  DoctorResultSchema,
   // guards
   checkCommandImplemented,
   checkArtifactTypeSupported,
@@ -186,6 +193,7 @@ export type {
   ListResult,
   ReadBackResult,
   StatusResult,
+  DoctorResult,
   OpenResult,
   PromoteResult,
   InstantiateResult,

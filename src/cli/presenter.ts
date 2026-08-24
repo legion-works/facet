@@ -188,5 +188,25 @@ export function presentEnvelope(envelope: FacetEnvelope<unknown>, caps: Presente
     }
   }
 
+  if (command === "doctor") {
+    const probes = Array.isArray(data["probes"]) ? data["probes"] : [];
+    const lines: string[] = [];
+    for (const item of probes) {
+      if (typeof item !== "object" || item === null) continue;
+      const probe = item as {
+        name?: unknown;
+        status?: unknown;
+        summary?: unknown;
+        fixCommand?: unknown;
+      };
+      const passed = probe.status === "pass";
+      lines.push(
+        `${paint(passed ? "green" : "red", `${passed ? "✓" : "✗"} ${String(probe.name)}`)} · ${String(probe.summary)}`,
+      );
+      if (!passed && typeof probe.fixCommand === "string") lines.push(row("fix", probe.fixCommand));
+    }
+    return lines;
+  }
+
   return [`${paint("green", "✓ ok")}${command === null ? "" : paint("dim", ` · ${command}`)}`];
 }

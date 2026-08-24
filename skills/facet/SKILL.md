@@ -21,7 +21,7 @@ artifact bytes separate from host capabilities.
 
 ## Publish and check
 
-1. Check status. Start only when needed: `facet status --start`.
+1. Cold-start check: when environment, launch, or permission errors are present, run `facet doctor`; it is read-only and reports literal repair commands. Check status next and start only when needed: `facet status --start`.
 2. Create or reuse an artifact: `facet create --project-id <id> --slug <slug> --title <title>`.
 3. Publish source bytes with one of these forms:
 
