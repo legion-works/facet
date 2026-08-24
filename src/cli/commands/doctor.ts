@@ -32,6 +32,7 @@ type DoctorFs = {
 };
 type DoctorDb = { quickCheck: string; version: number | null };
 export interface DoctorOptions {
+  readonly argv?: readonly string[];
   readonly bunVersion?: string;
   readonly paths?: FacetRuntimePaths;
   readonly shellBinary?: string | null;
@@ -82,6 +83,13 @@ function probe(
   return { name, status, summary, fixCommand, details };
 }
 
+function invocationPrefix(argv: readonly string[]): string {
+  const sourceEntrypoint = argv[1];
+  return sourceEntrypoint?.endsWith("/src/cli/main.ts") === true
+    ? `bun ${sourceEntrypoint}`
+    : "facet";
+}
+
 export function runDoctor(options: DoctorOptions = {}): DoctorResult {
   const paths = options.paths ?? computeFacetPaths();
   const fs = options.fs ?? { exists: existsSync, stat: statSync };
@@ -94,6 +102,7 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
   const netns = options.netns ?? probeNetnsSupport();
   const probes: DoctorProbeResult[] = [];
   const bunVersion = options.bunVersion ?? Bun.version;
+  const restartFix = `${invocationPrefix(options.argv ?? process.argv)} status --start`;
 
   probes.push(
     bunVersion === BUN_VERSION
@@ -127,15 +136,13 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
   );
 
   if (!fs.exists(paths.database)) {
-    probes.push(
-      probe("database", "fail", "database missing", "facet status --start", { present: false }),
-    );
+    probes.push(probe("database", "fail", "database missing", restartFix, { present: false }));
   } else {
     try {
       const db = databaseReader(paths.database);
       if (db.quickCheck !== "ok") {
         probes.push(
-          probe("database", "fail", `quick_check ${db.quickCheck}`, "facet status --start", {
+          probe("database", "fail", `quick_check ${db.quickCheck}`, restartFix, {
             quickCheck: db.quickCheck,
           }),
         );
@@ -145,7 +152,7 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
             "database",
             "fail",
             `schema v${db.version ?? "unknown"}, expected v${CURRENT_STORAGE_VERSION}`,
-            "facet status --start",
+            restartFix,
             {
               version: db.version,
               expected: CURRENT_STORAGE_VERSION,
@@ -166,7 +173,7 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
           "database",
           "fail",
           error instanceof Error ? error.message : String(error),
-          "facet status --start",
+          restartFix,
         ),
       );
     }
@@ -187,7 +194,7 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
           { path: tokenBad.path, mode: tokenBad.mode },
         )
       : installMode === null
-        ? probe("token-permissions", "fail", `${installToken} missing`, "facet status --start", {
+        ? probe("token-permissions", "fail", `${installToken} missing`, restartFix, {
             path: installToken,
             present: false,
           })
@@ -212,24 +219,20 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
     probes.push(probe("service-lock", "pass", "dormant · no lock", null, { state: "dormant" }));
   } else if (lockStale(lock) || !pidAlive(lock.pid)) {
     probes.push(
-      probe("service-lock", "fail", "stale or dead lock", "facet status --start", {
+      probe("service-lock", "fail", "stale or dead lock", restartFix, {
         pid: lock.pid,
         stale: true,
       }),
     );
   } else if (lock.contractVersion !== FACET_SCHEMA_VERSION) {
     probes.push(
-      probe(
-        "service-lock",
-        "fail",
-        `cross-version lock ${lock.contractVersion}`,
-        "facet status --start",
-        { contractVersion: lock.contractVersion },
-      ),
+      probe("service-lock", "fail", `cross-version lock ${lock.contractVersion}`, restartFix, {
+        contractVersion: lock.contractVersion,
+      }),
     );
   } else if (options.statusCheck !== undefined && !options.statusCheck(lock)) {
     probes.push(
-      probe("service-lock", "fail", "live service status request failed", "facet status --start", {
+      probe("service-lock", "fail", "live service status request failed", restartFix, {
         pid: lock.pid,
       }),
     );

@@ -163,4 +163,44 @@ describe("doctor probe matrix", () => {
       details: { expected: CURRENT_STORAGE_VERSION },
     });
   });
+
+  test("uses a runnable repair prefix for global and source CLI invocations", () => {
+    const options = {
+      bunVersion: "1.4.0",
+      paths: {
+        database: "/tmp/facet.sqlite",
+        evidence: "/tmp/evidence",
+        token: "/tmp/secrets/promote.token",
+        lock: "/tmp/lock",
+        metadata: "/tmp/meta",
+      },
+      shellBinary: "/tmp/chrome",
+      netns: { available: true, reason: null },
+      fs: {
+        exists: () => false,
+        stat: () => {
+          throw new Error("missing");
+        },
+      },
+      databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
+      lockReader: () => ({ pid: 12, startTime: 0, port: 1, contractVersion: "facet.v1" }),
+      pidAlive: () => false,
+      lockStale: () => true,
+    };
+
+    const global = runDoctor({ ...options, argv: ["/usr/local/bin/facet", "doctor"] });
+    const source = runDoctor({
+      ...options,
+      argv: ["/home/user/.bun/bin/bun", "/repo/src/cli/main.ts", "doctor"],
+    });
+
+    for (const name of ["database", "token-permissions", "service-lock"] as const) {
+      expect(global.probes.find((probe) => probe.name === name)?.fixCommand).toBe(
+        "facet status --start",
+      );
+      expect(source.probes.find((probe) => probe.name === name)?.fixCommand).toBe(
+        "bun /repo/src/cli/main.ts status --start",
+      );
+    }
+  });
 });
