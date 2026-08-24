@@ -7,6 +7,7 @@ import {
   type DoctorProbeResult,
 } from "../../src/cli/commands/doctor";
 import { DoctorResultSchema } from "../../src/shared/contracts/commands/results";
+import { CURRENT_STORAGE_VERSION } from "../../src/shared/storage-version";
 
 describe("doctor parser contract", () => {
   test("doctor is a local verb with help and no service command mapping", () => {
@@ -18,6 +19,9 @@ describe("doctor parser contract", () => {
     });
     expect(parseArgs(["doctor", "--help"])).toMatchObject({ kind: "help", verb: "doctor" });
     expect(renderHelp("doctor" as never)).toContain("facet doctor");
+    const topLevelHelp = renderHelp();
+    expect(topLevelHelp).toContain("doctor");
+    expect(topLevelHelp).toMatch(/\b1\s+doctor/i);
   });
 });
 
@@ -51,7 +55,7 @@ describe("doctor probe matrix", () => {
       status: "fail",
       fixCommand: "facet status --start",
     });
-    expect(DoctorResultSchema.parse({ requestId: "req-1", ...result })).toMatchObject(result);
+    expect(DoctorResultSchema.parse(result)).toMatchObject(result);
   });
 
   test("dormant service lock state passes while stale and cross-version locks fail", () => {
@@ -111,5 +115,52 @@ describe("doctor probe matrix", () => {
     for (const probe of result.probes as readonly DoctorProbeResult[]) {
       if (probe.status === "fail") expect(probe.fixCommand).toEqual(expect.any(String));
     }
+  });
+
+  test("uses the canonical storage version for current and stale databases", () => {
+    let version = 9;
+    const result = runDoctor({
+      bunVersion: "1.4.0",
+      paths: {
+        database: "/tmp/facet.sqlite",
+        evidence: "/tmp/evidence",
+        token: "/tmp/secrets/promote.token",
+        lock: "/tmp/lock",
+        metadata: "/tmp/meta",
+      },
+      shellBinary: "/tmp/chrome",
+      netns: { available: true, reason: null },
+      fs: { exists: () => true, stat: () => ({ mode: 0o100700 }) },
+      databaseReader: () => ({ quickCheck: "ok", version }),
+      lockReader: () => null,
+      pidAlive: () => false,
+      lockStale: () => false,
+    });
+    const current = result.probes.find((probe) => probe.name === "database");
+    expect(current).toMatchObject({ status: "pass" });
+    expect(current?.details.version).toBe(CURRENT_STORAGE_VERSION);
+
+    version = CURRENT_STORAGE_VERSION - 1;
+    const stale = runDoctor({
+      bunVersion: "1.4.0",
+      paths: {
+        database: "/tmp/facet.sqlite",
+        evidence: "/tmp/evidence",
+        token: "/tmp/secrets/promote.token",
+        lock: "/tmp/lock",
+        metadata: "/tmp/meta",
+      },
+      shellBinary: "/tmp/chrome",
+      netns: { available: true, reason: null },
+      fs: { exists: () => true, stat: () => ({ mode: 0o100700 }) },
+      databaseReader: () => ({ quickCheck: "ok", version }),
+      lockReader: () => null,
+      pidAlive: () => false,
+      lockStale: () => false,
+    });
+    expect(stale.probes.find((probe) => probe.name === "database")).toMatchObject({
+      status: "fail",
+      details: { expected: CURRENT_STORAGE_VERSION },
+    });
   });
 });

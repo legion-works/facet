@@ -23,6 +23,7 @@ import {
   ReadBackResultSchema,
   StatusRequestSchema,
   StatusResultSchema,
+  DoctorResultSchema,
   type CommandRequest,
   type CommandResult,
 } from "../../src/shared/contracts/commands";
@@ -53,6 +54,30 @@ import {
 } from "./_helpers/command-fixtures";
 
 describe("command round-trips", () => {
+  test("doctor result rejects forged top-level and probe keys", () => {
+    const result = {
+      command: "doctor" as const,
+      allPassed: true,
+      probes: [
+        {
+          name: "bun" as const,
+          status: "pass" as const,
+          summary: "1.4.0",
+          fixCommand: null,
+          details: {},
+          forged: true,
+        },
+      ],
+      forged: true,
+    };
+    expect(DoctorResultSchema.safeParse(result).success).toBe(false);
+    expect(
+      DoctorResultSchema.safeParse({
+        ...result,
+        probes: [{ ...result.probes[0], forged: undefined }],
+      }),
+    ).toMatchObject({ success: false });
+  });
   test("create request and result round-trip", () => {
     expect(CreateRequestSchema.parse(validCreateRequest())).toEqual(validCreateRequest());
     expect(CreateResultSchema.parse(validCreateResult())).toEqual(validCreateResult());

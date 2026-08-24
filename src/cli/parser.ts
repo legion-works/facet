@@ -20,6 +20,7 @@ import {
 } from "../shared/contracts/commands/names";
 import { RENDERERS } from "../shared/contracts/renderers";
 import { TSX_EXECUTION_MODES } from "../shared/tsx/execution";
+import { EXIT_CODES } from "./output";
 
 /**
  * Parsed CLI invocation. `verb === null` for the meta-commands
@@ -322,6 +323,7 @@ export function renderHelp(verb?: CliVerb): string {
   }
   const verbs = [...IMPLEMENTED_COMMANDS, ...RESERVED_COMMANDS]
     .map((c) => COMMAND_TO_VERB[c])
+    .concat("doctor")
     .join(", ");
   const lines: string[] = [
     "facet — Facet v1 command line interface",
@@ -347,6 +349,7 @@ export function renderHelp(verb?: CliVerb): string {
   // must stay in sync with src/cli/output.ts.
   const codes: readonly { code: number; meaning: string }[] = [
     { code: 0, meaning: "ok (any well-formed envelope on stdout, incl. typed error)" },
+    { code: EXIT_CODES.DOCTOR_FAILED, meaning: "doctor completed with one or more failed probes" },
     { code: 64, meaning: "usage error (pre-parse: unknown verb, bad flag)" },
     { code: 70, meaning: "internal (unhandled non-FacetError throw)" },
   ];

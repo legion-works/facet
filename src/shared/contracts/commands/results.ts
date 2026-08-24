@@ -14,18 +14,22 @@ export const DoctorProbeNameSchema = z.enum([
   "evidence-permissions",
   "service-lock",
 ]);
-export const DoctorProbeResultSchema = z.object({
-  name: DoctorProbeNameSchema,
-  status: z.enum(["pass", "fail"]),
-  summary: z.string(),
-  fixCommand: z.string().nullable(),
-  details: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
-});
-export const DoctorResultSchema = z.object({
-  command: z.literal("doctor"),
-  allPassed: z.boolean(),
-  probes: z.array(DoctorProbeResultSchema),
-});
+export const DoctorProbeResultSchema = z
+  .object({
+    name: DoctorProbeNameSchema,
+    status: z.enum(["pass", "fail"]),
+    summary: z.string(),
+    fixCommand: z.string().nullable(),
+    details: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  })
+  .strict();
+export const DoctorResultSchema = z
+  .object({
+    command: z.literal("doctor"),
+    allPassed: z.boolean(),
+    probes: z.array(DoctorProbeResultSchema),
+  })
+  .strict();
 export type DoctorResult = z.infer<typeof DoctorResultSchema>;
 
 import {
