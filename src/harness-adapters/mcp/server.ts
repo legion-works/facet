@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z, ZodError } from "zod";
+import { FACET_VERSION } from "../../shared/version";
 
 import { buildFacetArgs, FacetBridgeError, invokeFacet } from "./cli-bridge";
 import {
@@ -90,7 +91,7 @@ function publishSource(input: PublishToolInput): {
 }
 
 export function createFacetMcpServer(): McpServer {
-  const server = new McpServer({ name: "facet", version: "1.0.0" });
+  const server = new McpServer({ name: "facet", version: FACET_VERSION });
 
   server.registerTool(
     "facet_export",
@@ -123,7 +124,7 @@ export function createFacetMcpServer(): McpServer {
     "facet_publish",
     {
       description:
-        "Publish sourceText or a local file. Check envelope.ok separately from data.verdict.status: stored verdict status error is not a transport failure.",
+        "Publish exactly one sourceText or local file. Check envelope.ok separately from data.verdict.status: stored verdict status error is not a transport failure.",
       inputSchema: LooseToolInputSchema,
     },
     async (args) =>

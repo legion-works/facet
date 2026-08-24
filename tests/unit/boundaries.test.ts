@@ -436,7 +436,7 @@ describe("boundary check — clean surface", () => {
 });
 
 describe("boundary check — MCP adapter import surface", () => {
-  test("permits MCP SDK, Zod, Node builtins, and shared wire contracts", () => {
+  test("permits MCP SDK, Zod, Node builtins, shared wire contracts, and the product version", () => {
     const root = makeRoot();
     writeMcpAdapterFile(
       root,
@@ -446,7 +446,8 @@ describe("boundary check — MCP adapter import surface", () => {
         'import { z } from "zod";',
         'import { resolve } from "node:path";',
         'import { parseEnvelope } from "../../shared/contracts/envelope";',
-        "void McpServer; void z; void resolve; void parseEnvelope;",
+        'import { FACET_VERSION } from "../../shared/version";',
+        "void McpServer; void z; void resolve; void parseEnvelope; void FACET_VERSION;",
       ].join("\n"),
     );
 

@@ -250,6 +250,7 @@ function checkMcpAdapterSpecifier(
   if (
     relativePath === "src/shared/contracts" ||
     relativePath.startsWith("src/shared/contracts/") ||
+    relativePath === "src/shared/version" ||
     relativePath === "src/harness-adapters/mcp" ||
     relativePath.startsWith("src/harness-adapters/mcp/")
   ) {

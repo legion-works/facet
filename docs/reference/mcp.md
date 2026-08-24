@@ -51,15 +51,19 @@ Set `FACET_HOME` in the host configuration when the adapter must use a non-defau
 
 ## Tools
 
-| Tool              | Inputs                                                                                                     | Effect                                                                       |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `facet_publish`   | `artifactId`, `type`, `sourceText` or `file`; optional `execution`, `renderer`, `note`, `parentRevisionId` | Publishes inline source through CLI stdin or reads the named local file.     |
-| `facet_read_back` | `artifactId`; optional `revisionSha`, `tier` (`0` \| `1` \| `visual`)                                      | Reads the latest or named revision. Tier 1 and visual need browser evidence. |
-| `facet_status`    | optional `artifactId`, `start`                                                                             | Reads status. Set `start` only when activation is intended.                  |
-| `facet_export`    | `artifactId`, `format` (`source` \| `render`), `outDir`; optional `revisionSha`, `force`, `includeBytes`   | Writes the CLI's normal export and sidecar beneath `outDir`.                 |
-| `facet_open_url`  | `artifactId`; optional `revisionSha`                                                                       | Returns a gallery `frameUrl` without launching a browser.                    |
+| Tool              | Inputs                                                                                                                    | Effect                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `facet_publish`   | `artifactId`, `type`, exactly one of `sourceText` or `file`; optional `execution`, `renderer`, `note`, `parentRevisionId` | Publishes inline source through CLI stdin or reads the named local file.     |
+| `facet_read_back` | `artifactId`; optional `revisionSha`, `tier` (`0` \| `1` \| `visual`)                                                     | Reads the latest or named revision. Tier 1 and visual need browser evidence. |
+| `facet_status`    | optional `artifactId`, `start`                                                                                            | Reads status. Set `start` only when activation is intended.                  |
+| `facet_export`    | `artifactId`, `format` (`source` \| `render`), `outDir`; optional `revisionSha`, `force`, `includeBytes`                  | Writes the CLI's normal export and sidecar beneath `outDir`.                 |
+| `facet_open_url`  | `artifactId`; optional `revisionSha`                                                                                      | Returns a gallery `frameUrl` without launching a browser.                    |
 
 `facet_open_url` always adds `--no-launch`. It is the MCP-safe form of `facet open`; it never invokes `xdg-open` or another desktop launcher.
+
+Exactly one of `sourceText` or `file` is required. The adapter returns `invalid_request` when both or neither are supplied.
+
+The MCP surface is the five artifact tools; run `facet doctor` through the CLI.
 
 ## Result and error handling
 
@@ -69,4 +73,4 @@ Typed Facet failures return that same envelope with `isError: true`. The JSON bo
 
 ## Boundary
 
-The adapter only shells out to `facet` and parses the shared wire envelope. It does not import service, validation, or gallery code. The boundary checker permits only the MCP SDK, Zod, Node builtins, adapter-local modules, and shared contracts in `src/harness-adapters/mcp/`.
+The adapter only shells out to `facet` and parses the shared wire envelope. It does not import service, validation, or gallery code. The boundary checker permits only the MCP SDK, Zod, Node builtins, adapter-local modules, shared contracts, and the shared product version in `src/harness-adapters/mcp/`.

@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { FACET_VERSION } from "../../src/shared/version";
+import { PublishToolShape } from "../../src/harness-adapters/mcp/tool-schemas";
+
 const ROOT = resolve(import.meta.dir, "../..");
 const MCP_ENTRY = join(ROOT, "src/harness-adapters/mcp/main.ts");
 const CLI_ENTRY = join(ROOT, "src/cli/main.ts");
@@ -102,6 +105,7 @@ describe("facet MCP adapter", () => {
     const client = await connect(home);
     try {
       const tools = await client.listTools();
+      expect(client.getServerVersion()).toEqual({ name: "facet", version: FACET_VERSION });
       expect(tools.tools.map((tool) => tool.name)).toEqual([
         "facet_export",
         "facet_open_url",
@@ -118,6 +122,35 @@ describe("facet MCP adapter", () => {
       };
       expect(envelope.ok).toBe(true);
       expect(envelope.data?.command).toBe("status");
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("documents and enforces exactly one inline or file publish source", async () => {
+    const home = newHome();
+    const artifactId = await createArtifact(home);
+    const client = await connect(home);
+    try {
+      await client.listTools();
+      expect(Object.keys(PublishToolShape).toSorted()).toContain("sourceText");
+      expect(Object.keys(PublishToolShape).toSorted()).toContain("file");
+      expect(readFileSync(join(ROOT, "docs/reference/mcp.md"), "utf8")).toContain(
+        "Exactly one of `sourceText` or `file` is required.",
+      );
+
+      for (const input of [
+        { artifactId, type: "markdown" },
+        { artifactId, type: "markdown", sourceText: "# inline", file: "/tmp/source.md" },
+      ]) {
+        const result = await client.callTool({ name: "facet_publish", arguments: input });
+        expect(result.isError).toBe(true);
+        const envelope = JSON.parse(textContent(result)) as {
+          ok: boolean;
+          error?: { code?: string };
+        };
+        expect(envelope).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+      }
     } finally {
       await client.close();
     }
