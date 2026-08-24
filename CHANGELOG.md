@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.8.0](https://github.com/legion-works/facet/compare/v1.7.1...v1.8.0) (2026-08-24)
+
+
+### Features
+
+* **cli:** facet doctor environment diagnostics ([aef2b03](https://github.com/legion-works/facet/commit/aef2b03a3fa6aed6367806fbd171977dd7c90481))
+* **cli:** publish --watch continuous republishing ([6de4dba](https://github.com/legion-works/facet/commit/6de4dba0b5e3c28a3c4d8e7b789336c2f9c20058))
+* **mcp:** stdio adapter exposing the CLI contract as MCP tools ([f7de87c](https://github.com/legion-works/facet/commit/f7de87ce0bab0593b0ba1670b9ebff1d16297817))
+
+
+### Bug Fixes
+
+* **cli:** harden doctor contract ([1890aca](https://github.com/legion-works/facet/commit/1890acac5f4521980be854cfde809e0b81dada26))
+* **cli:** make doctor repair commands runnable ([ca6cff2](https://github.com/legion-works/facet/commit/ca6cff2214931fbebfa5c2155fcd41141625a47b))
+* **cli:** stabilize watch retries and failures ([7364b11](https://github.com/legion-works/facet/commit/7364b112093ff6482104b52694d012d2f57c8c83))
+* **mcp:** document inline publish contract ([68daf5a](https://github.com/legion-works/facet/commit/68daf5a26a869e2977760d361ec2401891128505))
+* **mcp:** map schema errors to Facet envelopes ([4743edf](https://github.com/legion-works/facet/commit/4743edf2bac87b4d2726e8d76005256069ff1e82))
+* **mcp:** restrict adapter imports to wire contracts ([f4cb644](https://github.com/legion-works/facet/commit/f4cb644b6f043e65034038de5736c5e861498e5a))
+* **runtime:** preserve source entrypoint laziness ([fb2a248](https://github.com/legion-works/facet/commit/fb2a24837569d5fdeb788f64df17291d4c6faebb))
+* **service:** reap pooled workers on idle-driven stop ([517a6c2](https://github.com/legion-works/facet/commit/517a6c2cdf619b546f607daf82ce5754593c2ed6))
+
 ## [1.7.1](https://github.com/legion-works/facet/compare/v1.7.0...v1.7.1) (2026-08-23)
 
 
