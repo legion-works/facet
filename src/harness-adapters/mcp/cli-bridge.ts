@@ -1,8 +1,11 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { type FacetEnvelope, parseEnvelope } from "../../shared/contracts/envelope";
-import { FacetError, type FacetErrorCode } from "../../shared/errors/facet-error";
+import {
+  type FacetEnvelope,
+  type FacetErrorBody,
+  parseEnvelope,
+} from "../../shared/contracts/envelope";
 
 const STDERR_DETAIL_LIMIT = 4_096;
 
@@ -31,10 +34,36 @@ export interface InvokeFacetOptions {
   readonly stdin?: string;
 }
 
+export class FacetBridgeError extends Error {
+  constructor(
+    readonly body: FacetErrorBody,
+    cause?: unknown,
+  ) {
+    super(body.message, { cause });
+  }
+}
+
+function bridgeError(
+  code: string,
+  message: string,
+  details?: FacetErrorBody["details"],
+  cause?: unknown,
+): FacetBridgeError {
+  return new FacetBridgeError(
+    {
+      code,
+      message,
+      retryable: false,
+      ...(details === undefined ? {} : { details }),
+    },
+    cause,
+  );
+}
+
 function requiredString(input: Readonly<Record<string, unknown>>, key: string): string {
   const value = input[key];
   if (typeof value === "string" && value.length > 0) return value;
-  throw new FacetError("invalid_request", `${key} is required`, { retryable: false });
+  throw bridgeError("invalid_request", `${key} is required`);
 }
 
 function appendString(args: string[], flag: string, value: unknown): void {
@@ -136,21 +165,14 @@ export function parseFacetStdout(stdout: string): FacetEnvelope<unknown> {
   try {
     value = JSON.parse(stdout);
   } catch (cause) {
-    throw new FacetError("invalid_envelope", "Invalid Facet envelope on stdout", {
-      retryable: false,
-      cause,
-    });
+    throw bridgeError("invalid_envelope", "Invalid Facet envelope on stdout", undefined, cause);
   }
   const parsed = parseEnvelope(value);
   if (parsed.ok) return parsed.envelope;
-  throw new FacetError(
-    parsed.body.code as FacetErrorCode,
-    `Invalid Facet envelope: ${parsed.body.message}`,
-    {
-      retryable: parsed.body.retryable,
-      ...(parsed.body.details === undefined ? {} : { details: parsed.body.details }),
-    },
-  );
+  throw new FacetBridgeError({
+    ...parsed.body,
+    message: `Invalid Facet envelope: ${parsed.body.message}`,
+  });
 }
 
 export async function invokeFacet(
@@ -170,15 +192,25 @@ export async function invokeFacet(
   try {
     return parseFacetStdout(result.stdout);
   } catch (cause) {
-    const error = FacetError.from(cause);
-    throw new FacetError(error.code, error.message, {
-      retryable: error.retryable,
-      details: {
-        ...error.details,
-        exitCode: result.exitCode,
-        ...(result.stderr.length === 0 ? {} : { stderr: boundedStderr(result.stderr) }),
+    const error =
+      cause instanceof FacetBridgeError
+        ? cause
+        : bridgeError(
+            "invalid_envelope",
+            cause instanceof Error ? cause.message : String(cause),
+            undefined,
+            cause,
+          );
+    throw new FacetBridgeError(
+      {
+        ...error.body,
+        details: {
+          ...error.body.details,
+          exitCode: result.exitCode,
+          ...(result.stderr.length === 0 ? {} : { stderr: boundedStderr(result.stderr) }),
+        },
       },
       cause,
-    });
+    );
   }
 }

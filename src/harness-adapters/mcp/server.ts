@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { buildFacetArgs, invokeFacet } from "./cli-bridge";
+import { buildFacetArgs, FacetBridgeError, invokeFacet } from "./cli-bridge";
 import {
   ExportToolSchema,
   ExportToolShape,
@@ -17,9 +17,22 @@ import {
   StatusToolShape,
 } from "./tool-schemas";
 import { errEnvelope, type FacetEnvelope } from "../../shared/contracts/envelope";
-import { FacetError } from "../../shared/errors/facet-error";
-import { FACET_VERSION } from "../../shared/version";
-import { generateRequestId } from "../../shared/util/time";
+
+function requestId(): string {
+  return `req-mcp-${crypto.randomUUID()}`;
+}
+
+function errorEnvelope(cause: unknown): FacetEnvelope<never> {
+  const body =
+    cause instanceof FacetBridgeError
+      ? cause.body
+      : {
+          code: "invalid_envelope",
+          message: cause instanceof Error ? cause.message : String(cause),
+          retryable: false,
+        };
+  return errEnvelope(requestId(), body);
+}
 
 function toolResult(envelope: FacetEnvelope<unknown>) {
   return {
@@ -32,8 +45,7 @@ async function invoke(args: readonly string[], options: { cwd?: string; stdin?: 
   try {
     return toolResult(await invokeFacet(args, options));
   } catch (cause) {
-    const error = FacetError.from(cause);
-    return toolResult(errEnvelope(generateRequestId(), error.toBody()));
+    return toolResult(errorEnvelope(cause));
   }
 }
 
@@ -42,19 +54,23 @@ function publishSource(input: PublishToolInput): {
   stdin?: string;
 } {
   if (input.sourceText !== undefined && input.file !== undefined) {
-    throw new FacetError("invalid_request", "Pass sourceText or file, not both", {
+    throw new FacetBridgeError({
+      code: "invalid_request",
+      message: "Pass sourceText or file, not both",
       retryable: false,
     });
   }
   if (input.sourceText !== undefined) return { stdin: input.sourceText };
   if (input.file !== undefined) return { file: input.file };
-  throw new FacetError("invalid_request", "publish requires sourceText or file", {
+  throw new FacetBridgeError({
+    code: "invalid_request",
+    message: "publish requires sourceText or file",
     retryable: false,
   });
 }
 
 export function createFacetMcpServer(): McpServer {
-  const server = new McpServer({ name: "facet", version: FACET_VERSION });
+  const server = new McpServer({ name: "facet", version: "1.0.0" });
 
   server.registerTool(
     "facet_export",
@@ -93,8 +109,7 @@ export function createFacetMcpServer(): McpServer {
         const source = publishSource(input);
         return invoke(buildFacetArgs("publish", { ...input, ...source }), source);
       } catch (cause) {
-        const error = FacetError.from(cause);
-        return toolResult(errEnvelope(generateRequestId(), error.toBody()));
+        return toolResult(errorEnvelope(cause));
       }
     },
   );

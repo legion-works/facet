@@ -472,4 +472,16 @@ describe("boundary check — MCP adapter import surface", () => {
       "../../../gallery-web/app",
     ]);
   });
+
+  test("rejects non-contract shared imports from the MCP adapter", () => {
+    const root = makeRoot();
+    writeMcpAdapterFile(
+      root,
+      "non-contract.ts",
+      'import { now } from "../../shared/util/time";\nvoid now;\n',
+    );
+
+    const violations = runBoundaryCheck(root);
+    expect(violations.map((violation) => violation.specifier)).toEqual(["../../shared/util/time"]);
+  });
 });

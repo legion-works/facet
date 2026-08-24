@@ -248,8 +248,8 @@ function checkMcpAdapterSpecifier(
   const resolved = resolve(join(file, "..", specifier)).replace(/\\/g, "/");
   const relativePath = relative(repoRoot, resolved).replace(/\\/g, "/");
   if (
-    relativePath === "src/shared" ||
-    relativePath.startsWith("src/shared/") ||
+    relativePath === "src/shared/contracts" ||
+    relativePath.startsWith("src/shared/contracts/") ||
     relativePath === "src/harness-adapters/mcp" ||
     relativePath.startsWith("src/harness-adapters/mcp/")
   ) {
