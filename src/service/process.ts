@@ -10,7 +10,7 @@ import type {
 } from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
 
-import { startFacetService, type RunningService } from "./server";
+import { startFacetService, type RunningService, type StartServiceOptions } from "./server";
 import { defaultInsecureReason } from "./verdict-enrichment";
 
 interface MutableServiceArgs {
@@ -48,6 +48,12 @@ export interface LoadedTier1Runner {
 export interface ServiceRunnerModules {
   readonly tier0: LoadedTier0Runner;
   readonly loadTier1: () => Promise<LoadedTier1Runner>;
+}
+
+export interface ServiceProcessHooks {
+  readonly onSignal?: (signal: "SIGTERM" | "SIGINT", handler: () => void) => void;
+  readonly startService?: (options: StartServiceOptions) => Promise<RunningService>;
+  readonly writeStderr?: (line: string) => void;
 }
 
 export function parseServiceArgs(argv: readonly string[]): ParsedServiceArgs {
@@ -148,17 +154,21 @@ export async function runServiceProcess(
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
   loadModules: (args: ParsedServiceArgs, env: NodeJS.ProcessEnv) => Promise<ServiceRunnerModules>,
+  hooks: ServiceProcessHooks = {},
 ): Promise<number> {
   const logger = createLogger({ component: "main" });
   const args = parseServiceArgs(argv);
+  const onSignal = hooks.onSignal ?? ((signal, handler) => process.on(signal, handler));
+  const startService = hooks.startService ?? startFacetService;
+  const writeStderr = hooks.writeStderr ?? ((line) => process.stderr.write(line));
   let running: RunningService | null = null;
   const shutdown = async (signal: string): Promise<void> => {
     logger.info("service.signal", { signal });
     if (running) await running.stop();
   };
 
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
+  onSignal("SIGTERM", () => void shutdown("SIGTERM"));
+  onSignal("SIGINT", () => void shutdown("SIGINT"));
 
   try {
     const forcedLevel = parseInsecureLevel(env.FACET_INSECURE);
@@ -185,9 +195,9 @@ export async function runServiceProcess(
     }
     if (insecureLevel > 0) {
       const reason = insecureReason ?? defaultInsecureReason(insecureLevel);
-      process.stderr.write(`WARN: FACET_INSECURE=${insecureLevel} — ${reason}\n`);
+      writeStderr(`WARN: FACET_INSECURE=${insecureLevel} — ${reason}\n`);
     }
-    running = await startFacetService({
+    running = await startService({
       ...(args.dbPath !== undefined ? { dbPath: args.dbPath } : {}),
       ...(args.installTokenPath !== undefined ? { installTokenPath: args.installTokenPath } : {}),
       ...(args.promoteTokenPath !== undefined ? { promoteTokenPath: args.promoteTokenPath } : {}),
@@ -203,7 +213,7 @@ export async function runServiceProcess(
       insecureReason,
       logger,
     });
-    process.stderr.write(
+    writeStderr(
       `${JSON.stringify({
         event: "service.ready",
         component: "main",

@@ -5,6 +5,8 @@ import { buildServiceSpawnArgs } from "../../src/cli/spawn-service";
 import {
   buildTier0WorkerArgs,
   dispatchCompiledEntrypoint,
+  runCompiledService,
+  runCompiledTier0Worker,
 } from "../../src/runtime/compiled-entrypoints";
 import type { FacetRuntimePaths } from "../../src/shared/config/paths";
 
@@ -46,6 +48,49 @@ test("dispatches the hidden compiled Tier 0 worker role", async () => {
 
 test("leaves normal CLI argv undispatched", async () => {
   expect(await dispatchCompiledEntrypoint(["status"], {})).toBeNull();
+});
+
+test("runs the compiled service wrapper with its compiled module loader", async () => {
+  let receivedArgv: readonly string[] | undefined;
+  let receivedEnv: NodeJS.ProcessEnv | undefined;
+  let hasTier0Probe = false;
+  let hasTier1Loader = false;
+
+  expect(
+    await runCompiledService(["--db-path", paths.database], {
+      runServiceProcess: async (argv, env, loadModules) => {
+        receivedArgv = argv;
+        receivedEnv = env;
+        const modules = await loadModules({}, env);
+        hasTier0Probe = typeof modules.tier0.probe === "function";
+        hasTier1Loader = typeof modules.loadTier1 === "function";
+        return 7;
+      },
+    }),
+  ).toBe(7);
+  expect(receivedArgv).toEqual(["--db-path", paths.database]);
+  expect(receivedEnv).toBe(process.env);
+  expect(hasTier0Probe).toBe(true);
+  expect(hasTier1Loader).toBe(true);
+});
+
+test("returns failure and reports an unhandled compiled Tier 0 worker error", async () => {
+  const stderr: string[] = [];
+
+  expect(
+    await runCompiledTier0Worker({
+      stdin: {} as ReadableStreamDefaultReader<Uint8Array>,
+      writeStdout: () => true,
+      writeStderr: (line) => {
+        stderr.push(line);
+        return true;
+      },
+      runWorkerLoop: async () => {
+        throw new Error("worker exploded");
+      },
+    }),
+  ).toBe(1);
+  expect(stderr.join("")).toContain("worker exploded");
 });
 
 test("builds compiled service and Tier 0 worker argv without source paths", () => {

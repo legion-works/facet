@@ -14,6 +14,17 @@ export interface CompiledEntrypointHooks {
   readonly runTier0Worker?: () => Promise<number>;
 }
 
+export interface CompiledServiceDeps {
+  readonly runServiceProcess?: typeof runServiceProcess;
+}
+
+export interface CompiledWorkerDeps {
+  readonly stdin?: ReadableStreamDefaultReader<Uint8Array>;
+  readonly runWorkerLoop?: typeof runWorkerLoop;
+  readonly writeStderr?: (text: string) => void;
+  readonly writeStdout?: (text: string) => void;
+}
+
 function loadCompiledModules(
   _args: ParsedServiceArgs,
   _env: NodeJS.ProcessEnv,
@@ -24,19 +35,22 @@ function loadCompiledModules(
   });
 }
 
-async function runCompiledService(argv: readonly string[]): Promise<number> {
-  return runServiceProcess(argv, process.env, loadCompiledModules);
+export async function runCompiledService(
+  argv: readonly string[],
+  deps: CompiledServiceDeps = {},
+): Promise<number> {
+  return (deps.runServiceProcess ?? runServiceProcess)(argv, process.env, loadCompiledModules);
 }
 
-async function runCompiledTier0Worker(): Promise<number> {
+export async function runCompiledTier0Worker(deps: CompiledWorkerDeps = {}): Promise<number> {
+  const stdin = deps.stdin ?? Bun.stdin.stream().getReader();
+  const writeStdout = deps.writeStdout ?? process.stdout.write.bind(process.stdout);
+  const writeStderr = deps.writeStderr ?? process.stderr.write.bind(process.stderr);
+  const workerLoop = deps.runWorkerLoop ?? runWorkerLoop;
   try {
-    return await runWorkerLoop(
-      Bun.stdin.stream().getReader(),
-      process.stdout.write.bind(process.stdout),
-      process.stderr.write.bind(process.stderr),
-    );
+    return await workerLoop(stdin, writeStdout, writeStderr);
   } catch (error) {
-    process.stderr.write(formatWorkerUnhandled(error));
+    writeStderr(formatWorkerUnhandled(error));
     return 1;
   }
 }
