@@ -27,6 +27,11 @@ import type { ChildProcess } from "node:child_process";
 import { resolve as resolvePath } from "node:path";
 
 import type { ArtifactType } from "../../shared/contracts/artifact";
+import {
+  buildTier0WorkerArgs,
+  isCompiledRuntime,
+  type Tier0WorkerCommand,
+} from "../../shared/build-mode";
 import { FacetError } from "../../shared/errors/facet-error";
 import {
   LexicalCountersSchema,
@@ -157,7 +162,7 @@ interface PendingRequest {
 }
 
 interface RunnerOptions {
-  readonly workerEntry: string;
+  readonly workerCommand: Tier0WorkerCommand;
   readonly timeoutMs: number;
   readonly tsxTimeoutMs: number;
   readonly outputCap: number;
@@ -366,8 +371,8 @@ function createRunner(level: InsecureLevel, options: RunnerOptions): Tier0Runner
     }
     const started =
       isolation === "netns"
-        ? spawnNetnsWorker(["run", options.workerEntry])
-        : spawnDirectWorker(["run", options.workerEntry]);
+        ? spawnNetnsWorker(buildTier0WorkerArgs(options.workerCommand))
+        : spawnDirectWorker(buildTier0WorkerArgs(options.workerCommand));
     child = started;
     options.onWorkerSpawn?.(started.pid!);
     started.stderr?.on("data", (chunk: Buffer) => {
@@ -476,7 +481,9 @@ export async function runTier0(input: Tier0Input): Promise<Tier0WorkerResult> {
 /** Create a Tier 0 runner using the requested isolation level. */
 export function createTier0Runner(level: InsecureLevel): Tier0Runner {
   return createRunner(level, {
-    workerEntry: TIER0_WORKER_ENTRY,
+    workerCommand: isCompiledRuntime()
+      ? { mode: "compiled" }
+      : { mode: "source", entrypoint: TIER0_WORKER_ENTRY },
     timeoutMs: TIER0_TIMEOUT_MS,
     tsxTimeoutMs: TIER0_TSX_TIMEOUT_MS,
     outputCap: TIER0_OUTPUT_CAP_BYTES,
@@ -488,7 +495,7 @@ export function createTier0RunnerForTests(
   hooks: Tier0RunnerTestHooks,
 ): Tier0Runner {
   return createRunner(level, {
-    workerEntry: hooks.workerEntry ?? TIER0_WORKER_ENTRY,
+    workerCommand: { mode: "source", entrypoint: hooks.workerEntry ?? TIER0_WORKER_ENTRY },
     timeoutMs: hooks.timeoutMs ?? TIER0_TIMEOUT_MS,
     tsxTimeoutMs: hooks.tsxTimeoutMs ?? TIER0_TSX_TIMEOUT_MS,
     outputCap: hooks.outputCap ?? TIER0_OUTPUT_CAP_BYTES,

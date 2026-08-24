@@ -22,99 +22,21 @@
  * tooling can scrape it without parsing prose.
  */
 
-import { createLogger } from "../shared/logging/logger";
-import { startFacetService, type RunningService } from "./server";
 import type {
-  InsecureLevel,
-  IsolationProbeResult,
   Tier0IsolationProbe,
   Tier0Runner,
   Tier0RunnerFactory,
   Tier1AvailabilityProbe,
-  Tier1Runner,
   Tier1RunnerFactory,
 } from "../shared/contracts/validation";
 import { FacetError } from "../shared/errors/facet-error";
-import { defaultInsecureReason } from "./verdict-enrichment";
-
-interface MutableArgs {
-  dbPath?: string;
-  installTokenPath?: string;
-  promoteTokenPath?: string;
-  lockPath?: string;
-  evidencePath?: string;
-  idleTimeoutMs?: number;
-  tier0RunnerPath?: string;
-  tier1RunnerPath?: string;
-}
-
-interface ParsedArgs {
-  readonly dbPath?: string;
-  readonly installTokenPath?: string;
-  readonly promoteTokenPath?: string;
-  readonly lockPath?: string;
-  readonly evidencePath?: string;
-  readonly idleTimeoutMs?: number;
-  readonly tier0RunnerPath?: string;
-  readonly tier1RunnerPath?: string;
-}
-
-function parseArgs(argv: readonly string[]): ParsedArgs {
-  const out: MutableArgs = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === "--db-path") {
-      const value = argv[i + 1];
-      if (value !== undefined) {
-        out.dbPath = value;
-        i += 1;
-      }
-    } else if (arg === "--install-token-path") {
-      const value = argv[i + 1];
-      if (value !== undefined) {
-        out.installTokenPath = value;
-        i += 1;
-      }
-    } else if (arg === "--promote-token-path") {
-      const value = argv[i + 1];
-      if (value !== undefined) {
-        out.promoteTokenPath = value;
-        i += 1;
-      }
-    } else if (arg === "--lock-path") {
-      const value = argv[i + 1];
-      if (value !== undefined) {
-        out.lockPath = value;
-        i += 1;
-      }
-    } else if (arg === "--evidence-path") {
-      const value = argv[i + 1];
-      if (value !== undefined) {
-        out.evidencePath = value;
-        i += 1;
-      }
-    } else if (arg === "--idle-timeout-ms") {
-      const value = Number(argv[i + 1]);
-      if (Number.isFinite(value) && value > 0) {
-        out.idleTimeoutMs = value;
-        i += 1;
-      }
-    } else if (arg === "--tier0-runner-path") {
-      const value = argv[i + 1];
-      if (value !== undefined) {
-        out.tier0RunnerPath = value;
-        i += 1;
-      }
-    } else if (arg === "--tier1-runner-path") {
-      const value = argv[i + 1];
-      if (value !== undefined) {
-        out.tier1RunnerPath = value;
-        i += 1;
-      }
-    }
-  }
-  return out;
-}
+import {
+  runServiceProcess,
+  type LoadedTier0Runner,
+  type LoadedTier1Runner,
+  type ParsedServiceArgs,
+  type ServiceRunnerModules,
+} from "./process";
 
 /**
  * Dynamic-import the Tier 0 runner from the caller-provided path.
@@ -125,16 +47,6 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
  * in the service child; the CLI (src/cli/) is the only place that
  * knows the concrete path.
  */
-interface LoadedTier0Runner {
-  readonly factory: Tier0RunnerFactory;
-  readonly probe?: Tier0IsolationProbe;
-}
-
-interface LoadedTier1Runner {
-  readonly factory: Tier1RunnerFactory;
-  readonly probe?: Tier1AvailabilityProbe;
-}
-
 async function loadTier0Runner(path: string): Promise<LoadedTier0Runner> {
   // The path is an arbitrary string at runtime; TypeScript cannot
   // type-check the import so we cast via unknown. The contract is
@@ -185,129 +97,6 @@ async function loadTier1Runner(path: string): Promise<LoadedTier1Runner> {
   };
 }
 
-function createLazyTier1Runner(path: string, level: InsecureLevel): Tier1Runner {
-  let runner: Promise<Tier1Runner> | undefined;
-  return async (input) => {
-    runner ??= loadTier1Runner(path).then((loaded) => loaded.factory(level));
-    return runner.then((loaded) => loaded(input));
-  };
-}
-
-function parseInsecureLevel(raw: string | undefined): InsecureLevel {
-  if (raw === undefined || raw === "0") return 0;
-  if (raw === "1" || raw === "2" || raw === "3") return Number(raw) as InsecureLevel;
-  throw new FacetError(
-    "invalid_request",
-    `FACET_INSECURE must be one of 0, 1, 2, or 3; got '${raw}'`,
-    {
-      retryable: false,
-    },
-  );
-}
-
-function isAutoFallbackEnabled(raw: string | undefined): boolean {
-  return raw === "1";
-}
-
-function boundedProbeReason(result: IsolationProbeResult): string {
-  const reason = result.reason?.trim() || "unavailable";
-  return reason.slice(0, 240);
-}
-
-function requireProbe<T>(probe: T | undefined, label: string): T {
-  if (probe !== undefined) return probe;
-  throw new FacetError("internal", `${label} probe is required for insecure auto fallback`, {
-    retryable: false,
-  });
-}
-
-async function main(): Promise<void> {
-  const logger = createLogger({ component: "main" });
-  const args = parseArgs(process.argv.slice(2));
-  const insecureRaw = process.env.FACET_INSECURE;
-
-  let running: RunningService | null = null;
-  const shutdown = async (signal: string): Promise<void> => {
-    logger.info("service.signal", { signal });
-    if (running) await running.stop();
-    process.exit(0);
-  };
-
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-
-  try {
-    const forcedLevel = parseInsecureLevel(insecureRaw);
-    const autoFallback = isAutoFallbackEnabled(process.env.FACET_INSECURE_AUTO);
-    const tier0Module = await loadRequiredTier0Runner(args.tier0RunnerPath);
-    const tier1RunnerPath = requireTier1RunnerPath(args.tier1RunnerPath);
-    let tier1Module: LoadedTier1Runner | undefined;
-    let insecureLevel = forcedLevel;
-    let insecureReason: string | null = null;
-    if (autoFallback && forcedLevel < 2) {
-      tier1Module = await loadTier1Runner(tier1RunnerPath);
-      const tier0Probe = requireProbe(tier0Module.probe, "Tier 0 isolation");
-      const tier0 = await tier0Probe();
-      if (!tier0.available) {
-        insecureLevel = 2;
-        insecureReason = `auto:${boundedProbeReason(tier0)}`;
-      } else if (forcedLevel === 0) {
-        const tier1Probe = requireProbe(tier1Module.probe, "Tier 1 availability");
-        const tier1 = await tier1Probe();
-        if (!tier1.available) {
-          insecureLevel = 1;
-          insecureReason = `auto:${boundedProbeReason(tier1)}`;
-        }
-      }
-    }
-    if (insecureLevel > 0) {
-      const reason = insecureReason ?? defaultInsecureReason(insecureLevel);
-      process.stderr.write(`WARN: FACET_INSECURE=${insecureLevel} — ${reason}\n`);
-    }
-    const configuredTier0Runner = tier0Module.factory(insecureLevel);
-    const tier1Runner =
-      tier1Module === undefined
-        ? createLazyTier1Runner(tier1RunnerPath, insecureLevel)
-        : tier1Module.factory(insecureLevel);
-    running = await startFacetService({
-      ...(args.dbPath !== undefined ? { dbPath: args.dbPath } : {}),
-      ...(args.installTokenPath !== undefined ? { installTokenPath: args.installTokenPath } : {}),
-      ...(args.promoteTokenPath !== undefined ? { promoteTokenPath: args.promoteTokenPath } : {}),
-      ...(args.lockPath !== undefined ? { lockPath: args.lockPath } : {}),
-      ...(args.evidencePath !== undefined ? { evidencePath: args.evidencePath } : {}),
-      ...(args.idleTimeoutMs !== undefined ? { idleTimeoutMs: args.idleTimeoutMs } : {}),
-      tier0Runner: configuredTier0Runner,
-      tier1Runner,
-      insecureLevel,
-      insecureReason,
-      logger,
-    });
-    process.stderr.write(
-      `${JSON.stringify({
-        event: "service.ready",
-        component: "main",
-        timestamp: new Date().toISOString(),
-        pid: process.pid,
-        port: running.port,
-        url: running.url,
-        ...(insecureLevel > 0
-          ? {
-              insecureLevel,
-              insecureReason: insecureReason ?? defaultInsecureReason(insecureLevel),
-            }
-          : {}),
-      })}\n`,
-    );
-    // Park here so the process stays alive — the idle controller will
-    // call stop() once the last reason releases.
-    await running.waitUntilIdle();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error("service.failed", { errorMessage: message });
-    process.exit(1);
-  }
-}
-
 async function loadRequiredTier0Runner(path: string | undefined): Promise<LoadedTier0Runner> {
   if (path === undefined) {
     throw new FacetError(
@@ -328,6 +117,17 @@ function requireTier1RunnerPath(path: string | undefined): string {
     );
   }
   return path;
+}
+
+async function loadModules(args: ParsedServiceArgs): Promise<ServiceRunnerModules> {
+  return {
+    tier0: await loadRequiredTier0Runner(args.tier0RunnerPath),
+    tier1: await loadTier1Runner(requireTier1RunnerPath(args.tier1RunnerPath)),
+  };
+}
+
+async function main(): Promise<void> {
+  process.exit(await runServiceProcess(process.argv.slice(2), process.env, loadModules));
 }
 
 if (import.meta.main) {

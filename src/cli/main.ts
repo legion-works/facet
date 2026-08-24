@@ -28,6 +28,7 @@ import { FACET_SCHEMA_VERSION, okEnvelope, type FacetEnvelope } from "../shared/
 import type { CommandRequest, CommandResult } from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
 import { FACET_VERSION } from "../shared/version";
+import { dispatchCompiledEntrypoint } from "../runtime/compiled-entrypoints";
 
 import { parseArgs, renderHelp, type ParsedCommand } from "./parser";
 import { buildVersionEnvelope, buildUsageError, printEnvelope, EXIT_CODES } from "./output";
@@ -411,6 +412,11 @@ export async function runCli(
  * test surface (`runCli`) stays hermetic.
  */
 async function main(): Promise<void> {
+  const compiledExit = await dispatchCompiledEntrypoint(process.argv.slice(2));
+  if (compiledExit !== null) {
+    process.exit(compiledExit);
+    return;
+  }
   const exit = await runCli(process.argv.slice(2), {
     stdin: process.stdin as unknown as ReadableStream<Uint8Array>,
     stdout: {

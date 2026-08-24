@@ -66,6 +66,7 @@ describe("buildServiceSpawnArgs — parent/child evidence-root agreement", () =>
   test("XDG mode: the child --evidence-path equals the parent's paths.evidence", () => {
     const paths = computeFacetPaths(XDG_ENV);
     const args = buildServiceSpawnArgs(paths, {
+      mode: "source",
       entrypoint: "/srv/main.ts",
       tier0RunnerPath: "/srv/tier0.ts",
       tier1RunnerPath: "/srv/tier1.ts",
@@ -79,6 +80,7 @@ describe("buildServiceSpawnArgs — parent/child evidence-root agreement", () =>
   test("FACET_HOME mode: the child --evidence-path equals the facetHome evidence root", () => {
     const paths = computeFacetPaths({ facetHome: "/home" });
     const args = buildServiceSpawnArgs(paths, {
+      mode: "source",
       entrypoint: "/srv/main.ts",
       tier0RunnerPath: "/srv/tier0.ts",
       tier1RunnerPath: "/srv/tier1.ts",

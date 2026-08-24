@@ -27,6 +27,7 @@ import { unlinkSync } from "node:fs";
 import { dirname, resolve as resolvePath } from "node:path";
 
 import { FACET_SCHEMA_VERSION } from "../shared/contracts/envelope";
+import { isCompiledRuntime, type ServiceLaunch } from "../shared/build-mode";
 import { isLockStale, readLockMetadata } from "../service/lifecycle/process-lock";
 import { computeFacetPaths, type FacetRuntimePaths } from "../shared/config/paths";
 import { isPidAlive } from "../service/lifecycle/process-lock";
@@ -63,6 +64,8 @@ export interface SpawnServiceOptions {
   readonly tier0RunnerPath?: string;
   /** Override the Tier 1 runner module path for insecure boots. */
   readonly tier1RunnerPath?: string;
+  /** Explicit process launch mode; defaults to the current Bun build mode. */
+  readonly launch?: ServiceLaunch;
 }
 
 /**
@@ -106,15 +109,10 @@ const inflight = new Map<string, Promise<ResolvedService>>();
  */
 export function buildServiceSpawnArgs(
   paths: FacetRuntimePaths,
-  options: {
-    readonly entrypoint: string;
-    readonly tier0RunnerPath: string;
-    readonly tier1RunnerPath: string;
-    readonly idleTimeoutMs?: number;
-  },
+  options: ServiceLaunch & { readonly idleTimeoutMs?: number },
 ): string[] {
   const args = [
-    options.entrypoint,
+    ...(options.mode === "compiled" ? ["--facet-internal-service"] : [options.entrypoint]),
     "--db-path",
     paths.database,
     "--install-token-path",
@@ -125,10 +123,14 @@ export function buildServiceSpawnArgs(
     paths.lock,
     "--evidence-path",
     paths.evidence,
-    "--tier0-runner-path",
-    options.tier0RunnerPath,
-    "--tier1-runner-path",
-    options.tier1RunnerPath,
+    ...(options.mode === "source"
+      ? [
+          "--tier0-runner-path",
+          options.tier0RunnerPath,
+          "--tier1-runner-path",
+          options.tier1RunnerPath,
+        ]
+      : []),
   ];
   if (options.idleTimeoutMs !== undefined) {
     args.push("--idle-timeout-ms", String(options.idleTimeoutMs));
@@ -148,7 +150,6 @@ function spawnChild(
   onSpawn?: (argv?: readonly string[], stderr?: "ignore" | "inherit") => void,
 ): ChildProcess {
   const bunPath = options.bunPath ?? process.execPath;
-  const entrypoint = options.entrypoint ?? resolvePath(import.meta.dir, "..", "service", "main.ts");
   const facetHome = paths.database
     ? resolvePath(dirname(dirname(paths.database)))
     : (options.env.FACET_HOME ?? "");
@@ -156,18 +157,12 @@ function spawnChild(
     ...options.env,
     FACET_HOME: facetHome,
   };
-  // The CLI owns the concrete path to the Tier 0 runner module; the
-  // service child dynamic-imports this path so the service's static
-  // boundary check stays clean (no `import "../validation/..."`).
-  const tier0RunnerPath = options.tier0RunnerPath ?? resolveDefaultTier0RunnerPath();
   // Pass per-path overrides as flags so the child does not have to
   // recompute paths from FACET_HOME; this keeps parent + child
   // identical even when an operator sets XDG_* vars.
-  const tier1RunnerPath = options.tier1RunnerPath ?? resolveDefaultTier1RunnerPath();
+  const launch = options.launch ?? resolveServiceLaunch(options);
   const args = buildServiceSpawnArgs(paths, {
-    entrypoint,
-    tier0RunnerPath,
-    tier1RunnerPath,
+    ...launch,
     ...(options.idleTimeoutMs !== undefined ? { idleTimeoutMs: options.idleTimeoutMs } : {}),
   });
   const insecureBoot =
@@ -180,6 +175,16 @@ function spawnChild(
     stdio: ["ignore", "ignore", stderr],
     detached: true,
   });
+}
+
+function resolveServiceLaunch(options: SpawnServiceOptions): ServiceLaunch {
+  if (isCompiledRuntime()) return { mode: "compiled" };
+  return {
+    mode: "source",
+    entrypoint: options.entrypoint ?? resolvePath(import.meta.dir, "..", "service", "main.ts"),
+    tier0RunnerPath: options.tier0RunnerPath ?? resolveDefaultTier0RunnerPath(),
+    tier1RunnerPath: options.tier1RunnerPath ?? resolveDefaultTier1RunnerPath(),
+  };
 }
 
 /**
