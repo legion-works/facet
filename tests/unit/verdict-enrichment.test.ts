@@ -3,11 +3,10 @@
  *
  * `enrichVerdict` is the on-write path that binds a worker result
  * to its (artifactId, revisionSha) pair and attaches the optional
- * `insecure` and `execution` markers. The traits we care about for
- * Task 3 are:
+ * `insecure` and `execution` markers. The execution marker must:
  *
  *   - the execution marker is conditional-spread so non-TSX
- *     verdicts stay BYTE-IDENTICAL to the pre-arc wire shape
+ *     verdicts keep the existing wire shape
  *     (the field is absent, not null),
  *   - the execution marker is preserved through the enrichment
  *     for TSX static and interactive verdicts.

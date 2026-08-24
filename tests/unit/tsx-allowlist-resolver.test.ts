@@ -171,15 +171,14 @@ describe("tsx allowlist resolver — ACCEPT (GREEN)", () => {
   });
 });
 
-describe("tsx allowlist resolver — determinism invariant pin", () => {
-  // MUST 2: characterize the exact conditions under which bytes are stable.
-  // The invariant we can claim and pin for Task 5 is:
+describe("tsx allowlist resolver — compilation determinism", () => {
+  // Byte stability depends on every input Bun embeds in the bundle:
   //
   //   Same source + same absolute entrypoint path + same cwd + same env
   //   ⇒ same bundle bytes (within a single process lifetime).
   //
-  // Task 5's compiler entry must satisfy all four conditions for the
-  // pooled Tier 0 worker, or revision-bound derived bytes will drift.
+  // The pooled Tier 0 worker must preserve all four conditions or
+  // revision-bound derived bytes drift.
 
   test("byte hashes are stable for the same (source, absolute entrypoint, cwd, env)", async () => {
     const dir = makeFixtureDir();
@@ -196,18 +195,16 @@ describe("tsx allowlist resolver — determinism invariant pin", () => {
     expect(second.bytes.length).toBe(first.bytes.length);
   });
 
-  test("different cwd changes the bytes even for an absolute entrypoint — the requirement Task 5 inherits", async () => {
+  test("different cwd changes the bytes even for an absolute entrypoint", async () => {
     // Bun.build embeds cwd-derived metadata in the bundle, so even an
     // absolute entrypoint produces different bytes when cwd differs. The
-    // invariant Task 5 inherits is therefore: bytes are stable IFF
-    // (source, absolute entrypoint, cwd, env) all match. Task 5 MUST
-    // pin cwd before calling Bun.build — the pooled Tier 0 worker
+    // invariant is therefore: bytes are stable IFF (source, absolute
+    // entrypoint, cwd, env) all match. The pooled Tier 0 worker
     // already pins cwd via spawn, so the compiler must read it from
     // process.cwd() (which is already canonical) and not rely on the
     // parent's cwd being stable across runs.
     //
-    // This test pins the requirement: the parent must NOT change cwd
-    // between compiles, and the compiler must not either.
+    // The parent and compiler must not change cwd between compiles.
     const dir = makeFixtureDir();
     const absoluteEntry = join(dir, "_probe.tsx");
     writeFileSync(

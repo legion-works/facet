@@ -16,13 +16,12 @@ the tasks in `.opencode/plans/2026-08-24-first-class-product.md`.
 
 ### Amendment 2026-08-24: fallback invoked on empirical proof
 
-The Task 3 compile proof on Bun 1.4.0 failed structurally: the compiled
+The compile proof on Bun 1.4.0 failed structurally: the compiled
 service child cannot load `sharp` (native libvips addon behind Tier 1's
 WebP evidence encoding). Two escalation probes also failed: `sharp` with
 the `@img/sharp-wasm32` runtime hangs in Bun 1.4.0 source mode (worker
 threading; `SHARP_CONCURRENCY=0` does not rescue it) and a compiled
 binary still resolves the linux-x64 native runtime. Evidence:
-`/tmp/opencode/fc-t3/report.md`, `/tmp/opencode/sharp-wasm-probe/report.md`,
 tracking issue #27. Consequences: `binaryFallback` takes its named
 fallback (no standalone binary this arc; the release keeps the source
 archive and never labels a Bun-dependent binary standalone), and

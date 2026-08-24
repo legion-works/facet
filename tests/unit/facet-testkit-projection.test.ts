@@ -3,28 +3,21 @@
  *
  * The test harness's `readBackFixture` projects a canonical `Verdict`
  * (parsed from the wire) down to the acceptance surface
- * (`AcceptanceVerdict`). The projection is the same field-by-field
- * class the production client fix eliminated — every field added
- * since the helper was written was silently dropped:
+ * (`AcceptanceVerdict`). Every observed field must be projected:
  *
  *   - `externalImageCount` and `viewBoxes` (HTML arc)
  *   - `discriminativeErrors` (declared in the interface but not
  *     filled by the projection)
- *   - `execution` (Task 3)
+ *   - `execution`
  *   - `mermaidNodeCount`, `visibleSvgCount` (HTML/visualization)
  *
  * This guard derives the expected key set from the canonical schema
  * and asserts the projection carries every one. A new
  * `VerdictObservedSchema` field that fails to surface in the
- * acceptance harness now hard-fails the test — the same class the
- * production client fix pinned, but pointed at the test harness.
+ * acceptance harness now hard-fails the test.
  *
- * The harness is what SEVEN acceptance tests observe verdicts
- * through (adversarial-render, gate-forgery, harness-recovery,
- * canvas-chart-tier1, screenshot-evidence-failure, insecure-sandbox,
- * html-tier1-status). If the harness drops a field, an acceptance
- * test cannot assert on it, so a whole class of regression becomes
- * structurally invisible to the gates that exist to catch it.
+ * If the harness drops a field, acceptance tests cannot assert on it,
+ * leaving a whole class of regression structurally invisible.
  * `externalImageCount` is the disclosure channel — no acceptance
  * test can currently check it end-to-end.
  */
@@ -86,10 +79,7 @@ describe("projectToAcceptanceVerdict — schema-derived key-set guard", () => {
   });
 
   test("the projection carries the execution marker for TSX rows", () => {
-    // Tasks 6-9 will need this. The pre-fix interface dropped
-    // `execution` entirely, so no acceptance test could assert on
-    // it. After the projection passes through, the top-level
-    // marker is on the surface.
+    // Static and interactive artifacts need distinct acceptance behavior.
     const verdict = makeVerdict({ execution: "interactive" });
     const projected = projectToAcceptanceVerdict({
       renderer: "svg",

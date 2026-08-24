@@ -1,13 +1,13 @@
 /**
- * Round-2 review residuals.
+ * Service boundary invariants:
  *
- *   1. ?lease= / ?artifactId= query-string fallback REMOVED — the SSE
+ *   1. The SSE
  *      route must REJECT (401) any connect that does NOT supply the
  *      `X-Gallery-Lease` + `X-Gallery-Artifact` headers. A request that
  *      presents the lease via the URL only is rejected, not silently
  *      accepted.
  *   2. Missing-Host is a typed 421 (Misdirected Request) — never a 500.
- *   3. Per-route AUTH MATRIX — every route returns 401 without a Bearer,
+ *   3. Every route returns 401 without a Bearer,
  *      including the SSE stream route, so a future un-authed route fails
  *      the test.
  *   4. Stream-renewal test holds a stream past its original lease TTL,
@@ -88,7 +88,7 @@ function parseEnvelope(
   return out;
 }
 
-describe("Round-2 #1: ?lease= query-string fallback REMOVED", () => {
+describe("SSE lease headers", () => {
   test("SSE connect with ?lease= + no X-Gallery-Lease header → 401 typed", async () => {
     const env = await startEnv();
     try {
@@ -205,7 +205,7 @@ describe("Round-2 #1: ?lease= query-string fallback REMOVED", () => {
   }, 10_000);
 });
 
-describe("Round-2 #2: missing Host → typed 421 (not 500)", () => {
+describe("host guard typed errors", () => {
   test("command route with no Host header → 400/421 typed (not 500)", async () => {
     const env = await startEnv();
     try {
@@ -262,7 +262,7 @@ describe("Round-2 #2: missing Host → typed 421 (not 500)", () => {
   });
 });
 
-describe("Round-2 #3: per-route AUTH MATRIX", () => {
+describe("route authorization", () => {
   // Every route in the service must reject an unauthenticated request
   // with 401. A future un-authed route will fail this test.
   const ROUTES: ReadonlyArray<{
@@ -313,7 +313,7 @@ describe("Round-2 #3: per-route AUTH MATRIX", () => {
   }
 });
 
-describe("Round-2 #4: stream renewal actually exercises TTL", () => {
+describe("stream lease renewal", () => {
   test("short-TTL lease → live stream survives original expiry + idle returns after close", async () => {
     const env = await startEnv({ leaseTtlMs: 60, heartbeatIntervalMs: 15, idleTimeoutMs: 200 });
     const streamAbort = new AbortController();
