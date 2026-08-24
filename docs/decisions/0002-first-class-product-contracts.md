@@ -6,15 +6,33 @@ the tasks in `.opencode/plans/2026-08-24-first-class-product.md`.
 
 ## Decisions
 
-- binaryFallback: embedded-self-dispatch
+- binaryFallback: no-standalone-binary (fallback invoked 2026-08-24 — see amendment)
 - npmPublish: disabled
 - doctorDormant: dormant-pass, missing-db-fail
-- mcpDistribution: release-binary
+- mcpDistribution: source-archive-only (amended 2026-08-24 — see amendment)
 - watchStdout: tty-text-and-ndjson-machine
 
 ## Rationale and rejected alternatives
 
-### binaryFallback: embedded-self-dispatch
+### Amendment 2026-08-24: fallback invoked on empirical proof
+
+The Task 3 compile proof on Bun 1.4.0 failed structurally: the compiled
+service child cannot load `sharp` (native libvips addon behind Tier 1's
+WebP evidence encoding). Two escalation probes also failed: `sharp` with
+the `@img/sharp-wasm32` runtime hangs in Bun 1.4.0 source mode (worker
+threading; `SHARP_CONCURRENCY=0` does not rescue it) and a compiled
+binary still resolves the linux-x64 native runtime. Evidence:
+`/tmp/opencode/fc-t3/report.md`, `/tmp/opencode/sharp-wasm-probe/report.md`,
+tracking issue #27. Consequences: `binaryFallback` takes its named
+fallback (no standalone binary this arc; the release keeps the source
+archive and never labels a Bun-dependent binary standalone), and
+`mcpDistribution` amends from `release-binary` to `source-archive-only`
+because the sibling `facet` binary it assumed does not exist; the
+`FACET_CLI` override contract is unchanged. Exit triggers to revisit:
+Bun native-addon embedding maturing for sharp's platform-package
+resolution, or sharp's wasm runtime becoming Bun-stable.
+
+### binaryFallback: embedded-self-dispatch (superseded by amendment)
 
 The compiled executable dispatches hidden service and Tier 0 worker roles
 through argv self-dispatch, so one downloaded file is the whole product.
