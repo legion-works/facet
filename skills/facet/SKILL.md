@@ -31,6 +31,8 @@ artifact bytes separate from host capabilities.
    printf '%s' "$SOURCE" | facet publish --artifact-id <id> --type markdown
    ```
 
+   Use `--watch --file <path>` for operator-led iterative authoring; it streams one publish envelope per changed attempt until Ctrl-C.
+
 4. For every publish response, branch on top-level `ok`. If it is true, separately inspect `data.verdict.status`, `tier`, `artifactId`, and `revisionSha`. `ok: true` only confirms command transport; `status: "error"` is a stored validation result, not a transport refusal.
 5. Read back Tier 0/latest by default: `facet read-back --artifact-id <id>`. Omit `--revision-sha` for the latest revision; pass its SHA only to pin reproducible read-back. Request `--tier 1` or `--tier visual` only when browser-backed evidence is needed.
 

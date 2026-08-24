@@ -1372,7 +1372,7 @@ describe("cli contract — wire", () => {
     }
   });
 
-  test("every v1 verb emits exactly ONE strict envelope on stdout", async () => {
+  test("every non-streaming v1 verb emits exactly ONE strict envelope on stdout", async () => {
     const { env } = makeEnv("verbs");
     // create
     const createIo = makeIo();

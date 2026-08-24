@@ -96,6 +96,8 @@ describe("gallery evidence documentation", () => {
 
     expect(cli).toMatch(/publish envelope[\s\S]*stored Tier 0 verdict[\s\S]*status.*error/is);
     expect(cli).toMatch(/FACET_PROMOTE_TOKEN[\s\S]*FACET_HOME\/secrets\/promote\.token/is);
+    expect(cli).toMatch(/watch[\s\S]*NDJSON|NDJSON[\s\S]*watch/i);
+    expect(cli).toMatch(/duplicate_revision[\s\S]*continues/i);
   });
 
   test("CLI reference documents doctor", () => {

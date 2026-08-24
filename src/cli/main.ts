@@ -51,6 +51,7 @@ import { buildPublishRequest, resolveSourceBytes } from "./commands/publish";
 import { buildExportRequest, resolveExportPaths, writeExportFiles } from "./commands/export";
 import { presentEnvelope, presenterCaps, shouldPresentPretty } from "./presenter";
 import { runDoctor } from "./commands/doctor";
+import { watchPublishFile } from "./commands/watch";
 
 export interface CliIo {
   /** A standard Readable stream of bytes — the CLI reads source bytes for `publish` from here. */
@@ -67,7 +68,7 @@ export function writeEnvelope(
 ): void {
   const routing = {
     isTTY: io.stdout.isTTY === true,
-    jsonFlag: parsed.kind === "verb" && parsed.jsonFlag,
+    jsonFlag: parsed.kind === "verb" && (parsed.jsonFlag || parsed.format === "json"),
     env: io.env,
   };
   if (shouldPresentPretty(routing)) {
@@ -87,6 +88,7 @@ export interface CliTestHooks {
   readonly onServiceSpawn?: () => void;
   readonly bypassInflight?: boolean;
   readonly openLauncher?: (url: string) => void | Promise<void>;
+  readonly watchSignal?: AbortSignal;
 }
 
 export interface CliExit {
@@ -141,6 +143,7 @@ async function executeVerb(
   openLauncher?: (url: string) => void | Promise<void>,
   cwd = process.cwd(),
   promoteToken?: string,
+  sourceBytesOverride?: Uint8Array,
 ): Promise<FacetEnvelope<unknown>> {
   const client = new FacetClient({
     baseUrl: resolved.baseUrl,
@@ -153,10 +156,12 @@ async function executeVerb(
       request = buildCreateRequest(args);
       break;
     case "publish": {
-      const bytes = resolveSourceBytes({
-        fileFlag: typeof args["file"] === "string" ? args["file"] : undefined,
-        stdinBytes,
-      });
+      const bytes =
+        sourceBytesOverride ??
+        resolveSourceBytes({
+          fileFlag: typeof args["file"] === "string" ? args["file"] : undefined,
+          stdinBytes,
+        });
       request = buildPublishRequest(args, bytes);
       break;
     }
@@ -340,8 +345,28 @@ export async function runCli(
     }
   }
 
+  if (parsed.kind === "verb" && parsed.verb === "publish" && parsed.args.watch === true) {
+    if (typeof parsed.args.file !== "string" || parsed.args.file === "-") {
+      const env1 = buildUsageError("publish --watch requires --file <path>", {
+        reason: "watch_requires_file",
+      });
+      printEnvelope(io.stdout, env1);
+      return { code: EXIT_CODES.USAGE, spawnedPid: null };
+    }
+    if (!existsSync(parsed.args.file)) {
+      const env1 = buildUsageError(`publish --watch file does not exist: ${parsed.args.file}`, {
+        reason: "watch_file_missing",
+      });
+      printEnvelope(io.stdout, env1);
+      return { code: EXIT_CODES.USAGE, spawnedPid: null };
+    }
+  }
+
   // 3. Read stdin up front (cheap when empty; needed for `publish -`).
-  const stdinBytes = await readAllStdin(io.stdin);
+  const stdinBytes =
+    parsed.kind === "verb" && parsed.verb === "publish" && parsed.args.watch === true
+      ? new Uint8Array()
+      : await readAllStdin(io.stdin);
 
   // 4. Lazy-spawn the service and resolve its baseUrl + install token.
   let resolved: {
@@ -387,6 +412,27 @@ export async function runCli(
   // 5. Dispatch the verb.
   try {
     const serviceVerb = parsed as Extract<ParsedCommand, { kind: "verb" }> & { verb: CommandName };
+    if (serviceVerb.verb === "publish" && parsed.args.watch === true) {
+      const watchArgs = { ...parsed.args };
+      delete watchArgs.watch;
+      const watchExit = await watchPublishFile({
+        filePath: String(parsed.args.file),
+        ...(testHooks.watchSignal === undefined ? {} : { signal: testHooks.watchSignal }),
+        publish: async (bytes) => {
+          const request = buildPublishRequest(watchArgs, bytes);
+          return new FacetClient({
+            baseUrl: resolved.baseUrl,
+            installToken: resolved.installToken,
+            ...(promoteToken === undefined ? {} : { promoteToken }),
+          }).sendCommand(request);
+        },
+        emit: (envelope) => writeEnvelope(io, parsed, envelope),
+        diagnostic: (message) => {
+          io.stderr.write(`${message}\n`);
+        },
+      });
+      return { code: watchExit.code, spawnedPid: resolved.metadata.pid };
+    }
     const response = await executeVerb(
       serviceVerb,
       parsed.args,
@@ -437,25 +483,33 @@ async function main(): Promise<void> {
       return;
     }
   }
-  const exit = await runCli(argv, {
-    stdin: process.stdin as unknown as ReadableStream<Uint8Array>,
-    stdout: {
-      get isTTY() {
-        return process.stdout.isTTY === true;
+  const watchController = argv.includes("--watch") ? new AbortController() : undefined;
+  const onSigint = () => watchController?.abort();
+  if (watchController !== undefined) process.once("SIGINT", onSigint);
+  const exit = await runCli(
+    argv,
+    {
+      stdin: process.stdin as unknown as ReadableStream<Uint8Array>,
+      stdout: {
+        get isTTY() {
+          return process.stdout.isTTY === true;
+        },
+        write(chunk) {
+          process.stdout.write(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+          return true;
+        },
       },
-      write(chunk) {
-        process.stdout.write(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
-        return true;
+      stderr: {
+        write(chunk) {
+          process.stderr.write(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+          return true;
+        },
       },
+      env: process.env,
     },
-    stderr: {
-      write(chunk) {
-        process.stderr.write(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
-        return true;
-      },
-    },
-    env: process.env,
-  });
+    watchController === undefined ? {} : { watchSignal: watchController.signal },
+  );
+  if (watchController !== undefined) process.off("SIGINT", onSigint);
   process.exit(exit.code);
 }
 

@@ -68,6 +68,7 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
     { flag: "--renderer", takesValue: true, values: [...RENDERERS] },
     { flag: "--execution", takesValue: true, values: [...TSX_EXECUTION_MODES] },
     { flag: "--file", takesValue: true },
+    { flag: "--watch", takesValue: false },
     { flag: "--note", takesValue: true },
     { flag: "--parent-revision-id", takesValue: true },
   ],
@@ -183,18 +184,19 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
   const firstRaw = argv[0];
   const isMeta =
     firstRaw === "--help" || firstRaw === "-h" || firstRaw === "--version" || firstRaw === "-V";
-  const metaFormat = isMeta ? readFormat(argv) : "text";
-  if (metaFormat === null) {
+  const jsonFlag = argv.includes("--json");
+  const localVerb = firstRaw === "doctor" ? ("doctor" as const) : undefined;
+  const firstCommand = typeof firstRaw === "string" ? VERB_TO_COMMAND[firstRaw] : undefined;
+  const watchRequested = firstCommand === "publish" && argv.includes("--watch");
+  const requestedFormat = isMeta || watchRequested ? readFormat(argv) : "text";
+  if (requestedFormat === null) {
     return {
       kind: "usage",
       message: "Flag '--format' must be one of: text, json",
       details: { flag: "--format", allowedValues: "text, json" },
     };
   }
-  const format = metaFormat;
-  const jsonFlag = argv.includes("--json");
-  const localVerb = firstRaw === "doctor" ? ("doctor" as const) : undefined;
-  const firstCommand = typeof firstRaw === "string" ? VERB_TO_COMMAND[firstRaw] : undefined;
+  const format = requestedFormat;
   // `--format` is scoped to `--help`/`--version` metadata and to export's
   // source|render argument; every other verb used to have `--format` (and
   // its value) silently dropped by `withoutFormatFlags` BEFORE flag
@@ -204,7 +206,8 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
     !isMeta &&
     firstCommand !== undefined &&
     firstCommand !== "export" &&
-    argv.includes("--format")
+    argv.includes("--format") &&
+    !watchRequested
   ) {
     return { kind: "usage", message: `Flag '--format' is not supported for '${firstRaw}'` };
   }
@@ -280,6 +283,15 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
       details: { missing: missing.join(", ") },
     };
   }
+  if (command === "publish" && args.watch === true) {
+    if (typeof args.file !== "string" || args.file === "-") {
+      return {
+        kind: "usage",
+        message: "publish --watch requires --file <path> and cannot read stdin",
+        details: { reason: "watch_requires_file" },
+      };
+    }
+  }
   return { kind: "verb", verb: command, args, format, jsonFlag };
 }
 
@@ -318,7 +330,9 @@ export function renderHelp(verb?: CliVerb): string {
       "Flags:",
       flags,
       "",
-      "stdout is always a versioned JSON envelope for verb calls.",
+      verb === "publish" && VERB_FLAGS[verb].some((flag) => flag.flag === "--watch")
+        ? "stdout is a versioned JSON envelope for verb calls; publish --watch streams one envelope per attempt (or presenter lines on a TTY)."
+        : "stdout is always a versioned JSON envelope for verb calls.",
     ].join("\n");
   }
   const verbs = [...IMPLEMENTED_COMMANDS, ...RESERVED_COMMANDS]

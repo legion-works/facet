@@ -2,6 +2,8 @@
 
 `facet` writes one JSON envelope per command to stdout. Diagnostics go to
 stderr. `--help` and `--version` may use text output; verbs always use JSON.
+Named exception: `publish --watch` is a stream and writes one envelope per
+publish attempt as NDJSON in machine mode; a TTY receives presenter lines.
 
 ## Envelope
 
@@ -14,25 +16,33 @@ Errors use the same top level with `ok: false` and
 
 ## Verbs and flags
 
-| verb          | flags                                                                                                                  |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `create`      | `--project-id`, `--slug`, `--title`                                                                                    |
-| `publish`     | `--artifact-id`, `--type`, `--file`, `--note`, `--parent-revision-id`, `--renderer`, `--execution static\|interactive` |
-| `list`        | `--project-id`, `--slug-prefix`, `--limit`                                                                             |
-| `read-back`   | `--artifact-id`, optional `--revision-sha` (latest when omitted), `--tier` (one of: `0` \| `1` \| `visual`)            |
-| `status`      | `--artifact-id`, `--start` (valueless start-then-inspect switch)                                                       |
-| `open`        | `--artifact-id`, optional `--revision-sha` (latest when omitted), `--no-launch`                                        |
-| `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`                                           |
-| `instantiate` | `--name`, `--new-slug`, `--project-id`                                                                                 |
-| `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                                                        |
-| `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`, `--include-bytes`                         |
-|               | `--format source` writes `.md` / `.mmd` / `.svg` / `.json` / `.html` to match the type                                 |
-|               | `--format render` writes detected evidence as `.webp` (new) or `.png` (legacy); the sidecar records `renderFormat`     |
-| `doctor`      | no flags; read-only local environment diagnostics                                                                      |
+| verb          | flags                                                                                                                             |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `create`      | `--project-id`, `--slug`, `--title`                                                                                               |
+| `publish`     | `--artifact-id`, `--type`, `--file`, `--watch`, `--note`, `--parent-revision-id`, `--renderer`, `--execution static\|interactive` |
+| `list`        | `--project-id`, `--slug-prefix`, `--limit`                                                                                        |
+| `read-back`   | `--artifact-id`, optional `--revision-sha` (latest when omitted), `--tier` (one of: `0` \| `1` \| `visual`)                       |
+| `status`      | `--artifact-id`, `--start` (valueless start-then-inspect switch)                                                                  |
+| `open`        | `--artifact-id`, optional `--revision-sha` (latest when omitted), `--no-launch`                                                   |
+| `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`                                                      |
+| `instantiate` | `--name`, `--new-slug`, `--project-id`                                                                                            |
+| `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                                                                   |
+| `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`, `--include-bytes`                                    |
+|               | `--format source` writes `.md` / `.mmd` / `.svg` / `.json` / `.html` to match the type                                            |
+|               | `--format render` writes detected evidence as `.webp` (new) or `.png` (legacy); the sidecar records `renderFormat`                |
+| `doctor`      | no flags; read-only local environment diagnostics                                                                                 |
 
 `publish --file -` reads bytes from stdin. `--json` is shorthand for
 `--format json` on meta commands. Verb stdout is always a JSON envelope;
-`--format` applies only to meta commands and `export`.
+`--format` applies only to meta commands and `export`, except
+`publish --watch --format json`, which selects machine NDJSON.
+
+`publish --watch --file <path>` performs an initial publish, then watches the
+parent directory with debounce. It hashes bytes before sending and skips
+identical content. Directory watching survives atomic-save rename/recreate
+sequences. A `duplicate_revision` envelope is emitted and the loop continues;
+other typed responses are emitted per attempt. Ctrl-C exits cleanly with code 0.
+Watch requires a real file path and never reads stdin.
 
 ```sh
 printf '# Report\n' | facet publish --artifact-id art-123 --type markdown

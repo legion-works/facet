@@ -25,6 +25,10 @@ Facet is a CLI contract. Agents should not call its loopback routes directly.
 7. Never promote. Never put secrets or credentials in source, notes, fixtures,
    artifacts, or shell history.
 
+For operator-led iterative authoring, use `facet publish --watch --file
+path/to/source.md`; it republishes changed bytes until Ctrl-C. Agents should
+prefer explicit publish calls when their loop already knows when bytes changed.
+
 The adapters in `src/harness-adapters/` forward argv and stdin to this CLI and
 return stdout unchanged. The same rule applies to tool wrappers.
 
