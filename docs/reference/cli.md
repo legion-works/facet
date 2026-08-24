@@ -41,7 +41,12 @@ Errors use the same top level with `ok: false` and
 parent directory with debounce. It hashes bytes before sending and skips
 identical content. Directory watching survives atomic-save rename/recreate
 sequences. A `duplicate_revision` envelope is emitted and the loop continues;
-other typed responses are emitted per attempt. Ctrl-C exits cleanly with code 0.
+other typed responses are emitted per attempt. If the service or transport is
+unavailable, watch emits the typed failure envelope, reports a stderr
+diagnostic, and keeps watching so a later edit can retry. The current client
+maps a dead service to `invalid_envelope` with
+`error.details.reason: "connection_failed"`; watch does not silently respawn
+the already-resolved endpoint. Ctrl-C exits cleanly with code 0.
 Watch requires a real file path and never reads stdin.
 
 ```sh

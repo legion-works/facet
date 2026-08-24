@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -67,6 +67,74 @@ describe("publish --watch CLI", () => {
     writeFileSync(source, "second\n");
     await expect(readLine()).resolves.toBe(true);
     expect(lines.map((line) => JSON.parse(line))).toHaveLength(2);
+    proc.kill("SIGINT");
+    await expect(proc.exited).resolves.toBe(0);
+  }, 30_000);
+
+  test("emits a typed envelope after the service dies mid-watch", async () => {
+    const root = mkdtempSync(join(tmpdir(), "facet-watch-death-"));
+    roots.push(root);
+    const home = join(root, "home");
+    const source = join(root, "source.md");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(source, "first\n");
+    const env = { ...process.env, FACET_HOME: home };
+    const created = await runOnce(
+      ["create", "--project-id", "watch", "--slug", "death", "--title", "Death"],
+      env,
+    );
+    const artifactId = String((created.data as { artifact?: { id?: string } }).artifact?.id);
+    const proc = Bun.spawn(
+      [
+        process.execPath,
+        "run",
+        "src/cli/main.ts",
+        "publish",
+        "--artifact-id",
+        artifactId,
+        "--type",
+        "markdown",
+        "--file",
+        source,
+        "--watch",
+      ],
+      { cwd: resolve(import.meta.dir, "../.."), env, stdout: "pipe", stderr: "pipe" },
+    );
+    const reader = proc.stdout.getReader();
+    const lines: string[] = [];
+    let buffered = "";
+    const readLine = async () => {
+      while (true) {
+        const complete = buffered.indexOf("\n");
+        if (complete >= 0) {
+          const line = buffered.slice(0, complete);
+          buffered = buffered.slice(complete + 1);
+          if (line.length > 0) {
+            lines.push(line);
+            return true;
+          }
+        }
+        const { value, done } = await reader.read();
+        if (done) return false;
+        buffered += new TextDecoder().decode(value);
+      }
+    };
+    await expect(readLine()).resolves.toBe(true);
+    const lock = JSON.parse(readFileSync(join(home, "run", "facet.lock"), "utf8")) as {
+      pid: number;
+    };
+    process.kill(lock.pid, "SIGKILL");
+    writeFileSync(source, "after-death\n");
+    await expect(readLine()).resolves.toBe(true);
+    const failure = JSON.parse(lines[1] ?? "{}");
+    expect(failure).toMatchObject({
+      ok: false,
+      error: {
+        code: "invalid_envelope",
+        retryable: true,
+        details: { reason: "connection_failed" },
+      },
+    });
     proc.kill("SIGINT");
     await expect(proc.exited).resolves.toBe(0);
   }, 30_000);

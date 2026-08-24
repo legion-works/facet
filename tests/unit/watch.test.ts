@@ -7,6 +7,7 @@ import {
   type WatchHandle,
 } from "../../src/cli/commands/watch";
 import { parseArgs, renderHelp } from "../../src/cli/parser";
+import { FacetError } from "../../src/shared/errors/facet-error";
 
 const envelope = (id: string): FacetEnvelope<unknown> => ({
   schemaVersion: FACET_SCHEMA_VERSION,
@@ -115,11 +116,87 @@ describe("watchPublishFile", () => {
     h.emit();
     await new Promise((resolve) => setTimeout(resolve, 15));
     h.setBytes(new Uint8Array([3]));
-    h.emit({ eventType: "rename", filename: "artifact.md" });
+    h.emit({ eventType: "rename", filename: "artifact.md.tmp" });
     await new Promise((resolve) => setTimeout(resolve, 15));
     controller.abort();
     await expect(running).resolves.toEqual({ code: 0 });
     expect(h.attempts.map((value) => [...value])).toEqual([[1], [3]]);
     expect(h.closed).toBe(true);
+  });
+
+  test("does not retry forever after a single edit", async () => {
+    const h = harness(new Uint8Array([1]));
+    const controller = new AbortController();
+    const running = watchPublishFile({
+      filePath: "/tmp/artifact.md",
+      debounceMs: 5,
+      signal: controller.signal,
+      readFile: h.readFile,
+      watchDirectory: h.watchDirectory,
+      publish: h.publish,
+      emit: (value) => h.outputs.push(value),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    h.setBytes(new Uint8Array([2]));
+    h.emit();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(h.attempts.map((value) => [...value])).toEqual([[1], [2]]);
+    controller.abort();
+    await expect(running).resolves.toEqual({ code: 0 });
+  });
+
+  test("clears the pending event before a timer-driven attempt", async () => {
+    const h = harness(new Uint8Array([1]));
+    const controller = new AbortController();
+    const timers: Array<() => void> = [];
+    const running = watchPublishFile({
+      filePath: "/tmp/artifact.md",
+      debounceMs: 5,
+      signal: controller.signal,
+      readFile: h.readFile,
+      watchDirectory: h.watchDirectory,
+      setTimer: (callback) => {
+        timers.push(callback);
+        return callback;
+      },
+      clearTimer: (timer) => {
+        const index = timers.indexOf(timer as () => void);
+        if (index >= 0) timers.splice(index, 1);
+      },
+      publish: h.publish,
+      emit: (value) => h.outputs.push(value),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    h.setBytes(new Uint8Array([2]));
+    h.emit();
+    expect(timers).toHaveLength(1);
+    timers.shift()?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.attempts.map((value) => [...value])).toEqual([[1], [2]]);
+    expect(timers).toHaveLength(0);
+    controller.abort();
+    await expect(running).resolves.toEqual({ code: 0 });
+  });
+
+  test("emits a typed envelope when publishing cannot reach the service", async () => {
+    const h = harness(new Uint8Array([1]));
+    const controller = new AbortController();
+    const running = watchPublishFile({
+      filePath: "/tmp/artifact.md",
+      debounceMs: 5,
+      signal: controller.signal,
+      readFile: h.readFile,
+      watchDirectory: h.watchDirectory,
+      publish: async () => {
+        throw new FacetError("internal", "Connection failed", { retryable: true });
+      },
+      emit: (value) => h.outputs.push(value),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(h.outputs).toHaveLength(1);
+    expect(h.outputs[0]).toMatchObject({ ok: false, error: { code: "internal" } });
+    controller.abort();
+    await expect(running).resolves.toEqual({ code: 0 });
   });
 });
