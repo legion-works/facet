@@ -64,3 +64,10 @@ test("deleted acceptance files stay out of the CI matrix", () => {
     expect(matrixListsFile(ciWorkflow, file)).toBe(false);
   }
 });
+
+test("packed-install gate has a dedicated CI job", () => {
+  const ciWorkflow = readFileSync(ciWorkflowPath, "utf8");
+  expect(ciWorkflow).toMatch(/^  package-install:\n/m);
+  expect(ciWorkflow).toMatch(/^\s+run: bun run verify:package-install\s*$/m);
+  expect(ciWorkflow).not.toMatch(/^\s+run: bun test tests\/integration\//m);
+});

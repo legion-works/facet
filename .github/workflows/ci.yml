@@ -164,6 +164,19 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  package-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: ./.github/actions/setup-bun
+      - name: permit Tier 0 network namespaces
+        shell: bash
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          unshare --map-current-user --user --net -- /bin/true
+      - name: packed-install E2E
+        run: bun run verify:package-install
+
   security:
     runs-on: ubuntu-latest
     steps:

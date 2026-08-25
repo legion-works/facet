@@ -49,6 +49,7 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov",
     "coverage:check": "bun scripts/check-coverage.ts",
     "check:boundaries": "bun scripts/check-boundaries.ts",
+    "verify:package-install": "bun scripts/verify-package-install.ts",
     "perf-gate": "bun scripts/perf-gate.ts",
     "perf-gate:quick": "bun scripts/perf-gate.ts --quick",
     "verify-adapter-size": "bun scripts/verify-adapter-size.ts"
