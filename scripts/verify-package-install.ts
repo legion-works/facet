@@ -108,8 +108,41 @@ async function main(): Promise<void> {
 
     const version = data(await run(["--version", "--format", "json"]), "--version");
     assert(version.version === packageJson.version, `version mismatch: ${String(version.version)}`);
-    data(await run(["doctor"], { allowExit: [0, 1] }), "doctor");
-    data(await run(["status", "--start"]), "status --start");
+    const initialDoctor = data(await run(["doctor"], { allowExit: [0, 1] }), "doctor");
+    const probes = initialDoctor.probes;
+    assert(Array.isArray(probes) && probes.length > 0, "doctor returned no probes");
+    const probeNames = new Set(probes.map((probe) => (probe as Record<string, unknown>).name));
+    for (const name of [
+      "bun",
+      "chrome-headless-shell",
+      "netns-userns",
+      "database",
+      "token-permissions",
+      "evidence-permissions",
+      "service-lock",
+    ]) {
+      assert(probeNames.has(name), `doctor omitted probe ${name}`);
+    }
+    assert(typeof initialDoctor.allPassed === "boolean", "doctor omitted allPassed");
+
+    const status = data(await run(["status", "--start"]), "status --start");
+    assert(status.state === "active", `status did not report active: ${String(status.state)}`);
+    const lock = JSON.parse(readFileSync(join(home, "run/facet.lock"), "utf8")) as {
+      pid?: unknown;
+      port?: unknown;
+    };
+    assert(
+      (typeof lock.pid === "number" && lock.pid > 0) ||
+        (typeof lock.port === "number" && lock.port > 0),
+      "status --start did not leave a live process pid or port",
+    );
+    const readyDoctor = data(await run(["doctor"], { allowExit: [0, 1] }), "doctor after start");
+    assert(
+      (readyDoctor.probes as unknown[])
+        .filter((probe) => (probe as Record<string, unknown>).name !== "bun")
+        .every((probe) => (probe as Record<string, unknown>).status === "pass"),
+      "doctor reported a non-Bun probe failure after service start",
+    );
 
     const created = data(
       await run([
@@ -138,7 +171,7 @@ async function main(): Promise<void> {
     const revision = published.revision as Record<string, unknown>;
     const revisionSha = revision.sha256;
     assert(typeof revisionSha === "string", "publish did not return a revision sha");
-    data(
+    const readBack = data(
       await run([
         "read-back",
         "--artifact-id",
@@ -150,6 +183,14 @@ async function main(): Promise<void> {
       ]),
       "read-back",
     );
+    const readBackVerdict = readBack.verdict as Record<string, unknown>;
+    assert(typeof readBackVerdict.status === "string", "read-back verdict omitted status");
+    assert(
+      readBackVerdict.tier === 0,
+      `read-back verdict tier mismatch: ${String(readBackVerdict.tier)}`,
+    );
+    assert(readBackVerdict.artifactId === artifactId, "read-back verdict artifact mismatch");
+    assert(readBackVerdict.revisionSha === revisionSha, "read-back verdict revision mismatch");
 
     const templateCreated = data(
       await run([
@@ -208,9 +249,13 @@ async function main(): Promise<void> {
       "instantiate",
     );
     assert(
-      instantiated.template !== undefined || instantiated.artifact !== undefined,
-      "instantiate returned no template result",
+      instantiated.template !== undefined && instantiated.artifact !== undefined,
+      "instantiate returned an incomplete result",
     );
+    const instantiatedTemplate = instantiated.template as Record<string, unknown>;
+    const instantiatedArtifact = instantiated.artifact as Record<string, unknown>;
+    assert(typeof instantiatedTemplate.id === "string", "instantiate template omitted id");
+    assert(typeof instantiatedArtifact.id === "string", "instantiate artifact omitted id");
 
     const opened = data(
       await run([
@@ -253,14 +298,27 @@ async function main(): Promise<void> {
     console.log(`PASS packed install E2E (${packageJson.version})`);
   } finally {
     await stopService();
-    Bun.spawnSync(["chmod", "-R", "u+w", scratch]);
-    rmSync(scratch, { recursive: true, force: true });
+    removeScratch();
   }
 }
 
 function chmodTree(path: string): void {
   const proc = Bun.spawnSync(["chmod", "-R", "a-w", path]);
   assert(proc.exitCode === 0, `failed to make installed package read-only: ${path}`);
+}
+
+function removeScratch(): void {
+  if (!existsSync(scratch)) return;
+  try {
+    const writable = Bun.spawnSync(["chmod", "-R", "u+rwX", scratch]);
+    assert(writable.exitCode === 0, `failed to restore scratch permissions: ${scratch}`);
+    rmSync(scratch, { recursive: true, force: true });
+  } catch {
+    // A failed assertion must not strand a read-only disposable tree.
+    Bun.spawnSync(["chmod", "-R", "u+rwX", scratch]);
+    Bun.spawnSync(["rm", "-rf", scratch]);
+  }
+  assert(!existsSync(scratch), `failed to remove scratch tree: ${scratch}`);
 }
 
 async function stopService(): Promise<void> {
