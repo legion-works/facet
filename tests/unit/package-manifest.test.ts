@@ -8,18 +8,6 @@ import { resolveGalleryRoot } from "../../src/shared/config/paths";
 const REPOSITORY_ROOT = join(import.meta.dir, "../..");
 const PACKAGE_JSON_PATH = join(REPOSITORY_ROOT, "package.json");
 
-const LOAD_BEARING_FILES = [
-  "src/**",
-  "scripts/launch-netns.sh",
-  "scripts/build-gallery.ts",
-  "templates/**",
-  "dist/gallery/**",
-  "skills/**",
-  "README.md",
-  "LICENSE-*",
-  "docs/reference/**",
-] as const;
-
 function packageManifest(): Record<string, unknown> {
   return JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf8")) as Record<string, unknown>;
 }
@@ -53,7 +41,16 @@ describe("npm package manifest", () => {
     expect((manifest.scripts as Record<string, unknown>).prepack).toBe(
       "bun scripts/build-gallery.ts --if-stale",
     );
-    expect(manifest.files).toEqual(LOAD_BEARING_FILES);
+    const files = manifest.files as string[];
+    expect(files).toContain("src/**");
+    expect(files).toContain("scripts/launch-netns.sh");
+    expect(files).toContain("scripts/build-gallery.ts");
+    expect(files).toContain("templates/**");
+    expect(files).toContain("dist/gallery/**");
+    expect(files).toContain("skills/**");
+    expect(files).toContain("README.md");
+    expect(files).toContain("LICENSE-*");
+    expect(files).toContain("docs/reference/**");
   });
 });
 

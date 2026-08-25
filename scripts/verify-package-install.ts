@@ -13,6 +13,7 @@ const consumer = join(scratch, "consumer");
 const home = join(scratch, "facet-home");
 const fixture = join(scratch, "source.md");
 const exported = join(consumer, "exported.md");
+const installedRoot = join(consumer, "node_modules", packageJson.name);
 const bun = process.execPath;
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -26,20 +27,17 @@ async function run(args: readonly string[], options: { allowExit?: readonly numb
   } catch {
     // The token is created by the first service-starting command.
   }
-  const proc = Bun.spawn(
-    [bun, join(consumer, "node_modules/@legionworks/facet/src/cli/main.ts"), ...args],
-    {
-      cwd: consumer,
-      env: {
-        ...process.env,
-        FACET_HOME: home,
-        ...(promoteToken ? { FACET_PROMOTE_TOKEN: promoteToken } : {}),
-      },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
+  const proc = Bun.spawn([bun, join(installedRoot, "src/cli/main.ts"), ...args], {
+    cwd: consumer,
+    env: {
+      ...process.env,
+      FACET_HOME: home,
+      ...(promoteToken ? { FACET_PROMOTE_TOKEN: promoteToken } : {}),
     },
-  );
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -161,7 +159,7 @@ async function main(): Promise<void> {
     assert(typeof artifactId === "string", "create did not return an artifact id");
 
     assert(
-      existsSync(join(consumer, "node_modules/@legionworks/facet/scripts/launch-netns.sh")),
+      existsSync(join(installedRoot, "scripts/launch-netns.sh")),
       "publish: packed package is missing scripts/launch-netns.sh",
     );
     const published = data(
@@ -215,7 +213,7 @@ async function main(): Promise<void> {
         "--type",
         "tsx",
         "--file",
-        join(consumer, "node_modules/@legionworks/facet/templates/incident-console.tsx"),
+        join(installedRoot, "templates/incident-console.tsx"),
       ]),
       "publish template",
     );
@@ -276,7 +274,7 @@ async function main(): Promise<void> {
     const asset = await fetch(`${origin}/gallery/frame/frame.css`);
     assert(asset.ok && (await asset.text()).length > 0, "gallery frame asset did not serve");
 
-    chmodTree(join(consumer, "node_modules/@legionworks/facet"));
+    chmodTree(installedRoot);
     const readonlyAsset = await fetch(`${origin}/gallery/frame/frame.css`);
     assert(
       readonlyAsset.ok && (await readonlyAsset.text()).length > 0,

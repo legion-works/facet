@@ -20,8 +20,9 @@ import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
 import { ArtifactRepository } from "../../src/service/store/repository";
+import { resolveGalleryRoot } from "../../src/shared/config/paths";
 
-const GALLERY_DIR = join(import.meta.dir, "../../dist/gallery");
+const GALLERY_DIR = resolveGalleryRoot(join(import.meta.dir, "../.."));
 const originalGalleryDir = mkdtempSync(join(tmpdir(), "facet-gallery-route-original-"));
 rmSync(originalGalleryDir, { recursive: true, force: true });
 
