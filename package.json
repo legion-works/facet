@@ -1,14 +1,46 @@
 {
-  "name": "facet",
+  "name": "@legionworks/facet",
   "version": "1.8.0",
-  "private": true,
-  "license": "MIT OR Apache-2.0",
-  "bin": {
-    "facet": "./src/cli/main.ts"
+  "private": false,
+  "keywords": [
+    "artifacts",
+    "bun",
+    "facet",
+    "gallery",
+    "rendering",
+    "validation"
+  ],
+  "homepage": "https://github.com/legion-works/facet#readme",
+  "bugs": {
+    "url": "https://github.com/legion-works/facet/issues"
   },
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/legion-works/facet.git"
+  },
+  "bin": {
+    "facet": "./src/cli/main.ts",
+    "facet-mcp": "./src/harness-adapters/mcp/main.ts"
+  },
+  "files": [
+    "src/**",
+    "scripts/launch-netns.sh",
+    "scripts/build-gallery.ts",
+    "templates/**",
+    "dist/gallery/**",
+    "skills/**",
+    "README.md",
+    "LICENSE-*",
+    "docs/reference/**"
+  ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "bun scripts/build-gallery.ts",
+    "prepack": "bun scripts/build-gallery.ts --if-stale",
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt",
     "format:check": "bun scripts/check-format.ts",
@@ -50,7 +82,7 @@
     "tailwindcss": "4.3.3"
   },
   "engines": {
-    "bun": "1.4.0"
+    "bun": ">=1.4.0"
   },
   "packageManager": "bun@1.4.0"
 }

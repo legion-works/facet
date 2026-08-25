@@ -14,16 +14,40 @@
  * artifact bytes leak into it. The `dist/` directory is gitignored.
  */
 
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { frameBundlePlugins } from "../src/shared/build/frame-bundle-plugins";
 import { ARTIFACT_TYPES } from "../src/shared/contracts/artifact-types";
+import { resolveGalleryRoot } from "../src/shared/config/paths";
 
 const REPO_ROOT = import.meta.dir.replace(/\/scripts$/, "");
-const OUT_DIR = join(REPO_ROOT, "dist", "gallery");
 const FRAME_ENTRY_DIR = join(REPO_ROOT, "src", "gallery-web", "frame", "entries");
 const FRAME_STYLE_DIR = join(REPO_ROOT, "src", "gallery-web", "frame", "styles");
+const GALLERY_INPUTS = [
+  join(REPO_ROOT, "scripts", "build-gallery.ts"),
+  join(REPO_ROOT, "src", "gallery-web"),
+  join(REPO_ROOT, "src", "shared", "build", "frame-bundle-plugins.ts"),
+  join(REPO_ROOT, "src", "shared", "contracts", "artifact-types.ts"),
+];
+
+function latestMtime(path: string): number {
+  const stats = statSync(path);
+  if (!stats.isDirectory()) return stats.mtimeMs;
+  return Math.max(
+    stats.mtimeMs,
+    ...readdirSync(path).map((entry) => latestMtime(join(path, entry))),
+  );
+}
+
+function galleryNeedsBuild(outDir: string): boolean {
+  const outputPath = join(outDir, "index.html");
+  try {
+    return GALLERY_INPUTS.some((input) => latestMtime(input) > statSync(outputPath).mtimeMs);
+  } catch {
+    return true;
+  }
+}
 
 /**
  * All frame entries build in ONE `Bun.build` call, not one call per
@@ -41,10 +65,10 @@ const FRAME_STYLE_DIR = join(REPO_ROOT, "src", "gallery-web", "frame", "styles")
  * build graph means one shared chunk, so there is nothing left to
  * diverge.
  */
-async function buildFrameEntries(entries: string[]): Promise<void> {
+async function buildFrameEntries(entries: string[], outDir: string): Promise<void> {
   const result = await Bun.build({
     entrypoints: entries,
-    outdir: OUT_DIR,
+    outdir: outDir,
     target: "browser",
     minify: false,
     splitting: true,
@@ -62,25 +86,31 @@ async function buildFrameEntries(entries: string[]): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  mkdirSync(OUT_DIR, { recursive: true });
-  rmSync(join(OUT_DIR, "frame", "bootstrap.js"), { force: true });
-  rmSync(join(OUT_DIR, "frame", "bootstrap"), { recursive: true, force: true });
-  rmSync(join(OUT_DIR, "frame", "runtime"), { recursive: true, force: true });
-  rmSync(join(OUT_DIR, "frame", "chunks"), { recursive: true, force: true });
-  rmSync(join(OUT_DIR, "frame", "assets"), { recursive: true, force: true });
-  rmSync(join(OUT_DIR, "frame", "frame.css"), { force: true });
-  rmSync(join(OUT_DIR, "frame", "artifact.css"), { force: true });
+  const outDir = resolveGalleryRoot(REPO_ROOT);
+  if (process.argv.includes("--if-stale") && !galleryNeedsBuild(outDir)) {
+    process.stderr.write(`${JSON.stringify({ event: "gallery.current", outdir: outDir })}\n`);
+    return;
+  }
+  mkdirSync(outDir, { recursive: true });
+  rmSync(join(outDir, "frame", "bootstrap.js"), { force: true });
+  rmSync(join(outDir, "frame", "bootstrap"), { recursive: true, force: true });
+  rmSync(join(outDir, "frame", "runtime"), { recursive: true, force: true });
+  rmSync(join(outDir, "frame", "chunks"), { recursive: true, force: true });
+  rmSync(join(outDir, "frame", "assets"), { recursive: true, force: true });
+  rmSync(join(outDir, "frame", "frame.css"), { force: true });
+  rmSync(join(outDir, "frame", "artifact.css"), { force: true });
   await buildFrameEntries(
     ARTIFACT_TYPES.map((artifactType) => join(FRAME_ENTRY_DIR, `${artifactType}.ts`)),
+    outDir,
   );
-  mkdirSync(join(OUT_DIR, "frame"), { recursive: true });
-  copyFileSync(join(FRAME_STYLE_DIR, "frame.css"), join(OUT_DIR, "frame", "frame.css"));
-  copyFileSync(join(FRAME_STYLE_DIR, "artifact.css"), join(OUT_DIR, "frame", "artifact.css"));
+  mkdirSync(join(outDir, "frame"), { recursive: true });
+  copyFileSync(join(FRAME_STYLE_DIR, "frame.css"), join(outDir, "frame", "frame.css"));
+  copyFileSync(join(FRAME_STYLE_DIR, "artifact.css"), join(outDir, "frame", "artifact.css"));
   // The shell controller is bundled from index.html so the CSS imports
   // + app.ts are wired into a single bundle the service serves.
   const shellResult = await Bun.build({
     entrypoints: [join(REPO_ROOT, "src", "gallery-web", "index.html")],
-    outdir: OUT_DIR,
+    outdir: outDir,
     target: "browser",
     minify: false,
     naming: "[dir]/[name].[ext]",
@@ -89,7 +119,7 @@ async function main(): Promise<void> {
     const messages = shellResult.logs.map((log) => log.message).join("\n");
     throw new Error(`Shell build failed:\n${messages}`);
   }
-  process.stderr.write(`${JSON.stringify({ event: "gallery.built", outdir: OUT_DIR })}\n`);
+  process.stderr.write(`${JSON.stringify({ event: "gallery.built", outdir: outDir })}\n`);
 }
 
 if (import.meta.main) {

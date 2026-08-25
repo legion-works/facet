@@ -50,6 +50,7 @@ import { ARTIFACT_TYPES } from "../shared/contracts/artifact-types";
 import { ArtifactTypeSchema } from "../shared/contracts/artifact";
 import { latestStoredVerdict } from "./stored-verdict";
 import { readStoredRenderEvidence } from "./export";
+import { resolveGalleryRoot } from "../shared/config/paths";
 
 const ROUTE_API = "/api/v1/commands";
 const ROUTE_STREAM = "/api/v1/stream";
@@ -300,7 +301,8 @@ export function buildRouter(deps: RouterDeps): {
     string,
     { readonly artifactId: string; readonly revisionSha: string; readonly leaseId: string }
   >();
-  const galleryRoot = join(import.meta.dir, "../../dist/gallery");
+  const packageRoot = join(import.meta.dir, "../..");
+  const galleryRoot = resolveGalleryRoot(packageRoot);
   // style-src allows 'unsafe-inline' because mermaid injects its theme
   // as a <style> element into the rendered SVG (operator-ruled posture
   // for this local-only tool); script-src stays 'self' blob: — no
@@ -322,7 +324,7 @@ export function buildRouter(deps: RouterDeps): {
       return;
     galleryBuild ??= (async () => {
       const process = Bun.spawn(["bun", "scripts/build-gallery.ts"], {
-        cwd: join(import.meta.dir, "../.."),
+        cwd: packageRoot,
         stderr: "pipe",
         stdout: "ignore",
       });

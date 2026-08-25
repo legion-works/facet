@@ -15,6 +15,7 @@ test-results/
 # `git add -A` cannot sweep one into history, where the blob would persist
 # after any later removal.
 *.zip
+*.tgz
 .facet-tsx-worker/
 
 # Resolver test fixtures. Probe TSX files are written under this dir and

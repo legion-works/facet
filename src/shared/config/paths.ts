@@ -1,3 +1,4 @@
+import { accessSync, constants } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -24,11 +25,29 @@ export interface FacetPathEnvironment {
   readonly xdgDataHome?: string;
   readonly xdgStateHome?: string;
   readonly xdgConfigHome?: string;
+  readonly xdgCacheHome?: string;
 }
 
 const FALLBACK_XDG_DATA = `${process.env.HOME ?? ""}/.local/share`;
 const FALLBACK_XDG_STATE = `${process.env.HOME ?? ""}/.local/state`;
 const FALLBACK_XDG_CONFIG = `${process.env.HOME ?? ""}/.config`;
+const FALLBACK_XDG_CACHE = `${process.env.HOME ?? ""}/.cache`;
+
+/**
+ * Resolve generated gallery assets to the checkout when it can be written,
+ * otherwise use the operator-owned cache so installed packages stay immutable.
+ */
+export function resolveGalleryRoot(packageRoot: string, env: FacetPathEnvironment = {}): string {
+  try {
+    accessSync(packageRoot, constants.W_OK);
+    return join(packageRoot, "dist", "gallery");
+  } catch {
+    const facetHome = env.facetHome ?? process.env.FACET_HOME;
+    if (facetHome) return join(facetHome, "cache", "gallery");
+    const cacheHome = env.xdgCacheHome ?? process.env.XDG_CACHE_HOME ?? FALLBACK_XDG_CACHE;
+    return join(cacheHome, "facet", "gallery");
+  }
+}
 
 /**
  * Compute the five runtime paths. XDG-style: data/state/configurable
