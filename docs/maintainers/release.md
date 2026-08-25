@@ -30,3 +30,15 @@ The release bar is 90% aggregate lines and functions, enforced in CI by summing 
 2. Confirm the generated release pull request contains only the intended version and changelog changes.
 3. Merge after `ci` and `security-egress` pass.
 4. Confirm the GitHub release contains the source, CLI/gallery, and pinned-browser manifest assets.
+
+## npm publishing
+
+The release workflow publishes `@legionworks/facet` after a published release when `NPM_TOKEN` is configured. If the secret is absent, the job logs `Skipping npm publish: NPM_TOKEN is not configured` and exits successfully; the GitHub release is not blocked.
+
+Before the first publish:
+
+1. Create the `legionworks` organization on npm.
+2. Mint an automation token with Granular Access and package publish scope.
+3. Add the token as the repository secret `NPM_TOKEN`.
+
+The first `@legionworks/facet` publish creates the package. Because it is scoped, the workflow must retain `--access public` on that first publish (and on subsequent publishes).
