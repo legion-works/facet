@@ -5,6 +5,11 @@ description: Use when creating, publishing, validating, exporting, or inspecting
 
 # Facet
 
+Install `@legionworks/facet` with `bun add -g` (recommended), `npm i -g`, or
+`pnpm add -g`; use `bunx @legionworks/facet <verb>` without a global install.
+Bun `1.4.0` or newer is the required runtime. npm and pnpm are distribution
+channels only. The pinned browser downloads on the first visual read-back.
+
 Facet stores and verifies artifact bytes through a versioned CLI envelope. Keep
 artifact bytes separate from host capabilities.
 

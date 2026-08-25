@@ -7,9 +7,9 @@ the tasks in `.opencode/plans/2026-08-24-first-class-product.md`.
 ## Decisions
 
 - binaryFallback: no-standalone-binary (fallback invoked 2026-08-24 — see amendment)
-- npmPublish: disabled
+- npmPublish: enabled:@legionworks/facet
 - doctorDormant: dormant-pass, missing-db-fail
-- mcpDistribution: source-archive-only (amended 2026-08-24 — see amendment)
+- mcpDistribution: npm-package (amended 2026-08-25 — see amendment)
 - watchStdout: tty-text-and-ndjson-machine
 
 ## Rationale and rejected alternatives
@@ -27,7 +27,9 @@ fallback (no standalone binary this arc; the release keeps the source
 archive and never labels a Bun-dependent binary standalone), and
 `mcpDistribution` amends from `release-binary` to `source-archive-only`
 because the sibling `facet` binary it assumed does not exist; the
-`FACET_CLI` override contract is unchanged. Exit triggers to revisit:
+`FACET_CLI` override contract is unchanged. The 2026-08-25 npm package
+amendment supersedes that distribution choice for the published install path.
+Exit triggers to revisit:
 Bun native-addon embedding maturing for sharp's platform-package
 resolution, or sharp's wasm runtime becoming Bun-stable.
 
@@ -44,7 +46,13 @@ buys; revisit as its own arc if embedded dispatch fails. Rejected: shipping
 a binary that silently requires a Bun install — misleads the exact user a
 binary exists for.
 
-### npmPublish: disabled
+### npmPublish: disabled (superseded by amendment)
+
+The earlier decision was blocked on an unprovisioned `NPM_TOKEN`, not on a
+technical finding. The compiled-binary blocker never applied to npm: npm
+installs `sharp` natively as an ordinary dependency. The 2026-08-25
+pack-install probe demonstrated the supported package path under Bun through
+both Bun and npm distribution channels.
 
 Publishing requires an operator-provisioned `NPM_TOKEN` and a scope/name
 decision (`@legionworks/facet` is the candidate). Neither exists today,
@@ -52,6 +60,15 @@ and the release binary covers the install story without any registry
 dependency. Rejected for now, not forever: enable in a follow-up when the
 operator provisions the token; the release workflow is structured so the
 npm job can be added without reshaping the asset job.
+
+### Amendment 2026-08-25: npm package enabled
+
+The old `npmPublish: disabled` rationale is superseded. The operator selected
+`@legionworks/facet`, and the empirical 2026-08-25 pack-install probe showed
+that Bun and npm distribution-channel installs resolve the package bins and
+runtime dependencies. This does not change the compiled-binary decision:
+`sharp` is an ordinary native npm dependency, so that blocker never applied to
+npm installs. The enabled contract is `npmPublish: enabled:@legionworks/facet`.
 
 ### doctorDormant: dormant-pass, missing-db-fail
 
@@ -70,6 +87,13 @@ the CLI via `FACET_CLI` when set, defaulting to a sibling `facet` binary
 in its own directory, falling back to PATH. Rejected: npm-only (npmPublish
 is disabled); source-archive-only (excludes the binary-download user the
 arc exists for).
+
+### Amendment 2026-08-25: MCP adapter follows npm package
+
+The source-archive-only rationale is superseded for the published product.
+`@legionworks/facet` ships the `facet-mcp` bin, so structured-tool-only hosts
+can register `bunx -p @legionworks/facet facet-mcp` without a checkout. Shell-
+capable hosts still use the CLI directly; the adapter boundary is unchanged.
 
 ### watchStdout: tty-text-and-ndjson-machine
 

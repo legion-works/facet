@@ -113,11 +113,24 @@ describe("gallery evidence documentation", () => {
     expect(mcp).toMatch(
       /facet_publish[\s\S]*facet_read_back[\s\S]*facet_status[\s\S]*facet_export[\s\S]*facet_open_url/i,
     );
-    expect(mcp).toMatch(/source-archive-only/i);
-    expect(mcp).toMatch(/do not ship a `facet-mcp` binary/i);
+    expect(mcp).toMatch(/bunx -p @legionworks\/facet facet-mcp/);
+    expect(mcp).toMatch(/npm package includes the `facet-mcp` bin/i);
     expect(mcp).toMatch(/facet_open_url[\s\S]*always adds `--no-launch`/i);
     expect(mcp).toMatch(/shell access, the CLI is the integration/i);
     assertTableRowsHaveNoUnescapedCellPipes(mcp);
+  });
+
+  test("distribution documentation pins the Bun runtime and install forms", () => {
+    const readme = readRepositoryFile("README.md");
+    const cli = readReference("cli.md");
+
+    expect(readme).toMatch(/## Install[\s\S]*bun add -g @legionworks\/facet/);
+    expect(readme).toMatch(/npm i -g @legionworks\/facet/);
+    expect(readme).toMatch(/pnpm add -g @legionworks\/facet/);
+    expect(readme).toMatch(/bunx @legionworks\/facet <verb>/);
+    expect(readme).toMatch(/Bun is the required runtime/i);
+    expect(readme).toMatch(/first visual[\s\S]*read-back/i);
+    expect(cli).toMatch(/Bun `1\.4\.0` or newer is required at runtime/i);
   });
 
   test("agent surfaces route shell-capable hosts to the CLI, not MCP", () => {

@@ -1,6 +1,10 @@
 # Agents
 
 Facet is a CLI contract. Agents should not call its loopback routes directly.
+Install `@legionworks/facet` with `bun add -g`, `npm i -g`, or `pnpm add -g`,
+then invoke `facet`; `bunx @legionworks/facet <verb>` is the zero-install form.
+Bun `1.4.0` or newer is required at runtime. A checkout is only needed for
+from-source contribution work.
 
 ## Safe automation workflow
 

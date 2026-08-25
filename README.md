@@ -39,6 +39,37 @@ Facet stores the source bytes without interpreting them, then asks independent v
 
 Current gallery captures use the Mermaid fixture in resolved dark and the chart fixture in resolved light. They are 3840×2160 PNG display assets; Tier 1 evidence is WebP for the whole artifact.
 
+## Install
+
+Facet is distributed as `@legionworks/facet`. **Bun is the required runtime**:
+the CLI runs on Bun `1.4.0` or newer. npm and pnpm are distribution channels,
+not Node runtime support; a machine without Bun cannot run the installed CLI and
+will receive a runtime failure.
+
+Recommended:
+
+```sh
+bun add -g @legionworks/facet
+```
+
+Other distribution channels:
+
+```sh
+npm i -g @legionworks/facet
+pnpm add -g @legionworks/facet
+```
+
+For a zero-install invocation:
+
+```sh
+bunx @legionworks/facet <verb>
+```
+
+The pinned browser used for visual read-back downloads on the first visual
+read-back. See the [CLI reference](docs/reference/cli.md) for the command
+contract and [MCP reference](docs/reference/mcp.md) for structured-tool-only
+hosts.
+
 ## Verdict language
 
 The gallery and CLI use the same wire enum, glyph, hue, and treatment.
@@ -76,9 +107,9 @@ A screenshot is evidence of pixels. It is not evidence that the page's own repor
 - **Validation** — a 5 MiB source cap, up to 64 Mermaid blocks and 10,000 Mermaid nodes, and a 1 MiB SVG cap with 16 roots. Tier 1 uses pinned `chrome-headless-shell` `151.0.7922.77`; v9 evidence-format metadata is documented in the [Export reference](docs/reference/export.md).
 - **Templates** — eleven checked-in starting points in [`templates/`](templates/), documented in [`templates/README.md`](templates/README.md).
 
-## Quickstart
+## From source
 
-Requires Bun `1.4.0` or newer. Bun 1.4.0 fixes oven-sh/bun#37230, the fd-reuse bug that affected CDP-pipe browser runs.
+For contributors working in a checkout, requires Bun `1.4.0` or newer. Bun 1.4.0 fixes oven-sh/bun#37230, the fd-reuse bug that affected CDP-pipe browser runs.
 
 ```sh
 bun install
@@ -102,7 +133,7 @@ Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) 
 
 ## MCP
 
-On harnesses with shell access, the CLI is the integration; the MCP adapter is for structured-tool-only environments. The source archive includes a stdio MCP adapter with five CLI-backed tools: publish, read-back, status, export, and a no-launch frame URL lookup. It requires Bun `1.4.0` and a checkout or source archive; Facet releases do not ship an MCP binary. See the [MCP reference](docs/reference/mcp.md) for OpenCode, Claude Code, and Codex registration.
+On harnesses with shell access, the CLI is the integration; the MCP adapter is for structured-tool-only environments. The npm package includes a stdio MCP adapter with five CLI-backed tools: publish, read-back, status, export, and a no-launch frame URL lookup. It requires Bun `1.4.0`. See the [MCP reference](docs/reference/mcp.md) for OpenCode, Claude Code, and Codex registration.
 
 ## Documentation
 

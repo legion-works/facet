@@ -2,12 +2,12 @@
 
 On harnesses with shell access, the CLI is the integration; the MCP adapter is for structured-tool-only environments. If an agent can run a shell, use the CLI and the Facet skill — this adapter buys no capability there.
 
-Facet's MCP adapter is source-archive-only. It needs a Facet checkout or source archive and Bun `1.4.0`; releases do not ship a `facet-mcp` binary or embed MCP in the Facet CLI.
+Facet's npm package includes the `facet-mcp` bin. It needs Bun `1.4.0`; npm and pnpm install the package, but Bun remains the runtime.
 
-Run the adapter with Bun:
+Run the adapter without a checkout:
 
 ```sh
-bun /absolute/path/to/facet/src/harness-adapters/mcp/main.ts
+bunx -p @legionworks/facet facet-mcp
 ```
 
 The adapter resolves the CLI in this order: `FACET_CLI`, then `bun <adapter-relative-repository>/src/cli/main.ts`, then `facet` on `PATH`. Set `FACET_CLI` to an absolute CLI executable when the adapter should use another installation.
@@ -21,7 +21,7 @@ OpenCode config:
   "mcp": {
     "facet": {
       "type": "local",
-      "command": ["bun", "/absolute/path/to/facet/src/harness-adapters/mcp/main.ts"],
+      "command": ["bunx", "-p", "@legionworks/facet", "facet-mcp"],
       "enabled": true
     }
   }
@@ -34,8 +34,8 @@ Claude Code project config (`.mcp.json`):
 {
   "mcpServers": {
     "facet": {
-      "command": "bun",
-      "args": ["/absolute/path/to/facet/src/harness-adapters/mcp/main.ts"]
+      "command": "bunx",
+      "args": ["-p", "@legionworks/facet", "facet-mcp"]
     }
   }
 }
@@ -45,11 +45,11 @@ Codex config (`~/.codex/config.toml`):
 
 ```toml
 [mcp_servers.facet]
-command = "bun"
-args = ["/absolute/path/to/facet/src/harness-adapters/mcp/main.ts"]
+command = "bunx"
+args = ["-p", "@legionworks/facet", "facet-mcp"]
 ```
 
-Set `FACET_HOME` in the host configuration when the adapter must use a non-default Facet runtime directory. Set `FACET_CLI` only for an alternate CLI executable; the source-archive default already resolves the checkout CLI.
+Set `FACET_HOME` in the host configuration when the adapter must use a non-default Facet runtime directory. Set `FACET_CLI` only for an alternate CLI executable.
 
 ## Tools
 

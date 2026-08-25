@@ -1,5 +1,11 @@
 # Operators
 
+Install `@legionworks/facet` with `bun add -g` (recommended), `npm i -g`, or
+`pnpm add -g`. Bun `1.4.0` or newer is the required runtime; npm and pnpm are
+distribution channels only. For a one-shot command, use
+`bunx @legionworks/facet <verb>`. The pinned browser downloads on the first
+visual read-back.
+
 ## Display an artifact
 
 `facet open` is **Tier 2 DISPLAY**. It opens one loopback-only gallery URL in

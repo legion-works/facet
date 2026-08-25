@@ -2,6 +2,10 @@
 
 `facet` writes one JSON envelope per command to stdout. Diagnostics go to
 stderr. `--help` and `--version` may use text output; verbs always use JSON.
+Install `@legionworks/facet` with Bun, npm, or pnpm, or invoke it with
+`bunx @legionworks/facet <verb>`. Bun `1.4.0` or newer is required at runtime;
+npm and pnpm are distribution channels only. The pinned browser downloads on
+the first visual read-back.
 Named exception: `publish --watch` is a stream and writes one envelope per
 publish attempt as NDJSON in machine mode; a TTY receives presenter lines.
 
