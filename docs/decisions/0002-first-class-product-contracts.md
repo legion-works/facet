@@ -47,7 +47,7 @@ binary exists for.
 ### npmPublish: disabled
 
 Publishing requires an operator-provisioned `NPM_TOKEN` and a scope/name
-decision (`@legion-works/facet` is the candidate). Neither exists today,
+decision (`@legionworks/facet` is the candidate). Neither exists today,
 and the release binary covers the install story without any registry
 dependency. Rejected for now, not forever: enable in a follow-up when the
 operator provisions the token; the release workflow is structured so the
