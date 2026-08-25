@@ -1,5 +1,7 @@
 # MCP adapter
 
+On harnesses with shell access, the CLI is the integration; the MCP adapter is for structured-tool-only environments. If an agent can run a shell, use the CLI and the Facet skill — this adapter buys no capability there.
+
 Facet's MCP adapter is source-archive-only. It needs a Facet checkout or source archive and Bun `1.4.0`; releases do not ship a `facet-mcp` binary or embed MCP in the Facet CLI.
 
 Run the adapter with Bun:

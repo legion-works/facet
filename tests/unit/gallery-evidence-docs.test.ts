@@ -116,7 +116,17 @@ describe("gallery evidence documentation", () => {
     expect(mcp).toMatch(/source-archive-only/i);
     expect(mcp).toMatch(/do not ship a `facet-mcp` binary/i);
     expect(mcp).toMatch(/facet_open_url[\s\S]*always adds `--no-launch`/i);
+    expect(mcp).toMatch(/shell access, the CLI is the integration/i);
     assertTableRowsHaveNoUnescapedCellPipes(mcp);
+  });
+
+  test("agent surfaces route shell-capable hosts to the CLI, not MCP", () => {
+    const skill = readRepositoryFile("skills/facet/SKILL.md");
+    const agents = readRepositoryFile("docs/guides/agents.md");
+
+    expect(skill).toMatch(/shell access, the CLI is the integration/i);
+    expect(skill).not.toMatch(/prefer MCP/i);
+    expect(agents).toMatch(/shell access, the CLI is the integration/i);
   });
 
   test("storage reference names schema v9 and WebP screenshot metadata", () => {

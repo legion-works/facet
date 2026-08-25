@@ -88,7 +88,7 @@ token on argv.
   `facet status --start`, then use the documented [Steel/browser workflow](../../docs/guides/agents.md)
   or ask a human to inspect.
 - Preserve stdout exactly so callers can parse the versioned envelope.
-- Prefer MCP when the host already owns an MCP client; `facet_open_url` is safe because it always uses `--no-launch`.
+- With shell access, the CLI is the integration — MCP is for structured-tool-only hosts, even when the host owns an MCP client. On that surface, `facet_open_url` is safe because it always uses `--no-launch`.
 
 ## Deeper reference
 

@@ -32,7 +32,7 @@ prefer explicit publish calls when their loop already knows when bytes changed.
 The adapters in `src/harness-adapters/` forward argv and stdin to this CLI and
 return stdout unchanged. The same rule applies to tool wrappers.
 
-MCP hosts can use the source-archive adapter when shell transport is awkward.
+With shell access, the CLI is the integration. The source-archive MCP adapter is for structured-tool-only hosts that cannot invoke a shell.
 It returns the same envelope; inspect `ok` and `data.verdict.status` separately.
 `facet_open_url` is safe because it always adds `--no-launch`.
 

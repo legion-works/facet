@@ -102,7 +102,7 @@ Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) 
 
 ## MCP
 
-The source archive includes a stdio MCP adapter with five CLI-backed tools: publish, read-back, status, export, and a no-launch frame URL lookup. It requires Bun `1.4.0` and a checkout or source archive; Facet releases do not ship an MCP binary. See the [MCP reference](docs/reference/mcp.md) for OpenCode, Claude Code, and Codex registration.
+On harnesses with shell access, the CLI is the integration; the MCP adapter is for structured-tool-only environments. The source archive includes a stdio MCP adapter with five CLI-backed tools: publish, read-back, status, export, and a no-launch frame URL lookup. It requires Bun `1.4.0` and a checkout or source archive; Facet releases do not ship an MCP binary. See the [MCP reference](docs/reference/mcp.md) for OpenCode, Claude Code, and Codex registration.
 
 ## Documentation
 
