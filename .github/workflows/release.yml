@@ -55,7 +55,7 @@ jobs:
         run: gh release upload "$TAG_NAME" release-assets/*.tar.gz release-assets/browser/* --clobber
 
   npm-publish:
-    needs: release-please
+    needs: assets
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     permissions:
