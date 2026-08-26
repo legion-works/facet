@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.0](https://github.com/legion-works/facet/compare/v1.8.0...v1.9.0) (2026-08-26)
+
+
+### Features
+
+* **dist:** publishable package manifest and relocatable gallery build ([2e20356](https://github.com/legion-works/facet/commit/2e203569e8357f942bf2b480d1c554b9d22ef671))
+
+
+### Bug Fixes
+
+* **ci:** order npm publish after release assets ([c5fb804](https://github.com/legion-works/facet/commit/c5fb804b351fa8190b1d058edd0c73dcc9f75430))
+* **dist:** scope the packed-install doctor gate to install-shape probes ([9641a08](https://github.com/legion-works/facet/commit/9641a08d47777b7a3efeb9dd0b227c4ce6e23984))
+
 ## [1.8.0](https://github.com/legion-works/facet/compare/v1.7.1...v1.8.0) (2026-08-24)
 
 
