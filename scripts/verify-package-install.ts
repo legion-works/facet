@@ -7,6 +7,15 @@ import packageJson from "../package.json" with { type: "json" };
 
 type Envelope = { schemaVersion?: string; ok?: boolean; data?: Record<string, unknown> };
 
+const HOST_PROVISIONING_PROBES = new Set(["bun", "chrome-headless-shell"]);
+const INSTALL_SHAPE_PROBES = [
+  "database",
+  "token-permissions",
+  "evidence-permissions",
+  "netns-userns",
+  "service-lock",
+] as const;
+
 const repoRoot = resolve(import.meta.dir, "..");
 const scratch = join(tmpdir(), `facet-package-install-${crypto.randomUUID()}`);
 const consumer = join(scratch, "consumer");
@@ -135,11 +144,33 @@ async function main(): Promise<void> {
       "status --start did not leave a live process pid or port",
     );
     const readyDoctor = data(await run(["doctor"], { allowExit: [0, 1] }), "doctor after start");
+    assert(Array.isArray(readyDoctor.probes), "doctor after start returned no probes array");
+    const readyProbes = new Map(
+      readyDoctor.probes.map((probe) => {
+        const value = probe as Record<string, unknown>;
+        return [String(value.name), value] as const;
+      }),
+    );
+    const unclassifiedProbes = [...readyProbes.keys()].filter(
+      (name) =>
+        !HOST_PROVISIONING_PROBES.has(name) &&
+        !INSTALL_SHAPE_PROBES.includes(name as (typeof INSTALL_SHAPE_PROBES)[number]),
+    );
     assert(
-      (readyDoctor.probes as unknown[])
-        .filter((probe) => (probe as Record<string, unknown>).name !== "bun")
-        .every((probe) => (probe as Record<string, unknown>).status === "pass"),
-      "doctor reported a non-Bun probe failure after service start",
+      unclassifiedProbes.length === 0,
+      `doctor returned unclassified probes: ${unclassifiedProbes.join(", ")}`,
+    );
+    const missingInstallShapeProbes = INSTALL_SHAPE_PROBES.filter((name) => !readyProbes.has(name));
+    assert(
+      missingInstallShapeProbes.length === 0,
+      `doctor omitted install-shape probes: ${missingInstallShapeProbes.join(", ")}`,
+    );
+    const installShapeFailures = INSTALL_SHAPE_PROBES.map((name) => readyProbes.get(name))
+      .filter((probe): probe is Record<string, unknown> => probe !== undefined)
+      .filter((probe) => probe.status !== "pass");
+    assert(
+      installShapeFailures.length === 0,
+      `doctor install-shape probe failures: ${formatProbeFailures(installShapeFailures)}`,
     );
 
     const created = data(
@@ -303,6 +334,15 @@ async function main(): Promise<void> {
 function chmodTree(path: string): void {
   const proc = Bun.spawnSync(["chmod", "-R", "a-w", path]);
   assert(proc.exitCode === 0, `failed to make installed package read-only: ${path}`);
+}
+
+function formatProbeFailures(probes: readonly Record<string, unknown>[]): string {
+  return probes
+    .map(
+      (probe) =>
+        `${String(probe.name)} status=${String(probe.status)} detail=${String(probe.summary ?? "missing")} fixCommand=${String(probe.fixCommand ?? "none")}`,
+    )
+    .join("; ");
 }
 
 function removeScratch(): void {
