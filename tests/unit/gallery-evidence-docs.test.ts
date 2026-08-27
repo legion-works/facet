@@ -113,7 +113,9 @@ describe("gallery evidence documentation", () => {
     expect(mcp).toMatch(
       /facet_publish[\s\S]*facet_read_back[\s\S]*facet_status[\s\S]*facet_export[\s\S]*facet_open_url/i,
     );
-    expect(mcp).toMatch(/bunx -p @legionworks\/facet facet-mcp/);
+    // These checks prove that documented command text is present, not that the command executes.
+    expect(mcp).toMatch(/bun add -g @legionworks\/facet[\s\S]*facet-mcp/);
+    expect(mcp).toMatch(/npx -p @legionworks\/facet facet-mcp/);
     expect(mcp).toMatch(/npm package includes the `facet-mcp` bin/i);
     expect(mcp).toMatch(/facet_open_url[\s\S]*always adds `--no-launch`/i);
     expect(mcp).toMatch(/shell access, the CLI is the integration/i);

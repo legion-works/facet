@@ -40,6 +40,13 @@ With shell access, the CLI is the integration. The source-archive MCP adapter is
 It returns the same envelope; inspect `ok` and `data.verdict.status` separately.
 `facet_open_url` is safe because it always adds `--no-launch`.
 
+For structured-tool-only hosts, install and register the adapter with the
+verified forms from the [MCP reference](../reference/mcp.md): `bun add -g
+@legionworks/facet` followed by the bare `facet-mcp` command, or
+`npx -p @legionworks/facet facet-mcp` without a global install. Do not copy a
+`bunx -p` registration without checking the local Bun version and environment;
+that form failed in the measured Bun `1.3.14` and scratch Bun `1.4.0` setups.
+
 Agents must never run `facet open`; it is Tier 2 human display. Ensure the
 service is active with `facet status --start`, then use the documented
 [Steel/browser workflow](../../skills/facet/SKILL.md#boundaries) or request human inspection.

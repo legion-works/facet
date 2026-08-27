@@ -94,6 +94,11 @@ token on argv.
   or ask a human to inspect.
 - Preserve stdout exactly so callers can parse the versioned envelope.
 - With shell access, the CLI is the integration — MCP is for structured-tool-only hosts, even when the host owns an MCP client. On that surface, `facet_open_url` is safe because it always uses `--no-launch`.
+- For MCP registration, use `bun add -g @legionworks/facet` and the bare
+  `facet-mcp` command, or the no-install fallback `npx -p @legionworks/facet
+facet-mcp`. The measured `bunx -p @legionworks/facet facet-mcp` form exited
+  with status 1 under Bun `1.3.14` and the available scratch Bun `1.4.0`; treat
+  that as an environment-specific caveat, not a universal Bun claim.
 
 ## Deeper reference
 

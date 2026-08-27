@@ -92,7 +92,7 @@ arc exists for).
 
 The source-archive-only rationale is superseded for the published product.
 `@legionworks/facet` ships the `facet-mcp` bin, so structured-tool-only hosts
-can register `bunx -p @legionworks/facet facet-mcp` without a checkout. Shell-
+can register the installed `facet-mcp` binary without a checkout. Shell-
 capable hosts still use the CLI directly; the adapter boundary is unchanged.
 
 ### watchStdout: tty-text-and-ndjson-machine
