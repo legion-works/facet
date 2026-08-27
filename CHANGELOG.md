@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.1](https://github.com/legion-works/facet/compare/v1.9.0...v1.9.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **dist:** drop leading ./ from bin paths so npm stops rewriting them ([6437df7](https://github.com/legion-works/facet/commit/6437df7b5454ca3aa055bb36e1559801e5699911))
+* **release:** authenticate npm publish and add a tag-scoped retry path ([bc13358](https://github.com/legion-works/facet/commit/bc13358fe11b642b2f0ffc5d4e64623f8ee1c9c3))
+
 ## [1.9.0](https://github.com/legion-works/facet/compare/v1.8.0...v1.9.0) (2026-08-26)
 
 
