@@ -35,8 +35,8 @@ describe("npm package manifest", () => {
     ]);
     expect(manifest.license).toBe("MIT OR Apache-2.0");
     expect(manifest.bin).toEqual({
-      facet: "./src/cli/main.ts",
-      "facet-mcp": "./src/harness-adapters/mcp/main.ts",
+      facet: "src/cli/main.ts",
+      "facet-mcp": "src/harness-adapters/mcp/main.ts",
     });
     expect((manifest.scripts as Record<string, unknown>).prepack).toBe(
       "bun scripts/build-gallery.ts --if-stale",

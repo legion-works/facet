@@ -20,8 +20,8 @@
     "url": "git+https://github.com/legion-works/facet.git"
   },
   "bin": {
-    "facet": "./src/cli/main.ts",
-    "facet-mcp": "./src/harness-adapters/mcp/main.ts"
+    "facet": "src/cli/main.ts",
+    "facet-mcp": "src/harness-adapters/mcp/main.ts"
   },
   "files": [
     "src/**",
