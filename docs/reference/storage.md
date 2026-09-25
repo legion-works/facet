@@ -23,7 +23,7 @@ the evidence root and every per-run evidence directory.
 ## Schema migrations
 
 `runMigrations` records applied versions in `schema_migrations` and applies
-additive fragments in order. The current schema is v9:
+additive fragments in order. The current schema is v10:
 
 | version | change                                                                                                                                                                 |
 | ------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -36,6 +36,7 @@ additive fragments in order. The current schema is v9:
 |      v7 | Backfills HTML observation defaults.                                                                                                                                   |
 |      v8 | Adds `tsx`, declared revision execution, and nullable `render_runs.compiled_path`.                                                                                     |
 |      v9 | Adds `render_runs.screenshot_format`, recorded as `png` or `webp` for retained evidence.                                                                               |
+|     v10 | Adds nullable `templates.promotion_override`; null for pre-v10 templates and for promotions that passed the verification gate.                                         |
 
 Migrations are additive and transactional. Existing revisions are not rewritten
 when a later schema version is applied.

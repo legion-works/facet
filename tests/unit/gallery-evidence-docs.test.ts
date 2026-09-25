@@ -169,10 +169,11 @@ describe("gallery evidence documentation", () => {
     expect(agents).toMatch(/shell access, the CLI is the integration/i);
   });
 
-  test("storage reference names schema v9 and WebP screenshot metadata", () => {
+  test("storage reference names schema v10 and WebP screenshot metadata", () => {
     const storage = readReference("storage.md");
 
-    expect(storage).toMatch(/current schema is v9/i);
+    expect(storage).toMatch(/current schema is v10/i);
+    expect(storage).toMatch(/v10[\s\S]*promotion_override[\s\S]*null/i);
     expect(storage).toMatch(/screenshot\.webp/);
     expect(storage).toMatch(/screenshot_format/);
   });
@@ -191,6 +192,7 @@ describe("gallery evidence documentation", () => {
 
     expect(readme).toMatch(/publish envelope[\s\S]*verdict/i);
     expect(readme).toMatch(/WebP[\s\S]*whole artifact/i);
+    expect(readme).toMatch(/^\| `partial:empty_render`/m);
     expect(readme).toMatch(/system[\s\S]*dark[\s\S]*light|system[\s\S]*light[\s\S]*dark/i);
   });
 });

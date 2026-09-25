@@ -67,7 +67,11 @@ the detected evidence format:
 
 Promotion is operator-only. The CLI discovers the token from
 `FACET_PROMOTE_TOKEN`, then `FACET_HOME/secrets/promote.token`; never put a
-token on argv.
+token on argv. First request visual read-back for the exact revision, then
+promote it. Tier 0 or publication success is not visual verification. The
+`templates` command lists promoted templates and their source verdicts.
+`--allow-unverified` records the refusal reason as `promotionOverride` for
+audit; it does not create verification or turn a refusal into a passing verdict.
 
 ## Error quick reference
 

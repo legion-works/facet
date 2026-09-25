@@ -28,7 +28,8 @@ Errors use the same top level with `ok: false` and
 | `read-back`   | `--artifact-id`, optional `--revision-sha` (latest when omitted), `--tier` (one of: `0` \| `1` \| `visual`)                       |
 | `status`      | `--artifact-id`, `--start` (valueless start-then-inspect switch)                                                                  |
 | `open`        | `--artifact-id`, optional `--revision-sha` (latest when omitted), `--no-launch`                                                   |
-| `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`                                                      |
+| `promote`     | `--artifact-id`, `--revision-id`, `--name`, `--description`, `--promoted-by`, `--allow-unverified`                                |
+| `templates`   | optional `--limit`                                                                                                                |
 | `instantiate` | `--name`, `--new-slug`, `--project-id`                                                                                            |
 | `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                                                                   |
 | `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`, `--include-bytes`                                    |
@@ -139,6 +140,21 @@ mode does not assert that its visuals always change.
 `promote` reads its operator bearer from `FACET_PROMOTE_TOKEN` or, by default,
 `FACET_HOME/secrets/promote.token`. Neither source is accepted as an argv flag
 or emitted in a CLI envelope.
+
+Before promotion, request visual read-back for the exact revision. Promotion
+requires Tier 1 visual verification. A refusal returns `promotion_refused`
+(HTTP 409) with `error.details.reason`: `no_visual_verification` when no visual
+run exists, `error` when Tier 0 failed, or the refused Tier 1 status. The gate refuses `error`,
+`partial:empty_render`, `tampered`, `timeout`, `shim_only`, `probe_only`, and
+`insecure:unvalidated`. Other Tier 1 statuses are allowed when Tier 0 is not an
+error. `--allow-unverified` permits a refused promotion but stores the refusal
+reason in the template's `promotionOverride`; this is an audit record, not
+verification or a passing verdict. A duplicate template name returns
+`template_name_taken` (HTTP 409).
+
+`facet templates [--limit N]` lists promoted templates. It uses the install
+token. Each row includes the source verdict, read from the stored revision when
+the list is requested, and any `promotionOverride` reason.
 
 ## Insecure mode
 
