@@ -164,10 +164,9 @@ function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
 }
 
 /**
- * Parse the source bytes as markdown. Pure tokenization — no DOM, no
- * render, no script execution. Raw HTML is counted (it must NOT
- * execute, and we surface structural red flags if it tries to smuggle
- * one) but never interpreted.
+ * Tokenize Markdown and grammar-check Mermaid fences without rendering
+ * or executing source. Raw HTML is counted and checked for structural
+ * red flags, but never interpreted.
  */
 export async function parseMarkdown(bytes: Uint8Array): Promise<MarkdownParseResult> {
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
@@ -196,6 +195,7 @@ export async function parseMarkdown(bytes: Uint8Array): Promise<MarkdownParseRes
   for (let i = 0; i < counts.mermaidBodies.length; i += 1) {
     const message = await parseMermaidText(counts.mermaidBodies[i]!);
     if (message !== null) {
+      // Fence grammar errors take precedence over lexer and hostile-HTML errors.
       return {
         status: "error",
         observed: {

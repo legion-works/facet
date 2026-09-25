@@ -273,4 +273,31 @@ describe("markdown external-image disclosure is type-agnostic", () => {
       await service.stop();
     }
   });
+
+  test("malformed Mermaid fence fails Tier 0 through the worker", async () => {
+    const { service } = await startEnv();
+    try {
+      const { artifactId, revisionSha } = await publishMarkdown(
+        service,
+        "```mermaid\nnot a diagram %%%\n```\n",
+        "malformed-mermaid-fence",
+      );
+      const result = await request(service, {
+        command: "readBack",
+        artifactId,
+        revisionSha,
+        tier: 0,
+      });
+      if (result.command !== "readBack") throw new Error("expected readBack");
+      expect(result.verdict.status).toBe("error");
+      expect(result.verdict.observed.discriminativeErrors).toContainEqual(
+        expect.objectContaining({
+          code: "mermaid_parse_error",
+          location: "mermaid fence 0",
+        }),
+      );
+    } finally {
+      await service.stop();
+    }
+  });
 });
