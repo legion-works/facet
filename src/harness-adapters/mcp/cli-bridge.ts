@@ -9,7 +9,7 @@ import {
 
 const STDERR_DETAIL_LIMIT = 4_096;
 
-export type FacetToolName = "publish" | "read_back" | "status" | "export" | "open";
+export type FacetToolName = "create" | "publish" | "read_back" | "status" | "export" | "open";
 
 export interface FacetCliInvocation {
   readonly command: string;
@@ -75,6 +75,16 @@ export function buildFacetArgs(
   input: Readonly<Record<string, unknown>>,
 ): string[] {
   switch (tool) {
+    case "create":
+      return [
+        "create",
+        "--project-id",
+        requiredString(input, "projectId"),
+        "--slug",
+        requiredString(input, "slug"),
+        "--title",
+        requiredString(input, "title"),
+      ];
     case "publish": {
       const args = [
         "publish",

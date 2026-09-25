@@ -1,11 +1,19 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { FACET_VERSION } from "../../src/shared/version";
-import { PublishToolShape } from "../../src/harness-adapters/mcp/tool-schemas";
+import {
+  CreateToolSchema,
+  ExportToolSchema,
+  OpenUrlToolSchema,
+  PublishToolSchema,
+  PublishToolShape,
+  ReadBackToolSchema,
+  StatusToolSchema,
+} from "../../src/harness-adapters/mcp/tool-schemas";
 
 const ROOT = resolve(import.meta.dir, "../..");
 const MCP_ENTRY = join(ROOT, "src/harness-adapters/mcp/main.ts");
@@ -100,19 +108,41 @@ async function createArtifact(home: string): Promise<string> {
 }
 
 describe("facet MCP adapter", () => {
-  test("lists the five stable tools and starts Facet status", async () => {
+  test("lists the six tools with inputs derived from their validation schemas", async () => {
     const home = newHome();
     const client = await connect(home);
     try {
       const tools = await client.listTools();
       expect(client.getServerVersion()).toEqual({ name: "facet", version: FACET_VERSION });
       expect(tools.tools.map((tool) => tool.name)).toEqual([
+        "facet_create",
         "facet_export",
         "facet_open_url",
         "facet_publish",
         "facet_read_back",
         "facet_status",
       ]);
+      const schemas = {
+        facet_create: CreateToolSchema,
+        facet_export: ExportToolSchema,
+        facet_open_url: OpenUrlToolSchema,
+        facet_publish: PublishToolSchema,
+        facet_read_back: ReadBackToolSchema,
+        facet_status: StatusToolSchema,
+      };
+      for (const tool of tools.tools) {
+        const schema = schemas[tool.name as keyof typeof schemas];
+        expect(schema).toBeDefined();
+        expect(Object.keys(tool.inputSchema.properties ?? {}).toSorted()).toEqual(
+          Object.keys(schema!.shape).toSorted(),
+        );
+        expect((tool.inputSchema.required ?? []).toSorted()).toEqual(
+          Object.entries(schema!.shape)
+            .filter(([, field]) => !field.isOptional())
+            .map(([key]) => key)
+            .toSorted(),
+        );
+      }
 
       const result = await client.callTool({ name: "facet_status", arguments: { start: true } });
       expect(result.isError).not.toBe(true);
@@ -122,6 +152,64 @@ describe("facet MCP adapter", () => {
       };
       expect(envelope.ok).toBe(true);
       expect(envelope.data?.command).toBe("status");
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("creates, publishes, reads back, and exports using MCP alone from a cold home", async () => {
+    const home = newHome();
+    const outDir = join(home, "mcp-export");
+    const client = await connect(home);
+    try {
+      const created = await client.callTool({
+        name: "facet_create",
+        arguments: { projectId: "mcp", slug: "cold", title: "Cold MCP" },
+      });
+      expect(created.isError).not.toBe(true);
+      const createEnvelope = JSON.parse(textContent(created)) as {
+        ok: boolean;
+        data?: { artifact?: { id?: string } };
+      };
+      expect(createEnvelope.ok).toBe(true);
+      const artifactId = createEnvelope.data?.artifact?.id;
+      expect(artifactId).toBeString();
+      if (!artifactId) throw new Error("MCP create returned no artifact id");
+
+      const published = await client.callTool({
+        name: "facet_publish",
+        arguments: { artifactId, type: "markdown", sourceText: "# Cold MCP source\n" },
+      });
+      expect(published.isError).not.toBe(true);
+      const publishEnvelope = JSON.parse(textContent(published)) as {
+        ok: boolean;
+        data?: { revision?: { sha256?: string } };
+      };
+      expect(publishEnvelope.ok).toBe(true);
+      const revisionSha = publishEnvelope.data?.revision?.sha256;
+      expect(revisionSha).toBeString();
+
+      const readBack = await client.callTool({
+        name: "facet_read_back",
+        arguments: { artifactId, revisionSha, tier: 0 },
+      });
+      expect(readBack.isError).not.toBe(true);
+      const readEnvelope = JSON.parse(textContent(readBack)) as {
+        ok: boolean;
+        data?: { verdict?: { artifactId?: string; revisionSha?: string; tier?: number } };
+      };
+      expect(readEnvelope.ok).toBe(true);
+      expect(readEnvelope.data?.verdict).toMatchObject({ artifactId, revisionSha, tier: 0 });
+
+      const exported = await client.callTool({
+        name: "facet_export",
+        arguments: { artifactId, revisionSha, format: "source", outDir },
+      });
+      expect(exported.isError).not.toBe(true);
+      expect(JSON.parse(textContent(exported))).toMatchObject({ ok: true });
+      const sourceFiles = readdirSync(outDir).filter((name) => /^cold-[a-f0-9]{7}\.md$/.test(name));
+      expect(sourceFiles).toHaveLength(1);
+      expect(readFileSync(join(outDir, sourceFiles[0]!), "utf8")).toBe("# Cold MCP source\n");
     } finally {
       await client.close();
     }
@@ -212,6 +300,12 @@ describe("facet MCP adapter", () => {
       for (const invalidInput of [
         { artifactId: "missing-artifact", type: "not-a-type", sourceText: "# Invalid type" },
         { artifactId: 42, type: "markdown", sourceText: "# Invalid artifact id" },
+        {
+          artifactId: "missing-artifact",
+          type: "markdown",
+          sourceText: "# Valid",
+          extraField: true,
+        },
       ]) {
         const result = await client.callTool({ name: "facet_publish", arguments: invalidInput });
         expect(result.isError).toBe(true);

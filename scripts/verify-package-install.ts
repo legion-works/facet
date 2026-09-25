@@ -23,6 +23,7 @@ const home = join(scratch, "facet-home");
 const fixture = join(scratch, "source.md");
 const exported = join(consumer, "exported.md");
 const installedRoot = join(consumer, "node_modules", packageJson.name);
+const installedMcp = join(consumer, "node_modules/.bin/facet-mcp");
 const bun = process.execPath;
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -75,6 +76,51 @@ function data(envelope: Envelope, command: string): Record<string, unknown> {
   return envelope.data;
 }
 
+async function assertInstalledMcpLaunch(): Promise<void> {
+  const proc = Bun.spawn([installedMcp], {
+    cwd: consumer,
+    env: { ...process.env, FACET_HOME: home },
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  proc.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-03-26",
+        capabilities: {},
+        clientInfo: { name: "facet-package-smoke", version: "0.0.0" },
+      },
+    }) + "\n",
+  );
+  proc.stdin.end();
+  const timeout = setTimeout(() => proc.kill(), 5000);
+  try {
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    const response = stdout
+      .split("\n")
+      .filter(Boolean)
+      .map(
+        (line) => JSON.parse(line) as { id?: number; result?: { serverInfo?: { name?: string } } },
+      )
+      .find((message) => message.id === 1);
+    assert(
+      response?.result?.serverInfo?.name === "facet",
+      `installed facet-mcp did not respond to initialize: ${stdout}\n${stderr}`,
+    );
+  } finally {
+    clearTimeout(timeout);
+    proc.kill();
+    await proc.exited;
+  }
+}
+
 async function main(): Promise<void> {
   mkdirSync(consumer, { recursive: true });
   mkdirSync(home, { recursive: true });
@@ -112,6 +158,7 @@ async function main(): Promise<void> {
       install.exited,
     ]);
     assert(installExit === 0, `bun install failed: ${installErr}\n${installOut}`);
+    await assertInstalledMcpLaunch();
 
     const version = data(await run(["--version", "--format", "json"]), "--version");
     assert(version.version === packageJson.version, `version mismatch: ${String(version.version)}`);

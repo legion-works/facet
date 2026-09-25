@@ -6,6 +6,13 @@ const RevisionShaSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const ExecutionSchema = z.enum(["static", "interactive"]);
 const ReadBackTierSchema = z.union([z.literal(0), z.literal(1), z.literal("visual")]);
 
+export const CreateToolShape = {
+  projectId: z.string().min(1),
+  slug: z.string().min(1),
+  title: z.string().min(1),
+};
+export const CreateToolSchema = z.object(CreateToolShape).strict();
+
 export const PublishToolShape = {
   artifactId: z.string().min(1),
   type: ArtifactTypeSchema,

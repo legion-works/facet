@@ -1,11 +1,14 @@
 import { mkdirSync } from "node:fs";
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z, ZodError } from "zod";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { type ZodType, ZodError } from "zod";
 import { FACET_VERSION } from "../../shared/version";
 
 import { buildFacetArgs, FacetBridgeError, invokeFacet } from "./cli-bridge";
 import {
+  CreateToolSchema,
   ExportToolSchema,
   OpenUrlToolSchema,
   PublishToolSchema,
@@ -40,8 +43,6 @@ function errorEnvelope(cause: unknown): FacetEnvelope<never> {
         };
   return errEnvelope(requestId(), body);
 }
-
-const LooseToolInputSchema = z.record(z.unknown());
 
 function toolResult(envelope: FacetEnvelope<unknown>) {
   return {
@@ -90,75 +91,83 @@ function publishSource(input: PublishToolInput): {
   });
 }
 
-export function createFacetMcpServer(): McpServer {
-  const server = new McpServer({ name: "facet", version: FACET_VERSION });
+function defineTool<T>(
+  schema: ZodType<T>,
+  description: string,
+  run: (input: T) => Promise<ReturnType<typeof toolResult>>,
+) {
+  return {
+    schema,
+    description,
+    execute: (args: unknown) => withInput(args, (input) => schema.parse(input), run),
+  };
+}
 
-  server.registerTool(
-    "facet_export",
-    {
-      description:
-        "Export source or stored render evidence into outDir. Check envelope.ok for transport success; a successful publish verdict remains a separate data.verdict.status decision.",
-      inputSchema: LooseToolInputSchema,
-    },
-    async (args) =>
-      withInput(args, ExportToolSchema.parse, async (input) => {
+export function createFacetMcpServer(): Server {
+  const server = new Server(
+    { name: "facet", version: FACET_VERSION },
+    { capabilities: { tools: {} } },
+  );
+  // The high-level SDK validates arguments before the handler and emits plain-text errors.
+  // Wire schemas and handler parsing are separate so invalid calls retain Facet envelopes.
+  const tools = {
+    facet_create: defineTool(
+      CreateToolSchema,
+      "Create an artifact from projectId, slug, and title before publishing source.",
+      async (input) => invoke(buildFacetArgs("create", input)),
+    ),
+    facet_export: defineTool(
+      ExportToolSchema,
+      "Export source or stored render evidence into outDir. Check envelope.ok for transport success; a successful publish verdict remains a separate data.verdict.status decision.",
+      async (input) => {
         mkdirSync(input.outDir, { recursive: true });
         return invoke(buildFacetArgs("export", input), { cwd: input.outDir });
-      }),
-  );
-
-  server.registerTool(
-    "facet_open_url",
-    {
-      description:
-        "Return a Facet gallery frameUrl without launching a browser. This always invokes facet open --no-launch; agents must not launch desktop display.",
-      inputSchema: LooseToolInputSchema,
-    },
-    async (args) =>
-      withInput(args, OpenUrlToolSchema.parse, async (input) =>
-        invoke(buildFacetArgs("open", input)),
-      ),
-  );
-
-  server.registerTool(
-    "facet_publish",
-    {
-      description:
-        "Publish exactly one sourceText or local file. Check envelope.ok separately from data.verdict.status: stored verdict status error is not a transport failure.",
-      inputSchema: LooseToolInputSchema,
-    },
-    async (args) =>
-      withInput(args, PublishToolSchema.parse, async (input) => {
+      },
+    ),
+    facet_open_url: defineTool(
+      OpenUrlToolSchema,
+      "Return a Facet gallery frameUrl without launching a browser. This always invokes facet open --no-launch; agents must not launch desktop display.",
+      async (input) => invoke(buildFacetArgs("open", input)),
+    ),
+    facet_publish: defineTool(
+      PublishToolSchema,
+      "Publish exactly one sourceText or local file. Check envelope.ok separately from data.verdict.status: stored verdict status error is not a transport failure.",
+      async (input) => {
         const source = publishSource(input);
         return invoke(buildFacetArgs("publish", { ...input, ...source }), source);
+      },
+    ),
+    facet_read_back: defineTool(
+      ReadBackToolSchema,
+      "Read back the latest or revision-bound stored verdict at Tier 0, Tier 1, or visual. Tier 1 and visual need browser evidence; inspect envelope.ok before verdict status.",
+      async (input) => invoke(buildFacetArgs("read_back", input)),
+    ),
+    facet_status: defineTool(
+      StatusToolSchema,
+      "Read Facet status. Set start only when activation is intended; envelope.ok reports command transport and never replaces verdict.status inspection.",
+      async (input) => invoke(buildFacetArgs("status", input)),
+    ),
+  };
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: Object.entries(tools).map(([name, tool]) => ({
+      name,
+      description: tool.description,
+      inputSchema: toJsonSchemaCompat(tool.schema, { pipeStrategy: "input" }),
+    })),
+  }));
+  server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
+    const tool = Object.hasOwn(tools, params.name)
+      ? tools[params.name as keyof typeof tools]
+      : null;
+    if (tool) return tool.execute(params.arguments);
+    return toolResult(
+      errEnvelope(requestId(), {
+        code: "invalid_request",
+        message: `Unknown MCP tool '${params.name}'`,
+        retryable: false,
       }),
-  );
-
-  server.registerTool(
-    "facet_read_back",
-    {
-      description:
-        "Read back the latest or revision-bound stored verdict at Tier 0, Tier 1, or visual. Tier 1 and visual need browser evidence; inspect envelope.ok before verdict status.",
-      inputSchema: LooseToolInputSchema,
-    },
-    async (args) =>
-      withInput(args, ReadBackToolSchema.parse, async (input) =>
-        invoke(buildFacetArgs("read_back", input)),
-      ),
-  );
-
-  server.registerTool(
-    "facet_status",
-    {
-      description:
-        "Read Facet status. Set start only when activation is intended; envelope.ok reports command transport and never replaces verdict.status inspection.",
-      inputSchema: LooseToolInputSchema,
-    },
-    async (args) =>
-      withInput(args, StatusToolSchema.parse, async (input) =>
-        invoke(buildFacetArgs("status", input)),
-      ),
-  );
+    );
+  });
 
   return server;
 }

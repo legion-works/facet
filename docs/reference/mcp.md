@@ -4,18 +4,14 @@ On harnesses with shell access, the CLI is the integration; the MCP adapter is f
 
 Facet's npm package includes the `facet-mcp` bin. It needs Bun `1.4.0`; npm and pnpm install the package, but Bun remains the runtime.
 
-Recommended installation and invocation:
+Install globally, then run the bin with Bun `1.4.0` or newer:
 
 ```sh
 bun add -g @legionworks/facet
 facet-mcp
 ```
 
-No-install alternative:
-
-```sh
-npx -p @legionworks/facet facet-mcp
-```
+Releases through `1.9.0` ship a `facet-mcp` bin that cannot launch directly. Use the next release or newer. A local package built with this fix answered JSON-RPC `initialize` after a global install. The `npx -p @legionworks/facet facet-mcp` path still needs verification against that published release before it is recommended.
 
 Do not use `bunx -p @legionworks/facet facet-mcp` as the registration command without verifying the local Bun release. It exited immediately with status 1 on Bun `1.3.14` on the measured host; the same form also exited with status 1 under the available scratch Bun `1.4.0` runtime. These observations are environment-specific, so this caveat is not a universal claim about every Bun release or installation.
 
@@ -62,6 +58,7 @@ Set `FACET_HOME` in the host configuration when the adapter must use a non-defau
 
 | Tool              | Inputs                                                                                                                    | Effect                                                                       |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `facet_create`    | `projectId`, `slug`, `title`                                                                                              | Creates an artifact; pass its returned `data.artifact.id` to publish.        |
 | `facet_publish`   | `artifactId`, `type`, exactly one of `sourceText` or `file`; optional `execution`, `renderer`, `note`, `parentRevisionId` | Publishes inline source through CLI stdin or reads the named local file.     |
 | `facet_read_back` | `artifactId`; optional `revisionSha`, `tier` (`0` \| `1` \| `visual`)                                                     | Reads the latest or named revision. Tier 1 and visual need browser evidence. |
 | `facet_status`    | optional `artifactId`, `start`                                                                                            | Reads status. Set `start` only when activation is intended.                  |
@@ -72,7 +69,7 @@ Set `FACET_HOME` in the host configuration when the adapter must use a non-defau
 
 Exactly one of `sourceText` or `file` is required. The adapter returns `invalid_request` when both or neither are supplied.
 
-The MCP surface is the five artifact tools; run `facet doctor` through the CLI.
+The MCP surface has six artifact tools. Start a cold-home flow with `facet_create`, then call `facet_publish`, `facet_read_back`, and `facet_export`. Each tool advertises its input schema in `tools/list`; run `facet doctor` through the CLI.
 
 ## Result and error handling
 
