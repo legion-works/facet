@@ -79,6 +79,16 @@ test("gallery signals post-render interaction errors without changing the stored
       status: "displayed · runtime error during interaction",
       marker: "true",
     });
+    expect(
+      await shell(`(() => {
+        const region = document.getElementById('facet-status-line');
+        return { live: region?.getAttribute('aria-live'), role: region?.getAttribute('role'), text: region?.textContent };
+      })()`),
+    ).toEqual({
+      live: "polite",
+      role: "status",
+      text: "displayed · runtime error during interaction",
+    });
     expect(await shell("document.querySelector('#facet-verdict')?.dataset.status")).toBe("ok");
     await shell("document.getElementById('facet-theme-toggle')?.click()");
     const clearedTheme = await settle(
