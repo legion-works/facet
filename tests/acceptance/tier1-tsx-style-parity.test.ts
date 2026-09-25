@@ -33,7 +33,7 @@ function hasRedBackground(pixels: {
   readonly channels: number;
 }): boolean {
   for (let y = 20; y < 40; y += 1) {
-    for (let x = 20; x < 40; x += 1) {
+    for (let x = Math.floor(pixels.width / 4); x < Math.floor((pixels.width * 3) / 4); x += 1) {
       const offset = (y * pixels.width + x) * pixels.channels;
       if (
         pixels.data[offset]! > 220 &&

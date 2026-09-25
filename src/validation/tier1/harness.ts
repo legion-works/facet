@@ -24,6 +24,7 @@ import { ARTIFACT_TYPES, type ArtifactType } from "../../gallery-web/frame/rende
 import frameChromeStyles from "../../gallery-web/frame/styles/frame.css" with { type: "text" };
 import { freshHarnessNonce } from "./nonce";
 import { frameBundlePlugins } from "../../shared/build/frame-bundle-plugins";
+import { artifactMainAttributes } from "../../shared/html/artifact-main";
 import { FROZEN_CSP_TEMPLATE as HARNESS_CSP } from "../../shared/security/frozen-csp";
 
 export { FROZEN_CSP_TEMPLATE as HARNESS_CSP } from "../../shared/security/frozen-csp";
@@ -135,7 +136,7 @@ export async function buildHarnessSrcdoc(artifactType: string): Promise<{
     `<style>${frameChromeStyles.replace(/<\/style/gi, "<\\/style")}</style>` +
     (styles.length === 0 ? "" : `<style>${styles.replace(/<\/style/gi, "<\\/style")}</style>`) +
     "</head><body>" +
-    `<main id="artifact" data-facet-nonce="${nonce}"></main>` +
+    `<main ${artifactMainAttributes(rendererType)} data-facet-nonce="${nonce}"></main>` +
     `<script type="module" nonce="${nonce}">${escaped}</script>` +
     "</body></html>";
   return { srcdoc, nonce, bundleBytes: bytes };

@@ -9,6 +9,7 @@
  */
 
 import { galleryDataTheme, type ResolvedGalleryTheme } from "./theme";
+import { artifactMainAttributes } from "../shared/html/artifact-main";
 
 /**
  * Frame element attributes. The shell applies these to every iframe it
@@ -48,7 +49,7 @@ export function buildFrameDocument(options: {
       ? `<link rel="stylesheet" href="/gallery/frame/artifact.css">`
       : "") +
     "</head><body>" +
-    `<main id="artifact" data-facet-artifact-type="${artifactType}"></main>` +
+    `<main ${artifactMainAttributes(artifactType)}></main>` +
     `<script type="module" src="${escapedRuntimeUrl}"></script>` +
     "</body></html>"
   );

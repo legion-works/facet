@@ -98,12 +98,19 @@ body {
  * wider than the stage (it start-aligns and stays reachable by
  * scroll instead).
  */
+#artifact[data-facet-artifact-type="html"],
+#artifact[data-facet-artifact-type="tsx"] {
+  display: flex;
+  flex-direction: column;
+}
+
 #artifact[data-facet-artifact-type="html"] > [data-facet-renderer-root],
 #artifact[data-facet-artifact-type="tsx"] > [data-facet-renderer-root] {
   display: flex;
   justify-content: safe center;
   align-items: flex-start;
-  min-height: 100%;
+  /* A full-height root plus a sibling runtime error makes capture bounds grow on every viewport resize. */
+  flex: 1 0 auto;
 }
 
 #artifact > svg {

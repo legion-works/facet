@@ -173,7 +173,7 @@ const CONSUMER_BASELINE: Record<string, ReturnType<typeof projectConsumer>> = {
       opaqueRegionCount: 0,
       externalImageCount: 0,
       html: undefined,
-      viewBoxes: ["0 0 169 345"],
+      viewBoxes: ["0 0 689 405"],
       discriminativeErrors: [],
     },
   },
