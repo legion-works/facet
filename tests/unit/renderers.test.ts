@@ -517,6 +517,19 @@ describe("chart renderer — loader disabled, zero marks is an error", () => {
     expect(chart.withFacetChartDimensions(viewed)).toBe(viewed);
   });
 
+  test("authored dimensions suppress defaults for unit and facet specs", () => {
+    const unit = { mark: "bar", width: 300, height: 180 };
+    const facet = {
+      mark: "bar",
+      width: 300,
+      height: 180,
+      facet: { column: { field: "category", type: "nominal" } },
+      spec: { mark: "bar" },
+    };
+    expect(chart.withFacetChartDimensions(unit)).toEqual(unit);
+    expect(chart.withFacetChartDimensions(facet)).toEqual(facet);
+  });
+
   test.each(["facet", "hconcat", "repeat"] as const)(
     "%s views inherit chart dimensions through config.view",
     (composition) => {
