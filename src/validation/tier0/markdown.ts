@@ -30,6 +30,7 @@ import { Lexer, type Token, type Tokens } from "marked";
 
 import type { DiscriminativeError, VerdictObserved } from "../../shared/contracts/validation";
 import { countMermaidNodeDeclarations } from "../../shared/util/mermaid-nodes";
+import { parseMermaidText } from "./mermaid";
 
 export interface MarkdownParseOk {
   readonly status: "ok";
@@ -54,6 +55,7 @@ interface MarkdownCounts {
   hasScript: boolean;
   hasOnHandler: boolean;
   hasExternalRef: boolean;
+  mermaidBodies: string[];
 }
 
 function isExternalHttpsUrl(value: string): boolean {
@@ -102,6 +104,7 @@ function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
       counts.totalFenced += 1;
       const lang = (code.lang ?? "").trim().toLowerCase();
       if (lang === "mermaid") {
+        counts.mermaidBodies.push(code.text);
         counts.mermaidFenced += 1;
         counts.rendererRoots += 1;
         const nodes = countMermaidNodeDeclarations(code.text);
@@ -166,7 +169,7 @@ function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
  * execute, and we surface structural red flags if it tries to smuggle
  * one) but never interpreted.
  */
-export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
+export async function parseMarkdown(bytes: Uint8Array): Promise<MarkdownParseResult> {
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   const counts: MarkdownCounts = {
     totalFenced: 0,
@@ -178,6 +181,7 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
     hasScript: false,
     hasOnHandler: false,
     hasExternalRef: false,
+    mermaidBodies: [],
   };
   let lexError: unknown = null;
   let tokens: Token[] = [];
@@ -187,6 +191,25 @@ export function parseMarkdown(bytes: Uint8Array): MarkdownParseResult {
     walkTokens(tokens, counts);
   } catch (error) {
     lexError = error;
+  }
+
+  for (let i = 0; i < counts.mermaidBodies.length; i += 1) {
+    const message = await parseMermaidText(counts.mermaidBodies[i]!);
+    if (message !== null) {
+      return {
+        status: "error",
+        observed: {
+          rendererRootSvgCount: counts.rendererRoots,
+          graphCount: counts.mermaidFenced,
+          mermaidNodeCount: counts.mermaidNodeCount ?? 0,
+          visibleSvgCount: 0,
+          externalImageCount: counts.externalImageCount,
+          errorCount: 1,
+          opaqueRegionCount: 0,
+        },
+        errors: [{ code: "mermaid_parse_error", message, location: `mermaid fence ${i}` }],
+      };
+    }
   }
 
   if (lexError !== null) {

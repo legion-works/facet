@@ -33,6 +33,15 @@ export interface MermaidParseFail {
 
 export type MermaidParseResult = MermaidParseOk | MermaidParseFail;
 
+export async function parseMermaidText(text: string): Promise<string | null> {
+  try {
+    await (mermaid as { parse: (s: string) => Promise<MermaidResolved> }).parse(text);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 /**
  * Count node declarations across the source. This is the lexical
  * counter the parser agrees with when the parse succeeds and disagrees
@@ -58,10 +67,8 @@ export async function parseMermaid(bytes: Uint8Array): Promise<MermaidParseResul
   const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   const lexicalNodes = countMermaidNodes(bytes);
   try {
-    const resolved = (await (mermaid as { parse: (s: string) => Promise<MermaidResolved> }).parse(
-      text,
-    )) as MermaidResolved;
-    void resolved;
+    const message = await parseMermaidText(text);
+    if (message !== null) throw new Error(message);
     return {
       status: "ok",
       observed: {

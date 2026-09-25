@@ -61,7 +61,7 @@ function lexicalCounters(_bytes: Uint8Array) {
 }
 
 describe("Tier 0 mermaid parser", () => {
-  test("installs a structural document implementation for import-time renderer checks", () => {
+  test("installs a structural document implementation for import-time renderer checks", async () => {
     expect(domShimInstalled).toBe(true);
     const parsed = domShimDocument.implementation.createHTMLDocument("<p>shim</p>");
     expect(parsed.querySelector("p")?.textContent).toBe("shim");
@@ -94,7 +94,7 @@ describe("Tier 0 mermaid parser", () => {
     expect(countMermaidNodeDeclarations(`flowchart TD\n  ${declaration}`)).toBe(expected);
   });
 
-  test("counts each flowchart id once and ignores metadata syntax", () => {
+  test("counts each flowchart id once and ignores metadata syntax", async () => {
     const source = [
       "%%{init: { 'theme': 'dark' }}%%",
       "flowchart TD",
@@ -169,7 +169,7 @@ describe("Tier 0 mermaid parser", () => {
     expect(countMermaidNodeDeclarations(source)).toBe(expected);
   });
 
-  test("marks diagram types without a reliable g.node grammar as uncountable", () => {
+  test("marks diagram types without a reliable g.node grammar as uncountable", async () => {
     expect(
       countMermaidNodeDeclarations(
         "gantt\ntitle Release\nsection Build\ncompile :done, 2026-01-01, 1d",
@@ -191,9 +191,9 @@ describe("Tier 0 mermaid parser", () => {
 });
 
 describe("Tier 0 markdown parser", () => {
-  test("counts mermaid fences against the lexical expectation on adversarial-md-mermaid.md", () => {
+  test("counts mermaid fences against the lexical expectation on adversarial-md-mermaid.md", async () => {
     const bytes = readBytes(FIXTURES.adversarial);
-    const result = parseMarkdown(bytes);
+    const result = await parseMarkdown(bytes);
     expect(result.status).toBe("ok");
     // Two mermaid blocks -> two renderer roots, matches the service-side
     // countFencedBlocks expectation.
@@ -201,15 +201,51 @@ describe("Tier 0 markdown parser", () => {
     expect(result.observed.graphCount).toBe(2);
   });
 
-  test("surfaces Mermaid node counts from fenced flowcharts", () => {
-    const result = parseMarkdown(readBytes(FIXTURES.markdownMermaid));
+  test("surfaces Mermaid node counts from fenced flowcharts", async () => {
+    const result = await parseMarkdown(readBytes(FIXTURES.markdownMermaid));
     expect(result.status).toBe("ok");
     if (result.status === "ok") expect(result.observed.mermaidNodeCount).toBe(2);
   });
 
-  test("raw HTML in markdown is counted as data, never executed", () => {
+  test("rejects a malformed Mermaid fence with index zero", async () => {
+    const result = await parseMarkdown(
+      new TextEncoder().encode("```mermaid\nnot a diagram %%%\n```"),
+    );
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.errors[0]!.code).toBe("mermaid_parse_error");
+      expect(result.errors[0]!.location).toBe("mermaid fence 0");
+    }
+  });
+
+  test("reports the index of the second malformed Mermaid fence", async () => {
+    const source = "```mermaid\nflowchart TD\n A-->B\n```\n\n```mermaid\nnot a diagram %%%\n```";
+    const result = await parseMarkdown(new TextEncoder().encode(source));
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.errors[0]!.code).toBe("mermaid_parse_error");
+      expect(result.errors[0]!.location).toBe("mermaid fence 1");
+      expect(result.errors[0]!.message.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("valid Mermaid fences preserve graph and node counts", async () => {
+    const source = "```mermaid\nflowchart TD\n A-->B\n```\n\n```mermaid\nflowchart TD\n C-->D\n```";
+    const result = await parseMarkdown(new TextEncoder().encode(source));
+    expect(result.status).toBe("ok");
+    expect(result.observed.graphCount).toBe(2);
+    expect(result.observed.rendererRootSvgCount).toBe(2);
+    expect(result.observed.mermaidNodeCount).toBe(2);
+  });
+
+  test("does not parse Mermaid-looking text in another code fence", async () => {
+    const result = await parseMarkdown(new TextEncoder().encode("```text\nnot a diagram %%%\n```"));
+    expect(result.status).toBe("ok");
+  });
+
+  test("raw HTML in markdown is counted as data, never executed", async () => {
     const bytes = readBytes(FIXTURES.rawHtml);
-    const result = parseMarkdown(bytes);
+    const result = await parseMarkdown(bytes);
     // No <script> and no on*= handlers, but the fixture contains an
     // external URL in href/src. The fixture is intentionally hostile
     // — the parser MUST report error.
@@ -221,30 +257,30 @@ describe("Tier 0 markdown parser", () => {
     }
   });
 
-  test("counts zero mermaid fences on markdown-raw-html.md's data-only content", () => {
+  test("counts zero mermaid fences on markdown-raw-html.md's data-only content", async () => {
     const bytes = readBytes(FIXTURES.rawHtml);
     // Even when the parse fails, the observed counts that DID get
     // tallied must remain zero (no mermaid blocks were counted).
-    const result = parseMarkdown(bytes);
+    const result = await parseMarkdown(bytes);
     if (result.status === "ok") {
       expect(result.observed.rendererRootSvgCount).toBe(0);
     }
   });
 
-  test("walks nested table tokens without executing their contents", () => {
+  test("walks nested table tokens without executing their contents", async () => {
     const source = "| name | value |\n| --- | --- |\n| safe | 1 |\n";
-    const result = parseMarkdown(new TextEncoder().encode(source));
+    const result = await parseMarkdown(new TextEncoder().encode(source));
     expect(result.status).toBe("ok");
     expect(result.observed.errorCount).toBe(0);
   });
 
-  test("surfaces a lexer failure as a typed markdown parse error", () => {
+  test("surfaces a lexer failure as a typed markdown parse error", async () => {
     const originalLex = Lexer.prototype.lex;
     Lexer.prototype.lex = () => {
       throw new Error("forced lexer failure");
     };
     try {
-      const result = parseMarkdown(new TextEncoder().encode("safe"));
+      const result = await parseMarkdown(new TextEncoder().encode("safe"));
       expect(result.status).toBe("error");
       if (result.status === "error") {
         expect(result.errors[0]!.code).toBe("markdown_lex_error");
@@ -263,15 +299,15 @@ describe("Tier 0 markdown parser", () => {
       '<iframe src="https://evil.invalid/pixel"></iframe>',
       "html_external_reference_in_markdown",
     ],
-  ])("rejects markdown raw HTML containing a %s", (_label, source, code) => {
-    const result = parseMarkdown(new TextEncoder().encode(source));
+  ])("rejects markdown raw HTML containing a %s", async (_label, source, code) => {
+    const result = await parseMarkdown(new TextEncoder().encode(source));
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.errors[0]!.code).toBe(code);
   });
 });
 
 describe("Tier 0 svg parser", () => {
-  test("clean svg parses ok with one root and the viewBox surfaced", () => {
+  test("clean svg parses ok with one root and the viewBox surfaced", async () => {
     const bytes = readBytes(FIXTURES.svgClean);
     const result = parseSvg(bytes);
     expect(result.status).toBe("ok");
@@ -281,7 +317,7 @@ describe("Tier 0 svg parser", () => {
     }
   });
 
-  test("svg with <script> + on*= handlers + external URL is REJECTED at Tier 0", () => {
+  test("svg with <script> + on*= handlers + external URL is REJECTED at Tier 0", async () => {
     const bytes = readBytes(FIXTURES.svgHostile);
     const result = parseSvg(bytes);
     expect(result.status).toBe("error");
@@ -295,7 +331,7 @@ describe("Tier 0 svg parser", () => {
     }
   });
 
-  test("rejects an SVG with an event-handler attribute when no earlier hostile branch fires", () => {
+  test("rejects an SVG with an event-handler attribute when no earlier hostile branch fires", async () => {
     const result = parseSvg(
       new TextEncoder().encode('<svg viewBox="0 0 10 10" onclick="alert(1)"/>'),
     );
@@ -303,7 +339,7 @@ describe("Tier 0 svg parser", () => {
     if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_event_handler");
   });
 
-  test("rejects an SVG script element when no handler or external URL masks the branch", () => {
+  test("rejects an SVG script element when no handler or external URL masks the branch", async () => {
     const result = parseSvg(
       new TextEncoder().encode('<svg viewBox="0 0 10 10"><script>alert(1)</script></svg>'),
     );
@@ -311,7 +347,7 @@ describe("Tier 0 svg parser", () => {
     if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_script_element");
   });
 
-  test("rejects an SVG with an external URL when no earlier hostile branch fires", () => {
+  test("rejects an SVG with an external URL when no earlier hostile branch fires", async () => {
     const result = parseSvg(
       new TextEncoder().encode(
         '<svg viewBox="0 0 10 10"><image href="https://evil.invalid/x"/></svg>',
@@ -321,38 +357,38 @@ describe("Tier 0 svg parser", () => {
     if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_external_reference");
   });
 
-  test("rejects an SVG without a top-level root", () => {
+  test("rejects an SVG without a top-level root", async () => {
     const result = parseSvg(new TextEncoder().encode("<html/>"));
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_no_root");
   });
 
-  test("rejects an SVG without a viewBox", () => {
+  test("rejects an SVG without a viewBox", async () => {
     const result = parseSvg(new TextEncoder().encode('<svg width="1"></svg>'));
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_missing_viewbox");
   });
 
-  test("rejects malformed SVG XML", () => {
+  test("rejects malformed SVG XML", async () => {
     const result = parseSvg(new TextEncoder().encode("<svg><"));
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_xml_error");
   });
 
-  test("rejects an SVG over the byte cap", () => {
+  test("rejects an SVG over the byte cap", async () => {
     const bytes = new Uint8Array(1_048_577);
     const result = parseSvg(bytes);
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.errors[0]!.code).toBe("svg_too_large");
   });
 
-  test("walks repeated SVG child nodes without treating them as extra roots", () => {
+  test("walks repeated SVG child nodes without treating them as extra roots", async () => {
     const source = '<svg viewBox="0 0 1 1"><g><path/><path/></g></svg>';
     const result = parseSvg(new TextEncoder().encode(source));
     expect(result.status).toBe("ok");
   });
 
-  test("rejects more top-level SVG roots than the cap", () => {
+  test("rejects more top-level SVG roots than the cap", async () => {
     const source = Array.from({ length: 17 }, () => '<svg viewBox="0 0 1 1"/>').join("");
     const result = parseSvg(new TextEncoder().encode(source));
     expect(result.status).toBe("error");
@@ -361,7 +397,7 @@ describe("Tier 0 svg parser", () => {
 });
 
 describe("Tier 0 chart parser", () => {
-  test("inline-data chart parses ok", () => {
+  test("inline-data chart parses ok", async () => {
     const bytes = readBytes(FIXTURES.chartBarline);
     const result = parseChart(bytes);
     expect(result.status).toBe("ok");
@@ -370,7 +406,7 @@ describe("Tier 0 chart parser", () => {
     }
   });
 
-  test("chart with external data.url is REJECTED at Tier 0 (no fetch ever attempted)", () => {
+  test("chart with external data.url is REJECTED at Tier 0 (no fetch ever attempted)", async () => {
     const bytes = readBytes(FIXTURES.chartExternal);
     const result = parseChart(bytes);
     expect(result.status).toBe("error");
@@ -383,13 +419,13 @@ describe("Tier 0 chart parser", () => {
     }
   });
 
-  test("rejects malformed chart JSON", () => {
+  test("rejects malformed chart JSON", async () => {
     const result = parseChart(new TextEncoder().encode("{not json"));
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.errors[0]!.code).toBe("chart_json_error");
   });
 
-  test("rejects a chart with an invalid top-level field shape", () => {
+  test("rejects a chart with an invalid top-level field shape", async () => {
     const result = parseChart(
       new TextEncoder().encode(JSON.stringify({ encoding: "not-an-object" })),
     );
@@ -412,7 +448,7 @@ describe("Tier 0 chart parser", () => {
     }
   });
 
-  test("rejects a syntactically valid but uncompileable chart spec", () => {
+  test("rejects a syntactically valid but uncompileable chart spec", async () => {
     const result = parseChart(new TextEncoder().encode(JSON.stringify({ mark: "not-a-mark" })));
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.errors[0]!.code).toBe("chart_compile_error");
@@ -538,7 +574,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
     { timeout: TIER0_TIMEOUT_MS + 5_000 },
   );
 
-  test("netns probe reports a typed reason when unavailable (or ok when available)", () => {
+  test("netns probe reports a typed reason when unavailable (or ok when available)", async () => {
     if (netnsProbe.available) {
       expect(netnsProbe.reason).toBeNull();
     } else {
@@ -546,7 +582,7 @@ describe("Tier 0 process boundary — worker subprocess", () => {
     }
   });
 
-  test("netns probe cannot report unavailable when the synchronous probe succeeds", () => {
+  test("netns probe cannot report unavailable when the synchronous probe succeeds", async () => {
     const directProbe = spawnSync("unshare", ["--map-current-user", "--net", "--", "/bin/true"], {
       stdio: "ignore",
     });
@@ -642,12 +678,12 @@ describe("Tier 0 protocol-boundary unit cases (no subprocess required)", () => {
     );
   });
 
-  test("a non-JSON stdout payload is rejected at the runner's stdout parser", () => {
+  test("a non-JSON stdout payload is rejected at the runner's stdout parser", async () => {
     const stdout = "this is not json at all";
     expect(() => JSON.parse(stdout.trim())).toThrow();
   });
 
-  test("an empty stdout payload is rejected at the runner's stdout parser", () => {
+  test("an empty stdout payload is rejected at the runner's stdout parser", async () => {
     expect(() => JSON.parse("".trim())).toThrow();
   });
 });
@@ -688,13 +724,13 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
   });
   const OUTPUT_CAP = 64 * 1024;
 
-  test("baseline: a well-formed Tier0Result JSON is accepted", () => {
+  test("baseline: a well-formed Tier0Result JSON is accepted", async () => {
     const result = _parseWorkerStdout(VALID_STDOUT, OUTPUT_CAP);
     expect(result.tier).toBe(0);
     expect(result.status).toBe("ok");
   });
 
-  test("accepts identity-blind worker stdout before parent enrichment", () => {
+  test("accepts identity-blind worker stdout before parent enrichment", async () => {
     const workerPayload = JSON.stringify({
       tier: 0,
       status: "ok",
@@ -722,7 +758,7 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
     expect("artifactId" in result).toBe(false);
   });
 
-  test("rejects a well-formed JSON object that VIOLATES Tier0ResultSchema (missing required field)", () => {
+  test("rejects a well-formed JSON object that VIOLATES Tier0ResultSchema (missing required field)", async () => {
     // Drop the required `observed` field — the strict schema rejects
     // a verdict without an observation block.
     const bad = JSON.parse(VALID_STDOUT);
@@ -733,7 +769,7 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
     );
   });
 
-  test("rejects a well-formed JSON object with a wrong-typed field (status not in the closed enum)", () => {
+  test("rejects a well-formed JSON object with a wrong-typed field (status not in the closed enum)", async () => {
     const bad = { ...JSON.parse(VALID_STDOUT), status: "yolo" };
     const stdout = JSON.stringify(bad);
     expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
@@ -741,7 +777,7 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
     );
   });
 
-  test("rejects a well-formed JSON object with a wrong-typed field (revisionSha not a 64-hex string)", () => {
+  test("rejects a well-formed JSON object with a wrong-typed field (revisionSha not a 64-hex string)", async () => {
     const bad = { ...JSON.parse(VALID_STDOUT), revisionSha: "not-a-sha" };
     const stdout = JSON.stringify(bad);
     expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
@@ -749,7 +785,7 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
     );
   });
 
-  test("rejects a well-formed JSON object whose observed.discriminativeErrors violates the closed error-entry schema", () => {
+  test("rejects a well-formed JSON object whose observed.discriminativeErrors violates the closed error-entry schema", async () => {
     // discriminativeErrors entries must have non-empty code + message.
     // An entry with `code: 1` (wrong type) trips the schema.
     const bad = JSON.parse(VALID_STDOUT);
@@ -763,14 +799,14 @@ describe("Tier 0 stdout schema guard (strict-zod)", () => {
     );
   });
 
-  test("rejects a JSON value that is NOT an object (array)", () => {
+  test("rejects a JSON value that is NOT an object (array)", async () => {
     const stdout = JSON.stringify([1, 2, 3]);
     expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
       expect.objectContaining({ code: "tier0_protocol_error" }),
     );
   });
 
-  test("rejects a JSON value that is NOT an object (string)", () => {
+  test("rejects a JSON value that is NOT an object (string)", async () => {
     const stdout = JSON.stringify("a verdict");
     expect(() => _parseWorkerStdout(stdout, OUTPUT_CAP)).toThrow(
       expect.objectContaining({ code: "tier0_protocol_error" }),

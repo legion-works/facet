@@ -15,7 +15,7 @@ export async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> 
   };
   switch (input.artifactType) {
     case "markdown": {
-      const result = parseMarkdown(input.source);
+      const result = await parseMarkdown(input.source);
       const externalImageCount = result.observed.externalImageCount;
       return {
         ...base,
