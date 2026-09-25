@@ -41,11 +41,10 @@ Current gallery captures use the Mermaid fixture in resolved dark and the chart 
 
 ## Install
 
-Facet is distributed as `@legionworks/facet`. **Bun is the required runtime**;
-install Bun `1.4.0` or newer first using the [official Bun installation
-instructions](https://bun.sh/docs/installation). The installed CLI runs on Bun.
-npm alone is not enough: npm and pnpm distribute
-Facet, but they do not provide its required runtime.
+Facet is distributed as `@legionworks/facet`. Bun is the required runtime
+(version `1.4.0` or newer); install it first using the [official Bun
+installation instructions](https://bun.sh/docs/installation). npm and pnpm
+distribute Facet, but do not provide Bun. npm alone is not enough.
 
 Recommended:
 
@@ -66,10 +65,10 @@ For a zero-install invocation:
 bunx @legionworks/facet <verb>
 ```
 
-The pinned browser used for visual read-back downloads on the first visual
-read-back. See the [CLI reference](docs/reference/cli.md) for the command
-contract and [MCP reference](docs/reference/mcp.md) for structured-tool-only
-hosts.
+The first visual read-back requires the pinned browser. If it is missing,
+`facet doctor` prints the install command. See the [CLI reference](docs/reference/cli.md) for
+the command contract and [MCP reference](docs/reference/mcp.md) for
+structured-tool-only hosts.
 
 ## Quickstart from an installed binary
 
@@ -80,6 +79,7 @@ checkout. It creates disposable runtime and export directories.
 export FACET_HOME="$(mktemp -d)"
 facet status --start
 facet doctor
+bunx --bun puppeteer browsers install chrome-headless-shell@151.0.7922.77
 SOURCE='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80"><rect width="240" height="80" rx="8" fill="#202638"/><text x="20" y="48" fill="white">Facet quickstart</text></svg>'
 SOURCE_FILE="$(mktemp)"
 printf '%s' "$SOURCE" > "$SOURCE_FILE"
@@ -92,10 +92,11 @@ EXPORT_DIR="$(mktemp -d)"
 facet export "$ARTIFACT_ID" --format source --out "$EXPORT_DIR/artifact.svg"
 ```
 
-`doctor` checks the local runtime and browser setup. Inspect `data.verdict` in
-the publish envelope: an `ok` command envelope only confirms transport, and
-the stored verdict can still have `status: "error"`. The first visual read-back
-uses Tier 1 and downloads the pinned browser if it isn't already installed.
+`doctor` checks the local runtime and browser setup and prints the browser
+install command if the pinned shell is missing. Install it before visual
+read-back. Inspect `data.verdict` in the publish envelope: an `ok` command
+envelope only confirms transport, and the stored verdict can still have
+`status: "error"`.
 
 ## Verdict language
 
