@@ -77,6 +77,14 @@ WebP; legacy PNG evidence remains readable and exportable. Before static
 capture it emulates `prefers-reduced-motion: reduce` and awaits
 `document.fonts.ready`; these pre-flights keep repeated captures byte-identical.
 
+Tier 1 uses the same artifact-type layout rules as the gallery frame: Mermaid,
+SVG, and chart roots are safely centered on both axes, with oversized content
+remaining reachable by scrolling; Markdown is top-aligned in a horizontally
+centered column capped at about 92ch; HTML and TSX are top-aligned while their
+renderer roots are safely centered across the stage. The renderer-parity gate
+compares both the gallery and verifier renderer-module sets and CSS/stylesheet
+sets.
+
 Interactive TSX declares animated-capture eligibility; it does not imply that
 the component is always visibly changing. CSS/Web Animations are probed, and
 eligible captures may contain multiple WebP frames. Static artifacts retain a

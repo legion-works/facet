@@ -77,6 +77,10 @@ Every tool returns one text content item containing the complete versioned Facet
 
 Typed Facet failures return that same envelope with `isError: true`. The JSON body preserves `error.code`, `error.message`, `error.retryable`, and `error.details`. The adapter converts malformed CLI stdout and subprocess failures into typed `invalid_envelope` errors instead of throwing raw process text through MCP.
 
+For `output_unwritable`, `error.details.out` is the absolute path whose write
+failed. A malformed Mermaid fence is a verdict result, not a tool failure: the
+call returns `isError: false` with `data.verdict.status: "error"`.
+
 ## Boundary
 
 The adapter only shells out to `facet` and parses the shared wire envelope. It does not import service, validation, or gallery code. The boundary checker permits only the MCP SDK, Zod, Node builtins, adapter-local modules, shared contracts, and the shared product version in `src/harness-adapters/mcp/`.
