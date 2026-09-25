@@ -71,6 +71,17 @@ token on argv.
 
 ## Error quick reference
 
+Render statuses are a closed set: `ok`, `error`, `partial:layout_unverified`,
+`partial:opaque_content`, `partial:external_resources`, `partial:unstable`,
+`partial:empty_render`, `tampered`, `timeout`, `shim_only`, `probe_only`, and
+`insecure:unvalidated`.
+
+Tier 0 `ok` means structure checked, not rendered. For visual evidence, run
+`facet read-back --artifact-id <id> --tier visual`. TSX Tier 0 `ok` means
+`ok · compiled`. Tier 1 TSX can return `partial:empty_render` when all
+authoritative channels agree that the renderer root has no elements or
+non-whitespace text; the verdict requires a screenshot.
+
 | Error                    | Do next                                                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | `invalid_request`        | Correct the command flags, artifact type, or source bytes, then retry.                                           |

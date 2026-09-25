@@ -18,6 +18,7 @@ Every other layer is bound to it through `VerdictSchema.status`.
 | `partial:opaque_content`     | An opaque DOM region was observed, so structural contents were not verified. MUST carry a screenshot path, or a typed `screenshotError` marker when capture fails transiently.                                                                                                                                                                                                                                                                                                                                                                   |
 | `partial:external_resources` | The artifact references external HTTPS images the no-egress verifier could not observe. MUST carry a screenshot path, or a typed `screenshotError` marker when capture fails transiently.                                                                                                                                                                                                                                                                                                                                                        |
 | `partial:unstable`           | TSX interactive mode: the structure observed at the render barrier differed from the structure observed after a bounded stability window. Deliberately NOT `tampered` — a legitimately animated or async-loading component also changes structure between observations, and branding that a forgery would manufacture the false-verdict class this project has spent three arcs eliminating. `tampered` stays reserved for channel divergence. MUST carry a screenshot path, or a typed `screenshotError` marker when capture fails transiently. |
+| `partial:empty_render`       | TSX Tier 1: all authoritative observations agree that the renderer root has no element children and no non-whitespace text. MUST carry a screenshot path, or a typed `screenshotError` marker when capture fails transiently.                                                                                                                                                                                                                                                                                                                    |
 | `tampered`                   | Page-shim or isolated-world observation diverges from protocol authority.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `timeout`                    | The harness did not emit `render-complete` within `TIER1_RENDER_BARRIER_MS`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `shim_only`                  | Isolated-world channel missing; only the untrusted page-shim produced usable counts.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -43,11 +44,12 @@ ordering, top to bottom:
 3. `probe_only` / `shim_only` — channel availability (meta-claim about the channels, not the page).
 4. `error` — discriminative errors are non-empty, or observed counts disagree with the lexical expectation. Both survive a structure change: a parse error is a parse error whenever it was observed, and a count that never matched the source's expectation never matches.
 5. **`partial:unstable`** — TSX interactive mode; structure changed between the render barrier and the stability window.
-6. `error` (declared-opaque, observed-zero) — the artifact declared opaque regions and none were seen. This sits BELOW `partial:unstable` deliberately: it compares the expectation against a SINGLE observation, so a structure change makes it unsafe to assert. A canvas that painted after the barrier would otherwise be reported as an artifact that never painted at all — a false accusation, which is the failure class the whole partial taxonomy exists to avoid.
-7. `partial:opaque_content` — single-snapshot claim: structure has opaque regions.
-8. `partial:external_resources` — single-snapshot claim: structure has external HTTP references.
-9. `partial:layout_unverified` — single-snapshot claim: visible SVG with zeroed viewBoxes.
-10. `ok`.
+6. `partial:empty_render` — TSX root emptiness, after instability and before other single-snapshot partials.
+7. `error` (declared-opaque, observed-zero) — the artifact declared opaque regions and none were seen.
+8. `partial:opaque_content` — single-snapshot claim: structure has opaque regions.
+9. `partial:external_resources` — single-snapshot claim: structure has external HTTP references.
+10. `partial:layout_unverified` — single-snapshot claim: visible SVG with zeroed viewBoxes.
+11. `ok`.
 
 The rule generalizing rows 4 and 6: a claim that depends on ONE observation
 loses to `partial:unstable`; a claim that holds regardless of when it was
@@ -68,7 +70,7 @@ mode 0700 — the canonical secret-bearing layout matches the DB file
 permissions.
 
 Tier 1 capture happens AFTER the verdict is derived so the
-`partial:layout_unverified`, `partial:opaque_content`, `partial:external_resources`, and `partial:unstable` screenshot mandates are honored. The runner
+`partial:layout_unverified`, `partial:opaque_content`, `partial:external_resources`, `partial:unstable`, and `partial:empty_render` screenshot mandates are honored. The runner
 measures the whole artifact, bounds each axis at 4096 pixels and the total at
 8,388,608 pixels, and encodes evidence under the 8 MiB cap. New captures are
 WebP; legacy PNG evidence remains readable and exportable. Before static
@@ -90,7 +92,21 @@ browser or network-namespace failure records a Tier 1 `error` verdict with its
 typed `tier1_*` code; it does not erase the Tier 0 verdict or turn visual
 read-back into `revision_not_found`.
 
+Tier 0 `ok` means the source passed structural checks; rendering is not
+verified. The TTY presenter says `structure checked · rendering not verified`
+and includes a visual read-back command. TSX Tier 0 reports `ok · compiled`.
+The JSON envelope is unchanged. A malformed Mermaid fence returns `error` with
+`mermaid_parse_error`, the parser message, and a zero-based `mermaid fence <i>`
+location.
+
 ## Observed fields and renderer expectations
+
+For Vega-Lite charts, Facet supplies 640×360 view defaults through
+`config.view` only when the spec omits `autosize`, `config.view`, and both
+top-level `width` and `height`. A supplied width or height is preserved while
+the other dimension receives its default. An authored `config.view` or
+`autosize` prevents defaulting. The composite-view defaults reach facet,
+concat, and repeat children; author sizing is not replaced.
 
 The canonical observed fields include `rendererRootSvgCount`, `graphCount`,
 `mermaidNodeCount`, `visibleSvgCount`, `opaqueRegionCount`, `viewBoxes`,

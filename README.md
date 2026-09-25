@@ -102,18 +102,19 @@ envelope only confirms transport, and the stored verdict can still have
 
 The gallery and CLI use the same wire enum, glyph, hue, and treatment.
 
-| enum (wire, verbatim)        | glyph | hue       | treatment                        |
-| ---------------------------- | ----- | --------- | -------------------------------- |
-| `ok`                         | `✓`   | `#c3e88d` | outline — proof, not celebration |
-| `error`                      | `✗`   | `#ff757f` | outline                          |
-| `partial:layout_unverified`  | `◐`   | `#ffc777` | outline; screenshot required     |
-| `partial:opaque_content`     | `◐`   | `#ffc777` | outline; screenshot required     |
-| `partial:external_resources` | `◐`   | `#ffc777` | outline; screenshot required     |
-| `partial:unstable`           | `◐`   | `#ffc777` | outline; screenshot required     |
-| `tampered`                   | `⊘`   | `#ff757f` | filled alarm badge               |
-| `timeout`                    | `◌`   | `#737aa2` | dim outline                      |
-| `shim_only`                  | `◇`   | `#737aa2` | dim outline                      |
-| `probe_only`                 | `◈`   | `#737aa2` | dim outline                      |
+| enum (wire, verbatim)        | glyph | hue       | treatment                           |
+| ---------------------------- | ----- | --------- | ----------------------------------- |
+| `ok`                         | `✓`   | `#c3e88d` | outline — proof, not celebration    |
+| `error`                      | `✗`   | `#ff757f` | outline                             |
+| `partial:layout_unverified`  | `◐`   | `#ffc777` | outline; screenshot required        |
+| `partial:opaque_content`     | `◐`   | `#ffc777` | outline; screenshot required        |
+| `partial:external_resources` | `◐`   | `#ffc777` | outline; screenshot required        |
+| `partial:unstable`           | `◐`   | `#ffc777` | outline; screenshot required        |
+| `partial:empty_render`       | `◐`   | `#ffc777` | empty TSX root; screenshot required |
+| `tampered`                   | `⊘`   | `#ff757f` | filled alarm badge                  |
+| `timeout`                    | `◌`   | `#737aa2` | dim outline                         |
+| `shim_only`                  | `◇`   | `#737aa2` | dim outline                         |
+| `probe_only`                 | `◈`   | `#737aa2` | dim outline                         |
 
 `partial:external_resources` means an artifact references external HTTPS images the no-egress verifier could not load. An `ok` verdict can still carry `Verdict.screenshotError.code: "screenshot_unavailable"` when whole-artifact capture cannot be produced; it records the limit without changing the validation result. `insecure:unvalidated` means level 3 intentionally skipped validation. A missing verdict is `UNVERIFIED` with no tier.
 
@@ -161,7 +162,7 @@ Facet's insecure mode is an explicit, boot-only opt-in (`FACET_INSECURE=1|2|3`) 
 
 ## MCP
 
-On harnesses with shell access, the CLI is the integration; the MCP adapter is for structured-tool-only environments. The npm package includes a stdio MCP adapter with five CLI-backed tools: publish, read-back, status, export, and a no-launch frame URL lookup. It requires Bun `1.4.0`. Register it with `bun add -g @legionworks/facet` followed by the bare `facet-mcp` command; `npx -p @legionworks/facet facet-mcp` is the no-install alternative. See the [MCP reference](docs/reference/mcp.md) for OpenCode, Claude Code, and Codex registration.
+On harnesses with shell access, the CLI is the integration; the MCP adapter is for structured-tool-only environments. The npm package includes six CLI-backed tools: `facet_create`, `facet_publish`, `facet_read_back`, `facet_status`, `facet_export`, and `facet_open_url`. It requires Bun `1.4.0`. Register it with `bun add -g @legionworks/facet` followed by the bare `facet-mcp` command; `npx -p @legionworks/facet facet-mcp` is the no-install alternative. See the [MCP reference](docs/reference/mcp.md) for OpenCode, Claude Code, and Codex registration.
 
 ## Documentation
 

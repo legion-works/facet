@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { RenderStatusSchema } from "../../src/shared/contracts/validation";
 
 const repositoryRoot = join(import.meta.dir, "../..");
 
@@ -107,8 +108,19 @@ describe("gallery evidence documentation", () => {
     expect(cli).toMatch(/exits 1/i);
   });
 
-  test("MCP reference documents the five adapter tools", () => {
+  test("MCP reference documents every adapter tool", () => {
     const mcp = readReference("mcp.md");
+    const readme = readRepositoryFile("README.md");
+    const adapter = readRepositoryFile("src/harness-adapters/mcp/server.ts");
+    const toolNames = [...adapter.matchAll(/^\s{4}(facet_[a-z_]+): defineTool\(/gm)].map(
+      ([, name]) => name!,
+    );
+    expect(toolNames).toHaveLength(6);
+
+    for (const name of toolNames) {
+      expect(mcp, `missing ${name} in MCP reference`).toContain(name);
+      expect(readme, `missing ${name} in README`).toContain(name);
+    }
 
     expect(mcp).toMatch(
       /facet_publish[\s\S]*facet_read_back[\s\S]*facet_status[\s\S]*facet_export[\s\S]*facet_open_url/i,
@@ -120,6 +132,19 @@ describe("gallery evidence documentation", () => {
     expect(mcp).toMatch(/facet_open_url[\s\S]*always adds `--no-launch`/i);
     expect(mcp).toMatch(/shell access, the CLI is the integration/i);
     assertTableRowsHaveNoUnescapedCellPipes(mcp);
+  });
+
+  test("every render status is documented in validation reference and skill", () => {
+    const validation = readReference("validation.md");
+    const skill = readRepositoryFile("skills/facet/SKILL.md");
+
+    for (const status of RenderStatusSchema.options) {
+      expect(
+        validation.split("\n").some((line) => line.startsWith(`| \`${status}\``)),
+        `missing ${status} from validation status table`,
+      ).toBe(true);
+      expect(skill, `missing ${status} in Facet skill`).toContain(`\`${status}\``);
+    }
   });
 
   test("distribution documentation pins the Bun runtime and install forms", () => {

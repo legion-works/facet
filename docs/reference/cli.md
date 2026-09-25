@@ -96,6 +96,12 @@ available without invoking the desktop launcher, and a launcher failure reports
 defaults to `svg`; `canvas` is valid only for chart artifacts. An invalid
 renderer value is a usage error and exits 64.
 
+For charts, Facet defaults unspecified views to 640×360 through
+`config.view`. These defaults apply only when the spec has no `autosize`, no
+`config.view`, and does not set both top-level `width` and `height`. An authored
+dimension is preserved; composite facet, concat, and repeat views receive the
+defaults through their child view config.
+
 `publish --type html` publishes a static, script-free HTML artifact.
 See [HTML reference](html.md) for the static / script-free contract,
 the denied element and attribute set, the vendored class vocabulary,
