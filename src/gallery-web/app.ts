@@ -1091,6 +1091,36 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   let removeThemePreferenceListener: () => void = noOp;
   let generation = 0;
   let activeFrame: CreatedArtifactFrame | null = null;
+  let removeInteractionListener: () => void = noOp;
+  const activateInteractionSignal = (frame: CreatedArtifactFrame): void => {
+    removeInteractionListener();
+    const badge = document.getElementById("facet-verdict");
+    if (badge !== null) delete badge.dataset.interactionError;
+    updateGalleryStatus("displayed");
+    const frameWindow = (frame.element.raw as HTMLIFrameElement).contentWindow;
+    if (frameWindow === null || typeof frameWindow.addEventListener !== "function") return;
+    const markFailure = (): void => {
+      if (expired || activeFrame !== frame || frame.renderResult === null) return;
+      if (badge !== null) badge.dataset.interactionError = "true";
+      updateGalleryStatus("displayed · runtime error during interaction");
+    };
+    frameWindow.addEventListener("error", markFailure, true);
+    frameWindow.addEventListener("unhandledrejection", markFailure, true);
+    const frameDocument = (frame.element.raw as HTMLIFrameElement).contentDocument;
+    const observer =
+      frameDocument == null || typeof MutationObserver !== "function"
+        ? null
+        : new MutationObserver(() => {
+            if (frameDocument.querySelector("[data-facet-error]")) markFailure();
+          });
+    if (frameDocument !== null)
+      observer?.observe(frameDocument, { childList: true, subtree: true });
+    removeInteractionListener = (): void => {
+      frameWindow.removeEventListener("error", markFailure, true);
+      frameWindow.removeEventListener("unhandledrejection", markFailure, true);
+      observer?.disconnect();
+    };
+  };
   const expireSession = (): void => {
     if (expired) return;
     generation += 1;
@@ -1100,6 +1130,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     exportMenu?.sync();
     activeFrame?.renderResult?.setGestureMode("native");
     swaps?.close();
+    removeInteractionListener();
     removeThemePreferenceListener();
     clearSession(window.sessionStorage);
     renderSessionExpired(
@@ -1237,6 +1268,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   updateGalleryFavicon(source.verdict?.status ?? "unverified");
   updateGalleryVerdict(source.verdict ?? null);
   updateGalleryStatus("displayed");
+  activateInteractionSignal(current);
   updateLiveState("live");
   const themeToggle = document.getElementById("facet-theme-toggle");
   const updateThemeToggle = (mode: GalleryThemeMode): void => {
@@ -1295,6 +1327,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     if (!canCommit() || result.cancelled || result.failedNewFrameReady) return;
     current = next;
     activeFrame = next;
+    activateInteractionSignal(next);
     commitTheme(nextMode, nextResolvedTheme);
     syncPanZoomToggle();
     syncZoomButtons();
@@ -1373,6 +1406,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
           if (!result.failedNewFrameReady) {
             current = frame;
             activeFrame = frame;
+            activateInteractionSignal(frame);
             source = revision;
             commitTheme(revisionThemeMode, revisionTheme);
             syncPanZoomToggle();
@@ -1439,6 +1473,9 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       updateSwapBar("start");
       updateGalleryFavicon("unverified");
       updateGalleryVerdict(null);
+      removeInteractionListener();
+      const badge = document.getElementById("facet-verdict");
+      if (badge !== null) delete badge.dataset.interactionError;
       swaps?.enqueue({ kind: "revision", ...event });
     },
     onClose: (event) => {
@@ -1472,6 +1509,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     // releases the lease when the TTL fires, which is the only path
     // that lets "refresh the tab" reach the same displayed canvas.
     stream.close();
+    removeInteractionListener();
     removeThemePreferenceListener();
     if (zoomButtonPoll !== undefined) clearInterval(zoomButtonPoll);
   };

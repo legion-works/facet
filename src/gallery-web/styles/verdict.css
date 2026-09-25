@@ -57,6 +57,16 @@
   content: "✓";
 }
 
+.facet-verdict[data-interaction-error="true"] {
+  border-color: var(--facet-fail);
+  box-shadow: var(--facet-glow-danger);
+}
+.facet-verdict[data-interaction-error="true"]::after {
+  content: "✗ runtime";
+  color: var(--facet-fail);
+  font-weight: 700;
+}
+
 .facet-verdict[data-status="error"] {
   border-color: var(--facet-fail-border);
   background: var(--facet-fail-fill);
