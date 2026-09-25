@@ -8,6 +8,7 @@ import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { galleryBrowser } from "../helpers/gallery-live";
+import { selectGalleryTheme } from "../helpers/gallery-theme";
 
 interface GalleryShellState {
   readonly status: string;
@@ -113,33 +114,9 @@ test("gallery refresh survives without re-issuing the bootstrap token", async ()
     expect(before.revision).toContain(published.revisionSha.slice(0, 7));
     expect(before.fragment).toBe("");
 
-    const selectedTheme = (await target.session.send("Runtime.evaluate", {
-      returnByValue: true,
-      awaitPromise: true,
-      expression: `new Promise((resolve, reject) => {
-        const toggle = document.getElementById('facet-theme-toggle');
-        if (toggle === null) {
-          reject(new Error('theme toggle missing'));
-          return;
-        }
-        toggle.click();
-        const deadline = Date.now() + 7000;
-        const inspect = () => {
-          const session = JSON.parse(window.sessionStorage.getItem('facet:gallery-session') ?? '{}');
-          if (document.documentElement.dataset.theme === 'dark' && session.theme === 'dark') {
-            resolve('dark');
-            return;
-          }
-          if (Date.now() >= deadline) {
-            reject(new Error('theme toggle did not settle'));
-            return;
-          }
-          setTimeout(inspect, 25);
-        };
-        inspect();
-      })`,
-    })) as { result?: { value?: string } };
-    expect(selectedTheme.result?.value).toBe("dark");
+    expect(await selectGalleryTheme(target.session, "dark", { verifySessionStorage: true })).toBe(
+      "dark",
+    );
 
     await target.session.send("Page.navigate", {
       url: `${baseUrl}${galleryPath}`,

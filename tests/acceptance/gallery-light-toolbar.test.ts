@@ -9,6 +9,7 @@ import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
+import { selectGalleryTheme } from "../helpers/gallery-theme";
 
 test("gallery toolbar labels paint in light and dark themes", async () => {
   const envDir = mkdtempSync(join(tmpdir(), "facet-gallery-toolbar-"));
@@ -38,23 +39,7 @@ test("gallery toolbar labels paint in light and dark themes", async () => {
           slug: `gallery-light-toolbar-${theme}`,
         },
       );
-      const selectedTheme = (await target.session.send("Runtime.evaluate", {
-        returnByValue: true,
-        awaitPromise: true,
-        expression: `new Promise((resolve, reject) => {
-          const toggle = document.getElementById('facet-theme-toggle');
-          if (toggle === null) return reject(new Error('theme toggle missing'));
-          for (let index = 0; index < ${theme === "dark" ? 1 : 2}; index += 1) toggle.click();
-          const deadline = Date.now() + 7000;
-          const inspect = () => {
-            if (document.documentElement.dataset.theme === ${JSON.stringify(theme)}) return resolve(document.documentElement.dataset.theme);
-            if (Date.now() >= deadline) return reject(new Error('theme toggle did not settle'));
-            setTimeout(inspect, 25);
-          };
-          inspect();
-        })`,
-      })) as { result?: { value?: string } };
-      expect(selectedTheme.result?.value).toBe(theme);
+      expect(await selectGalleryTheme(target.session, theme)).toBe(theme);
       // The buttons animate `color` for 120ms after a theme switch; read styles and capture only after it settles.
       await target.session.send("Runtime.evaluate", {
         awaitPromise: true,

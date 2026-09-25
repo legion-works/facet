@@ -3,6 +3,7 @@ import { publishFixture, readBackFixture } from "../helpers/facet-testkit";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseViewBox } from "../../src/gallery-web/frame/frame-payload";
 
 const base = {
   mark: "bar",
@@ -49,7 +50,7 @@ test("dimensionless charts get a readable Tier 1 viewBox while authored width st
       });
       expect(
         verdict.observed.viewBoxes?.some((viewBox) => {
-          const width = /^\s*\S+\s+\S+\s+(\S+)/.exec(viewBox)?.[1];
+          const width = parseViewBox(viewBox)?.width;
           return (
             width !== undefined && Number(width) >= item.minWidth && Number(width) <= item.maxWidth
           );

@@ -9,6 +9,7 @@ import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { artifactWorld, galleryBrowser, navigateToArtifact } from "../helpers/gallery-live";
 import { galleryDataTheme } from "../../src/gallery-web/theme";
+import { selectGalleryTheme } from "../helpers/gallery-theme";
 
 /** Shared color-contrast math (WCAG relative-luminance ratio) evaluated inside the artifact's isolated world. */
 const CONTRAST_HELPERS = `
@@ -90,32 +91,7 @@ test("gallery HTML cards keep readable text in both resolved themes", async () =
         undefined,
         { slug: `gallery-contrast-release-ledger-${theme}` },
       );
-      const selectedTheme = (await target.session.send("Runtime.evaluate", {
-        returnByValue: true,
-        awaitPromise: true,
-        expression: `new Promise((resolve, reject) => {
-          const toggle = document.getElementById('facet-theme-toggle');
-          if (toggle === null) {
-            reject(new Error('theme toggle missing'));
-            return;
-          }
-          for (let index = 0; index < ${theme === "dark" ? 1 : 2}; index += 1) toggle.click();
-          const deadline = Date.now() + 7000;
-          const inspect = () => {
-            if (document.documentElement.dataset.theme === ${JSON.stringify(theme)}) {
-              resolve(document.documentElement.dataset.theme);
-              return;
-            }
-            if (Date.now() >= deadline) {
-              reject(new Error('theme toggle did not settle'));
-              return;
-            }
-            setTimeout(inspect, 25);
-          };
-          inspect();
-        })`,
-      })) as { result?: { value?: string } };
-      expect(selectedTheme.result?.value).toBe(theme);
+      expect(await selectGalleryTheme(target.session, theme)).toBe(theme);
       const shellColors = (await target.session.send("Runtime.evaluate", {
         returnByValue: true,
         expression: `(() => {
