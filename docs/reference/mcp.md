@@ -11,9 +11,14 @@ bun add -g @legionworks/facet
 facet-mcp
 ```
 
-Releases through `1.9.0` ship a `facet-mcp` bin that cannot launch directly. Use the next release or newer. A local package built with this fix answered JSON-RPC `initialize` after a global install. The `npx -p @legionworks/facet facet-mcp` path still needs verification against that published release before it is recommended.
+Releases through `1.9.0` ship a `facet-mcp` bin that cannot launch: its entry file has no `#!/usr/bin/env bun` line. Use `1.10.0` or newer. With `1.10.0` on Bun `1.4.0`, each of these answered JSON-RPC `initialize` and listed six tools:
 
-Do not use `bunx -p @legionworks/facet facet-mcp` as the registration command without verifying the local Bun release. It exited immediately with status 1 on Bun `1.3.14` on the measured host; the same form also exited with status 1 under the available scratch Bun `1.4.0` runtime. These observations are environment-specific, so this caveat is not a universal claim about every Bun release or installation.
+- `bun add -g @legionworks/facet`, then `facet-mcp`
+- `npm i -g @legionworks/facet`, then `facet-mcp`
+- `npx -p @legionworks/facet facet-mcp`
+- `bunx -p @legionworks/facet facet-mcp`
+
+Run `npx -p` from outside a Facet checkout. Inside one, npx resolves the local project instead of the published package and fails with `facet-mcp: command not found`.
 
 The adapter resolves the CLI in this order: `FACET_CLI`, then `bun <adapter-relative-repository>/src/cli/main.ts`, then `facet` on `PATH`. Set `FACET_CLI` to an absolute CLI executable when the adapter should use another installation.
 
