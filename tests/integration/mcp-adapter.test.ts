@@ -3,7 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { FACET_VERSION } from "../../src/shared/version";
 import {
@@ -232,6 +232,31 @@ describe("facet MCP adapter", () => {
     }
   });
 
+  test("reports the resolved directory when relative MCP export output cannot be created", async () => {
+    const home = newHome();
+    const blocked = join(home, "missing-export");
+    const outDir = relative(ROOT, join(blocked, "export"));
+    mkdirSync(blocked, { recursive: true });
+    chmodSync(blocked, 0o500);
+    const client = await connect(home);
+    try {
+      const result = await client.callTool({
+        name: "facet_export",
+        arguments: { artifactId: "missing-artifact", outDir },
+      });
+      expect(result.isError).toBe(true);
+      const envelope = JSON.parse(textContent(result)) as {
+        error?: { code?: string; details?: { out?: string } };
+      };
+      expect(envelope.error?.code).toBe("output_unwritable");
+      expect(isAbsolute(envelope.error?.details?.out ?? "")).toBe(true);
+      expect(envelope.error?.details?.out).toBe(resolve(ROOT, outDir));
+    } finally {
+      chmodSync(blocked, 0o700);
+      await client.close();
+    }
+  });
+
   test("documents and enforces exactly one inline or file publish source", async () => {
     const home = newHome();
     const artifactId = await createArtifact(home);
@@ -277,6 +302,81 @@ describe("facet MCP adapter", () => {
       };
       expect(envelope.ok).toBe(true);
       expect(envelope.data?.verdict?.status).toBeDefined();
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("relays a malformed Mermaid fence as a stored Tier 0 verdict, not a tool error", async () => {
+    const home = newHome();
+    const client = await connect(home);
+    try {
+      const created = await client.callTool({
+        name: "facet_create",
+        arguments: { projectId: "mcp", slug: "bad-mermaid", title: "Bad Mermaid" },
+      });
+      const artifactId = (
+        JSON.parse(textContent(created)) as {
+          data?: { artifact?: { id?: string } };
+        }
+      ).data?.artifact?.id;
+      expect(artifactId).toBeString();
+      const result = await client.callTool({
+        name: "facet_publish",
+        arguments: {
+          artifactId,
+          type: "markdown",
+          sourceText: "# Diagram\n\n```mermaid\nnot a diagram %%%\n```\n",
+        },
+      });
+      expect(result.isError).toBe(false);
+      expect(JSON.parse(textContent(result))).toMatchObject({
+        ok: true,
+        data: {
+          verdict: {
+            status: "error",
+            observed: {
+              discriminativeErrors: [{ code: "mermaid_parse_error", location: "mermaid fence 0" }],
+            },
+          },
+        },
+      });
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("every registered tool rejects extra arguments with a typed invalid_request", async () => {
+    const home = newHome();
+    const client = await connect(home);
+    try {
+      const tools = await client.listTools();
+      const minimalByTool: Record<string, Record<string, unknown>> = {
+        facet_create: { projectId: "mcp", slug: "extra", title: "Extra" },
+        facet_export: { artifactId: "missing-artifact", outDir: home },
+        facet_open_url: { artifactId: "missing-artifact" },
+        facet_publish: {
+          artifactId: "missing-artifact",
+          type: "markdown",
+          sourceText: "# Extra",
+        },
+        facet_read_back: { artifactId: "missing-artifact" },
+        facet_status: {},
+      };
+      expect(Object.keys(minimalByTool).toSorted()).toEqual(
+        tools.tools.map((tool) => tool.name).toSorted(),
+      );
+      for (const tool of tools.tools) {
+        const result = await client.callTool({
+          name: tool.name,
+          arguments: { ...minimalByTool[tool.name], extraField: 1 },
+        });
+        expect(result.isError, tool.name).toBe(true);
+        expect(JSON.parse(textContent(result)), tool.name).toMatchObject({
+          ok: false,
+          error: { code: "invalid_request", retryable: false },
+        });
+      }
     } finally {
       await client.close();
     }

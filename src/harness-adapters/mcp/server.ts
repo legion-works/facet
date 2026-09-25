@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
@@ -47,7 +48,7 @@ function errorEnvelope(cause: unknown): FacetEnvelope<never> {
 function toolResult(envelope: FacetEnvelope<unknown>) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(envelope) }],
-    ...(envelope.ok ? {} : { isError: true }),
+    isError: !envelope.ok,
   };
 }
 
@@ -120,20 +121,21 @@ export function createFacetMcpServer(): Server {
       ExportToolSchema,
       "Export source or stored render evidence into outDir. Check envelope.ok for transport success; a successful publish verdict remains a separate data.verdict.status decision.",
       async (input) => {
+        const outDir = resolve(input.outDir);
         try {
-          mkdirSync(input.outDir, { recursive: true });
+          mkdirSync(outDir, { recursive: true });
         } catch (cause) {
           throw new FacetBridgeError(
             {
               code: "output_unwritable",
-              message: `Cannot write export output: ${input.outDir}`,
+              message: `Cannot write export output: ${outDir}`,
               retryable: false,
-              details: { out: input.outDir },
+              details: { out: outDir },
             },
             cause,
           );
         }
-        return invoke(buildFacetArgs("export", input), { cwd: input.outDir });
+        return invoke(buildFacetArgs("export", input), { cwd: outDir });
       },
     ),
     facet_open_url: defineTool(
