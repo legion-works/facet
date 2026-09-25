@@ -107,6 +107,11 @@ service.
 |   `2` | Removes Tier 0 and Tier 1 network-namespace isolation. Real validators still run.             |
 |   `3` | Performs no validation and records `insecure:unvalidated`.                                    |
 
+Level 3 skips publish-time validation, not an explicit visual read-back.
+`facet read-back --tier visual` still runs Tier 1, and that verdict carries the
+insecure marker. Evidence consumers must check the marker, not infer trust from
+`status` alone.
+
 Levels compose as a forced floor: the effective level is never below the
 operator's `FACET_INSECURE` value. `FACET_INSECURE_AUTO=1` may raise a level when
 startup probes fail, but it never selects level 3. With auto mode off, hard

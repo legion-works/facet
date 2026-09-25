@@ -29,6 +29,15 @@ and must not call `createRoot` or self-mount.
 
 ## Imports and styling
 
+Artifacts cannot fetch data (`connect-src 'none'`). Generate source with the
+data embedded, then publish it. For repeated updates, regenerate the file and
+use `facet publish --watch` to publish each changed version:
+
+```sh
+node -e 'const data = [{label:"A", value:3}]; require("node:fs").writeFileSync("report.tsx", `export default function Report(){ return <pre>{JSON.stringify(${JSON.stringify(data)})}</pre> }`)'
+facet publish --artifact-id <id> --type tsx --file report.tsx
+```
+
 The compiler accepts only vendored modules: `react`, `react-dom`,
 `react-dom/client`, `react/jsx-runtime`, and `react/jsx-dev-runtime`.
 Pinned versions are React and React DOM `19.2.8`, TypeScript `5.7.3`.
@@ -61,6 +70,11 @@ verification CSP, which remains a validation-only concern. The artifact code
 has no host port or service capability.
 
 ## Storage and export
+
+The TSX verifier loads the vendored `artifact.css` used by the gallery frame.
+A runtime error after initial render, such as one thrown by a click handler,
+appears as a gallery signal in an `aria-live="polite"` status region. It does
+not rewrite the immutable verdict and clears on revision swap or theme change.
 
 Revision source remains immutable. Compilation creates derived bytes recorded at
 the run's `compiled_path`; TSX source export writes the original `.tsx` bytes.

@@ -84,6 +84,10 @@ its sidecar is not a valid export.
 The sidecar describes the stored verdict. Export does not approve, promote,
 revalidate, or otherwise change the artifact.
 
+Evidence consumers must inspect `verdict.insecure` before treating a result as
+validated. In particular, an explicit Tier 1 run under insecure level 3 carries
+the insecure marker even when its status is not `insecure:unvalidated`.
+
 ## `evidence_unavailable`
 
 Render export returns typed `evidence_unavailable` when the selected revision

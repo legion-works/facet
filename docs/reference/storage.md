@@ -81,6 +81,10 @@ artifact and unlinks older screenshot and console files. Rows marked
 `retained = 1` are exempt. Cleanup is best-effort; the database row remains the
 authority and the orphan sweep can recover from stale files.
 
+Facet targets one operator on a local machine. The evidence bound is the last
+`EVIDENCE_LAST_N_PER_ARTIFACT` Tier 1 runs per artifact, plus any retained runs.
+There is no quota; retained evidence can grow without a fixed limit.
+
 ## Templates
 
 A template records one immutable revision ID. Later publication to the source

@@ -39,10 +39,19 @@ Authoritative automated read-back remains the pinned Tier 1 browser. Use
 verification are decoupled: a user's browser displays the sandboxed structured
 artifact, while the pinned browser supplies the automated result.
 
+Facet targets one operator on a local machine. It keeps the last
+`EVIDENCE_LAST_N_PER_ARTIFACT` Tier 1 runs per artifact plus retained runs. There
+is no evidence quota.
+
 ## Gallery and evidence
 
 Gallery display defaults to the system theme. The dark/light toggle persists
 per tab and session; Tier 1 remains dark for deterministic parity.
+
+Runtime errors after a gallery artifact's initial render appear in a status
+region announced through `aria-live="polite"`. The signal does not alter the
+stored verdict and clears when the revision changes or the gallery theme
+changes.
 
 New render evidence is WebP; legacy evidence remains PNG. File-mode export
 writes the artifact and sidecar and reports their paths and sizes. Use
