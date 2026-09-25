@@ -493,18 +493,76 @@ describe("Mermaid renderer", () => {
 describe("chart renderer — loader disabled, zero marks is an error", () => {
   test("chart dimensions default only when omitted and authored sizing remains untouched", () => {
     expect(chart.withFacetChartDimensions({ mark: "bar" })).toMatchObject({
-      width: 640,
-      height: 360,
+      config: {
+        view: {
+          continuousWidth: 640,
+          continuousHeight: 360,
+          discreteWidth: 640,
+          discreteHeight: 360,
+        },
+      },
     });
     expect(chart.withFacetChartDimensions({ mark: "bar", width: 300 })).toMatchObject({
       width: 300,
-      height: 360,
+      config: {
+        view: {
+          continuousHeight: 360,
+          discreteHeight: 360,
+        },
+      },
     });
     const autosized = { mark: "bar", autosize: "fit" };
     const viewed = { mark: "bar", config: { view: { continuousWidth: 300 } } };
     expect(chart.withFacetChartDimensions(autosized)).toBe(autosized);
     expect(chart.withFacetChartDimensions(viewed)).toBe(viewed);
   });
+
+  test.each(["facet", "hconcat", "repeat"] as const)(
+    "%s views inherit chart dimensions through config.view",
+    (composition) => {
+      const spec =
+        composition === "facet"
+          ? { mark: "bar", facet: { column: { field: "category", type: "nominal" } }, spec: {} }
+          : composition === "hconcat"
+            ? { hconcat: [{ mark: "bar" }, { mark: "line" }] }
+            : { repeat: { column: ["value"] }, spec: { mark: "bar" } };
+      expect(chart.withFacetChartDimensions(spec)).toMatchObject({
+        config: {
+          view: {
+            continuousWidth: 640,
+            continuousHeight: 360,
+            discreteWidth: 640,
+            discreteHeight: 360,
+          },
+        },
+      });
+    },
+  );
+
+  test("canvas charts use the omitted-dimension defaults", async () => {
+    const container = freshContainer();
+    const spec = {
+      mark: "bar",
+      data: {
+        values: [
+          { category: "A", value: 1 },
+          { category: "B", value: 2 },
+        ],
+      },
+      encoding: {
+        x: { field: "category", type: "nominal" },
+        y: { field: "value", type: "quantitative" },
+      },
+    };
+    await chart.renderChart(
+      { container, theme: "dark" },
+      new TextEncoder().encode(JSON.stringify(spec)),
+      "canvas",
+    );
+    expect(
+      (container.querySelector("canvas") as HTMLCanvasElement | null)?.width,
+    ).toBeGreaterThanOrEqual(640);
+  }, 20_000);
 
   test("Facet defaults fill missing config while authored config wins", () => {
     const source = {

@@ -137,10 +137,24 @@ export function withFacetChartDimensions(spec: unknown): unknown {
     (typeof config === "object" && config !== null && !Array.isArray(config) && "view" in config)
   )
     return spec;
+  if ("width" in source && "height" in source) return spec;
+  const authoredConfig =
+    typeof config === "object" && config !== null && !Array.isArray(config)
+      ? (config as Readonly<Record<string, unknown>>)
+      : {};
+  const viewDefaults = {
+    ...(!("width" in source) ? { continuousWidth: 640, discreteWidth: 640 } : {}),
+    ...(!("height" in source) ? { continuousHeight: 360, discreteHeight: 360 } : {}),
+  };
+  // Composite views ignore top-level dimensions; config.view reaches each child view. An
+  // authored config.view wins because its sizing is an explicit author choice. The 640×360
+  // plot defaults leave charts readable in the 1280×800 verifier viewport.
   return {
     ...source,
-    width: "width" in source ? source.width : 640,
-    height: "height" in source ? source.height : 360,
+    config: {
+      ...authoredConfig,
+      view: viewDefaults,
+    },
   };
 }
 

@@ -22,8 +22,16 @@ test("dimensionless charts get a readable Tier 1 viewBox while authored width st
   const directory = mkdtempSync(join(tmpdir(), "facet-chart-size-"));
   try {
     const cases = [
-      { name: "default", spec: base, minWidth: 600, maxWidth: Number.POSITIVE_INFINITY },
+      { name: "default", spec: base, minWidth: 600, maxWidth: 800 },
       { name: "explicit", spec: { ...base, width: 300 }, minWidth: 0, maxWidth: 400 },
+      {
+        name: "hconcat",
+        spec: {
+          hconcat: [base, base],
+        },
+        minWidth: 1200,
+        maxWidth: 1600,
+      },
     ];
     for (const item of cases) {
       const fixturePath = join(directory, `${item.name}.vl.json`);
