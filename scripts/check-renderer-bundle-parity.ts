@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
-import { basename, join } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join, relative } from "node:path";
 
 import { frameBundlePlugins } from "../src/shared/build/frame-bundle-plugins";
 import { ARTIFACT_TYPES, type ArtifactType } from "../src/shared/contracts/artifact-types";
@@ -22,6 +24,13 @@ const EXPECTED_INITIAL_RENDERERS: Readonly<Record<ArtifactType, readonly string[
   chart: ["chart.ts", "svg.ts"],
   html: ["html.ts"],
   tsx: ["html.ts", "tsx.ts"],
+};
+
+// The gallery loads artifact.css through frame-html's link for HTML/TSX;
+// the verifier imports that same stylesheet into its inline browser bundle.
+const EXTERNAL_GALLERY_STYLESHEETS: Readonly<Partial<Record<ArtifactType, readonly string[]>>> = {
+  html: ["src/gallery-web/frame/styles/artifact.css"],
+  tsx: ["src/gallery-web/frame/styles/artifact.css"],
 };
 
 interface BuildMetafileOutput {
@@ -53,11 +62,23 @@ function rendererNames(inputs: readonly string[]): string[] {
     .toSorted();
 }
 
+function stylesheetPaths(inputs: readonly string[]): string[] {
+  return inputs
+    .filter((path) => path.endsWith(".css"))
+    .map((path) => (path.startsWith(`${REPO_ROOT}/`) ? relative(REPO_ROOT, path) : path))
+    .toSorted();
+}
+
 async function rendererSources(
   entry: string,
   splitting: boolean,
   followDynamicImports: boolean,
-): Promise<{ readonly all: string[]; readonly initial: string[]; readonly sourcePaths: string[] }> {
+): Promise<{
+  readonly all: string[];
+  readonly initial: string[];
+  readonly sourcePaths: string[];
+  readonly stylesheets: string[];
+}> {
   const result = await Bun.build({
     entrypoints: [entry],
     target: "browser",
@@ -74,7 +95,8 @@ async function rendererSources(
   const metafile = result.metafile;
   const sourcePaths = Object.keys(metafile?.inputs ?? {});
   const all = rendererNames(sourcePaths);
-  if (!splitting || metafile === undefined) return { all, initial: all, sourcePaths };
+  const stylesheets = stylesheetPaths(sourcePaths);
+  if (!splitting || metafile === undefined) return { all, initial: all, sourcePaths, stylesheets };
 
   const outputs = metafile.outputs as Readonly<Record<string, BuildMetafileOutput>>;
   const entryOutput = Object.entries(outputs).find(([, output]) => output.entryPoint !== undefined);
@@ -94,7 +116,23 @@ async function rendererSources(
       if (imported.kind === "import-statement" || followDynamicImports) pending.push(imported.path);
     }
   }
-  return { all, initial: rendererNames([...initialInputs]), sourcePaths };
+  return { all, initial: rendererNames([...initialInputs]), sourcePaths, stylesheets };
+}
+
+function assertStylesheetParity(
+  artifactType: ArtifactType,
+  gallery: readonly string[],
+  verifier: readonly string[],
+): void {
+  const galleryWithExternal = [
+    ...gallery,
+    ...(EXTERNAL_GALLERY_STYLESHEETS[artifactType] ?? []),
+  ].toSorted();
+  if (JSON.stringify(galleryWithExternal) !== JSON.stringify(verifier)) {
+    throw new Error(
+      `stylesheet bundle parity mismatch for ${artifactType}: gallery=${JSON.stringify(galleryWithExternal)} verifier=${JSON.stringify(verifier)}`,
+    );
+  }
 }
 
 function assertLegacyBundleIsolation(
@@ -143,20 +181,38 @@ for (const artifactType of ARTIFACT_TYPES) {
     true,
     process.env.FACET_TEST_RENDERER_STATIC_MUTATION === artifactType,
   );
-  const verifier = await rendererSources(
-    join(
-      REPO_ROOT,
-      "src",
-      "validation",
-      "tier1",
-      "entries",
-      `${verifierEntryType(artifactType)}.ts`,
-    ),
-    false,
-    false,
+  const verifierEntry = join(
+    REPO_ROOT,
+    "src",
+    "validation",
+    "tier1",
+    "entries",
+    `${verifierEntryType(artifactType)}.ts`,
   );
+  const cssMutationDir =
+    process.env.FACET_TEST_RENDERER_CSS_MUTATION === artifactType
+      ? mkdtempSync(join(tmpdir(), "facet-renderer-css-parity-"))
+      : undefined;
+  let verifier: Awaited<ReturnType<typeof rendererSources>>;
+  try {
+    if (cssMutationDir !== undefined) {
+      const mutantEntry = join(cssMutationDir, `${artifactType}.ts`);
+      writeFileSync(
+        mutantEntry,
+        `import ${JSON.stringify(verifierEntry)};\nimport ${JSON.stringify(join(REPO_ROOT, "src/gallery-web/frame/styles/frame.css"))};\n`,
+      );
+    }
+    verifier = await rendererSources(
+      cssMutationDir === undefined ? verifierEntry : join(cssMutationDir, `${artifactType}.ts`),
+      false,
+      false,
+    );
+  } finally {
+    if (cssMutationDir !== undefined) rmSync(cssMutationDir, { recursive: true, force: true });
+  }
   const expected = [...EXPECTED_RENDERERS[artifactType]].toSorted();
   assertEqualSets(artifactType, expected, gallery.all, verifier.all);
+  assertStylesheetParity(artifactType, gallery.stylesheets, verifier.stylesheets);
   assertLegacyBundleIsolation(artifactType, gallery, verifier);
   const expectedInitial = [...EXPECTED_INITIAL_RENDERERS[artifactType]].toSorted();
   if (JSON.stringify(gallery.initial) !== JSON.stringify(expectedInitial)) {

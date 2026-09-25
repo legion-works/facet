@@ -8,6 +8,7 @@ async function runParityCheck(
   options: {
     readonly parityMutation?: string;
     readonly staticMutation?: string;
+    readonly cssMutation?: string;
   } = {},
 ): Promise<{
   readonly exitCode: number;
@@ -24,6 +25,9 @@ async function runParityCheck(
       ...(options.staticMutation === undefined
         ? {}
         : { FACET_TEST_RENDERER_STATIC_MUTATION: options.staticMutation }),
+      ...(options.cssMutation === undefined
+        ? {}
+        : { FACET_TEST_RENDERER_CSS_MUTATION: options.cssMutation }),
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -61,5 +65,11 @@ describe("gallery and Tier 1 renderer bundle parity", () => {
     const result = await runParityCheck({ staticMutation: "markdown" });
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("initial renderer load mismatch for markdown");
+  });
+
+  test("the check turns red when a verifier entry imports an extra frame stylesheet", async () => {
+    const result = await runParityCheck({ cssMutation: "mermaid" });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("stylesheet bundle parity mismatch for mermaid");
   });
 });
