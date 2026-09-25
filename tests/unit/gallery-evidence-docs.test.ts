@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { PROMOTION_GATE } from "../../src/shared/contracts/promotion";
 import { RenderStatusSchema } from "../../src/shared/contracts/validation";
 
 const repositoryRoot = join(import.meta.dir, "../..");
@@ -99,6 +100,19 @@ describe("gallery evidence documentation", () => {
     expect(cli).toMatch(/FACET_PROMOTE_TOKEN[\s\S]*FACET_HOME\/secrets\/promote\.token/is);
     expect(cli).toMatch(/watch[\s\S]*NDJSON|NDJSON[\s\S]*watch/i);
     expect(cli).toMatch(/duplicate_revision[\s\S]*continues/i);
+  });
+
+  test("CLI promotion refusal description covers every gate-refused status", () => {
+    const cli = readReference("cli.md");
+    const refusalDescription = cli.match(
+      /The gate refuses ([\s\S]*?)\.\s+Other Tier 1 statuses/,
+    )?.[1];
+    expect(refusalDescription).toBeDefined();
+
+    for (const [status, disposition] of Object.entries(PROMOTION_GATE)) {
+      if (disposition !== "refuse") continue;
+      expect(refusalDescription, `missing refused status ${status}`).toContain(`\`${status}\``);
+    }
   });
 
   test("CLI reference documents doctor", () => {

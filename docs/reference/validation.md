@@ -107,6 +107,10 @@ The JSON envelope is unchanged. A malformed Mermaid fence returns `error` with
 `mermaid_parse_error`, the parser message, and a zero-based `mermaid fence <i>`
 location.
 
+Tier 0 grammar-checks Mermaid fences but does not sanitize Mermaid label HTML;
+it never renders a diagram. Sanitization happens in Tier 1, when Mermaid runs
+in the real browser.
+
 ## Observed fields and renderer expectations
 
 For Vega-Lite charts, Facet supplies 640×360 view defaults through
