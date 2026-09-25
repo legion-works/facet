@@ -74,6 +74,79 @@ const document = {
 
 const childFrame = { frameId: "child-frame", url: "about:srcdoc" } as const;
 
+test("both protocol channels ignore whitespace and user-agent shadow children of a marked root", async () => {
+  for (const [text, empty] of [
+    ["  \n ", true],
+    ["Visible", false],
+  ] as const) {
+    const snapshotWithText = {
+      strings: [
+        "child-frame",
+        "#document",
+        "MAIN",
+        "#text",
+        text,
+        "data-facet-renderer-root",
+        "true",
+        "#shadow-root",
+        "BUTTON",
+      ],
+      documents: [
+        {
+          frameId: 0,
+          nodes: {
+            nodeName: [1, 2, 3, 7, 8],
+            nodeType: [9, 1, 3, 11, 1],
+            nodeValue: [1, 1, 4, 1, 1],
+            parentIndex: [-1, 0, 1, 1, 3],
+            attributes: [[], [5, 6], [], [], []],
+          },
+        },
+      ],
+    };
+    const documentWithText = {
+      root: {
+        nodeName: "#document",
+        children: [
+          {
+            nodeName: "IFRAME",
+            backendNodeId: 41,
+            contentDocument: {
+              nodeName: "#document",
+              children: [
+                {
+                  nodeName: "MAIN",
+                  nodeType: 1,
+                  attributes: ["data-facet-renderer-root", "true"],
+                  children: [{ nodeName: "#text", nodeType: 3, nodeValue: text }],
+                  shadowRoots: [
+                    {
+                      nodeName: "#shadow-root",
+                      shadowRootType: "user-agent",
+                      children: [{ nodeName: "BUTTON", nodeType: 1 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+    const cdp = {
+      ...session(),
+      async send(method: string): Promise<never> {
+        if (method === "DOMSnapshot.captureSnapshot") return snapshotWithText as never;
+        if (method === "DOM.getFrameOwner") return { backendNodeId: 41 } as never;
+        if (method === "DOM.getDocument") return documentWithText as never;
+        throw new Error(`unexpected CDP method: ${method}`);
+      },
+    };
+    expect((await probeProtocolSnapshot(cdp, childFrame, true)).emptyRendererRoot).toBe(empty);
+    expect((await probeProtocolGetDocument(cdp, childFrame, true)).emptyRendererRoot).toBe(empty);
+  }
+});
+
 function session(): VerifierCdpSession {
   return {
     async send(method: string): Promise<never> {

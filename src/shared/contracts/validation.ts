@@ -36,6 +36,7 @@ export const RenderStatusSchema = z.enum([
   "partial:opaque_content",
   "partial:external_resources",
   "partial:unstable",
+  "partial:empty_render",
   "tampered",
   "timeout",
   "shim_only",
@@ -134,9 +135,14 @@ export type LexicalCounters = z.infer<typeof LexicalCountersSchema>;
 const ObservedCountShape = Object.fromEntries(
   OBSERVED_COUNT_KEYS.map((key) => [key, z.number().int().nonnegative()]),
 ) as Record<(typeof OBSERVED_COUNT_KEYS)[number], z.ZodNumber>;
+const RenderedContentShape = {
+  // Legacy stored observations lack this TSX-only probe; absence never proves an empty render.
+  emptyRendererRoot: z.boolean().optional(),
+};
 
 export const VerdictObservedSchema = z.object({
   ...ObservedCountShape,
+  ...RenderedContentShape,
   html: HtmlStructureCountsSchema.optional(),
   viewBoxes: z.array(z.string()).optional(),
   errorCount: z.number().int().nonnegative(),
@@ -288,6 +294,7 @@ export type Tier1Result = z.infer<typeof Tier1ResultSchema>;
  */
 export const ProtocolObservationSchema = z.object({
   ...ObservedCountShape,
+  ...RenderedContentShape,
   html: HtmlStructureCountsSchema.optional(),
   viewBoxes: z.array(z.string()),
   errorCount: z.number().int().nonnegative(),

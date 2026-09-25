@@ -46,6 +46,7 @@ function makeVerdict(overrides: Partial<Verdict> = {}): Verdict {
       visibleSvgCount: 1,
       opaqueRegionCount: 0,
       externalImageCount: 3,
+      emptyRendererRoot: false,
       viewBoxes: ["0 0 100 100"],
       errorCount: 0,
       html: {
@@ -76,6 +77,15 @@ describe("projectToAcceptanceVerdict — schema-derived key-set guard", () => {
     const expectedObservedKeys = Object.keys(VerdictObservedSchema.shape).toSorted();
     const actualObservedKeys = Object.keys(projected.observed).toSorted();
     expect(actualObservedKeys).toEqual(expectedObservedKeys);
+    expect(projected.observed.emptyRendererRoot).toBe(false);
+  });
+
+  test("a legacy verdict without the optional content probe still parses and projects", () => {
+    const { emptyRendererRoot: _content, ...legacyObserved } = makeVerdict().observed;
+    const verdict = makeVerdict({ observed: legacyObserved });
+    const projected = projectToAcceptanceVerdict({ renderer: "svg", verdict });
+    expect(projected.observed).not.toHaveProperty("emptyRendererRoot");
+    expect(projected.observed).toEqual(legacyObserved);
   });
 
   test("the projection carries the execution marker for TSX rows", () => {

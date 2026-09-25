@@ -53,6 +53,7 @@ test("protocol observations derive scalar counters while keeping verdict metadat
   expect(OBSERVED_COUNT_KEYS).not.toContain("errorCount");
   expect(Object.keys(ProtocolObservationSchema.shape)).toEqual([
     ...OBSERVED_COUNT_KEYS,
+    "emptyRendererRoot",
     "html",
     "viewBoxes",
     "errorCount",

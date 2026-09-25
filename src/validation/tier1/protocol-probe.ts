@@ -30,6 +30,8 @@ export interface SnapshotDocument {
   readonly frameId: number;
   readonly nodes: {
     readonly nodeName: number[];
+    readonly nodeType?: readonly number[];
+    readonly nodeValue?: readonly number[];
     /** Parent node index for every entry in nodeName. */
     readonly parentIndex: readonly number[];
     /**
@@ -42,6 +44,23 @@ export interface SnapshotDocument {
      */
     readonly attributes?: readonly (readonly number[])[];
   };
+}
+
+function snapshotRootEmpty(snapshot: SnapshotResponse, documentIndex: number): boolean | undefined {
+  const document = snapshot.documents[documentIndex];
+  if (document === undefined) return undefined;
+  const roots = htmlRootIndexes(snapshot, documentIndex);
+  if (roots.length !== 1) return undefined;
+  const root = roots[0];
+  if (root === undefined) return undefined;
+  for (let index = 0; index < document.nodes.nodeName.length; index += 1) {
+    if (document.nodes.parentIndex[index] !== root) continue;
+    const type = document.nodes.nodeType?.[index];
+    if (type === 1) return false;
+    if (type === 3 && readString(snapshot.strings, document.nodes.nodeValue?.[index] ?? -1).trim())
+      return false;
+  }
+  return true;
 }
 
 export interface SnapshotResponse {
@@ -328,6 +347,7 @@ function findDocumentIndex(snapshot: SnapshotResponse, childFrameId: string): nu
 export async function probeProtocolSnapshot(
   session: VerifierCdpSession,
   childFrame: ResolvedChildFrame,
+  observeContent = false,
 ): Promise<ProtocolObservation> {
   const snapshot = (await session.send("DOMSnapshot.captureSnapshot", {
     computedStyles: [],
@@ -352,6 +372,7 @@ export async function probeProtocolSnapshot(
   const discriminativeErrors = collectDiscriminativeErrors(snapshot, documentIndex);
   const errorCount = discriminativeErrors.length;
   const htmlCounts = countSnapshotHtml(snapshot, documentIndex);
+  const emptyRendererRoot = observeContent ? snapshotRootEmpty(snapshot, documentIndex) : undefined;
   return {
     rendererRootSvgCount: rendererRoots.length,
     graphCount: graphRoots.length,
@@ -360,6 +381,7 @@ export async function probeProtocolSnapshot(
     opaqueRegionCount: countByName(snapshot, documentIndex, "canvas"),
     externalImageCount: htmlCounts?.externalImageCount ?? 0,
     ...(htmlCounts === undefined ? {} : { html: htmlCounts }),
+    ...(emptyRendererRoot === undefined ? {} : { emptyRendererRoot }),
     viewBoxes,
     errorCount,
     discriminativeErrors: discriminativeErrors.map((entry) => ({
@@ -378,6 +400,7 @@ export async function probeProtocolSnapshot(
 export async function probeProtocolGetDocument(
   session: VerifierCdpSession,
   childFrame: ResolvedChildFrame,
+  observeContent = false,
 ): Promise<ProtocolObservation> {
   const result = (await session.send("DOM.getDocument", {
     depth: -1,
@@ -402,6 +425,7 @@ export async function probeProtocolGetDocument(
   let opaqueRegionCount = 0;
   let visibleSvgCount = 0;
   let html: HtmlStructureCounts | undefined;
+  let emptyRendererRoot: boolean | undefined;
   const viewBoxes: string[] = [];
   const visit = (
     node: unknown,
@@ -413,6 +437,8 @@ export async function probeProtocolGetDocument(
     if (node === null || typeof node !== "object") return;
     const record = node as {
       nodeName?: string;
+      nodeType?: number;
+      nodeValue?: string;
       // DOM.Node attributes arrive as a FLAT string array
       // [name1, value1, name2, value2, …] — not {name, value} objects.
       attributes?: string[];
@@ -435,6 +461,16 @@ export async function probeProtocolGetDocument(
     const htmlRoot = name !== "svg" && markedRoot && !withinMarkedRoot;
     const graphRoot = rendererRoot && findAttr("data-facet-renderer-graph") === "true";
     if (htmlRoot) {
+      if (observeContent) {
+        const empty = !(record.children ?? []).some((child) => {
+          const direct = child as ProtocolDomNode & { nodeType?: number; nodeValue?: string };
+          return (
+            direct.nodeType === 1 ||
+            (direct.nodeType === 3 && (direct.nodeValue ?? "").trim().length > 0)
+          );
+        });
+        emptyRendererRoot = emptyRendererRoot === undefined ? empty : false;
+      }
       html ??= {
         rendererRootCount: 0,
         headingCount: 0,
@@ -511,6 +547,7 @@ export async function probeProtocolGetDocument(
     opaqueRegionCount,
     externalImageCount: html?.externalImageCount ?? 0,
     ...(html === undefined ? {} : { html }),
+    ...(emptyRendererRoot === undefined ? {} : { emptyRendererRoot }),
     viewBoxes,
     errorCount,
     discriminativeErrors:

@@ -44,12 +44,12 @@ export type { ProtocolObservation };
  */
 export type PageShim = Pick<
   ProtocolObservation,
-  (typeof COUNT_COMPARISON_KEYS)[number] | "html" | "errorCount"
+  (typeof COUNT_COMPARISON_KEYS)[number] | "html" | "errorCount" | "emptyRendererRoot"
 >;
 
 export type CountsLike = Pick<
   ProtocolObservation,
-  (typeof COUNT_COMPARISON_KEYS)[number] | "html" | "errorCount"
+  (typeof COUNT_COMPARISON_KEYS)[number] | "html" | "errorCount" | "emptyRendererRoot"
 >;
 
 const COUNT_COMPARISON_KEYS = OBSERVED_COUNT_KEYS;
@@ -88,47 +88,21 @@ export interface LifecycleSummary {
   readonly channelDivergence?: boolean;
   /** Interactive TSX has no lexical HTML prediction and no trusted outer shim. */
   readonly interactive?: boolean;
+  /** Only TSX has a renderer-root emptiness claim from Tier 1. */
+  readonly tsx?: boolean;
 }
 
 /**
- * Compute the final `RenderStatus`. Order of precedence:
+ * Compute the final `RenderStatus`. Precedence, highest first:
+ * timeout → channel divergence/tampered → missing channels → protocol
+ * errors or lexical mismatch → missing TSX content observation →
+ * unstable → empty TSX root → missing declared opaque content/error →
+ * opaque content → external resources → unobservable SVG layout → ok.
  *
- *   1. Lifecycle: `renderComplete === false` → `timeout`
- *   2. Trust: shim disagrees with protocol → `tampered`
- *   3. Trust: isolated disagrees with protocol → `tampered`
- *   4. Channel availability: both shim AND isolated missing → `probe_only`
- *   5. Channel availability: only shim missing → `probe_only`
- *   6. Channel availability: only isolated missing → `shim_only`
- *   7. Opaque content: expected > 0 but protocol observed 0 → `error`
- *   8. Opaque content: protocol observed > 0 → `partial:opaque_content`
- *   9. External resources: expected external images > 0 → `partial:external_resources`
- *  10. Layout observability (non-HTML only): protocol visibleSvgCount === 0
- *      AND every viewBox is zeroed → `partial:layout_unverified`. The
- *      branch is gated on `expected.html === undefined` because HTML
- *      artifacts carry no viewBox axis — they have no SVG layout to
- *      verify against, so `partial:layout_unverified` is structurally
- *      unreachable for HTML. A clean HTML artifact with zero
- *      `visibleSvgCount` and zero `viewBoxes` returns `ok` when its
- *      counts match.
- *  11. Counts: protocol discriminativeErrors non-empty → `error`
- *  12. Counts: protocol observed !== expected lexical → `error`
- *  13. Otherwise → `ok`
- *
- * Tampered wins over partial: a forge attempt that hides layout
- * observability (no viewBoxes) is still a forge attempt.
- *
- * D11 addition: `partial:unstable` slots between step 6 and step 7,
- * i.e. AFTER the catastrophic statuses (timeout, tampered, channel
- * availability) and the count-mismatch error, but BEFORE the
- * single-snapshot partials (opaque_content, external_resources,
- * layout_unverified). The reasoning: when structure is changing
- * between the two observation snapshots, the verifier cannot
- * honestly claim "this artifact has structure X" — every
- * single-snapshot claim is moot. Unstable is a meta-claim about the
- * page's runtime behavior that dominates the structural claims.
- * Tampered stays above it because channel divergence (the page
- * contradicting protocol authority) is the more catastrophic
- * reading of the page's behavior.
+ * A changing page cannot support any single-snapshot content claim,
+ * including emptiness. HTML/TSX has no SVG viewBox axis, while TSX
+ * emptiness needs agreement from the two protocol paths and isolated
+ * world; the outer page shim has no authority to make that claim.
  */
 export function deriveVerdict(
   expected: LexicalCounters,
@@ -164,11 +138,19 @@ export function deriveVerdict(
 
   if (protocolObservation.discriminativeErrors.length > 0) return "error";
   if (!lifecycle.interactive && !matchesExpected(expected, protocolObservation)) return "error";
+  if (
+    lifecycle.tsx &&
+    (protocolObservation.emptyRendererRoot === undefined ||
+      isolatedObservation?.emptyRendererRoot === undefined)
+  )
+    return "probe_only";
   // D11: structure changed between the barrier and the stability
   // window. This is the only path that does not also depend on a
   // single observation — it depends on TWO observations, so it
   // dominates the single-snapshot partial statuses below.
   if (lifecycle.structureChanged === true) return "partial:unstable";
+  if (lifecycle.tsx && protocolObservation.emptyRendererRoot === true)
+    return "partial:empty_render";
   if (expected.opaqueRegionCount > 0 && protocolObservation.opaqueRegionCount === 0) {
     return "error";
   }
@@ -224,6 +206,9 @@ function htmlCountsDiffer(
 export function countsDiffer(left: CountsLike, right: CountsLike): boolean {
   return (
     COUNT_COMPARISON_KEYS.some((key) => left[key] !== right[key]) ||
+    (left.emptyRendererRoot !== undefined &&
+      right.emptyRendererRoot !== undefined &&
+      left.emptyRendererRoot !== right.emptyRendererRoot) ||
     left.errorCount !== right.errorCount ||
     htmlCountsDiffer(left.html, right.html)
   );

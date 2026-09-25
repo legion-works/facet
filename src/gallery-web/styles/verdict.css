@@ -110,6 +110,15 @@
   content: "◐";
 }
 
+.facet-verdict[data-status="partial:empty_render"] {
+  border-color: var(--facet-partial-border);
+  background: var(--facet-partial-fill);
+  color: var(--facet-partial);
+}
+.facet-verdict[data-status="partial:empty_render"]::before {
+  content: "◐";
+}
+
 /* The alarm. The only fill, the only glow. Never animated. */
 .facet-verdict[data-status="tampered"],
 .facet-verdict[data-status="insecure:unvalidated"] {

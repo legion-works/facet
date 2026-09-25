@@ -888,7 +888,9 @@ function setGalleryVerdict(document: Document, verdict: Verdict | null): void {
             ? "external"
             : verdict.status === "partial:unstable"
               ? "unstable"
-              : null;
+              : verdict.status === "partial:empty_render"
+                ? "empty"
+                : null;
     const insecure = verdict.insecure === undefined ? null : `INSECURE L${verdict.insecure.level}`;
     const suffix = insecure === null ? `T${verdict.tier}` : `${insecure} · T${verdict.tier}`;
     tier.textContent = detail === null ? `· ${suffix}` : `· ${detail} · ${suffix}`;

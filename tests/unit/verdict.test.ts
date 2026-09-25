@@ -113,6 +113,49 @@ describe("deriveVerdict — happy path", () => {
   });
 });
 
+describe("deriveVerdict — TSX empty renderer root", () => {
+  const empty = protocol({ emptyRendererRoot: true });
+  const notEmpty = protocol({ emptyRendererRoot: false });
+  const tsx = lifecycle({ tsx: true, interactive: true });
+
+  test("matching empty authority channels downgrade both TSX execution modes", () => {
+    expect(deriveVerdict(lex(), empty, empty, null, tsx)).toBe("partial:empty_render");
+    expect(deriveVerdict(lex(), empty, empty, shim(), lifecycle({ tsx: true }))).toBe(
+      "partial:empty_render",
+    );
+    expect(deriveVerdict(lex(), empty, empty, shim(), lifecycle())).toBe("ok");
+  });
+
+  test("nonempty, missing, or contradictory evidence never claims empty", () => {
+    expect(deriveVerdict(lex(), notEmpty, notEmpty, null, tsx)).toBe("ok");
+    expect(deriveVerdict(lex(), protocol(), protocol(), null, tsx)).toBe("probe_only");
+    expect(deriveVerdict(lex(), empty, notEmpty, null, tsx)).toBe("tampered");
+  });
+
+  test("timeout, tampering, error, and instability outrank empty; opaque and external trail it", () => {
+    expect(
+      deriveVerdict(lex(), empty, empty, null, lifecycle({ ...tsx, renderComplete: false })),
+    ).toBe("timeout");
+    expect(
+      deriveVerdict(lex(), empty, empty, null, lifecycle({ ...tsx, channelDivergence: true })),
+    ).toBe("tampered");
+    const errored = protocol({
+      emptyRendererRoot: true,
+      discriminativeErrors: [{ code: "runtime_exception", message: "boom" }],
+    });
+    expect(deriveVerdict(lex(), errored, errored, null, tsx)).toBe("error");
+    expect(
+      deriveVerdict(lex(), empty, empty, null, lifecycle({ ...tsx, structureChanged: true })),
+    ).toBe("partial:unstable");
+    const opaque = protocol({
+      emptyRendererRoot: true,
+      opaqueRegionCount: 1,
+      externalImageCount: 1,
+    });
+    expect(deriveVerdict(lex(), opaque, opaque, null, tsx)).toBe("partial:empty_render");
+  });
+});
+
 describe("deriveVerdict — tamper detection (page shim is untrusted)", () => {
   test("canonical comparison applies externalImageCount to shim and isolated channels", () => {
     const expected = lex({ externalImageCount: 1 });

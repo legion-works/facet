@@ -35,6 +35,7 @@ test("static TSX renders through the shared HTML path in Tier 1", async () => {
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
       externalImageCount: 0,
+      emptyRendererRoot: false,
       html: {
         rendererRootCount: 1,
         headingCount: 1,

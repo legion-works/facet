@@ -327,6 +327,7 @@ async function runTier1Attempt(
       artifactFrame,
       isolated.executionContextId,
       interactiveTsx ? runtimeExceptions!.errorsForFrame(artifactFrame.frameId) : [],
+      input.artifactType === "tsx",
     );
     const secondObservation = interactiveTsx
       ? await waitForStabilityObservation(
@@ -334,6 +335,7 @@ async function runTier1Attempt(
           artifactFrame,
           isolated.executionContextId,
           () => runtimeExceptions!.errorsForFrame(artifactFrame.frameId),
+          true,
         )
       : firstObservation;
     const protocolObservation = secondObservation.protocol;
@@ -350,6 +352,7 @@ async function runTier1Attempt(
         bootReady: shim.bootReady,
         renderComplete: shim.renderComplete,
         interactive: interactiveTsx,
+        tsx: input.artifactType === "tsx",
         channelDivergence,
         structureChanged:
           interactiveTsx && countsDiffer(firstObservation.protocol, secondObservation.protocol),
@@ -390,6 +393,9 @@ async function runTier1Attempt(
         errorCount: observed.errorCount,
         opaqueRegionCount: observed.opaqueRegionCount,
         externalImageCount: observed.externalImageCount,
+        ...(observed.emptyRendererRoot === undefined
+          ? {}
+          : { emptyRendererRoot: observed.emptyRendererRoot }),
         ...(observed.html === undefined ? {} : { html: observed.html }),
         discriminativeErrors: observed.discriminativeErrors,
       },
@@ -604,6 +610,12 @@ function mergeProtocol(
       message: `DOMSnapshot.externalImageCount=${snapshot.externalImageCount} vs DOM.getDocument.externalImageCount=${getDocument.externalImageCount}`,
     });
   }
+  if (snapshot.emptyRendererRoot !== getDocument.emptyRendererRoot) {
+    errors.push({
+      code: "protocol_divergence",
+      message: `DOMSnapshot.emptyRendererRoot=${snapshot.emptyRendererRoot} vs DOM.getDocument.emptyRendererRoot=${getDocument.emptyRendererRoot}`,
+    });
+  }
   const observedCounts = Object.fromEntries(
     OBSERVED_COUNT_KEYS.map((key) => [key, snapshot[key]]),
   ) as Pick<ProtocolObservation, ObservedCountKey>;
@@ -612,6 +624,9 @@ function mergeProtocol(
     viewBoxes: snapshot.viewBoxes,
     errorCount: snapshot.errorCount,
     ...(snapshot.html === undefined ? {} : { html: snapshot.html }),
+    ...(snapshot.emptyRendererRoot === undefined
+      ? {}
+      : { emptyRendererRoot: snapshot.emptyRendererRoot }),
     discriminativeErrors: errors,
   };
 }
@@ -717,10 +732,11 @@ async function observeArtifact(
   frame: { readonly frameId: string; readonly url: string },
   executionContextId: number,
   runtimeErrors: readonly { readonly code: string; readonly message: string }[],
+  observeContent = false,
 ): Promise<ArtifactObservation> {
-  const snapshot = await probeProtocolSnapshot(session, frame);
-  const document = await probeProtocolGetDocument(session, frame);
-  const isolated = await probeIsolatedCounts(session, executionContextId);
+  const snapshot = await probeProtocolSnapshot(session, frame, observeContent);
+  const document = await probeProtocolGetDocument(session, frame, observeContent);
+  const isolated = await probeIsolatedCounts(session, executionContextId, observeContent);
   return { protocol: mergeProtocol(snapshot, document, runtimeErrors), isolated };
 }
 
@@ -729,9 +745,10 @@ async function waitForStabilityObservation(
   frame: { readonly frameId: string; readonly url: string },
   executionContextId: number,
   runtimeErrors: () => readonly { readonly code: string; readonly message: string }[],
+  observeContent = false,
 ): Promise<ArtifactObservation> {
   await Bun.sleep(TSX_STABILITY_WINDOW_MS);
-  return observeArtifact(session, frame, executionContextId, runtimeErrors());
+  return observeArtifact(session, frame, executionContextId, runtimeErrors(), observeContent);
 }
 
 interface EvidenceCapture {

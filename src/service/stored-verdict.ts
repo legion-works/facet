@@ -39,6 +39,9 @@ export function withTolerantObserved(parsed: unknown): VerdictObserved {
     visibleSvgCount: num("visibleSvgCount", 0),
     opaqueRegionCount: num("opaqueRegionCount", 0),
     externalImageCount: num("externalImageCount", 0),
+    ...(typeof observed.emptyRendererRoot === "boolean"
+      ? { emptyRendererRoot: observed.emptyRendererRoot }
+      : {}),
     // errorCount is required on the schema; pre-arc rows that never
     // recorded it default to 0.
     errorCount: num("errorCount", 0),

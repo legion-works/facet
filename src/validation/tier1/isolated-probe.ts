@@ -26,6 +26,7 @@ import type { VerifierCdpSession } from "./browser-process";
 export async function probeIsolatedCounts(
   session: VerifierCdpSession,
   executionContextId: number,
+  observeContent = false,
 ): Promise<ProtocolObservation | null> {
   try {
     const selectors = Object.fromEntries(
@@ -47,6 +48,8 @@ export async function probeIsolatedCounts(
         "  var svgRoots = roots.filter(function(root){ return String(root.nodeName).toLowerCase() === 'svg'; });",
         "  var graphRoots = svgRoots.filter(function(root){ return root.getAttribute('data-facet-renderer-graph') === 'true'; });",
         "  var htmlRoots = roots.filter(function(root){ return String(root.nodeName).toLowerCase() !== 'svg'; });",
+        `  var observeContent = ${JSON.stringify(observeContent)};`,
+        "  var emptyRendererRoot = observeContent && htmlRoots.length === 1 ? Array.prototype.every.call(htmlRoots[0].childNodes, function(node){ return node.nodeType !== 1 && (node.nodeType !== 3 || !node.textContent.trim()); }) : undefined;",
         `  var selectors = ${JSON.stringify(selectors)};`,
         "  var html = htmlRoots.length === 0 ? null : {rendererRootCount:htmlRoots.length,headingCount:0,tableCount:0,listCount:0,imageCount:0,canvasCount:0,externalImageCount:0};",
         "  var externalImageCount = 0;",
@@ -82,6 +85,7 @@ export async function probeIsolatedCounts(
         "    opaqueRegionCount: opaqueRegionCount,",
         "    externalImageCount: externalImageCount,",
         "    discriminativeErrors: [],",
+        "    ...(emptyRendererRoot === undefined ? {} : {emptyRendererRoot: emptyRendererRoot}),",
         "    ...(html === null ? {} : {html: html})",
         "  };",
         "})()",

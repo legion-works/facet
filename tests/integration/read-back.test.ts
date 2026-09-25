@@ -432,6 +432,7 @@ describe("read-back revision binding", () => {
                   visibleSvgCount: 1,
                   opaqueRegionCount: 0,
                   externalImageCount: 3,
+                  emptyRendererRoot: false,
                   viewBoxes: ["0 0 100 100"],
                   errorCount: 0,
                   html: {
@@ -466,7 +467,46 @@ describe("read-back revision binding", () => {
     // The top-level markers are not dropped.
     expect(result.verdict.execution).toBe("static");
     expect(result.verdict.observed.externalImageCount).toBe(3);
+    expect(result.verdict.observed.emptyRendererRoot).toBe(false);
     expect(result.verdict.observed.viewBoxes).toEqual(["0 0 100 100"]);
+  });
+
+  test("CLI read-back parses a legacy observed verdict without the optional content probe", async () => {
+    const sha = "a".repeat(64);
+    const client = new FacetClient({
+      baseUrl: "http://127.0.0.1:1234",
+      installToken: "test-token",
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify({
+            schemaVersion: FACET_SCHEMA_VERSION,
+            requestId: "legacy-request",
+            ok: true,
+            data: {
+              command: "readBack",
+              requestId: "legacy-request",
+              renderer: "svg",
+              verdict: {
+                status: "ok",
+                tier: 0,
+                artifactId: "artifact-1",
+                revisionSha: sha,
+                observed: {
+                  rendererRootSvgCount: 0,
+                  graphCount: 0,
+                  mermaidNodeCount: 0,
+                  visibleSvgCount: 0,
+                  opaqueRegionCount: 0,
+                  externalImageCount: 0,
+                  errorCount: 0,
+                },
+              },
+            },
+          }),
+        )) as unknown as typeof fetch,
+    });
+    const parsed = await readBack(client, { artifactId: "artifact-1", revisionSha: sha, tier: 0 });
+    expect(parsed.verdict.observed).not.toHaveProperty("emptyRendererRoot");
   });
 
   test("two rapid revisions to the same artifact — each read-back returns only its own verdict", async () => {

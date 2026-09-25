@@ -35,6 +35,7 @@ test("interactive TSX records a nested-frame Tier 1 verdict", async () => {
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
       externalImageCount: 0,
+      emptyRendererRoot: false,
       html: {
         rendererRootCount: 1,
         headingCount: 1,

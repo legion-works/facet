@@ -10,6 +10,7 @@ export const FAVICON_TINT_BY_STATUS = {
   "partial:opaque_content": "amber",
   "partial:external_resources": "amber",
   "partial:unstable": "amber",
+  "partial:empty_render": "amber",
   tampered: "red",
   timeout: "red",
   shim_only: "grey",

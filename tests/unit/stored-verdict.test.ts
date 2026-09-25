@@ -65,6 +65,18 @@ function makeRun(overrides: Partial<RenderRun> = {}): RenderRun {
 }
 
 describe("verdictFromStoredRun — execution marker reconstruction", () => {
+  test("legacy rows omit the optional empty observation and new partial rows retain it", () => {
+    const legacy = verdictFromStoredRun(makeRevision(), makeRun());
+    expect(legacy.observed.emptyRendererRoot).toBeUndefined();
+    const observed = { ...JSON.parse(makeRun().observedJson), emptyRendererRoot: true };
+    const current = verdictFromStoredRun(
+      makeRevision(),
+      makeRun({ status: "partial:empty_render", observedJson: JSON.stringify(observed) }),
+    );
+    expect(current.status).toBe("partial:empty_render");
+    expect(current.observed.emptyRendererRoot).toBe(true);
+  });
+
   test("tsx revision with execution: static re-emits the marker on read-back", () => {
     const verdict = verdictFromStoredRun(
       makeRevision({ artifactType: "tsx", execution: "static" }),
