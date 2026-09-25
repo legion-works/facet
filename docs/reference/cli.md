@@ -156,6 +156,12 @@ verification or a passing verdict. A duplicate template name returns
 token. Each row includes the source verdict, read from the stored revision when
 the list is requested, and any `promotionOverride` reason.
 
+A Tier 1 verdict whose `insecure.level === 3` marker is present is refused as
+`insecure:unvalidated` even when the verdict's status would otherwise be
+allow-listed (level 3 skips validation); `--allow-unverified` records the same
+reason on `promotionOverride`. Levels 1 and 2 keep their status-based
+treatment — they are real validator results under relaxed sandboxing.
+
 ## Insecure mode
 
 `FACET_INSECURE=1|2|3` sets a boot-only forced floor. `FACET_INSECURE_AUTO=1`

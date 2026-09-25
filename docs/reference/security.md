@@ -110,7 +110,9 @@ service.
 Level 3 skips publish-time validation, not an explicit visual read-back.
 `facet read-back --tier visual` still runs Tier 1, and that verdict carries the
 insecure marker. Evidence consumers must check the marker, not infer trust from
-`status` alone.
+`status` alone. A level-3 visual verdict does not count toward `facet promote`
+either — the gate refuses it as `insecure:unvalidated` unless the operator
+passes `--allow-unverified`.
 
 Levels compose as a forced floor: the effective level is never below the
 operator's `FACET_INSECURE` value. `FACET_INSECURE_AUTO=1` may raise a level when

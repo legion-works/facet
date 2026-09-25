@@ -116,6 +116,91 @@ describe("promotion", () => {
     }
   });
 
+  test("refuses a level-3 insecure marker even when the visual status would allow promotion", () => {
+    const { db, repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([10]),
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: {},
+      insecure: { level: 3, reason: "manual insecure level 3" },
+    });
+    expect(() =>
+      repository.promoteRevision({
+        revisionId: revision.id,
+        name: "l3-ok-tmpl",
+        promotedBy: "operator",
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "promotion_refused",
+        details: expect.objectContaining({
+          reason: "insecure:unvalidated",
+          tier1Status: "ok",
+        }),
+      }),
+    );
+    expect(
+      (db.query("SELECT COUNT(*) AS count FROM templates").get() as { count: number }).count,
+    ).toBe(0);
+  });
+
+  test("records insecure:unvalidated on the template when the operator overrides a level-3 marker", () => {
+    const { repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([11]),
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: {},
+      insecure: { level: 3, reason: "manual insecure level 3" },
+    });
+    const template = repository.promoteRevision({
+      revisionId: revision.id,
+      name: "l3-override",
+      promotedBy: "operator",
+      allowUnverified: true,
+    });
+    expect(template.promotionOverride).toBe("insecure:unvalidated");
+  });
+
+  test.each([1, 2] as const)(
+    "allows a level-%s insecure marker on a visual ok (real validation, relaxed sandboxing)",
+    (level) => {
+      const { repository, artifact } = makeStore();
+      const revision = repository.publishRevision({
+        artifactId: artifact.id,
+        artifactType: "markdown",
+        source: new Uint8Array([12 + level]),
+      });
+      repository.recordRenderRun({
+        revisionId: revision.id,
+        tier: 1,
+        status: "ok",
+        expected: {},
+        observed: {},
+        insecure: { level, reason: `manual insecure level ${level}` },
+      });
+      const template = repository.promoteRevision({
+        revisionId: revision.id,
+        name: `l${level}-ok-tmpl`,
+        promotedBy: "operator",
+      });
+      expect(template.promotionOverride).toBeNull();
+    },
+  );
+
   test("refuses missing visual verification without inserting a template", () => {
     const { db, repository, artifact } = makeStore();
     const revision = repository.publishRevision({

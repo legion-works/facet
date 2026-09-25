@@ -94,16 +94,31 @@ export function promoteRevision(
         throw new FacetStoreError("foreign_key", `Revision not found: ${input.revisionId}`);
       const tier1 = repository.listRenderRuns({ revisionId: revision.id, tier: 1 })[0];
       const tier0 = repository.listRenderRuns({ revisionId: revision.id, tier: 0 })[0];
-      const tier1Status = tier1 === undefined ? null : verdictFromStoredRun(revision, tier1).status;
-      const tier0Status = tier0 === undefined ? null : verdictFromStoredRun(revision, tier0).status;
+      // Read the marker from the reconstructed verdict object rather than
+      // the raw `insecure_json` column — `verdictFromStoredRun` is the single
+      // source of truth for cross-boundary reconstruction and keeps the
+      // precedence between status, tier, and marker consistent with the
+      // dispatcher's wire form.
+      const tier1Verdict = tier1 === undefined ? null : verdictFromStoredRun(revision, tier1);
+      const tier0Verdict = tier0 === undefined ? null : verdictFromStoredRun(revision, tier0);
+      const tier1Status = tier1Verdict === null ? null : tier1Verdict.status;
+      const tier0Status = tier0Verdict === null ? null : tier0Verdict.status;
+      // Level 3 opts out of the validation contract (publish skips Tier 0). A
+      // visual read-back still runs the browser, but a result carrying
+      // `insecure.level === 3` is not trusted verification for a template, so
+      // refuse even when the status alone would allow. Levels 1 and 2 keep the
+      // status decision: they run real validators under relaxed sandboxing.
+      const insecureLevel3 = tier1Verdict !== null && tier1Verdict.insecure?.level === 3;
       const reason =
         tier1Status === null
           ? "no_visual_verification"
           : tier0Status === "error"
             ? "error"
-            : PROMOTION_GATE[tier1Status as RenderStatus] === "allow"
-              ? null
-              : tier1Status;
+            : insecureLevel3
+              ? "insecure:unvalidated"
+              : PROMOTION_GATE[tier1Status as RenderStatus] === "allow"
+                ? null
+                : tier1Status;
       if (reason !== null && input.allowUnverified !== true) {
         throw new FacetError(
           "promotion_refused",

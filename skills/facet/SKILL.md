@@ -72,6 +72,9 @@ promote it. Tier 0 or publication success is not visual verification. The
 `templates` command lists promoted templates and their source verdicts.
 `--allow-unverified` records the refusal reason as `promotionOverride` for
 audit; it does not create verification or turn a refusal into a passing verdict.
+A Tier 1 verdict carrying `insecure.level === 3` is refused as
+`insecure:unvalidated` even when its status would otherwise be allow-listed —
+levels 1 and 2 are real validator runs and keep status-based treatment.
 
 ## Error quick reference
 
