@@ -1,7 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { toJsonSchemaCompat } from "@modelcontextprotocol/sdk/server/zod-json-schema-compat.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { FACET_VERSION } from "../../src/shared/version";
@@ -133,14 +134,8 @@ describe("facet MCP adapter", () => {
       for (const tool of tools.tools) {
         const schema = schemas[tool.name as keyof typeof schemas];
         expect(schema).toBeDefined();
-        expect(Object.keys(tool.inputSchema.properties ?? {}).toSorted()).toEqual(
-          Object.keys(schema!.shape).toSorted(),
-        );
-        expect((tool.inputSchema.required ?? []).toSorted()).toEqual(
-          Object.entries(schema!.shape)
-            .filter(([, field]) => !field.isOptional())
-            .map(([key]) => key)
-            .toSorted(),
+        expect(tool.inputSchema as unknown).toEqual(
+          toJsonSchemaCompat(schema!, { pipeStrategy: "input" }),
         );
       }
 
@@ -211,6 +206,28 @@ describe("facet MCP adapter", () => {
       expect(sourceFiles).toHaveLength(1);
       expect(readFileSync(join(outDir, sourceFiles[0]!), "utf8")).toBe("# Cold MCP source\n");
     } finally {
+      await client.close();
+    }
+  });
+
+  test("classifies an unwritable export directory as output_unwritable", async () => {
+    const home = newHome();
+    const locked = join(home, "locked");
+    mkdirSync(locked);
+    chmodSync(locked, 0o500);
+    const client = await connect(home);
+    try {
+      const result = await client.callTool({
+        name: "facet_export",
+        arguments: { artifactId: "missing-artifact", outDir: join(locked, "export") },
+      });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(textContent(result))).toMatchObject({
+        ok: false,
+        error: { code: "output_unwritable", retryable: false },
+      });
+    } finally {
+      chmodSync(locked, 0o700);
       await client.close();
     }
   });

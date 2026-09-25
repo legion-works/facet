@@ -120,7 +120,19 @@ export function createFacetMcpServer(): Server {
       ExportToolSchema,
       "Export source or stored render evidence into outDir. Check envelope.ok for transport success; a successful publish verdict remains a separate data.verdict.status decision.",
       async (input) => {
-        mkdirSync(input.outDir, { recursive: true });
+        try {
+          mkdirSync(input.outDir, { recursive: true });
+        } catch (cause) {
+          throw new FacetBridgeError(
+            {
+              code: "output_unwritable",
+              message: `Cannot write export output: ${input.outDir}`,
+              retryable: false,
+              details: { out: input.outDir },
+            },
+            cause,
+          );
+        }
         return invoke(buildFacetArgs("export", input), { cwd: input.outDir });
       },
     ),
