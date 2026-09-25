@@ -12,6 +12,7 @@ export const FacetErrorCodes = {
   database_busy: true,
   disk_full: true,
   duplicate_revision: true,
+  template_name_taken: true,
   foreign_key: true,
   immutable_revision: true,
   migration_failed: true,

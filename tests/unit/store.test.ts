@@ -73,6 +73,17 @@ function tableCounts(db: ReturnType<typeof openDatabase>) {
   );
 }
 
+function seedLegacyTemplate(
+  db: ReturnType<typeof openDatabase>,
+  artifactId: string,
+  revisionId: string,
+  name: string,
+): void {
+  db.query(
+    "INSERT INTO templates(id, artifact_id, revision_id, name, promoted_by, promoted_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(crypto.randomUUID(), artifactId, revisionId, name, "test", new Date().toISOString());
+}
+
 function artifactTypeCheckValues(db: ReturnType<typeof openDatabase>): string[] {
   const row = db
     .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'revisions'")
@@ -279,12 +290,7 @@ describe("artifact store", () => {
       expected: { nodes: 0 },
       observed: { nodes: 0 },
     });
-    repository.instantiateTemplate({
-      artifactId: artifact.id,
-      revisionId: revision.id,
-      name: `v5-template-${crypto.randomUUID()}`,
-      promotedBy: "test",
-    });
+    seedLegacyTemplate(db, artifact.id, revision.id, `v5-template-${crypto.randomUUID()}`);
     const before = tableCounts(db);
 
     runMigrations(db);
@@ -346,12 +352,7 @@ describe("artifact store", () => {
       expected: { nodes: 0 },
       observed: { nodes: 0 },
     });
-    repository.instantiateTemplate({
-      artifactId: artifact.id,
-      revisionId: revision.id,
-      name: `v5-interrupted-${crypto.randomUUID()}`,
-      promotedBy: "test",
-    });
+    seedLegacyTemplate(db, artifact.id, revision.id, `v5-interrupted-${crypto.randomUUID()}`);
     const before = tableCounts(db);
 
     expect(() =>

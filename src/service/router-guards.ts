@@ -222,6 +222,7 @@ export function statusFor(error: FacetError): number {
     case "tier0_unavailable":
       return 503;
     case "duplicate_revision":
+    case "template_name_taken":
     case "promotion_refused":
     case "constraint":
     case "foreign_key":

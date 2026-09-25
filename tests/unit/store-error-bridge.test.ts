@@ -30,6 +30,7 @@ import { INVALID_JSON, statusFor } from "../../src/service/router-guards";
 
 const STORE_CODES_WITH_STATUS_ARM: Array<{ code: StoreErrorCode; status: number }> = [
   { code: "duplicate_revision", status: 409 },
+  { code: "template_name_taken", status: 409 },
   { code: "constraint", status: 409 },
   { code: "foreign_key", status: 409 },
   { code: "immutable_revision", status: 409 },
@@ -60,6 +61,15 @@ describe("asStoreError — known SQLite failure shapes", () => {
   });
 
   test("maps 'unique constraint' → duplicate_revision", () => {
+    expect(asStoreError(new Error("UNIQUE constraint failed: revisions.sha256")).code).toBe(
+      "duplicate_revision",
+    );
+  });
+
+  test("maps templates.name UNIQUE conflicts to template_name_taken, not duplicate_revision", () => {
+    expect(asStoreError(new Error("UNIQUE constraint failed: templates.name")).code).toBe(
+      "template_name_taken",
+    );
     expect(asStoreError(new Error("UNIQUE constraint failed: revisions.sha256")).code).toBe(
       "duplicate_revision",
     );
@@ -116,6 +126,7 @@ describe("FacetStoreError → FacetError bridge", () => {
       "database_busy",
       "disk_full",
       "duplicate_revision",
+      "template_name_taken",
       "foreign_key",
       "immutable_revision",
       "migration_failed",

@@ -49,8 +49,37 @@ describe("facet templates", () => {
       { schemaVersion: "facet.v1", requestId: "r", ok: true, data: result },
       { color: false },
     );
-    expect(lines[0]).toContain("VERDICT");
-    expect(lines[1]).toContain("stable · art · rev ·");
-    expect(lines[1]).toContain("operator · 2026-01-01T00:00:00.000Z · error · ok · tier 1");
+    expect(lines[0]).toBe("NAME · SHA · VERDICT · OVERRIDE · BY · DATE");
+    expect(lines[1]).toBe("stable · aaaaaaaaaaaa · ✓ ok t1 · error · operator · 2026-01-01");
+    expect(lines[1]!.length).toBeLessThanOrEqual(100);
+    expect(result.templates[0]?.revisionSha).toHaveLength(64);
+    const long = {
+      ...result,
+      templates: [
+        {
+          ...result.templates[0]!,
+          name: "a very long template name",
+          promotedBy: "a very long operator name",
+          promotionOverride: "no_visual_verification",
+          sourceVerdict: { status: "partial:external_resources" as const, tier: 1 as const },
+        },
+      ],
+    };
+    const longLine = presentEnvelope(
+      { schemaVersion: "facet.v1", requestId: "r", ok: true, data: long },
+      { color: false },
+    )[1];
+    expect(longLine).toContain("◐ partial:external_resources t1");
+    expect(longLine!.length).toBeLessThanOrEqual(100);
+    const withoutOverride = {
+      ...result,
+      templates: [{ ...result.templates[0]!, promotionOverride: null }],
+    };
+    expect(
+      presentEnvelope(
+        { schemaVersion: "facet.v1", requestId: "r", ok: true, data: withoutOverride },
+        { color: false },
+      )[1],
+    ).toContain(" ·  · operator · ");
   });
 });

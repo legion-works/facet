@@ -135,11 +135,8 @@ export function createTemplate(db: Database, input: TemplateInput): Template {
     promotionOverride: input.promotionOverride ?? null,
   };
   try {
-    const hasOverride = (
-      db.query("PRAGMA table_info(templates)").all() as Array<{ name: string }>
-    ).some((row) => row.name === "promotion_override");
     db.query(
-      `INSERT INTO templates(id, artifact_id, revision_id, name, description, promoted_by, promoted_at${hasOverride ? ", promotion_override" : ""}) VALUES (?, ?, ?, ?, ?, ?, ?${hasOverride ? ", ?" : ""})`,
+      "INSERT INTO templates(id, artifact_id, revision_id, name, description, promoted_by, promoted_at, promotion_override) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(
       value.id,
       value.artifactId,
@@ -148,11 +145,22 @@ export function createTemplate(db: Database, input: TemplateInput): Template {
       value.description,
       value.promotedBy,
       value.promotedAt,
-      ...(hasOverride ? [value.promotionOverride] : []),
+      value.promotionOverride,
     );
     return TemplateSchema.parse(value);
   } catch (error) {
-    throw asStoreError(error);
+    const mapped = asStoreError(error);
+    if (mapped.code === "template_name_taken") {
+      throw new FacetStoreError(
+        "template_name_taken",
+        `Template name already exists: ${input.name}`,
+        {
+          cause: error,
+          details: { name: input.name },
+        },
+      );
+    }
+    throw mapped;
   }
 }
 

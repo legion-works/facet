@@ -103,6 +103,10 @@ function row(label: string, value: string): string {
   return `  ${label.padEnd(10, " ")}${value}`;
 }
 
+function shortCell(value: string, width: number): string {
+  return value.length <= width ? value : `${value.slice(0, width - 1)}…`;
+}
+
 function verdictLines(verdict: Verdict, caps: PresenterCaps): string[] {
   const paint = makePaint(caps);
   const tone = STATUS_TONE[verdict.status];
@@ -210,20 +214,22 @@ export function presentEnvelope(envelope: FacetEnvelope<unknown>, caps: Presente
 
   if (command === "templates") {
     const templates = Array.isArray(data["templates"]) ? data["templates"] : [];
-    const lines = ["NAME · ARTIFACT · REVISION · SHA · ACTOR · PROMOTED · OVERRIDE · VERDICT"];
+    const lines = ["NAME · SHA · VERDICT · OVERRIDE · BY · DATE"];
     for (const entry of templates) {
       const item = entry as Record<string, unknown>;
-      const verdict = item["sourceVerdict"] as { status: string; tier: number } | null;
+      const verdict = item["sourceVerdict"] as { status: RenderStatus; tier: number } | null;
       lines.push(
         [
-          item["name"],
-          item["artifactId"],
-          item["revisionId"],
-          item["revisionSha"],
-          item["promotedBy"],
-          item["promotedAt"],
-          item["promotionOverride"] ?? "—",
-          verdict === null ? "—" : `${verdict.status} · tier ${verdict.tier}`,
+          shortCell(String(item["name"]), 12),
+          String(item["revisionSha"]).slice(0, 12),
+          verdict === null
+            ? "—"
+            : `${VERDICT_GLYPH[verdict.status]} ${verdict.status} t${verdict.tier}`,
+          item["promotionOverride"] === null
+            ? ""
+            : shortCell(String(item["promotionOverride"]), 12),
+          shortCell(String(item["promotedBy"]), 8),
+          String(item["promotedAt"]).slice(0, 10),
         ].join(" · "),
       );
     }

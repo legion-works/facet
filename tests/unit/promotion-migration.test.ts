@@ -65,12 +65,16 @@ test("v9 template migrates with a null override and a live v10 doctor database p
       artifactType: "markdown",
       source: new Uint8Array([1]),
     });
-    repo.instantiateTemplate({
-      artifactId: artifact.id,
-      revisionId: revision.id,
-      name: "legacy-template",
-      promotedBy: "operator",
-    });
+    db.query(
+      "INSERT INTO templates(id, artifact_id, revision_id, name, promoted_by, promoted_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      crypto.randomUUID(),
+      artifact.id,
+      revision.id,
+      "legacy-template",
+      "operator",
+      new Date().toISOString(),
+    );
     const copy = join(root, "migration-copy.sqlite");
     const verify = Bun.spawnSync([
       process.execPath,

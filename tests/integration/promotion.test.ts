@@ -48,6 +48,36 @@ afterEach(() => {
 });
 
 describe("promotion", () => {
+  test("duplicate template name is a typed conflict and cannot insert a second row", () => {
+    const { db, repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([71]),
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: {},
+    });
+    const input = { revisionId: revision.id, name: "shared-name", promotedBy: "operator" };
+    repository.promoteRevision(input);
+    expect(() => repository.promoteRevision(input)).toThrowError(
+      expect.objectContaining({ code: "template_name_taken", details: { name: "shared-name" } }),
+    );
+    expect(
+      db.query("SELECT COUNT(*) AS count FROM templates WHERE name = ?").get("shared-name"),
+    ).toEqual({ count: 1 });
+    expect(() =>
+      repository.publishRevision({
+        artifactId: artifact.id,
+        artifactType: "markdown",
+        source: new Uint8Array([71]),
+      }),
+    ).toThrowError(expect.objectContaining({ code: "duplicate_revision" }));
+  });
   const allowed = new Set([
     "ok",
     "partial:layout_unverified",
@@ -359,6 +389,24 @@ describe("promotion", () => {
           sourceVerdict: { status: "ok", tier: 0 },
         },
       ]);
+      const nameTaken = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers: headers(promoteToken),
+        body: JSON.stringify(
+          envelope({
+            command: "promote",
+            revisionId,
+            name: "stable",
+            promotedBy: "operator",
+            allowUnverified: true,
+          }),
+        ),
+      });
+      expect(nameTaken.status).toBe(409);
+      expect((await nameTaken.json()).error).toMatchObject({
+        code: "template_name_taken",
+        details: { name: "stable" },
+      });
     } finally {
       await service.stop();
     }

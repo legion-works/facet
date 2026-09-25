@@ -18,6 +18,7 @@ export type StoreErrorCode = Extract<
   | "database_busy"
   | "disk_full"
   | "duplicate_revision"
+  | "template_name_taken"
   | "foreign_key"
   | "immutable_revision"
   | "migration_failed"
@@ -62,6 +63,9 @@ export function asStoreError(error: unknown): FacetStoreError {
     return new FacetStoreError("foreign_key", message, { cause: error });
   }
   if (lower.includes("unique constraint")) {
+    if (lower.includes("templates.name")) {
+      return new FacetStoreError("template_name_taken", message, { cause: error });
+    }
     return new FacetStoreError("duplicate_revision", message, { cause: error });
   }
   return new FacetStoreError("constraint", message, { cause: error });
