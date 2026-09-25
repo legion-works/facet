@@ -297,6 +297,7 @@ jobs:
           - gallery-daisyui-library.test.ts
           - gallery-export.test.ts
           - gallery-html-scroll.test.ts
+          - gallery-light-toolbar.test.ts
           - gallery-interactive-tsx.test.ts
           - gallery-markdown-mermaid-labels.test.ts
           - gallery-refresh.test.ts
