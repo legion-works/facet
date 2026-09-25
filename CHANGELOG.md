@@ -3,6 +3,11 @@
 ## [1.10.0](https://github.com/legion-works/facet/compare/v1.9.0...v1.10.0) (2026-09-25)
 
 
+### Behaviour changes
+
+* `facet promote` now requires a stored visual verification. A revision with no Tier 1 run, a refused Tier 1 status, a Tier 0 error, or a level-3 insecure visual run is refused with `promotion_refused` (HTTP 409). Pass `--allow-unverified` to promote anyway; the reason is recorded on the template as `promotionOverride`. Scripts that promote straight after publish need `facet read-back --tier visual` first, or the flag.
+
+
 ### Features
 
 * classify empty TSX renders as partial:empty_render ([957b94e](https://github.com/legion-works/facet/commit/957b94e56b35b2366559703802159c9af1356bd1)), closes [#38](https://github.com/legion-works/facet/issues/38)
@@ -13,21 +18,16 @@
 ### Bug Fixes
 
 * announce gallery interaction failures to assistive tech ([0b5fa56](https://github.com/legion-works/facet/commit/0b5fa568175123f5b27e953aa1802e502a0beddf)), closes [#39](https://github.com/legion-works/facet/issues/39)
-* clear the interaction-error signal when the gallery session expires ([c917444](https://github.com/legion-works/facet/commit/c9174448a78c4808a46902099971c434d3ba17a6)), closes [#39](https://github.com/legion-works/facet/issues/39)
 * default chart size through config.view for composite specs ([7421d1d](https://github.com/legion-works/facet/commit/7421d1d13e956d61ef9dfc32abc9833a21d4ab98)), closes [#45](https://github.com/legion-works/facet/issues/45)
 * **dist:** drop leading ./ from bin paths so npm stops rewriting them ([6437df7](https://github.com/legion-works/facet/commit/6437df7b5454ca3aa055bb36e1559801e5699911))
-* exercise the promotion override in the packed-install gate ([4ee7b20](https://github.com/legion-works/facet/commit/4ee7b20aece1d9d75e340837f8bca2e978603cdf))
-* format only the files the format check covers ([24418d2](https://github.com/legion-works/facet/commit/24418d29433805c1db86263f82c6eb02358df8b3))
 * grammar-check Mermaid fences in Markdown at Tier 0 ([2d690dc](https://github.com/legion-works/facet/commit/2d690dcd6543e0ce015403655f00d70a67da85fe)), closes [#41](https://github.com/legion-works/facet/issues/41)
-* keep Tier 0 Mermaid parsing independent of DOMPurify ([a4e5c91](https://github.com/legion-works/facet/commit/a4e5c913e5c598b7835699ba4c5e538a71037e22))
 * lay out Tier 1 evidence with the gallery artifact rules ([778397c](https://github.com/legion-works/facet/commit/778397c0e80672927715acbb718a222ea21c35c6)), closes [#40](https://github.com/legion-works/facet/issues/40)
 * load artifact styles in the TSX Tier 1 verifier ([3da2a19](https://github.com/legion-works/facet/commit/3da2a19c5d379ea39fc01096374564546eecebed)), closes [#40](https://github.com/legion-works/facet/issues/40)
-* **mcp:** support cold artifact flows and executable bin ([9c407af](https://github.com/legion-works/facet/commit/9c407afde812da10dd8497d83da1777170bca2cd))
-* qualify Tier 0 ok in the CLI presenter ([71b89ac](https://github.com/legion-works/facet/commit/71b89ac8a5ca81764fc80a06872d955a88b06e54))
+* **mcp:** add `facet_create`, advertise real input schemas, and ship an executable `facet-mcp` bin ([9c407af](https://github.com/legion-works/facet/commit/9c407afde812da10dd8497d83da1777170bca2cd)), closes [#37](https://github.com/legion-works/facet/issues/37)
+* qualify Tier 0 ok in the CLI presenter ([71b89ac](https://github.com/legion-works/facet/commit/71b89ac8a5ca81764fc80a06872d955a88b06e54)), closes [#42](https://github.com/legion-works/facet/issues/42)
 * refuse promotion of a level-3 visual verification ([a3eee38](https://github.com/legion-works/facet/commit/a3eee3891c833b14ebe31f149d386dfaac017f7b)), closes [#43](https://github.com/legion-works/facet/issues/43)
-* **release:** authenticate npm publish and add a tag-scoped retry path ([bc13358](https://github.com/legion-works/facet/commit/bc13358fe11b642b2f0ffc5d4e64623f8ee1c9c3))
-* signal gallery interaction runtime failures ([ce9f93b](https://github.com/legion-works/facet/commit/ce9f93b2332358cb15f2ce7943997898ecb95e94))
-* size charts with omitted dimensions ([a9d1e66](https://github.com/legion-works/facet/commit/a9d1e66f5ec23dfe2c8f6d4016585a497bb473a7))
+* signal gallery interaction runtime failures ([ce9f93b](https://github.com/legion-works/facet/commit/ce9f93b2332358cb15f2ce7943997898ecb95e94)), closes [#39](https://github.com/legion-works/facet/issues/39)
+* size charts with omitted dimensions ([a9d1e66](https://github.com/legion-works/facet/commit/a9d1e66f5ec23dfe2c8f6d4016585a497bb473a7)), closes [#45](https://github.com/legion-works/facet/issues/45)
 * tighten the templates view and name-conflict errors ([2bf01ec](https://github.com/legion-works/facet/commit/2bf01ec69633bf55c665c7d69f6697e74529feea))
 
 ## [1.9.0](https://github.com/legion-works/facet/compare/v1.8.0...v1.9.0) (2026-08-26)
