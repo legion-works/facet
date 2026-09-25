@@ -37,6 +37,7 @@ import { FacetClient } from "./client";
 
 import { buildCreateRequest } from "./commands/create";
 import { buildListRequest } from "./commands/list";
+import { buildTemplatesRequest } from "./commands/templates";
 import { buildOpenRequest, launchDisplay } from "./commands/open";
 import { buildPinRequest } from "./commands/pin";
 import { buildPromoteRequest } from "./commands/promote";
@@ -167,6 +168,9 @@ async function executeVerb(
     }
     case "list":
       request = buildListRequest(args);
+      break;
+    case "templates":
+      request = buildTemplatesRequest(args);
       break;
     case "readBack":
       request = buildReadBackRequest(args);

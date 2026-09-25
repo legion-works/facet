@@ -216,3 +216,7 @@ export const V9_SCHEMA_FRAGMENT = `
 ALTER TABLE render_runs ADD COLUMN screenshot_format TEXT
   CHECK(screenshot_format IN ('png','webp'));
 `;
+
+export const V10_SCHEMA_FRAGMENT = `
+ALTER TABLE templates ADD COLUMN promotion_override TEXT;
+`;

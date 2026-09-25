@@ -12,6 +12,9 @@ import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { dispatch } from "../../src/service/dispatcher";
 import { buildInstantiateRequest } from "../../src/cli/commands/instantiate";
+import { RenderStatusSchema } from "../../src/shared/contracts/validation";
+import { parseArgs, renderHelp } from "../../src/cli/parser";
+import { buildPromoteRequest } from "../../src/cli/commands/promote";
 
 const databases: Array<{ close: () => void }> = [];
 const roots: string[] = [];
@@ -45,6 +48,217 @@ afterEach(() => {
 });
 
 describe("promotion", () => {
+  const allowed = new Set([
+    "ok",
+    "partial:layout_unverified",
+    "partial:opaque_content",
+    "partial:external_resources",
+    "partial:unstable",
+  ]);
+
+  test.each(RenderStatusSchema.options)("classifies newest visual status %s", (status) => {
+    const { db, repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new TextEncoder().encode(status),
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status,
+      expected: {},
+      observed: {},
+    });
+    const input = { revisionId: revision.id, name: `status-${status}`, promotedBy: "operator" };
+    if (allowed.has(status)) {
+      expect(repository.promoteRevision(input).promotionOverride).toBeNull();
+    } else {
+      expect(() => repository.promoteRevision(input)).toThrowError(
+        expect.objectContaining({
+          code: "promotion_refused",
+          details: expect.objectContaining({ reason: status, tier1Status: status }),
+        }),
+      );
+      expect(
+        (db.query("SELECT COUNT(*) AS count FROM templates").get() as { count: number }).count,
+      ).toBe(0);
+    }
+  });
+
+  test("refuses missing visual verification without inserting a template", () => {
+    const { db, repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([1]),
+    });
+    expect(() =>
+      repository.promoteRevision({
+        revisionId: revision.id,
+        name: "missing",
+        promotedBy: "operator",
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "promotion_refused",
+        details: {
+          revisionId: revision.id,
+          reason: "no_visual_verification",
+          tier1Status: null,
+          tier0Status: null,
+        },
+      }),
+    );
+    expect(db.query("SELECT COUNT(*) AS count FROM templates").get()).toEqual({ count: 0 });
+  });
+
+  test("a failed parse cannot be redeemed by a visual ok", () => {
+    const { repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([2]),
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 0,
+      status: "error",
+      expected: {},
+      observed: {},
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: {},
+    });
+    expect(() =>
+      repository.promoteRevision({
+        revisionId: revision.id,
+        name: "bad-parse",
+        promotedBy: "operator",
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "promotion_refused",
+        details: expect.objectContaining({
+          reason: "error",
+          tier0Status: "error",
+          tier1Status: "ok",
+        }),
+      }),
+    );
+  });
+
+  test.each([
+    ["error", "ok", true],
+    ["ok", "error", false],
+  ] as const)("newer visual %s supersedes older %s", (oldStatus, newStatus, permitted) => {
+    const { repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([3]),
+    });
+    for (const [status, finishedAt] of [
+      [oldStatus, "2026-01-01T00:00:00.000Z"],
+      [newStatus, "2026-01-02T00:00:00.000Z"],
+    ] as const) {
+      repository.recordRenderRun({
+        revisionId: revision.id,
+        tier: 1,
+        status,
+        expected: {},
+        observed: {},
+        finishedAt,
+      });
+    }
+    const input = { revisionId: revision.id, name: "latest", promotedBy: "operator" };
+    if (permitted) expect(repository.promoteRevision(input).promotionOverride).toBeNull();
+    else
+      expect(() => repository.promoteRevision(input)).toThrowError(
+        expect.objectContaining({ code: "promotion_refused" }),
+      );
+  });
+
+  test("override persists refusal reason and templates show live source verdict", async () => {
+    const { repository, artifact } = makeStore();
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source: new Uint8Array([4]),
+    });
+    const result = (await dispatch(
+      { repository } as never,
+      {
+        command: "promote",
+        requestId: "override",
+        revisionId: revision.id,
+        name: "override",
+        promotedBy: "operator",
+        allowUnverified: true,
+      },
+      "override",
+    )) as { template: { promotionOverride: string } };
+    expect(result.template.promotionOverride).toBe("no_visual_verification");
+    expect(repository.findTemplateByName("override")?.promotionOverride).toBe(
+      "no_visual_verification",
+    );
+    const before = (await dispatch(
+      { repository } as never,
+      { command: "templates", requestId: "before" },
+      "before",
+    )) as { templates: Array<{ promotionOverride: string; sourceVerdict: unknown }> };
+    expect(before.templates[0]).toMatchObject({
+      promotionOverride: "no_visual_verification",
+      sourceVerdict: null,
+    });
+    repository.recordRenderRun({
+      revisionId: revision.id,
+      tier: 1,
+      status: "ok",
+      expected: {},
+      observed: {},
+    });
+    const after = (await dispatch(
+      { repository } as never,
+      { command: "templates", requestId: "after" },
+      "after",
+    )) as {
+      templates: Array<{ revisionSha: string; sourceVerdict: { status: string; tier: number } }>;
+    };
+    expect(after.templates[0]).toMatchObject({
+      revisionSha: revision.sha256,
+      sourceVerdict: { status: "ok", tier: 1 },
+    });
+  });
+
+  test("promote override flag and templates help parse", () => {
+    expect(
+      parseArgs([
+        "promote",
+        "--revision-id",
+        "r",
+        "--name",
+        "n",
+        "--promoted-by",
+        "p",
+        "--allow-unverified",
+      ]),
+    ).toMatchObject({ kind: "verb", args: { "allow-unverified": true } });
+    expect(
+      buildPromoteRequest({
+        "revision-id": "r",
+        name: "n",
+        "promoted-by": "p",
+        "allow-unverified": true,
+      }),
+    ).toMatchObject({ allowUnverified: true });
+    expect(parseArgs(["templates", "--help"])).toMatchObject({ kind: "help", verb: "templates" });
+    expect(renderHelp("templates" as never)).toContain("--limit");
+  });
   test("operator promotion succeeds while the install token is denied", async () => {
     const root = join(tmpdir(), `facet-promotion-${crypto.randomUUID()}`);
     roots.push(root);
@@ -91,15 +305,60 @@ describe("promotion", () => {
       });
       expect(denied.status).toBe(403);
       expect((await denied.json()).error.code).toBe("invalid_envelope");
+      const refused = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers: headers(promoteToken),
+        body: JSON.stringify(
+          envelope({ command: "promote", revisionId, name: "refused", promotedBy: "operator" }),
+        ),
+      });
+      expect(refused.status).toBe(409);
+      const refusalBody = await refused.json();
+      expect(refusalBody.error).toMatchObject({
+        code: "promotion_refused",
+        details: {
+          revisionId,
+          reason: "no_visual_verification",
+          tier1Status: null,
+          tier0Status: "ok",
+        },
+      });
+      expect(refusalBody.error.message).toContain(
+        `facet read-back --artifact-id ${artifactId} --tier visual`,
+      );
+      expect(refusalBody.error.message).toContain("--allow-unverified");
       const promoted = await fetch(`${service.url}/api/v1/commands`, {
         method: "POST",
         headers: headers(promoteToken),
         body: JSON.stringify(
-          envelope({ command: "promote", revisionId, name: "stable", promotedBy: "operator" }),
+          envelope({
+            command: "promote",
+            revisionId,
+            name: "stable",
+            promotedBy: "operator",
+            allowUnverified: true,
+          }),
         ),
       });
       expect(promoted.status).toBe(200);
-      expect((await promoted.json()).data.template.promotedBy).toBe("operator");
+      expect((await promoted.json()).data.template).toMatchObject({
+        promotedBy: "operator",
+        promotionOverride: "no_visual_verification",
+      });
+      const templates = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers: headers(service.installToken),
+        body: JSON.stringify(envelope({ command: "templates", limit: 1 })),
+      });
+      expect(templates.status).toBe(200);
+      expect((await templates.json()).data.templates).toMatchObject([
+        {
+          name: "stable",
+          revisionId,
+          promotionOverride: "no_visual_verification",
+          sourceVerdict: { status: "ok", tier: 0 },
+        },
+      ]);
     } finally {
       await service.stop();
     }
@@ -139,6 +398,7 @@ describe("promotion", () => {
       revisionId: revision.id,
       name: "matching",
       promotedBy: "operator",
+      allowUnverified: true,
     });
     expect(template.artifactId).toBe(artifact.id);
   });
@@ -156,6 +416,7 @@ describe("promotion", () => {
       revisionId: revision.id,
       name: "stable",
       promotedBy: "operator",
+      allowUnverified: true,
     });
     const result = (await dispatch(
       { repository } as never,
@@ -182,7 +443,12 @@ describe("promotion", () => {
       artifactType: "markdown",
       source: original,
     });
-    repository.promoteRevision({ revisionId: revision.id, name: "stable", promotedBy: "operator" });
+    repository.promoteRevision({
+      revisionId: revision.id,
+      name: "stable",
+      promotedBy: "operator",
+      allowUnverified: true,
+    });
     for (const value of [4, 5, 6]) {
       repository.publishRevision({
         artifactId: artifact.id,
@@ -268,6 +534,7 @@ describe("promotion", () => {
       revisionId: revision.id,
       name: "interactive-tsx",
       promotedBy: "operator",
+      allowUnverified: true,
     });
     return (async () => {
       const result = (await dispatch(

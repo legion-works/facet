@@ -118,7 +118,7 @@ describe("doctor probe matrix", () => {
   });
 
   test("uses the canonical storage version for current and stale databases", () => {
-    let version = 9;
+    let version = CURRENT_STORAGE_VERSION;
     const result = runDoctor({
       bunVersion: "1.4.0",
       paths: {

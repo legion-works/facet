@@ -32,6 +32,7 @@ import {
   type TemplateInput,
 } from "./repository-lifecycle";
 import { enforceEvidenceRetention, removeUnreferencedEvidence } from "./evidence-retention";
+import { latestStoredVerdict } from "../stored-verdict";
 
 interface ProjectInput {
   readonly projectRoot: string;
@@ -407,7 +408,7 @@ export class ArtifactRepository {
     try {
       const row = this.db
         .query(
-          "SELECT id, artifact_id, revision_id, name, description, promoted_by, promoted_at FROM templates WHERE name = ? ORDER BY promoted_at DESC LIMIT 1",
+          "SELECT id, artifact_id, revision_id, name, description, promoted_by, promoted_at, promotion_override FROM templates WHERE name = ? ORDER BY promoted_at DESC LIMIT 1",
         )
         .get(name) as {
         id: string;
@@ -417,6 +418,7 @@ export class ArtifactRepository {
         description: string | null;
         promoted_by: string;
         promoted_at: string;
+        promotion_override: string | null;
       } | null;
       if (!row) return null;
       return TemplateSchema.parse({
@@ -427,10 +429,66 @@ export class ArtifactRepository {
         description: row.description,
         promotedBy: row.promoted_by,
         promotedAt: row.promoted_at,
+        promotionOverride: row.promotion_override,
       });
     } catch (error) {
       throw asStoreError(error);
     }
+  }
+
+  listTemplates(limit = DEFAULT_LIST_LIMIT): Array<{
+    name: string;
+    artifactId: string;
+    revisionId: string;
+    revisionSha: string;
+    promotedBy: string;
+    promotedAt: string;
+    promotionOverride: string | null;
+    sourceVerdict: {
+      status: import("../../shared/contracts/validation").RenderStatus;
+      tier: 0 | 1;
+    } | null;
+  }> {
+    const rows = this.db
+      .query(
+        "SELECT id, artifact_id, revision_id, name, description, promoted_by, promoted_at, promotion_override FROM templates ORDER BY promoted_at DESC, id DESC LIMIT ?",
+      )
+      .all(limit) as Array<{
+      id: string;
+      artifact_id: string;
+      revision_id: string;
+      name: string;
+      description: string | null;
+      promoted_by: string;
+      promoted_at: string;
+      promotion_override: string | null;
+    }>;
+    return rows.map((row) => {
+      const revision = this.getRevisionById(row.revision_id);
+      if (revision === null)
+        throw new FacetStoreError("foreign_key", `Template revision not found: ${row.revision_id}`);
+      const template = TemplateSchema.parse({
+        id: row.id,
+        artifactId: row.artifact_id,
+        revisionId: row.revision_id,
+        name: row.name,
+        description: row.description,
+        promotedBy: row.promoted_by,
+        promotedAt: row.promoted_at,
+        promotionOverride: row.promotion_override,
+      });
+      const verdict = latestStoredVerdict(this, revision);
+      return {
+        name: template.name,
+        artifactId: template.artifactId,
+        revisionId: template.revisionId,
+        revisionSha: revision.sha256,
+        promotedBy: template.promotedBy,
+        promotedAt: template.promotedAt,
+        promotionOverride: template.promotionOverride,
+        sourceVerdict: verdict === null ? null : { status: verdict.status, tier: verdict.tier },
+      };
+    });
   }
 
   createArtifact(input: ArtifactInput): Artifact {
@@ -715,7 +773,7 @@ export class ArtifactRepository {
   }
 
   promoteRevision(input: PromoteRevisionInput): Template {
-    return promoteLifecycleRevision(this.db, input);
+    return promoteLifecycleRevision(this.db, this, input);
   }
 
   instantiateTemplate(input: TemplateInput): Template {

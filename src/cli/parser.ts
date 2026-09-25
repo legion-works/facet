@@ -77,6 +77,7 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
     { flag: "--slug-prefix", takesValue: true },
     { flag: "--limit", takesValue: true },
   ],
+  templates: [{ flag: "--limit", takesValue: true }],
   readBack: [
     { flag: "--artifact-id", takesValue: true, required: true },
     { flag: "--revision-sha", takesValue: true },
@@ -97,6 +98,7 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
     { flag: "--name", takesValue: true, required: true },
     { flag: "--description", takesValue: true },
     { flag: "--promoted-by", takesValue: true, required: true },
+    { flag: "--allow-unverified", takesValue: false },
   ],
   instantiate: [
     { flag: "--name", takesValue: true, required: true },
@@ -121,6 +123,7 @@ const VERB_TO_COMMAND: Readonly<Record<string, CommandName>> = {
   create: "create",
   publish: "publish",
   list: "list",
+  templates: "templates",
   "read-back": "readBack",
   status: "status",
   open: "open",
@@ -134,6 +137,7 @@ const COMMAND_TO_VERB: Readonly<Record<CommandName, string>> = {
   create: "create",
   publish: "publish",
   list: "list",
+  templates: "templates",
   readBack: "read-back",
   status: "status",
   open: "open",

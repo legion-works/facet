@@ -27,6 +27,7 @@ export const FacetErrorCodes = {
   artifact_not_found: true,
   revision_not_found: true,
   template_not_found: true,
+  promotion_refused: true,
   evidence_unavailable: true,
   output_unwritable: true,
   revision_capacity_pinned: true,

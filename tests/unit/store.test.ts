@@ -248,7 +248,7 @@ describe("artifact store", () => {
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
     // Migration recorded.
     expect(db.query("SELECT MAX(version) AS max FROM schema_migrations").get()).toEqual({
-      max: 9,
+      max: 10,
     });
     // Pre-arc row reads back: the legacy observed_json is enriched with
     // the missing counters (V7 backfill) but the row still maps to a
@@ -279,7 +279,8 @@ describe("artifact store", () => {
       expected: { nodes: 0 },
       observed: { nodes: 0 },
     });
-    repository.promoteRevision({
+    repository.instantiateTemplate({
+      artifactId: artifact.id,
       revisionId: revision.id,
       name: `v5-template-${crypto.randomUUID()}`,
       promotedBy: "test",
@@ -299,6 +300,7 @@ describe("artifact store", () => {
       { version: 7 },
       { version: 8 },
       { version: 9 },
+      { version: 10 },
     ]);
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
 
@@ -344,7 +346,8 @@ describe("artifact store", () => {
       expected: { nodes: 0 },
       observed: { nodes: 0 },
     });
-    repository.promoteRevision({
+    repository.instantiateTemplate({
+      artifactId: artifact.id,
       revisionId: revision.id,
       name: `v5-interrupted-${crypto.randomUUID()}`,
       promotedBy: "test",

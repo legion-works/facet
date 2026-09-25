@@ -12,8 +12,8 @@ import {
   V7_SCHEMA_FRAGMENT,
   V8_SCHEMA_FRAGMENT,
   V9_SCHEMA_FRAGMENT,
+  V10_SCHEMA_FRAGMENT,
 } from "./schema";
-import { CURRENT_STORAGE_VERSION } from "../../shared/storage-version";
 
 export interface MigrationOptions {
   readonly beforeRecordVersion?: (version: number) => void;
@@ -106,12 +106,22 @@ const MIGRATION_STEPS: readonly MigrationStep[] = [
     requiresForeignKeyDisable: true,
   },
   {
-    version: CURRENT_STORAGE_VERSION,
+    version: 9,
     apply: (db) => {
       db.exec(V9_SCHEMA_FRAGMENT);
     },
   },
+  {
+    version: 10,
+    apply: (db) => {
+      db.exec(V10_SCHEMA_FRAGMENT);
+    },
+  },
 ];
+
+export function latestMigrationVersion(): number {
+  return MIGRATION_STEPS.at(-1)?.version ?? 0;
+}
 
 export function runMigrations(db: Database, options: MigrationOptions = {}): void {
   try {

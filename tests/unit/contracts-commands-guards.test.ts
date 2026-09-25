@@ -11,11 +11,12 @@ import {
 import { REQUEST_ID } from "./_helpers/command-fixtures";
 
 describe("CommandName coverage", () => {
-  test("exposes the ten implemented command verbs", () => {
+  test("exposes the eleven implemented command verbs", () => {
     const implemented: CommandName[] = [
       "create",
       "publish",
       "list",
+      "templates",
       "readBack",
       "status",
       "open",

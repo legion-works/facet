@@ -201,6 +201,7 @@ describe("Must #2: distinct operator token reaches promote", () => {
             revisionId,
             name: "stable",
             promotedBy: "alice",
+            allowUnverified: true,
           },
         }),
       });

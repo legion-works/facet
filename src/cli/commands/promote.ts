@@ -43,6 +43,7 @@ export function buildPromoteRequest(
     revisionId,
     name,
     promotedBy,
+    ...(args["allow-unverified"] === true ? { allowUnverified: true } : {}),
     ...(typeof artifactId === "string" ? { artifactId } : {}),
     ...(typeof description === "string" ? { description } : {}),
   };

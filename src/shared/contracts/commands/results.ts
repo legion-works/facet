@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { Tier1ResultSchema, VerdictSchema } from "../validation";
+import { Tier1ResultSchema, VerdictSchema, RenderStatusSchema } from "../validation";
 import { ArtifactTypeSchema, RendererSchema } from "../artifact";
 import { EvidenceImageFormatSchema } from "../../evidence-image";
 import { ExportFormatSchema } from "./requests";
@@ -63,6 +63,25 @@ export const ListResultSchema = BaseResultSchema.extend({
   nextCursor: z.string().nullable().optional(),
 });
 export type ListResult = z.infer<typeof ListResultSchema>;
+
+export const TemplatesResultSchema = BaseResultSchema.extend({
+  command: z.literal("templates"),
+  templates: z.array(
+    z.object({
+      name: z.string().min(1),
+      artifactId: z.string().min(1),
+      revisionId: z.string().min(1),
+      revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
+      promotedBy: z.string().min(1),
+      promotedAt: z.string().datetime({ offset: true }),
+      promotionOverride: z.string().nullable(),
+      sourceVerdict: z
+        .object({ status: RenderStatusSchema, tier: z.union([z.literal(0), z.literal(1)]) })
+        .nullable(),
+    }),
+  ),
+});
+export type TemplatesResult = z.infer<typeof TemplatesResultSchema>;
 
 /**
  * Read-back result embeds the canonical `VerdictSchema` from

@@ -513,6 +513,13 @@ export async function dispatch(
         nextCursor: null,
       };
     }
+    case "templates": {
+      return {
+        command: "templates",
+        requestId,
+        templates: deps.repository.listTemplates(command.limit),
+      };
+    }
     case "readBack": {
       const revision =
         command.revisionSha === undefined
@@ -642,6 +649,9 @@ export async function dispatch(
         revisionId: command.revisionId,
         name: command.name,
         promotedBy: command.promotedBy,
+        ...(command.allowUnverified !== undefined
+          ? { allowUnverified: command.allowUnverified }
+          : {}),
         ...(command.description !== undefined ? { description: command.description } : {}),
       });
       return { command: "promote", requestId, template };

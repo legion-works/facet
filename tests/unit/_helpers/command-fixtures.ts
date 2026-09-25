@@ -36,6 +36,7 @@ export const TEMPLATE = {
   description: null,
   promotedBy: "alice",
   promotedAt: "2025-01-01T00:00:00.000Z",
+  promotionOverride: null,
 };
 
 export const VERDICT_OBSERVED = {

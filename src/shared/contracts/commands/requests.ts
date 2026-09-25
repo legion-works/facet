@@ -82,6 +82,12 @@ export const ListRequestSchema = BaseRequestSchema.extend({
 });
 export type ListRequest = z.infer<typeof ListRequestSchema>;
 
+export const TemplatesRequestSchema = BaseRequestSchema.extend({
+  command: z.literal("templates"),
+  limit: z.number().int().positive().max(MAX_LIST_LIMIT).optional(),
+});
+export type TemplatesRequest = z.infer<typeof TemplatesRequestSchema>;
+
 export const ReadBackRequestSchema = BaseRequestSchema.extend({
   command: z.literal("readBack"),
   artifactId: z.string().min(1),
@@ -116,6 +122,7 @@ export const PromoteRequestSchema = BaseRequestSchema.extend({
   name: z.string().min(1),
   description: z.string().nullable().optional(),
   promotedBy: z.string().min(1),
+  allowUnverified: z.boolean().optional(),
 });
 export type PromoteRequest = z.infer<typeof PromoteRequestSchema>;
 

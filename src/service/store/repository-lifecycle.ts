@@ -2,6 +2,11 @@ import type { Database } from "bun:sqlite";
 
 import { type Template, TemplateSchema } from "../../shared/contracts/artifact";
 import { now } from "../../shared/util/time";
+import { FacetError } from "../../shared/errors/facet-error";
+import { PROMOTION_GATE } from "../../shared/contracts/promotion";
+import type { RenderStatus } from "../../shared/contracts/validation";
+import { verdictFromStoredRun } from "../stored-verdict";
+import type { ArtifactRepository } from "./repository";
 import { asStoreError, FacetStoreError } from "./database";
 
 export interface TemplateInput {
@@ -11,6 +16,7 @@ export interface TemplateInput {
   readonly description?: string | null;
   readonly promotedBy: string;
   readonly promotedAt?: string;
+  readonly promotionOverride?: string | null;
 }
 
 export interface PromoteRevisionInput {
@@ -20,6 +26,7 @@ export interface PromoteRevisionInput {
   readonly description?: string | null;
   readonly promotedBy: string;
   readonly promotedAt?: string;
+  readonly allowUnverified?: boolean;
 }
 
 export function evictRevisions(
@@ -59,23 +66,60 @@ export function evictRevisions(
   }
 }
 
-export function promoteRevision(db: Database, input: PromoteRevisionInput): Template {
-  const owner = db
-    .query("SELECT artifact_id FROM revisions WHERE id = ?")
-    .get(input.revisionId) as { artifact_id: string } | null;
-  if (!owner) throw new FacetStoreError("foreign_key", `Revision not found: ${input.revisionId}`);
-  // The template table has independent foreign keys on artifact_id and
-  // revision_id, not a composite ownership constraint, so an explicit
-  // artifactId that disagrees with the revision's real owner would
-  // otherwise insert silently — instantiation would then copy the wrong
-  // artifact's bytes under the caller-supplied artifact's identity.
-  if (input.artifactId !== undefined && input.artifactId !== owner.artifact_id) {
-    throw new FacetStoreError(
-      "foreign_key",
-      `Revision ${input.revisionId} belongs to artifact ${owner.artifact_id}, not ${input.artifactId}`,
-    );
-  }
-  return createTemplate(db, { ...input, artifactId: owner.artifact_id });
+export function promoteRevision(
+  db: Database,
+  repository: ArtifactRepository,
+  input: PromoteRevisionInput,
+): Template {
+  return db
+    .transaction(() => {
+      const owner = db
+        .query("SELECT artifact_id FROM revisions WHERE id = ?")
+        .get(input.revisionId) as { artifact_id: string } | null;
+      if (!owner)
+        throw new FacetStoreError("foreign_key", `Revision not found: ${input.revisionId}`);
+      // The template table has independent foreign keys on artifact_id and
+      // revision_id, not a composite ownership constraint, so an explicit
+      // artifactId that disagrees with the revision's real owner would
+      // otherwise insert silently — instantiation would then copy the wrong
+      // artifact's bytes under the caller-supplied artifact's identity.
+      if (input.artifactId !== undefined && input.artifactId !== owner.artifact_id) {
+        throw new FacetStoreError(
+          "foreign_key",
+          `Revision ${input.revisionId} belongs to artifact ${owner.artifact_id}, not ${input.artifactId}`,
+        );
+      }
+      const revision = repository.getRevisionById(input.revisionId);
+      if (revision === null)
+        throw new FacetStoreError("foreign_key", `Revision not found: ${input.revisionId}`);
+      const tier1 = repository.listRenderRuns({ revisionId: revision.id, tier: 1 })[0];
+      const tier0 = repository.listRenderRuns({ revisionId: revision.id, tier: 0 })[0];
+      const tier1Status = tier1 === undefined ? null : verdictFromStoredRun(revision, tier1).status;
+      const tier0Status = tier0 === undefined ? null : verdictFromStoredRun(revision, tier0).status;
+      const reason =
+        tier1Status === null
+          ? "no_visual_verification"
+          : tier0Status === "error"
+            ? "error"
+            : PROMOTION_GATE[tier1Status as RenderStatus] === "allow"
+              ? null
+              : tier1Status;
+      if (reason !== null && input.allowUnverified !== true) {
+        throw new FacetError(
+          "promotion_refused",
+          `Promotion refused (${reason}). Run facet read-back --artifact-id ${owner.artifact_id} --tier visual on revision ${input.revisionId}, or pass --allow-unverified to record an override.`,
+          {
+            details: { revisionId: input.revisionId, reason, tier1Status, tier0Status },
+          },
+        );
+      }
+      return createTemplate(db, {
+        ...input,
+        artifactId: owner.artifact_id,
+        promotionOverride: reason,
+      });
+    })
+    .immediate();
 }
 
 export function createTemplate(db: Database, input: TemplateInput): Template {
@@ -88,10 +132,14 @@ export function createTemplate(db: Database, input: TemplateInput): Template {
     description: input.description ?? null,
     promotedBy: input.promotedBy,
     promotedAt,
+    promotionOverride: input.promotionOverride ?? null,
   };
   try {
+    const hasOverride = (
+      db.query("PRAGMA table_info(templates)").all() as Array<{ name: string }>
+    ).some((row) => row.name === "promotion_override");
     db.query(
-      "INSERT INTO templates(id, artifact_id, revision_id, name, description, promoted_by, promoted_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      `INSERT INTO templates(id, artifact_id, revision_id, name, description, promoted_by, promoted_at${hasOverride ? ", promotion_override" : ""}) VALUES (?, ?, ?, ?, ?, ?, ?${hasOverride ? ", ?" : ""})`,
     ).run(
       value.id,
       value.artifactId,
@@ -100,6 +148,7 @@ export function createTemplate(db: Database, input: TemplateInput): Template {
       value.description,
       value.promotedBy,
       value.promotedAt,
+      ...(hasOverride ? [value.promotionOverride] : []),
     );
     return TemplateSchema.parse(value);
   } catch (error) {

@@ -1634,13 +1634,25 @@ describe("cli contract — wire", () => {
 
     const promoteIo = makeIo();
     const exit = await runCli(
-      ["promote", "--revision-id", revisionId, "--name", "stable", "--promoted-by", "operator"],
+      [
+        "promote",
+        "--revision-id",
+        revisionId,
+        "--name",
+        "stable",
+        "--promoted-by",
+        "operator",
+        "--allow-unverified",
+      ],
       { ...promoteIo, env },
     );
     expect(exit.code).toBe(0);
     const promoted = parseStdoutEnvelope(promoteIo.stdoutBuf.value);
     if (!promoted.ok) throw new Error(`promotion failed: ${JSON.stringify(promoted.error)}`);
     expect((promoted.data["template"] as { promotedBy: string }).promotedBy).toBe("operator");
+    expect((promoted.data["template"] as { promotionOverride: string }).promotionOverride).toBe(
+      "no_visual_verification",
+    );
     expect(promoteIo.stdoutBuf.value).not.toContain(token);
     expect(promoteIo.stderrBuf.value).not.toContain(token);
   }, 30_000);

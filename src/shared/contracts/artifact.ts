@@ -94,5 +94,6 @@ export const TemplateSchema = z.object({
   description: z.string().nullable(),
   promotedBy: z.string().min(1),
   promotedAt: IsoTimestampSchema,
+  promotionOverride: z.string().nullable(),
 });
 export type Template = z.infer<typeof TemplateSchema>;
