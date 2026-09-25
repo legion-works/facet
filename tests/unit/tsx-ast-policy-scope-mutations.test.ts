@@ -20,6 +20,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { validateTsxAst } from "../../src/validation/tier0/tsx/ast-policy";
 
 const REPO_ROOT = join(import.meta.dir, "../..");
 const AST_POLICY_PATH = join(REPO_ROOT, "src/validation/tier0/tsx/ast-policy.ts");
@@ -251,28 +252,8 @@ process.stdout.write(JSON.stringify({ count: errors.length, codes }) + "\\n");`;
   // Sanity baseline: confirm the unmutated walker reports zero errors
   // for the same ACCEPT case. If the baseline fails, the ACCEPT test
   // itself is broken — fix that first.
-  const baseline = await runUnmutated(caseSource);
+  const baseline = validateTsxAst(caseSource).length;
   return { ...parsed, unmutatedCount: baseline };
-}
-
-async function runUnmutated(caseSource: string): Promise<number> {
-  const driverPath = join(scratchRoot, `baseline-${crypto.randomUUID()}.ts`);
-  tempFiles.push(driverPath);
-  const driver = `import { validateTsxAst } from ${JSON.stringify(AST_POLICY_PATH)};
-const source = ${JSON.stringify(caseSource)};
-const errors = validateTsxAst(source);
-process.stdout.write(String(errors.length) + "\\n");`;
-  writeFileSync(driverPath, driver);
-  const child = Bun.spawn({
-    cmd: [process.execPath, driverPath],
-    env: process.env,
-    cwd: REPO_ROOT,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
-  if (exitCode !== 0) return -1;
-  return Number(stdout.trim());
 }
 
 describe("tsx ast policy — scope-handling mutation harness", () => {
@@ -280,10 +261,10 @@ describe("tsx ast policy — scope-handling mutation harness", () => {
   // against the unmutated walker. If this fails, the ACCEPT test in
   // tests/unit/tsx-ast-policy.test.ts is broken or no longer tests
   // what it claims.
-  test("baseline: every ACCEPT case reports zero errors against the unmutated walker", async () => {
+  test("baseline: every ACCEPT case reports zero errors against the unmutated walker", () => {
     const failures: string[] = [];
     for (const [key, value] of Object.entries(ACCEPT_CASES)) {
-      const count = await runUnmutated(value.source);
+      const count = validateTsxAst(value.source).length;
       if (count !== 0) failures.push(`${key}: ${count} errors (expected 0)`);
     }
     expect(failures).toEqual([]);
@@ -315,10 +296,10 @@ describe("tsx ast policy — scope-handling mutation harness", () => {
   // declaration does not trigger a false rejection. There is no
   // mutation to run here — the test is a regression pin, not a scope-
   // handler test. We still verify the baseline (sanity).
-  test("class field ACCEPT case reports zero errors against the unmutated walker", async () => {
+  test("class field ACCEPT case reports zero errors against the unmutated walker", () => {
     const accept = ACCEPT_CASES["classFieldFetch"];
     if (accept === undefined) throw new Error("classFieldFetch missing");
-    const count = await runUnmutated(accept.source);
+    const count = validateTsxAst(accept.source).length;
     expect(count).toBe(0);
   });
 });
