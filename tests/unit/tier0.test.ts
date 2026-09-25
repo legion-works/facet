@@ -23,7 +23,7 @@ import { parseMarkdown } from "../../src/validation/tier0/markdown";
 import { parseSvg } from "../../src/validation/tier0/svg";
 import { parseChart } from "../../src/validation/tier0/chart";
 import { parseHtml } from "../../src/validation/tier0/html";
-import { domShimDocument, domShimInstalled } from "../../src/validation/tier0/dom-shim";
+import { domShimInstalled } from "../../src/validation/tier0/dom-shim";
 import { runTier0, _parseWorkerStdout } from "../../src/validation/tier0/runner";
 import { probeNetnsSupport } from "../../src/validation/sandbox/netns";
 import { TIER0_TIMEOUT_MS } from "../../src/validation/sandbox/limits";
@@ -61,10 +61,21 @@ function lexicalCounters(_bytes: Uint8Array) {
 }
 
 describe("Tier 0 mermaid parser", () => {
-  test("installs a structural document implementation for import-time renderer checks", async () => {
+  test("imports Mermaid for parsing while leaving label sanitization to Tier 1", async () => {
     expect(domShimInstalled).toBe(true);
-    const parsed = domShimDocument.implementation.createHTMLDocument("<p>shim</p>");
-    expect(parsed.querySelector("p")?.textContent).toBe("shim");
+    const source = [
+      'await import("./src/validation/tier0/dom-shim.ts");',
+      'const [{ default: DOMPurify }, { default: mermaid }] = await Promise.all([import("dompurify"), import("mermaid")]);',
+      "const purify = DOMPurify(globalThis.window);",
+      'if (purify.isSupported || purify.sanitize("<b>x</b>") !== "<b>x</b>") throw new Error("DOMPurify did not pass through Tier 0 labels");',
+      'await mermaid.parse("flowchart TD\\n  A --> B");',
+    ].join("\n");
+    const probe = spawnSync(process.execPath, ["-e", source], {
+      cwd: resolvePath(import.meta.dir, "../.."),
+      encoding: "utf8",
+    });
+    expect(probe.status).toBe(0);
+    expect(probe.stderr).toBe("");
   });
 
   test("parses a clean mermaid body and surfaces lexical node count", async () => {

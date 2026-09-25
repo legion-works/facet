@@ -8,10 +8,12 @@
  * DOM (DOMPurify, etc.) at IMPORT TIME.
  *
  * `dom-shim.ts` installs a linkedom-based structural DOM stub BEFORE
- * this module imports mermaid, so the library's import-time
- * DOMPurify check succeeds. The shim is structural: it never executes
- * artifact source against the DOM. netns ensures any library-initiated
- * network egress cannot reach a host.
+ * this module imports mermaid, so the library can initialize. DOMPurify
+ * deliberately reports itself unsupported under the stub and passes label
+ * text through unsanitized: Tier 0 never renders or keeps that text, and
+ * sanitization is verified at Tier 1 in a real browser. The shim never
+ * executes artifact source against the DOM. netns ensures any
+ * library-initiated network egress cannot reach a host.
  */
 
 import "./dom-shim";
