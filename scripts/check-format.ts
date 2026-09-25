@@ -31,7 +31,7 @@ export const GENERATED_PATHS = new Set(["CHANGELOG.md"]);
 export interface FormatCheckDeps {
   readonly trackedPaths: () => readonly string[];
   readonly pathExists: (path: string) => boolean;
-  readonly invoke: (paths: readonly string[]) => number;
+  readonly invoke: (paths: readonly string[], write: boolean) => number;
 }
 
 export function selectFormatPaths(
@@ -50,8 +50,8 @@ const defaultDeps: FormatCheckDeps = {
   trackedPaths: () =>
     execFileSync("git", ["ls-files", "-z"]).toString().split("\0").filter(Boolean),
   pathExists: existsSync,
-  invoke: (paths) =>
-    spawnSync(process.execPath, [FORMATTER_EXECUTABLE, "--check", ...paths], {
+  invoke: (paths, write) =>
+    spawnSync(process.execPath, [FORMATTER_EXECUTABLE, ...(write ? [] : ["--check"]), ...paths], {
       stdio: "inherit",
     }).status ?? 1,
 };
@@ -60,12 +60,13 @@ export function runFormatCheck(
   args: readonly string[] = process.argv.slice(2),
   deps: FormatCheckDeps = defaultDeps,
 ): number {
-  const explicit = args.filter((path) => path !== "--");
+  const write = args.includes("--write");
+  const explicit = args.filter((path) => path !== "--" && path !== "--write");
   const candidates = selectFormatPaths(
     explicit.length === 0 ? deps.trackedPaths() : explicit,
     deps.pathExists,
   );
-  return candidates.length === 0 ? 0 : deps.invoke(candidates);
+  return candidates.length === 0 ? 0 : deps.invoke(candidates, write);
 }
 
 if (import.meta.main) process.exitCode = runFormatCheck();

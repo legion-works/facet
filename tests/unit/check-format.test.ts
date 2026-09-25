@@ -62,6 +62,21 @@ describe("format surface", () => {
     ).toBe(0);
   });
 
+  test("write mode excludes generated files", () => {
+    const calls: string[][] = [];
+    expect(
+      runFormatCheck(["--write"], {
+        trackedPaths: () => ["CHANGELOG.md", "README.md"],
+        pathExists: () => true,
+        invoke: (paths) => {
+          calls.push([...paths]);
+          return 0;
+        },
+      }),
+    ).toBe(0);
+    expect(calls).toEqual([["README.md"]]);
+  });
+
   test("invokes the project formatter without relying on a global PATH", () => {
     expect(FORMATTER_EXECUTABLE).toBe(resolve("node_modules/.bin/oxfmt"));
     const path = process.env["PATH"];
