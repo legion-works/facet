@@ -208,6 +208,28 @@ export function presentEnvelope(envelope: FacetEnvelope<unknown>, caps: Presente
     }
   }
 
+  if (command === "templates") {
+    const templates = Array.isArray(data["templates"]) ? data["templates"] : [];
+    const lines = ["NAME · ARTIFACT · REVISION · SHA · ACTOR · PROMOTED · OVERRIDE · VERDICT"];
+    for (const entry of templates) {
+      const item = entry as Record<string, unknown>;
+      const verdict = item["sourceVerdict"] as { status: string; tier: number } | null;
+      lines.push(
+        [
+          item["name"],
+          item["artifactId"],
+          item["revisionId"],
+          item["revisionSha"],
+          item["promotedBy"],
+          item["promotedAt"],
+          item["promotionOverride"] ?? "—",
+          verdict === null ? "—" : `${verdict.status} · tier ${verdict.tier}`,
+        ].join(" · "),
+      );
+    }
+    return lines;
+  }
+
   if (command === "doctor") {
     const probes = Array.isArray(data["probes"]) ? data["probes"] : [];
     const lines: string[] = [];
