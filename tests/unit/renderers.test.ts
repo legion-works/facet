@@ -491,6 +491,21 @@ describe("Mermaid renderer", () => {
 });
 
 describe("chart renderer — loader disabled, zero marks is an error", () => {
+  test("chart dimensions default only when omitted and authored sizing remains untouched", () => {
+    expect(chart.withFacetChartDimensions({ mark: "bar" })).toMatchObject({
+      width: 640,
+      height: 360,
+    });
+    expect(chart.withFacetChartDimensions({ mark: "bar", width: 300 })).toMatchObject({
+      width: 300,
+      height: 360,
+    });
+    const autosized = { mark: "bar", autosize: "fit" };
+    const viewed = { mark: "bar", config: { view: { continuousWidth: 300 } } };
+    expect(chart.withFacetChartDimensions(autosized)).toBe(autosized);
+    expect(chart.withFacetChartDimensions(viewed)).toBe(viewed);
+  });
+
   test("Facet defaults fill missing config while authored config wins", () => {
     const source = {
       mark: "bar",

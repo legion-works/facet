@@ -128,6 +128,22 @@ export function withFacetChartTheme(spec: unknown, theme: ResolvedGalleryTheme):
   };
 }
 
+export function withFacetChartDimensions(spec: unknown): unknown {
+  if (spec === null || typeof spec !== "object" || Array.isArray(spec)) return spec;
+  const source = spec as Readonly<Record<string, unknown>>;
+  const config = source.config;
+  if (
+    "autosize" in source ||
+    (typeof config === "object" && config !== null && !Array.isArray(config) && "view" in config)
+  )
+    return spec;
+  return {
+    ...source,
+    width: "width" in source ? source.width : 640,
+    height: "height" in source ? source.height : 360,
+  };
+}
+
 /** Render a chart artifact (artifactType "chart"): Vega-Lite JSON bytes. */
 export async function renderChart(
   ctx: RenderContext,
@@ -144,7 +160,7 @@ export async function renderChart(
   }
   let compiled: { spec: unknown };
   try {
-    compiled = compile(withFacetChartTheme(spec, ctx.theme) as never);
+    compiled = compile(withFacetChartTheme(withFacetChartDimensions(spec), ctx.theme) as never);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new FacetRenderError(`vega-lite compile failed: ${message}`, "chart_compile_error");

@@ -291,6 +291,7 @@ jobs:
           - _repro-browser-lifecycle.test.ts
           - adversarial-render.test.ts
           - canvas-chart-tier1.test.ts
+          - chart-default-size.test.ts
           - csp-consumer-baseline.test.ts
           - egress.test.ts
           - gallery-contrast.test.ts
