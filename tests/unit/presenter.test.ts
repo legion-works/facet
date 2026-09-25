@@ -27,6 +27,32 @@ describe("CLI presenter routing", () => {
 });
 
 describe("CLI presenter envelopes", () => {
+  test("Tier 0 TSX ok says compiled and supplies the exact visual read-back command", () => {
+    const verdict = {
+      ...validReadBackResult().verdict,
+      tier: 0 as const,
+      execution: "interactive" as const,
+    };
+    const lines = presentEnvelope(
+      okEnvelope("request-1", { command: "readBack", renderer: "tsx", verdict }),
+      plain,
+    );
+    expect(lines).toContain(`✓ ok · compiled · tier 0 · art-1 @ ${"a".repeat(8)}`);
+    expect(lines).toContain("  structure checked · rendering not verified");
+    expect(lines).toContain("  verify    facet read-back --artifact-id art-1 --tier visual");
+  });
+
+  test("every publish Tier 0 ok is qualified but a Tier 1 ok is not", () => {
+    const tier0 = { ...validReadBackResult().verdict, tier: 0 as const };
+    const publish = { ...validPublishResult(), verdict: tier0 };
+    const lines = presentEnvelope(okEnvelope("request-1", publish), plain);
+    expect(lines).toContain("  structure checked · rendering not verified");
+    expect(lines).toContain("  verify    facet read-back --artifact-id art-1 --tier visual");
+    const visual = presentEnvelope(okEnvelope("request-1", validReadBackResult()), plain);
+    expect(visual.join("\n")).not.toContain("rendering not verified");
+    expect(visual.join("\n")).not.toContain("compiled");
+  });
+
   test("doctor output lists probes and literal fixes", () => {
     const envelope = okEnvelope("request-1", {
       command: "doctor",

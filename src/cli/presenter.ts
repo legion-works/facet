@@ -108,6 +108,9 @@ function verdictLines(verdict: Verdict, caps: PresenterCaps): string[] {
   const head = [
     paint(tone, `${VERDICT_GLYPH[verdict.status]} ${word}`),
     ...(detail === undefined ? [] : [paint("dim", detail)]),
+    ...(verdict.tier === 0 && verdict.status === "ok" && verdict.execution !== undefined
+      ? [paint("dim", "compiled")]
+      : []),
     paint("dim", `tier ${verdict.tier}`),
     `${verdict.artifactId} ${paint("dim", "@")} ${paint("cyan", sha8(verdict.revisionSha))}`,
   ].join(paint("dim", " · "));
@@ -121,6 +124,12 @@ function verdictLines(verdict: Verdict, caps: PresenterCaps): string[] {
       "observed",
       `svg ${o.rendererRootSvgCount} · graphs ${o.graphCount} · nodes ${o.mermaidNodeCount} · errors ${o.errorCount}`,
     ),
+    ...(verdict.tier === 0 && verdict.status === "ok"
+      ? [
+          "  structure checked · rendering not verified",
+          row("verify", `facet read-back --artifact-id ${verdict.artifactId} --tier visual`),
+        ]
+      : []),
   ];
   const first = o.discriminativeErrors?.[0];
   if (first !== undefined)
@@ -162,6 +171,15 @@ export function presentEnvelope(envelope: FacetEnvelope<unknown>, caps: Presente
     ];
     if (revision?.sha256 !== undefined) {
       lines.push(row("read-back", `facet read-back --revision-sha ${revision.sha256}`));
+    }
+    const tier0 = data["verdict"];
+    if (
+      typeof tier0 === "object" &&
+      tier0 !== null &&
+      (tier0 as Verdict).tier === 0 &&
+      (tier0 as Verdict).status === "ok"
+    ) {
+      lines.push(...verdictLines(tier0 as Verdict, caps));
     }
     const tier1 = data["tier1Verdict"];
     if (typeof tier1 === "object" && tier1 !== null) {
