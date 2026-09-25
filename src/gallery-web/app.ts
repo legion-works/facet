@@ -1094,10 +1094,16 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
   let generation = 0;
   let activeFrame: CreatedArtifactFrame | null = null;
   let removeInteractionListener: () => void = noOp;
-  const activateInteractionSignal = (frame: CreatedArtifactFrame): void => {
+  // Every path that leaves the displayed frame ends the signal: a stale flag would paint the
+  // previous artifact's runtime error onto whatever the shell shows next.
+  const endInteractionSignal = (): void => {
     removeInteractionListener();
     const badge = document.getElementById("facet-verdict");
     if (badge !== null) delete badge.dataset.interactionError;
+  };
+  const activateInteractionSignal = (frame: CreatedArtifactFrame): void => {
+    endInteractionSignal();
+    const badge = document.getElementById("facet-verdict");
     updateGalleryStatus("displayed");
     const frameWindow = (frame.element.raw as HTMLIFrameElement).contentWindow;
     if (frameWindow === null || typeof frameWindow.addEventListener !== "function") return;
@@ -1132,7 +1138,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     exportMenu?.sync();
     activeFrame?.renderResult?.setGestureMode("native");
     swaps?.close();
-    removeInteractionListener();
+    endInteractionSignal();
     removeThemePreferenceListener();
     clearSession(window.sessionStorage);
     renderSessionExpired(
@@ -1475,9 +1481,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       updateSwapBar("start");
       updateGalleryFavicon("unverified");
       updateGalleryVerdict(null);
-      removeInteractionListener();
-      const badge = document.getElementById("facet-verdict");
-      if (badge !== null) delete badge.dataset.interactionError;
+      endInteractionSignal();
       swaps?.enqueue({ kind: "revision", ...event });
     },
     onClose: (event) => {

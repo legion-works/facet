@@ -128,10 +128,6 @@
   font-weight: 700;
   box-shadow: var(--facet-glow-danger);
 }
-.facet-verdict[data-status="tampered"]::before {
-  content: "⊘";
-}
-
 .facet-verdict[data-status="tampered"]::before,
 .facet-verdict[data-status="insecure:unvalidated"]::before {
   content: "⊘";

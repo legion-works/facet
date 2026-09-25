@@ -164,7 +164,28 @@ class FakeIframe extends FakeElement {
   readonly receivedPayloads: unknown[] = [];
   readonly contentWindow: {
     __facetFrame?: { readonly render?: (payload: unknown) => Promise<unknown> };
-  } = {};
+    addEventListener(type: string, listener: Listener): void;
+    removeEventListener(type: string, listener: Listener): void;
+    emit(type: string): void;
+  } = (() => {
+    const listeners = new Map<string, Listener[]>();
+    return {
+      addEventListener(type, listener) {
+        const current = listeners.get(type) ?? [];
+        current.push(listener);
+        listeners.set(type, current);
+      },
+      removeEventListener(type, listener) {
+        listeners.set(
+          type,
+          (listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
+        );
+      },
+      emit(type) {
+        for (const listener of listeners.get(type) ?? []) listener({});
+      },
+    };
+  })();
 
   install(config: FakeFrameConfig): void {
     if (config.autoLoad === false) this.autoLoadOnAppend = false;
@@ -416,6 +437,18 @@ function isIframe(child: FakeElement): child is FakeIframe {
 }
 
 describe("gallery shell startup", () => {
+  test("expiry clears a prior interaction error signal", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    const badge = harness.elements.get("facet-verdict")!;
+    harness.frames[0]!.contentWindow.emit("error");
+    expect(badge.dataset["interactionError"]).toBe("true");
+    harness.emitStreamClose("lease_expired");
+    await waitFor(
+      () => harness.elements.get("facet-status-line")?.textContent === "session expired",
+    );
+    expect(badge.dataset["interactionError"]).toBeUndefined();
+  });
   test("accepts the page-shim observation shape with and without HTML counts", async () => {
     const svgHarness = createRuntime();
     await startGallery(svgHarness.runtime);
