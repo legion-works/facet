@@ -41,10 +41,11 @@ Current gallery captures use the Mermaid fixture in resolved dark and the chart 
 
 ## Install
 
-Facet is distributed as `@legionworks/facet`. **Bun is the required runtime**:
-the CLI runs on Bun `1.4.0` or newer. npm and pnpm are distribution channels,
-not Node runtime support; a machine without Bun cannot run the installed CLI and
-will receive a runtime failure.
+Facet is distributed as `@legionworks/facet`. **Bun is the required runtime**;
+install Bun `1.4.0` or newer first using the [official Bun installation
+instructions](https://bun.sh/docs/installation). The installed CLI runs on Bun.
+npm alone is not enough: npm and pnpm distribute
+Facet, but they do not provide its required runtime.
 
 Recommended:
 
@@ -69,6 +70,32 @@ The pinned browser used for visual read-back downloads on the first visual
 read-back. See the [CLI reference](docs/reference/cli.md) for the command
 contract and [MCP reference](docs/reference/mcp.md) for structured-tool-only
 hosts.
+
+## Quickstart from an installed binary
+
+This walkthrough uses the globally installed `facet` command, not a source
+checkout. It creates disposable runtime and export directories.
+
+```sh
+export FACET_HOME="$(mktemp -d)"
+facet status --start
+facet doctor
+SOURCE='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80"><rect width="240" height="80" rx="8" fill="#202638"/><text x="20" y="48" fill="white">Facet quickstart</text></svg>'
+SOURCE_FILE="$(mktemp)"
+printf '%s' "$SOURCE" > "$SOURCE_FILE"
+ARTIFACT_ID="$(facet create --project-id demo --slug quickstart --title 'Quickstart' | bun -e 'const x=JSON.parse(await Bun.stdin.text()); if(!x.ok) throw new Error(x.error.code); console.log(x.data.artifact.id)')"
+PUBLISH="$(facet publish --artifact-id "$ARTIFACT_ID" --type svg --file "$SOURCE_FILE")"
+printf '%s\n' "$PUBLISH" | bun -e 'const x=JSON.parse(await Bun.stdin.text()); if(!x.ok || !x.data.verdict) throw new Error("publish failed"); console.log(JSON.stringify(x.data.verdict))'
+REVISION_SHA="$(printf '%s\n' "$PUBLISH" | bun -e 'const x=JSON.parse(await Bun.stdin.text()); console.log(x.data.revision.sha256)')"
+facet read-back --artifact-id "$ARTIFACT_ID" --revision-sha "$REVISION_SHA" --tier visual
+EXPORT_DIR="$(mktemp -d)"
+facet export "$ARTIFACT_ID" --format source --out "$EXPORT_DIR/artifact.svg"
+```
+
+`doctor` checks the local runtime and browser setup. Inspect `data.verdict` in
+the publish envelope: an `ok` command envelope only confirms transport, and
+the stored verdict can still have `status: "error"`. The first visual read-back
+uses Tier 1 and downloads the pinned browser if it isn't already installed.
 
 ## Verdict language
 
