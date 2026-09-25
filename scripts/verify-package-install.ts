@@ -298,7 +298,13 @@ async function main(): Promise<void> {
     const templateRevision = templatePublished.revision as Record<string, unknown>;
     const templateRevisionId = templateRevision.id;
     assert(typeof templateRevisionId === "string", "template publish did not return a revision id");
-    data(
+    // CI has no pinned browser, so a visual read-back cannot gate this path;
+    // assert the override contract end-to-end instead. The promotion gate
+    // refuses without `--allow-unverified`; the override must surface as
+    // `no_visual_verification` on both the create response and the templates
+    // listing so the smoke path exercises the same wire form a human operator
+    // would see after an explicit override.
+    const promotedTemplate = data(
       await run([
         "promote",
         "--artifact-id",
@@ -309,8 +315,25 @@ async function main(): Promise<void> {
         "incident-console",
         "--promoted-by",
         "package-install",
+        "--allow-unverified",
       ]),
       "promote template",
+    );
+    const template = promotedTemplate.template as Record<string, unknown>;
+    assert(typeof template.id === "string", "promote template did not return an id");
+    assert(
+      template.promotionOverride === "no_visual_verification",
+      `promote template override mismatch: ${String(template.promotionOverride)}`,
+    );
+    const listedTemplates = data(await run(["templates", "--limit", "50"]), "templates");
+    const listedRows = Array.isArray(listedTemplates.templates)
+      ? (listedTemplates.templates as Array<Record<string, unknown>>)
+      : [];
+    const incidentConsole = listedRows.find((row) => row.name === "incident-console");
+    assert(incidentConsole !== undefined, "templates listing omitted incident-console");
+    assert(
+      incidentConsole.promotionOverride === "no_visual_verification",
+      `templates listing override mismatch: ${String(incidentConsole.promotionOverride)}`,
     );
     const instantiated = data(
       await run([
