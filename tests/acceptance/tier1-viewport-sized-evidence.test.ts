@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,6 +24,15 @@ async function publishSource(source: string, artifactType: "html" | "tsx", slug:
   }
 }
 
+// CI uploads this directory for this leg, so a pixel failure on a runner can be
+// inspected instead of guessed at.
+const EVIDENCE_DIR = join(process.cwd(), "test-results", "tier1-viewport-sized");
+
+function keepEvidence(path: string, label: string) {
+  mkdirSync(EVIDENCE_DIR, { recursive: true });
+  copyFileSync(path, join(EVIDENCE_DIR, `${label}.webp`));
+}
+
 function expectColor(actual: number[], expected: number[]) {
   for (let channel = 0; channel < 3; channel += 1)
     expect(Math.abs(actual[channel]! - expected[channel]!)).toBeLessThanOrEqual(48);
@@ -43,9 +52,12 @@ async function expectFullViewportImage(path: string, heroColor: number[], footer
   expect(metadata.pages ?? 1).toBe(1);
   expect(info.width).toBeGreaterThanOrEqual(1280);
   expect(info.height).toBeGreaterThanOrEqual(800 + 48);
-  expectColor(pixel(100, 400), heroColor);
-  expectColor(pixel(100, 790), heroColor);
-  expectColor(pixel(100, 830), footerColor);
+  // Sample right of the fixtures' left-aligned text: host fonts differ in width,
+  // and a runner font once put a glyph under a column-100 sample.
+  const column = 1200;
+  expectColor(pixel(column, 400), heroColor);
+  expectColor(pixel(column, 790), heroColor);
+  expectColor(pixel(column, 830), footerColor);
 }
 
 test("HTML viewport-height hero and following paragraph both appear in evidence", async () => {
@@ -57,6 +69,7 @@ test("HTML viewport-height hero and following paragraph both appear in evidence"
   expect(published.tier1Status).toBe("ok");
   expect(published.tier1ScreenshotError).toBeNull();
   expect(published.tier1ScreenshotPath).not.toBeNull();
+  keepEvidence(published.tier1ScreenshotPath!, "html-viewport-height");
   await expectFullViewportImage(published.tier1ScreenshotPath!, [251, 44, 55], [0, 166, 62]);
 }, 90_000);
 
@@ -69,6 +82,7 @@ test("interactive TSX viewport-height hero retains a still image including follo
   expect(published.tier1Status).toBe("ok");
   expect(published.tier1ScreenshotError).toBeNull();
   expect(published.tier1ScreenshotPath).not.toBeNull();
+  keepEvidence(published.tier1ScreenshotPath!, "tsx-interactive-viewport-height");
   await expectFullViewportImage(published.tier1ScreenshotPath!, [213, 50, 34], [34, 185, 122]);
 }, 90_000);
 
@@ -92,6 +106,7 @@ test("viewport-height content extending beyond 1280px retains its right edge", a
   expect(published.tier1Status).toBe("ok");
   expect(published.tier1ScreenshotError).toBeNull();
   expect(published.tier1ScreenshotPath).not.toBeNull();
+  keepEvidence(published.tier1ScreenshotPath!, "tsx-wide-viewport-height");
   const { data, info } = await sharp(readFileSync(published.tier1ScreenshotPath!))
     .raw()
     .toBuffer({ resolveWithObject: true });
