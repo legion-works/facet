@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.10.2](https://github.com/legion-works/facet/compare/v1.10.1...v1.10.2) (2026-09-26)
+
+
+### Behaviour changes
+
+* A visual check (`facet read-back --tier visual`) of Markdown with text but no diagrams now returns `ok`. It returned `partial:layout_unverified` before. Empty or whitespace-only Markdown still returns `partial:layout_unverified`.
+* A visual check of Markdown with an external `https:` image now returns `partial:external_resources`, as HTML already did. Before, Markdown images were not counted at Tier 1.
+
+
+### Bug Fixes
+
+* keep a screenshot for layouts sized to the viewport (`min-h-screen`, `100vh`): when the whole-artifact capture cannot size the page, the visual check captures it in 1280×800 tiles and stitches them, within a per-tile timeout and a 15-second overall deadline ([9c6e2d8](https://github.com/legion-works/facet/commit/9c6e2d8b982ecb2d865f38d621696805333f3efa), [4d13a47](https://github.com/legion-works/facet/commit/4d13a47d2c33906d6bdc559fd9e3f6e5999462f2), [60daa8d](https://github.com/legion-works/facet/commit/60daa8de65a1ed397f8888ee465f6be7b40737cc)), closes [#47](https://github.com/legion-works/facet/issues/47)
+* pass visual read-back for Markdown with no diagrams, and count Markdown external images at Tier 1 ([3047efd](https://github.com/legion-works/facet/commit/3047efd4540894369f12774152639081ba66c71f)), closes [#51](https://github.com/legion-works/facet/issues/51) [#53](https://github.com/legion-works/facet/issues/53)
+
 ## [1.10.1](https://github.com/legion-works/facet/compare/v1.10.0...v1.10.1) (2026-09-26)
 
 
