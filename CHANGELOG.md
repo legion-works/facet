@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.3](https://github.com/legion-works/facet/compare/v1.10.2...v1.10.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* do not treat failed resource loads as runtime errors ([7b3cc63](https://github.com/legion-works/facet/commit/7b3cc63218fa07d9c39ab0a2fff29709d864bd36)), closes [#56](https://github.com/legion-works/facet/issues/56)
+
 ## [1.10.2](https://github.com/legion-works/facet/compare/v1.10.1...v1.10.2) (2026-09-26)
 
 
