@@ -454,4 +454,53 @@ describe("Tier 1 screenshot evidence", () => {
       format: "webp",
     });
   });
+
+  test("refuses slow successful tiles once the tiled-capture deadline expires", async () => {
+    const png = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "#22b97a" },
+    })
+      .png()
+      .toBuffer();
+    let capturedTiles = 0;
+    const session = {
+      send: async <T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> => {
+        if (method === "Page.captureScreenshot") {
+          capturedTiles += 1;
+          await Bun.sleep(30);
+          return { data: png.toString("base64") } as T;
+        }
+        if (method === "Runtime.evaluate") {
+          const expression = String(params?.expression);
+          if (expression.includes("container.scrollWidth"))
+            return { result: { value: { width: 2, height: 16 } } } as T;
+          if (expression.includes("element.clientWidth"))
+            return { result: { value: { width: 2, height: 2 } } } as T;
+          if (expression.includes("#host-root iframe"))
+            return { result: { value: { x: 0, y: 0, width: 2, height: 2 } } } as T;
+          if (expression.includes("element.style.scrollBehavior")) {
+            const top = Number(expression.match(/element\.scrollTop=(\d+)/)?.[1]);
+            return { result: { value: { left: 0, top } } } as T;
+          }
+        }
+        return {} as T;
+      },
+      on: () => {},
+      off: () => {},
+      detach: async () => {},
+    };
+    const started = performance.now();
+    const result = await captureTiledEvidenceScreenshot(session, 41, {
+      tileTimeoutMs: 100,
+      tileAttempts: 1,
+      tiledDeadlineMs: 100,
+    });
+
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(capturedTiles).toBeLessThan(8);
+    expect(result.screenshot).toBeNull();
+    expect(result.screenshotError).toMatchObject({
+      code: "screenshot_unavailable",
+      message: expect.stringContaining("tiled-capture deadline"),
+    });
+  });
 });

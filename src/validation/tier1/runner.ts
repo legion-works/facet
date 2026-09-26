@@ -74,6 +74,7 @@ import {
   TIER1_SCREENSHOT_MAX_AXIS_PX,
   TIER1_SCREENSHOT_MAX_PIXELS,
   TIER1_SCREENSHOT_WEBP_QUALITY,
+  TIER1_TILED_CAPTURE_DEADLINE_MS,
   TIER1_VIEWPORT_HEIGHT,
   TIER1_VIEWPORT_WIDTH,
   TSX_STABILITY_WINDOW_MS,
@@ -980,8 +981,17 @@ export async function captureEvidenceScreenshot(
 async function captureTiledScreenshot(
   session: VerifierCdpSession,
   executionContextId: number,
-  options: { readonly tileTimeoutMs?: number; readonly tileAttempts?: number } = {},
+  options: {
+    readonly tileTimeoutMs?: number;
+    readonly tileAttempts?: number;
+    readonly tiledDeadlineMs?: number;
+  } = {},
 ): Promise<CapturedEvidenceImage> {
+  const deadlineAt =
+    performance.now() + (options.tiledDeadlineMs ?? TIER1_TILED_CAPTURE_DEADLINE_MS);
+  const assertDeadline = () => {
+    if (performance.now() >= deadlineAt) throw new Error("tiled-capture deadline exceeded");
+  };
   await configureTier1Viewport(session);
   await session.send("Runtime.evaluate", {
     contextId: executionContextId,
@@ -1019,6 +1029,7 @@ async function captureTiledScreenshot(
   const layers: { input: Buffer; left: number; top: number }[] = [];
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
+      assertDeadline();
       const x = column * tileWidth;
       const y = row * tileHeight;
       const scrolled = (await session.send("Runtime.evaluate", {
@@ -1080,6 +1091,7 @@ async function captureTiledScreenshot(
       layers.push({ input, left: outputLeft, top: outputTop });
     }
   }
+  assertDeadline();
   const finalSize = await measureArtifactCaptureSize(session, executionContextId);
   await session.send("Runtime.evaluate", {
     contextId: executionContextId,
@@ -1096,13 +1108,18 @@ async function captureTiledScreenshot(
     .toBuffer();
   if (bytes.byteLength > TIER1_SCREENSHOT_CAP_BYTES)
     throw new Error("tiled screenshot exceeds encoded-size cap");
+  assertDeadline();
   return { bytes, format: "webp" };
 }
 
 export async function captureTiledEvidenceScreenshot(
   session: VerifierCdpSession,
   executionContextId: number,
-  options: { readonly tileTimeoutMs?: number; readonly tileAttempts?: number } = {},
+  options: {
+    readonly tileTimeoutMs?: number;
+    readonly tileAttempts?: number;
+    readonly tiledDeadlineMs?: number;
+  } = {},
 ): Promise<{
   readonly screenshot: CapturedEvidenceImage | null;
   readonly screenshotError: ScreenshotError | null;

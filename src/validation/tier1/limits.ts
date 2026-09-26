@@ -36,6 +36,9 @@ export const TIER1_USER_DATA_DIR_MODE = 0o700;
  */
 export const TIER1_RENDER_BARRIER_MS = 30_000;
 
+/** Keep tiled evidence below the Tier 1 budget after the render and stability windows. */
+export const TIER1_TILED_CAPTURE_DEADLINE_MS = 15_000;
+
 /**
  * Time between the first interactive TSX observation and its bounded
  * stability re-check. It stays below the headroom after the render barrier so
