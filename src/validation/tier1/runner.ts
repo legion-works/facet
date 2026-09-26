@@ -329,7 +329,7 @@ async function runTier1Attempt(
       artifactFrame,
       isolated.executionContextId,
       interactiveTsx ? runtimeExceptions!.errorsForFrame(artifactFrame.frameId) : [],
-      input.artifactType === "tsx",
+      input.artifactType === "tsx" || input.artifactType === "markdown",
     );
     const secondObservation = interactiveTsx
       ? await waitForStabilityObservation(
@@ -355,6 +355,7 @@ async function runTier1Attempt(
         renderComplete: shim.renderComplete,
         interactive: interactiveTsx,
         tsx: input.artifactType === "tsx",
+        markdown: input.artifactType === "markdown",
         channelDivergence,
         structureChanged:
           interactiveTsx && countsDiffer(firstObservation.protocol, secondObservation.protocol),

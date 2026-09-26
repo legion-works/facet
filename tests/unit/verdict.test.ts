@@ -111,6 +111,71 @@ describe("deriveVerdict — happy path", () => {
     expect((verdict.observed as Record<string, unknown>).insecure).toBeUndefined();
     expect(Object.keys(verdict.observed)).not.toContain("insecure");
   });
+
+  test("Markdown without layout roots is ok only when an authoritative renderer root is non-empty", () => {
+    const markdown = lex({ rendererRootSvgCount: 0, mermaidNodeCount: 0, visibleSvgCount: 0 });
+    const text = protocol({
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      viewBoxes: [],
+      emptyRendererRoot: false,
+    });
+    const empty = { ...text, emptyRendererRoot: true };
+
+    expect(deriveVerdict(markdown, text, text, shim(text), lifecycle({ markdown: true }))).toBe(
+      "ok",
+    );
+    expect(deriveVerdict(markdown, empty, empty, shim(empty), lifecycle({ markdown: true }))).toBe(
+      "partial:layout_unverified",
+    );
+    expect(
+      deriveVerdict(
+        markdown,
+        text,
+        { ...text, emptyRendererRoot: true },
+        shim(text),
+        lifecycle({ markdown: true }),
+      ),
+    ).toBe("tampered");
+    expect(deriveVerdict(markdown, text, text, shim(text), lifecycle())).toBe(
+      "partial:layout_unverified",
+    );
+  });
+
+  test("Markdown with external images or Mermaid keeps its existing verdict paths", () => {
+    const markdown = lex({
+      rendererRootSvgCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      externalImageCount: 1,
+    });
+    const external = protocol({
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      viewBoxes: [],
+      externalImageCount: 1,
+      emptyRendererRoot: false,
+    });
+    expect(
+      deriveVerdict(markdown, external, external, shim(external), lifecycle({ markdown: true })),
+    ).toBe("partial:external_resources");
+
+    const mermaidExpected = lex({ rendererRootSvgCount: 1, mermaidNodeCount: 1 });
+    const mermaidObserved = protocol({ emptyRendererRoot: false });
+    expect(
+      deriveVerdict(
+        mermaidExpected,
+        mermaidObserved,
+        mermaidObserved,
+        shim(),
+        lifecycle({ markdown: true }),
+      ),
+    ).toBe("ok");
+  });
 });
 
 describe("deriveVerdict — TSX empty renderer root", () => {

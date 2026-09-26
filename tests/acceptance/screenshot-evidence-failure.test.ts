@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { publishFixture, readBackFixture } from "../helpers/facet-testkit";
 
 const SMUGGLE_FIXTURE = `${import.meta.dir}/../fixtures/hostile-canvas-smuggle.json`;
-const LAYOUT_FIXTURE = `${import.meta.dir}/../fixtures/plain-markdown.md`;
+const LAYOUT_FIXTURE = `${import.meta.dir}/../fixtures/whitespace-markdown.fixture`;
 
 function expectScreenshotUnavailable(value: unknown): void {
   expect(value).toMatchObject({
@@ -33,6 +33,7 @@ test("opaque verdict survives a forced screenshot failure with evidence annotati
 }, 90_000);
 
 test("layout verdict survives a forced screenshot failure with evidence annotation", async () => {
+  // Whitespace leaves the Markdown root empty, so no visual claim is verifiable.
   const published = await publishFixture({
     fixturePath: LAYOUT_FIXTURE,
     artifactType: "markdown",

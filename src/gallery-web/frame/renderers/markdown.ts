@@ -77,5 +77,9 @@ export async function renderMarkdown(ctx: RenderContext, bytes: Uint8Array): Pro
     if (region.firstElementChild !== null) pre.replaceWith(region);
     else pre.remove();
   }
-  ctx.container.appendChild(template.content);
+  const root = document.createElement("div");
+  root.setAttribute("data-facet-renderer-root", "true");
+  root.setAttribute("data-facet-renderer-kind", "markdown");
+  root.appendChild(template.content);
+  ctx.container.appendChild(root);
 }

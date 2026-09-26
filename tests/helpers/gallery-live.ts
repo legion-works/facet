@@ -139,7 +139,7 @@ export async function artifactBlockRects(
   const markdown = (await target.session.send("Runtime.evaluate", {
     contextId: markdownWorld,
     returnByValue: true,
-    expression: `Array.from(document.querySelector('#artifact')?.children ?? []).map((block) => {
+    expression: `Array.from(document.querySelector('#artifact [data-facet-renderer-kind="markdown"]')?.children ?? []).map((block) => {
       const rect = block.getBoundingClientRect();
       return { top: rect.top, bottom: rect.bottom, left: rect.left };
     })`,
@@ -190,14 +190,10 @@ export interface ArtifactGeometry {
   readonly rootTop: number;
   /**
    * Gutter probe for renderer types that mount a full-width wrapper
-   * as `#artifact`'s only child (html/tsx via `[data-facet-renderer-root]`)
-   * — measures the wrapper's own first element child (the fixture's
-   * actual rendered content) instead of the wrapper itself, which
-   * would always read edge-to-edge regardless of whether the real
-   * content is centered. Falls back to `rootLeft`/`rootRight` when
-   * there's no marked wrapper or it has no element child (markdown,
-   * and the standalone-diagram types where the marked root IS the
-   * leaf content).
+   * (`html`/`tsx` and Markdown) — measures its first element child
+   * instead of the wrapper, whose bounds would always read edge-to-edge.
+   * Standalone diagrams fall back to `rootLeft`/`rootRight` because their
+   * marked root is the leaf content.
    */
   readonly contentLeft: number;
   readonly contentRight: number;

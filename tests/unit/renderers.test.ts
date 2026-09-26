@@ -167,6 +167,8 @@ describe("markdown renderer — raw HTML is DATA, never elements", () => {
       { container, theme: "dark" },
       new TextEncoder().encode("# Hi\n\n<script>alert(1)</script>"),
     );
+    expect(container.firstElementChild?.getAttribute("data-facet-renderer-root")).toBe("true");
+    expect(container.firstElementChild?.getAttribute("data-facet-renderer-kind")).toBe("markdown");
     expect(container.querySelector("h1")).not.toBeNull();
     expect(container.querySelector("script")).toBeNull();
     expect(container.textContent).toContain("<script>alert(1)</script>");

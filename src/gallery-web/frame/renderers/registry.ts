@@ -140,8 +140,11 @@ export function countPageShim(): PageShimCounts {
   const graphRoots = roots.filter((root) => root.getAttribute(RENDERER_GRAPH_ATTRIBUTE) === "true");
   const allMarkedCandidates = safeSelectorElements(MARKED_ROOT_SELECTOR);
   const markedSet = new Set(allMarkedCandidates);
-  const htmlRoots = allMarkedCandidates.filter(
+  const contentRoots = allMarkedCandidates.filter(
     (root) => root.nodeName.toLowerCase() !== "svg" && !hasMarkedRootAncestor(root, markedSet),
+  );
+  const htmlRoots = contentRoots.filter(
+    (root) => root.getAttribute("data-facet-renderer-kind") !== "markdown",
   );
   const html =
     htmlRoots.length === 0
@@ -192,13 +195,25 @@ export function countPageShim(): PageShimCounts {
   const opaqueRegionCount = safeSelectorElements("*").filter(
     (element) => element.nodeName.toLowerCase() === "canvas",
   ).length;
+  const externalImageCount = contentRoots.reduce(
+    (count, root) =>
+      count +
+      safeSelectorElementsWithin(root, HTML_STRUCTURAL_GROUPS.images.join(",")).filter((image) => {
+        try {
+          return new URL(image.getAttribute("src") ?? "").protocol === "https:";
+        } catch {
+          return false;
+        }
+      }).length,
+    0,
+  );
   return {
     rendererRootSvgCount: roots.length,
     graphCount: graphRoots.length,
     mermaidNodeCount,
     visibleSvgCount: roots.filter(nonDegenerateViewBox).length,
     opaqueRegionCount,
-    externalImageCount: html?.externalImageCount ?? 0,
+    externalImageCount,
     errorCount: safeSelectorElements("[data-facet-error]").length,
     ...(html === undefined ? {} : { html }),
   };

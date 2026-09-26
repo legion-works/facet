@@ -49,7 +49,7 @@ export interface SnapshotDocument {
 function snapshotRootEmpty(snapshot: SnapshotResponse, documentIndex: number): boolean | undefined {
   const document = snapshot.documents[documentIndex];
   if (document === undefined) return undefined;
-  const roots = htmlRootIndexes(snapshot, documentIndex);
+  const roots = contentRootIndexes(snapshot, documentIndex);
   if (roots.length !== 1) return undefined;
   const root = roots[0];
   if (root === undefined) return undefined;
@@ -166,6 +166,18 @@ function hasAncestorIn(
 }
 
 function htmlRootIndexes(snapshot: SnapshotResponse, documentIndex: number): number[] {
+  return contentRootIndexes(snapshot, documentIndex).filter(
+    (nodeIndex) =>
+      attributeValue(
+        snapshot,
+        snapshot.documents[documentIndex]!,
+        nodeIndex,
+        "data-facet-renderer-kind",
+      ) !== "markdown",
+  );
+}
+
+function contentRootIndexes(snapshot: SnapshotResponse, documentIndex: number): number[] {
   const document = snapshot.documents[documentIndex];
   if (document === undefined) return [];
   const candidates = new Set<number>();
@@ -179,6 +191,27 @@ function htmlRootIndexes(snapshot: SnapshotResponse, documentIndex: number): num
     ).toLowerCase();
     return name !== "svg" && !hasAncestorIn(document, nodeIndex, candidates);
   });
+}
+
+function countSnapshotExternalImages(snapshot: SnapshotResponse, documentIndex: number): number {
+  const document = snapshot.documents[documentIndex];
+  if (document === undefined) return 0;
+  const roots = new Set(contentRootIndexes(snapshot, documentIndex));
+  let count = 0;
+  for (let nodeIndex = 0; nodeIndex < document.nodes.nodeName.length; nodeIndex += 1) {
+    if (!isDescendantOf(document, nodeIndex, roots)) continue;
+    const name = readString(
+      snapshot.strings,
+      document.nodes.nodeName[nodeIndex] ?? 0,
+    ).toLowerCase();
+    if (
+      (HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name) &&
+      isExternalHttps(attributeValue(snapshot, document, nodeIndex, "src"))
+    ) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function isDescendantOf(
@@ -372,6 +405,7 @@ export async function probeProtocolSnapshot(
   const discriminativeErrors = collectDiscriminativeErrors(snapshot, documentIndex);
   const errorCount = discriminativeErrors.length;
   const htmlCounts = countSnapshotHtml(snapshot, documentIndex);
+  const externalImageCount = countSnapshotExternalImages(snapshot, documentIndex);
   const emptyRendererRoot = observeContent ? snapshotRootEmpty(snapshot, documentIndex) : undefined;
   return {
     rendererRootSvgCount: rendererRoots.length,
@@ -379,7 +413,7 @@ export async function probeProtocolSnapshot(
     mermaidNodeCount: countGNode(snapshot, documentIndex, graphRoots),
     visibleSvgCount: viewBoxes.filter(isNonDegenerateViewBox).length,
     opaqueRegionCount: countByName(snapshot, documentIndex, "canvas"),
-    externalImageCount: htmlCounts?.externalImageCount ?? 0,
+    externalImageCount,
     ...(htmlCounts === undefined ? {} : { html: htmlCounts }),
     ...(emptyRendererRoot === undefined ? {} : { emptyRendererRoot }),
     viewBoxes,
@@ -424,6 +458,7 @@ export async function probeProtocolGetDocument(
   let gNodeCount = 0;
   let opaqueRegionCount = 0;
   let visibleSvgCount = 0;
+  let externalImageCount = 0;
   let html: HtmlStructureCounts | undefined;
   let emptyRendererRoot: boolean | undefined;
   const viewBoxes: string[] = [];
@@ -458,19 +493,21 @@ export async function probeProtocolGetDocument(
     const name = (record.nodeName ?? "").toLowerCase();
     const markedRoot = findAttr("data-facet-renderer-root") === "true";
     const rendererRoot = name === "svg" && markedRoot && !withinRendererRoot;
-    const htmlRoot = name !== "svg" && markedRoot && !withinMarkedRoot;
+    const contentRoot = name !== "svg" && markedRoot && !withinMarkedRoot;
+    const markdownRoot = contentRoot && findAttr("data-facet-renderer-kind") === "markdown";
+    const htmlRoot = contentRoot && !markdownRoot;
     const graphRoot = rendererRoot && findAttr("data-facet-renderer-graph") === "true";
+    if (contentRoot && observeContent) {
+      const empty = !(record.children ?? []).some((child) => {
+        const direct = child as ProtocolDomNode & { nodeType?: number; nodeValue?: string };
+        return (
+          direct.nodeType === 1 ||
+          (direct.nodeType === 3 && (direct.nodeValue ?? "").trim().length > 0)
+        );
+      });
+      emptyRendererRoot = emptyRendererRoot === undefined ? empty : false;
+    }
     if (htmlRoot) {
-      if (observeContent) {
-        const empty = !(record.children ?? []).some((child) => {
-          const direct = child as ProtocolDomNode & { nodeType?: number; nodeValue?: string };
-          return (
-            direct.nodeType === 1 ||
-            (direct.nodeType === 3 && (direct.nodeValue ?? "").trim().length > 0)
-          );
-        });
-        emptyRendererRoot = emptyRendererRoot === undefined ? empty : false;
-      }
       html ??= {
         rendererRootCount: 0,
         headingCount: 0,
@@ -498,6 +535,12 @@ export async function probeProtocolGetDocument(
     // covers the entire child-frame document so smuggled canvases stay visible.
     // getContext() would create a context and make the observation self-fulfilling.
     if (name === "canvas") opaqueRegionCount += 1;
+    if (
+      (withinMarkedRoot || contentRoot) &&
+      (HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)
+    ) {
+      if (isExternalHttps(findAttr("src"))) externalImageCount += 1;
+    }
     if (withinHtmlRoot && html !== undefined) {
       if ((HTML_STRUCTURAL_GROUPS.headings as readonly string[]).includes(name))
         html.headingCount += 1;
@@ -545,7 +588,7 @@ export async function probeProtocolGetDocument(
     mermaidNodeCount: gNodeCount,
     visibleSvgCount,
     opaqueRegionCount,
-    externalImageCount: html?.externalImageCount ?? 0,
+    externalImageCount,
     ...(html === undefined ? {} : { html }),
     ...(emptyRendererRoot === undefined ? {} : { emptyRendererRoot }),
     viewBoxes,

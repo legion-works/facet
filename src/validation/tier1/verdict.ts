@@ -88,6 +88,8 @@ export interface LifecycleSummary {
   readonly channelDivergence?: boolean;
   /** Interactive TSX has no lexical HTML prediction and no trusted outer shim. */
   readonly interactive?: boolean;
+  /** Markdown can have no layout-bearing roots while still containing readable prose. */
+  readonly markdown?: boolean;
   /** Only TSX has a renderer-root emptiness claim from Tier 1. */
   readonly tsx?: boolean;
 }
@@ -166,6 +168,13 @@ export function deriveVerdict(
   if (
     !lifecycle.interactive &&
     expected.html === undefined &&
+    !(
+      lifecycle.markdown === true &&
+      expected.rendererRootSvgCount === 0 &&
+      expected.opaqueRegionCount === 0 &&
+      protocolObservation.emptyRendererRoot === false &&
+      isolatedObservation?.emptyRendererRoot === false
+    ) &&
     !layoutObservable(protocolObservation)
   ) {
     return "partial:layout_unverified";
