@@ -76,6 +76,8 @@ Recent product contracts, diagnostics, watch, MCP adapter, and packaging additio
 
 Recent renderer and validation contracts: `src/validation/tier0/markdown.ts` exports `parseMarkdown` (Mermaid fence grammar is checked during Tier 0); `src/gallery-web/frame/renderers/chart.ts` exports `withFacetChartDimensions` (author-preserving Vega-Lite view defaults); `src/shared/contracts/validation.ts` owns the closed `RenderStatusSchema`, including `partial:empty_render`; the MCP adapter exposes six tools (`facet_create`, `facet_publish`, `facet_read_back`, `facet_status`, `facet_export`, `facet_open_url`) and `CreateToolSchema`.
 
+Recent verification and diagnostics contracts: `src/shared/html/policy.ts` exports `srcsetCandidates` (WHATWG `srcset` URL extraction) and `countExternalHttpsImageReferences` (one external-image count for Tier 0, the Tier 1 protocol channels, and the isolated-world probe, which serializes it with its helpers); an absent Tier 0 `externalImageCount` means interactive TSX and skips the Tier 1 comparison. `src/gallery-web/frame-error-filter.ts` exports `isFrameScriptError`, which the gallery interaction signal and the interactive TSX renderer share so resource-load failures are not reported as runtime errors. `src/validation/tier1/runner.ts` enforces `TIER1_TIMEOUT_MS` across all attempts, with `TIER1_TEARDOWN_TIMEOUT_MS` bounding teardown. `src/cli/commands/doctor.ts` accepts an injectable `which` lookup and prints `facet …` fix commands only when the `facet` on `PATH` resolves to the inspected install.
+
 ## Export slot
 
 - Shared contracts: `ExportRequestSchema`, `ExportResultSchema`, and
