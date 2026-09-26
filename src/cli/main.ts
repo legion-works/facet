@@ -427,8 +427,19 @@ export async function runCli(
     if (serviceVerb.verb === "publish" && parsed.args.watch === true) {
       const watchArgs = { ...parsed.args };
       delete watchArgs.watch;
+      const status = await new FacetClient({
+        baseUrl: resolved.baseUrl,
+        installToken: resolved.installToken,
+      }).sendCommand(buildStatusRequest({ "artifact-id": String(parsed.args["artifact-id"]) }));
+      if (!status.ok) {
+        writeEnvelope(io, parsed, status);
+        return { code: EXIT_CODES.OK, spawnedPid: resolved.metadata.pid };
+      }
       const watchExit = await watchPublishFile({
         filePath: String(parsed.args.file),
+        ...(status.data.command === "status" && status.data.latestRevisionSha !== undefined
+          ? { latestRevisionSha: status.data.latestRevisionSha }
+          : {}),
         ...(testHooks.watchSignal === undefined ? {} : { signal: testHooks.watchSignal }),
         publish: async (bytes) => {
           const request = buildPublishRequest(watchArgs, bytes);

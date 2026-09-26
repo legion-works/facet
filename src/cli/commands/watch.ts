@@ -26,6 +26,7 @@ export interface WatchPublishOptions {
     callback: (event: WatchFileEvent) => void,
   ) => WatchHandle;
   readonly hash?: (bytes: Uint8Array) => string | Promise<string>;
+  readonly latestRevisionSha?: string;
   readonly setTimer?: (callback: () => void, delayMs: number) => unknown;
   readonly clearTimer?: (timer: unknown) => void;
   readonly publish: (bytes: Uint8Array) => Promise<FacetEnvelope<unknown>>;
@@ -68,7 +69,7 @@ export async function watchPublishFile(options: WatchPublishOptions): Promise<Wa
   const clearTimer =
     options.clearTimer ??
     ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>));
-  let lastHash: string | undefined;
+  let lastHash = options.latestRevisionSha;
   let timer: unknown;
   let running = false;
   let pending = false;

@@ -70,8 +70,13 @@ required before exporting Tier 1 evidence.
 
 The publish envelope carries the stored Tier 0 verdict, including when its
 `status` is `error`; callers must inspect `data.verdict` before treating the
-publication as usable. A duplicate publish returns `ok: false` with
-`duplicate_revision`; the existing SHA is in `error.details.revisionSha`.
+publication as usable.
+
+A duplicate publish returns `ok: false` with `duplicate_revision` and a
+database-independent message naming the stored SHA prefix. If that SHA belongs
+to an older revision, the message also names the latest revision prefix;
+`error.details.revisionSha` and `error.details.latestRevisionSha` carry both full
+hashes.
 
 Every verb accepts `--help`. It prints its positional arguments and flags from the
 same command table used by the parser. Missing required inputs are reported
@@ -128,7 +133,7 @@ errors and next actions:
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `artifact_not_found`   | Check the artifact ID and list the project.                                                                    |
 | `revision_not_found`   | Check that the artifact has a revision; omit the SHA for latest or use an existing SHA.                        |
-| `duplicate_revision`   | Reuse `error.details.revisionSha`; no new revision was stored.                                                 |
+| `duplicate_revision`   | Reuse the stored revision named by `error.details.revisionSha`; no new revision was stored.                    |
 | `output_unwritable`    | Fix the output directory, permissions, or rename target.                                                       |
 | `evidence_unavailable` | Run Tier 1 again or inspect retention and evidence paths.                                                      |
 | `tier0_*`              | Inspect `error.details`; restore the Tier 0 worker, isolation, protocol, or runtime prerequisites named there. |

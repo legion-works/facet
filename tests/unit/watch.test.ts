@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 
 import { FACET_SCHEMA_VERSION, type FacetEnvelope } from "../../src/shared/contracts/envelope";
 import {
@@ -56,6 +57,32 @@ function harness(initial: Uint8Array) {
 }
 
 describe("watchPublishFile", () => {
+  test("skips the initial publish when bytes match the latest stored revision", async () => {
+    const initial = new Uint8Array([1]);
+    const latestRevisionSha = createHash("sha256").update(initial).digest("hex");
+    const h = harness(initial);
+    const controller = new AbortController();
+    const running = watchPublishFile({
+      filePath: "/tmp/artifact.md",
+      debounceMs: 5,
+      signal: controller.signal,
+      readFile: h.readFile,
+      watchDirectory: h.watchDirectory,
+      latestRevisionSha,
+      publish: h.publish,
+      emit: (value) => h.outputs.push(value),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    h.setBytes(new Uint8Array([2]));
+    h.emit();
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    controller.abort();
+    await expect(running).resolves.toEqual({ code: 0 });
+    expect(h.attempts.map((value) => [...value])).toEqual([[2]]);
+    expect(h.outputs).toHaveLength(1);
+    expect(h.outputs[0]?.ok).toBe(true);
+  });
+
   test("requires a file for watch mode and exposes help", () => {
     expect(
       parseArgs(["publish", "--artifact-id", "a", "--type", "markdown", "--watch"]),

@@ -1084,6 +1084,55 @@ describe("cli contract — lazy spawn", () => {
 });
 
 describe("cli contract — wire", () => {
+  test("duplicate publishes expose product text and distinguish an older revision", async () => {
+    const { env } = makeEnv("duplicate-revision-envelope");
+    const createIo = makeIo();
+    await runCli(["create", "--project-id", "p", "--slug", "duplicate", "--title", "Duplicate"], {
+      ...createIo,
+      env,
+    });
+    const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+    if (!created.ok) throw new Error("create must succeed");
+    const artifactId = (created.data["artifact"] as { id: string }).id;
+    const publish = async (source: string) => {
+      const io = makeIo(source);
+      await runCli(["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"], {
+        ...io,
+        env,
+      });
+      return parseStdoutEnvelope(io.stdoutBuf.value);
+    };
+
+    const first = await publish("A");
+    if (!first.ok) throw new Error("first publish must succeed");
+    const firstSha = (first.data["revision"] as { sha256: string }).sha256;
+    const identical = await publish("A");
+    expect(identical.ok).toBe(false);
+    if (!identical.ok) {
+      expect(identical.error.code).toBe("duplicate_revision");
+      expect(identical.error.retryable).toBe(false);
+      expect(identical.error.message).toContain(firstSha.slice(0, 8));
+      expect(identical.error.message).not.toMatch(/UNIQUE|constraint|SQLite|revisions\./i);
+      expect(identical.error.details).toMatchObject({ revisionSha: firstSha });
+    }
+
+    const second = await publish("B");
+    if (!second.ok) throw new Error("second revision publish must succeed");
+    const secondSha = (second.data["revision"] as { sha256: string }).sha256;
+    const older = await publish("A");
+    expect(older.ok).toBe(false);
+    if (!older.ok) {
+      expect(older.error.code).toBe("duplicate_revision");
+      expect(older.error.message).toContain("older revision");
+      expect(older.error.message).toContain(firstSha.slice(0, 8));
+      expect(older.error.message).toContain(secondSha.slice(0, 8));
+      expect(older.error.details).toMatchObject({
+        revisionSha: firstSha,
+        latestRevisionSha: secondSha,
+      });
+    }
+  }, 30_000);
+
   test("render export reads seeded Tier 1 screenshot bytes and defaults to .png", async () => {
     const { env, home } = makeEnv("render-export");
     const screenshot = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 11, 12, 13]);

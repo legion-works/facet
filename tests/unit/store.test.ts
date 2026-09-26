@@ -411,6 +411,40 @@ describe("artifact store", () => {
     ).toEqual(Array.from(source));
   });
 
+  test("duplicate error survives a failed latest-revision lookup", () => {
+    const { db, repository, artifact } = makeStore();
+    const source = new TextEncoder().encode("same");
+    const revision = repository.publishRevision({
+      artifactId: artifact.id,
+      artifactType: "markdown",
+      source,
+    });
+    const failingLookupRepository = new (class extends ArtifactRepository {
+      override getLatestRevision(_artifactId: string): never {
+        throw new Error("database_busy");
+      }
+    })(db);
+
+    let caught: unknown;
+    try {
+      failingLookupRepository.publishRevision({
+        artifactId: artifact.id,
+        artifactType: "markdown",
+        source,
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: "duplicate_revision",
+      message: `identical bytes are already stored as revision ${revision.sha256.slice(0, 8)}`,
+    });
+    expect((caught as { details?: Record<string, unknown> }).details).not.toHaveProperty(
+      "latestRevisionSha",
+    );
+  });
+
   test("onCommitted fires once only after a successful commit", () => {
     const { db, artifact } = makeStore();
     let calls = 0;

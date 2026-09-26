@@ -22,7 +22,7 @@ async function runOnce(args: string[], env: NodeJS.ProcessEnv): Promise<Record<s
 }
 
 describe("publish --watch CLI", () => {
-  test("streams initial and changed envelopes, then exits cleanly on SIGINT", async () => {
+  test("skips the current revision, publishes a changed save, then exits on SIGINT", async () => {
     const root = mkdtempSync(join(tmpdir(), "facet-watch-cli-"));
     roots.push(root);
     const home = join(root, "home");
@@ -36,6 +36,11 @@ describe("publish --watch CLI", () => {
     );
     const artifactId = String((created.data as { artifact?: { id?: string } }).artifact?.id);
     expect(artifactId).not.toBe("undefined");
+    const seeded = await runOnce(
+      ["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", source],
+      env,
+    );
+    expect(seeded.ok).toBe(true);
     const proc = Bun.spawn(
       [
         process.execPath,
@@ -63,10 +68,11 @@ describe("publish --watch CLI", () => {
         if (lines.length > 0) return true;
       }
     };
-    await expect(readLine()).resolves.toBe(true);
     writeFileSync(source, "second\n");
     await expect(readLine()).resolves.toBe(true);
-    expect(lines.map((line) => JSON.parse(line))).toHaveLength(2);
+    const changed = JSON.parse(lines[0] ?? "{}") as { ok?: boolean; error?: unknown };
+    expect(changed.ok).toBe(true);
+    expect(changed.error).toBeUndefined();
     proc.kill("SIGINT");
     await expect(proc.exited).resolves.toBe(0);
   }, 30_000);

@@ -599,10 +599,25 @@ export class ArtifactRepository {
     } catch (error) {
       const mapped = asStoreError(error);
       if (mapped.code === "duplicate_revision") {
-        throw new FacetStoreError("duplicate_revision", mapped.message, {
-          cause: error,
-          details: { revisionSha: sha },
-        });
+        let latestRevisionSha: string | undefined;
+        try {
+          latestRevisionSha = this.getLatestRevision(input.artifactId)?.sha256 ?? sha;
+        } catch {
+          latestRevisionSha = undefined;
+        }
+        throw new FacetStoreError(
+          "duplicate_revision",
+          latestRevisionSha !== undefined && latestRevisionSha !== sha
+            ? `identical bytes are already stored as older revision ${sha.slice(0, 8)}; latest revision is ${latestRevisionSha.slice(0, 8)}`
+            : `identical bytes are already stored as revision ${sha.slice(0, 8)}`,
+          {
+            cause: error,
+            details: {
+              revisionSha: sha,
+              ...(latestRevisionSha === undefined ? {} : { latestRevisionSha }),
+            },
+          },
+        );
       }
       throw mapped;
     }
