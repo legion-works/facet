@@ -8,17 +8,33 @@ import {
   resolveSrcdocChildFrame,
 } from "../../src/validation/tier1/frame-target";
 
-function srcdoc(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+function waitForSrcdocChildFrame(
+  session: Awaited<ReturnType<PuppeteerTier1Browser["launch"]>>["session"],
+): Promise<void> {
+  return new Promise((resolve) => {
+    session.on("Page.frameNavigated", (params: unknown) => {
+      const frame = (
+        params as {
+          frame?: { parentId?: string; url?: string };
+        }
+      ).frame;
+      if (frame?.parentId !== undefined && frame.url === "about:srcdoc") resolve();
+    });
+  });
 }
 
 test("real browser resolves direct TSX mounts to the artifact frame", async () => {
   const direct = `<!doctype html><body>
     <main id="facet-tsx-mount" data-facet-renderer-root="true">direct renderer-owned document</main>
   </body>`;
-  const directHost = `<!doctype html><body>
-    <iframe id="outer" srcdoc="${srcdoc(direct)}"></iframe>
-  </body>`;
+  const directHost = `<!doctype html><body><script>
+    setTimeout(() => {
+      const frame = document.createElement("iframe");
+      frame.id = "outer";
+      frame.srcdoc = ${JSON.stringify(direct)};
+      document.body.append(frame);
+    }, 500);
+  </script></body>`;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -35,8 +51,9 @@ test("real browser resolves direct TSX mounts to the artifact frame", async () =
   try {
     target = await browser.launch();
     await target.session.send("Page.enable");
+    const childAttached = waitForSrcdocChildFrame(target.session);
     await target.session.send("Page.navigate", { url: `http://127.0.0.1:${server.port}/` });
-    await Bun.sleep(100);
+    await childAttached;
 
     const outerFrame = await resolveSrcdocChildFrame(target.session);
     const artifactFrame = await resolveNestedArtifactFrame(target.session, outerFrame);
