@@ -1,4 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { parseArgs, renderHelp } from "../../src/cli/parser";
 import {
@@ -8,6 +20,12 @@ import {
 } from "../../src/cli/commands/doctor";
 import { DoctorResultSchema } from "../../src/shared/contracts/commands/results";
 import { CURRENT_STORAGE_VERSION } from "../../src/shared/storage-version";
+
+function makeEntrypoint(path: string): string {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, "");
+  return path;
+}
 
 describe("doctor parser contract", () => {
   test("doctor is a local verb with help and no service command mapping", () => {
@@ -30,6 +48,8 @@ describe("doctor probe matrix", () => {
     const database = "/tmp/facet-doctor-missing.sqlite";
     const result = runDoctor({
       bunVersion: "1.4.0",
+      argv: ["bun", join(process.cwd(), "src/cli/main.ts"), "doctor"],
+      which: () => null,
       paths: {
         database,
         evidence: "/tmp/facet-evidence",
@@ -53,7 +73,7 @@ describe("doctor probe matrix", () => {
     expect(result.allPassed).toBe(false);
     expect(result.probes.find((probe) => probe.name === "database")).toMatchObject({
       status: "fail",
-      fixCommand: "facet status --start",
+      fixCommand: `bun '${join(process.cwd(), "src/cli/main.ts")}' status --start`,
     });
     expect(DoctorResultSchema.parse(result)).toMatchObject(result);
   });
@@ -164,15 +184,129 @@ describe("doctor probe matrix", () => {
     });
   });
 
-  test("uses a runnable repair prefix for global and source CLI invocations", () => {
-    const options = {
+  test("uses facet only when PATH resolves to the active package entrypoint", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet doctor prefix "));
+    try {
+      const installedEntrypoint = makeEntrypoint(
+        join(root, "global", "node_modules", "@legionworks", "facet", "src", "cli", "main.ts"),
+      );
+      const otherEntrypoint = makeEntrypoint(
+        join(root, "other", "node_modules", "@legionworks", "facet", "src", "cli", "main.ts"),
+      );
+      const localEntrypoint = makeEntrypoint(
+        join(root, "consumer", "node_modules", "@legionworks", "facet", "src", "cli", "main.ts"),
+      );
+      const sourceEntrypoint = makeEntrypoint(join(root, "checkout", "src", "cli", "main.ts"));
+      const binDirectory = join(root, "bin");
+      mkdirSync(binDirectory);
+      const facetBin = join(binDirectory, "facet");
+      symlinkSync(installedEntrypoint, facetBin);
+
+      const options = {
+        bunVersion: "1.4.0",
+        paths: {
+          database: "/tmp/facet.sqlite",
+          evidence: "/tmp/evidence",
+          token: "/tmp/secrets/promote.token",
+          lock: "/tmp/lock",
+          metadata: "/tmp/meta",
+        },
+        shellBinary: "/tmp/chrome",
+        netns: { available: true, reason: null },
+        fs: {
+          exists: () => false,
+          stat: () => {
+            throw new Error("missing");
+          },
+        },
+        databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
+        lockReader: () => ({ pid: 12, startTime: 0, port: 1, contractVersion: "facet.v1" }),
+        pidAlive: () => false,
+        lockStale: () => true,
+      };
+      const fixCommand = (entrypoint: string, which: (command: string) => string | null) =>
+        runDoctor({ ...options, argv: ["bun", entrypoint, "doctor"], which }).probes.find(
+          (probe) => probe.name === "database",
+        )?.fixCommand;
+
+      expect(fixCommand(installedEntrypoint, () => facetBin)).toBe("facet status --start");
+      expect(fixCommand(localEntrypoint, () => null)).toBe(
+        `bun '${localEntrypoint}' status --start`,
+      );
+      expect(fixCommand(installedEntrypoint, () => otherEntrypoint)).toBe(
+        `bun '${installedEntrypoint}' status --start`,
+      );
+      expect(fixCommand(sourceEntrypoint, () => facetBin)).toBe(
+        `bun '${sourceEntrypoint}' status --start`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("uses resolved XDG and FACET_HOME paths for permission repair commands", () => {
+    const cases = [
+      {
+        name: "XDG default",
+        paths: {
+          database: "/home/test/.local/share/facet/db/facet.sqlite",
+          evidence: "/home/test/.local/state/facet/evidence",
+          token: "/home/test/.local/share/facet/secrets/promote.token",
+          lock: "/home/test/.local/state/facet/run/facet.lock",
+          metadata: "/home/test/.config/facet/metadata.json",
+        },
+      },
+      {
+        name: "explicit FACET_HOME",
+        paths: {
+          database: "/tmp/facet home/db/facet.sqlite",
+          evidence: "/tmp/facet home/evidence",
+          token: "/tmp/facet home/secrets/promote.token",
+          lock: "/tmp/facet home/run/facet.lock",
+          metadata: "/tmp/facet home/metadata.json",
+        },
+      },
+    ];
+
+    for (const { name, paths } of cases) {
+      const result = runDoctor({
+        bunVersion: "1.4.0",
+        argv: ["/usr/local/bin/facet", "doctor"],
+        paths,
+        shellBinary: "/tmp/chrome",
+        netns: { available: true, reason: null },
+        fs: {
+          exists: () => true,
+          stat: () => ({ mode: 0o100644 }),
+        },
+        databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
+        lockReader: () => null,
+        pidAlive: () => false,
+        lockStale: () => false,
+      });
+      const evidenceFix = result.probes.find((probe) => probe.name === "evidence-permissions");
+      const tokenFix = result.probes.find((probe) => probe.name === "token-permissions");
+
+      expect(evidenceFix?.fixCommand, name).toBe(`chmod 700 '${paths.evidence}'`);
+      expect(tokenFix?.fixCommand, name).toBe(
+        `chmod 600 '${paths.token.replace(/promote\.token$/, "install.token")}' '${paths.token}'`,
+      );
+      expect(evidenceFix?.fixCommand).not.toContain("$FACET_HOME");
+      expect(tokenFix?.fixCommand).not.toContain("$FACET_HOME");
+    }
+  });
+
+  test("uses status-start to create a missing evidence root", () => {
+    const result = runDoctor({
       bunVersion: "1.4.0",
+      argv: ["bun", join(process.cwd(), "src/cli/main.ts"), "doctor"],
+      which: () => null,
       paths: {
-        database: "/tmp/facet.sqlite",
-        evidence: "/tmp/evidence",
-        token: "/tmp/secrets/promote.token",
-        lock: "/tmp/lock",
-        metadata: "/tmp/meta",
+        database: "/home/test/.local/share/facet/db/facet.sqlite",
+        evidence: "/home/test/.local/state/facet/evidence",
+        token: "/home/test/.local/share/facet/secrets/promote.token",
+        lock: "/home/test/.local/state/facet/run/facet.lock",
+        metadata: "/home/test/.config/facet/metadata.json",
       },
       shellBinary: "/tmp/chrome",
       netns: { available: true, reason: null },
@@ -183,24 +317,97 @@ describe("doctor probe matrix", () => {
         },
       },
       databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
-      lockReader: () => ({ pid: 12, startTime: 0, port: 1, contractVersion: "facet.v1" }),
+      lockReader: () => null,
       pidAlive: () => false,
-      lockStale: () => true,
-    };
-
-    const global = runDoctor({ ...options, argv: ["/usr/local/bin/facet", "doctor"] });
-    const source = runDoctor({
-      ...options,
-      argv: ["/home/user/.bun/bin/bun", "/repo/src/cli/main.ts", "doctor"],
+      lockStale: () => false,
     });
 
-    for (const name of ["database", "token-permissions", "service-lock"] as const) {
-      expect(global.probes.find((probe) => probe.name === name)?.fixCommand).toBe(
-        "facet status --start",
-      );
-      expect(source.probes.find((probe) => probe.name === name)?.fixCommand).toBe(
-        "bun /repo/src/cli/main.ts status --start",
-      );
+    expect(result.probes.find((probe) => probe.name === "evidence-permissions")?.fixCommand).toBe(
+      `bun '${join(process.cwd(), "src/cli/main.ts")}' status --start`,
+    );
+  });
+
+  test("printed permission commands repair the real evidence and token modes", () => {
+    const root = mkdtempSync(join(tmpdir(), "facet doctor repair "));
+    try {
+      const evidence = join(root, "evidence");
+      const secrets = join(root, "secrets");
+      const installToken = join(secrets, "install.token");
+      const promoteToken = join(secrets, "promote.token");
+      mkdirSync(evidence, { mode: 0o755 });
+      mkdirSync(secrets, { mode: 0o755 });
+      writeFileSync(installToken, "install", { mode: 0o644 });
+      writeFileSync(promoteToken, "promote", { mode: 0o644 });
+
+      const result = runDoctor({
+        bunVersion: "1.4.0",
+        argv: ["/usr/local/bin/facet", "doctor"],
+        paths: {
+          database: join(root, "db", "facet.sqlite"),
+          evidence,
+          token: promoteToken,
+          lock: join(root, "run", "facet.lock"),
+          metadata: join(root, "metadata.json"),
+        },
+        shellBinary: "/tmp/chrome",
+        netns: { available: true, reason: null },
+        fs: {
+          exists: (path) => path === installToken || path === promoteToken,
+          stat: (path) => statSync(path),
+        },
+        databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
+        lockReader: () => null,
+        pidAlive: () => false,
+        lockStale: () => false,
+      });
+      const evidenceFix = result.probes.find(
+        (probe) => probe.name === "evidence-permissions",
+      )?.fixCommand;
+      const tokenFix = result.probes.find(
+        (probe) => probe.name === "token-permissions",
+      )?.fixCommand;
+
+      expect(evidenceFix).toBe(`chmod 700 '${evidence}'`);
+      expect(tokenFix).toBe(`chmod 600 '${installToken}' '${promoteToken}'`);
+      execFileSync("sh", ["-c", evidenceFix!]);
+      execFileSync("sh", ["-c", tokenFix!]);
+
+      expect(statSync(evidence).mode & 0o777).toBe(0o700);
+      expect(statSync(installToken).mode & 0o777).toBe(0o600);
+      expect(statSync(promoteToken).mode & 0o777).toBe(0o600);
+
+      chmodSync(installToken, 0o644);
+      rmSync(promoteToken);
+      const missingPromote = runDoctor({
+        bunVersion: "1.4.0",
+        argv: ["/usr/local/bin/facet", "doctor"],
+        paths: {
+          database: join(root, "db", "facet.sqlite"),
+          evidence,
+          token: promoteToken,
+          lock: join(root, "run", "facet.lock"),
+          metadata: join(root, "metadata.json"),
+        },
+        shellBinary: "/tmp/chrome",
+        netns: { available: true, reason: null },
+        fs: {
+          exists: (path) => path === installToken,
+          stat: (path) => statSync(path),
+        },
+        databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
+        lockReader: () => null,
+        pidAlive: () => false,
+        lockStale: () => false,
+      });
+      const installOnlyFix = missingPromote.probes.find(
+        (probe) => probe.name === "token-permissions",
+      )?.fixCommand;
+
+      expect(installOnlyFix).toBe(`chmod 600 '${installToken}'`);
+      expect(() => execFileSync("sh", ["-c", installOnlyFix!])).not.toThrow();
+      expect(statSync(installToken).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

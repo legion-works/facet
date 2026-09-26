@@ -1,4 +1,5 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { resolve } from "node:path";
 import { Database } from "bun:sqlite";
 
 import { computeFacetPaths, type FacetRuntimePaths } from "../../shared/config/paths";
@@ -34,6 +35,7 @@ type DoctorDb = { quickCheck: string; version: number | null };
 export interface DoctorOptions {
   readonly argv?: readonly string[];
   readonly bunVersion?: string;
+  readonly which?: (command: string) => string | null;
   readonly paths?: FacetRuntimePaths;
   readonly shellBinary?: string | null;
   readonly netns?: NetnsProbe;
@@ -83,11 +85,25 @@ function probe(
   return { name, status, summary, fixCommand, details };
 }
 
-function invocationPrefix(argv: readonly string[]): string {
-  const sourceEntrypoint = argv[1];
-  return sourceEntrypoint?.endsWith("/src/cli/main.ts") === true
-    ? `bun ${sourceEntrypoint}`
-    : "facet";
+function invocationPrefix(
+  argv: readonly string[],
+  which: (command: string) => string | null,
+): string {
+  const sourceEntrypoint = argv[1] ?? resolve(import.meta.dir, "../main.ts");
+  const absoluteEntrypoint = resolve(sourceEntrypoint);
+  const facetExecutable = which("facet");
+  if (facetExecutable !== null) {
+    try {
+      if (realpathSync(facetExecutable) === realpathSync(absoluteEntrypoint)) return "facet";
+    } catch {
+      // A missing PATH entry cannot establish that the installed command is runnable.
+    }
+  }
+  return `bun ${quoteShellPath(absoluteEntrypoint)}`;
+}
+
+function quoteShellPath(path: string): string {
+  return `'${path.replace(/'/g, `'\\''`)}'`;
 }
 
 export function runDoctor(options: DoctorOptions = {}): DoctorResult {
@@ -102,7 +118,7 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
   const netns = options.netns ?? probeNetnsSupport();
   const probes: DoctorProbeResult[] = [];
   const bunVersion = options.bunVersion ?? Bun.version;
-  const restartFix = `${invocationPrefix(options.argv ?? process.argv)} status --start`;
+  const restartFix = `${invocationPrefix(options.argv ?? process.argv, options.which ?? Bun.which)} status --start`;
 
   probes.push(
     bunVersion === BUN_VERSION
@@ -184,13 +200,17 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
   const tokenModes = tokenPaths.map((path) => ({ path, mode: modeOf(fs, path) }));
   const tokenBad = tokenModes.find(({ mode }) => mode !== null && mode !== 0o600);
   const installMode = modeOf(fs, installToken);
+  const tokenPermissionFix = `chmod 600 ${tokenModes
+    .filter(({ mode }) => mode !== null && mode !== 0o600)
+    .map(({ path }) => quoteShellPath(path))
+    .join(" ")}`;
   probes.push(
     tokenBad
       ? probe(
           "token-permissions",
           "fail",
           `${tokenBad.path} mode ${tokenBad.mode?.toString(8)}`,
-          'chmod 600 "$FACET_HOME/secrets/install.token" "$FACET_HOME/secrets/promote.token"',
+          tokenPermissionFix,
           { path: tokenBad.path, mode: tokenBad.mode },
         )
       : installMode === null
@@ -209,7 +229,7 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
           "evidence-permissions",
           "fail",
           evidenceMode === null ? "evidence root missing" : `mode ${evidenceMode.toString(8)}`,
-          `mkdir -p "$FACET_HOME/evidence" && chmod 700 "$FACET_HOME/evidence"`,
+          evidenceMode === null ? restartFix : `chmod 700 ${quoteShellPath(paths.evidence)}`,
           { mode: evidenceMode },
         ),
   );
