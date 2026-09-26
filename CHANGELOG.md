@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.6](https://github.com/legion-works/facet/compare/v1.10.5...v1.10.6) (2026-09-26)
+
+
+### Bug Fixes
+
+* accept --artifact-id on facet export ([99d8efd](https://github.com/legion-works/facet/commit/99d8efdcbbf1adb80dcafd030791d07f7ca611df)), closes [#63](https://github.com/legion-works/facet/issues/63)
+
 ## [1.10.5](https://github.com/legion-works/facet/compare/v1.10.4...v1.10.5) (2026-09-26)
 
 
