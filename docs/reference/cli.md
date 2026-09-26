@@ -32,7 +32,7 @@ Errors use the same top level with `ok: false` and
 | `templates`   | optional `--limit`                                                                                                                |
 | `instantiate` | `--name`, `--new-slug`, `--project-id`                                                                                            |
 | `pin`         | `--revision-id`, `--pinned` (`true` or `false`)                                                                                   |
-| `export`      | `<artifactId>`, `--revision`, `--format source\|render`, `--out`, `--force`, `--include-bytes`                                    |
+| `export`      | `--artifact-id` (or positional `<artifactId>`), `--revision`, `--format source\|render`, `--out`, `--force`, `--include-bytes`    |
 |               | `--format source` writes `.md` / `.mmd` / `.svg` / `.json` / `.html` to match the type                                            |
 |               | `--format render` writes detected evidence as `.webp` (new) or `.png` (legacy); the sidecar records `renderFormat`                |
 | `doctor`      | no flags; read-only local environment diagnostics                                                                                 |
@@ -60,8 +60,8 @@ facet read-back --artifact-id art-123 --tier 0
 facet read-back --artifact-id art-123 --revision-sha <sha256> --tier 0
 facet read-back --artifact-id art-123 --tier visual  # launches the pinned headless browser
 facet open --artifact-id art-123 --no-launch
-facet export art-123 --format render --out exports/report.webp
-facet export art-123 --format render --out exports/report-with-bytes.webp --include-bytes
+facet export --artifact-id art-123 --format render --out exports/report.webp
+facet export --artifact-id art-123 --format render --out exports/report-with-bytes.webp --include-bytes
 ```
 
 For file input, use the same publish request with `--file report.md` instead of

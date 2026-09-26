@@ -3,8 +3,10 @@
 ## Syntax
 
 ```sh
-facet export <artifactId> [--revision <sha>] [--format source|render] [--out <path>] [--force] [--include-bytes]
+facet export --artifact-id <id> [--revision <sha>] [--format source|render] [--out <path>] [--force] [--include-bytes]
 ```
+
+The positional form `facet export <artifactId>` remains supported.
 
 The default format is `source`. The command returns one JSON envelope on
 stdout and writes the exported bytes plus a mandatory sidecar locally. In
@@ -49,14 +51,14 @@ The default name is `<slug>-<revisionSha prefix><extension>`.
 artifact filename:
 
 ```sh
-facet export art-123 --out exports/chart.json
+facet export --artifact-id art-123 --out exports/chart.json
 # writes exports/chart.json and exports/chart.json.facet.json
 ```
 
 An extensionless path gets `.facet.json` appended:
 
 ```sh
-facet export art-123 --out exports/chart
+facet export --artifact-id art-123 --out exports/chart
 # writes exports/chart and exports/chart.facet.json
 ```
 

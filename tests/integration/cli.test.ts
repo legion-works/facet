@@ -340,12 +340,38 @@ describe("cli contract — surface", () => {
     expect(probes.find((probe) => probe["name"] === "database")?.["status"]).toBe("fail");
   });
 
-  test("export parser accepts positional id and keeps export --format distinct from meta --format", async () => {
+  test("export parser accepts flag and positional ids, including matching values", () => {
+    expect(parseArgs(["export", "--artifact-id", "artifact-1"])).toMatchObject({
+      kind: "verb",
+      verb: "export",
+      args: { "artifact-id": "artifact-1" },
+    });
     expect(parseArgs(["export", "artifact-1"])).toMatchObject({
       kind: "verb",
       verb: "export",
       args: { "artifact-id": "artifact-1" },
     });
+    expect(parseArgs(["export", "--artifact-id", "artifact-1", "artifact-1"]).kind).toBe("verb");
+    expect(parseArgs(["export", "artifact-1", "--artifact-id", "artifact-1"]).kind).toBe("verb");
+    expect(
+      parseArgs(["export", "--artifact-id", "artifact-1", "--artifact-id", "artifact-1"]).kind,
+    ).toBe("verb");
+    expect(parseArgs(["export", "--artifact-id", "flag-id", "positional-id"]).kind).toBe("usage");
+  });
+
+  test("export id disagreement check rejects different identifiers in either order", () => {
+    for (const args of [
+      ["export", "--artifact-id", "flag-id", "positional-id"],
+      ["export", "positional-id", "--artifact-id", "flag-id"],
+    ]) {
+      expect(parseArgs(args)).toEqual({
+        kind: "usage",
+        message: "export: --artifact-id and the positional artifact id disagree",
+      });
+    }
+  });
+
+  test("export parser keeps export --format distinct from meta --format", () => {
     expect(
       parseArgs([
         "export",
@@ -406,7 +432,10 @@ describe("cli contract — surface", () => {
     const io = makeIo();
     const exit = await runCli(["export", "--help"], { ...io, env });
     expect(exit.code).toBe(0);
-    expect(io.stdoutBuf.value).toContain("Usage: facet export <artifactId>");
+    expect(io.stdoutBuf.value).toContain(
+      "Usage: facet export --artifact-id <id> [--flag value]...",
+    );
+    expect(io.stdoutBuf.value).toContain("positional");
     expect(io.stdoutBuf.value).toContain("--include-bytes");
   });
 
@@ -447,6 +476,21 @@ describe("cli contract — surface", () => {
       expect(parseStdoutEnvelope(io.stdoutBuf.value).ok).toBe(false);
       expect(existsSync(join(home, "run", "facet.lock"))).toBe(false);
     }
+  });
+
+  test("export id disagreement is a usage error before service startup", async () => {
+    const { env, home } = makeEnv("export-id-disagreement");
+    const io = makeIo();
+    const exit = await runCli(["export", "--artifact-id", "flag-id", "positional-id"], {
+      ...io,
+      env,
+    });
+    expect(exit.code).toBe(64);
+    expect(parseStdoutEnvelope(io.stdoutBuf.value)).toMatchObject({
+      ok: false,
+      error: { message: "export: --artifact-id and the positional artifact id disagree" },
+    });
+    expect(existsSync(join(home, "run", "facet.lock"))).toBe(false);
   });
 
   test("--format on an ordinary verb is a usage error, exit 64, before service startup", async () => {
@@ -1352,13 +1396,13 @@ describe("cli contract — wire", () => {
       const inlineIo = makeIo();
       const inlinePath = join(exportCwd, "inline.md");
       const inlineExit = await runCli(
-        ["export", artifactId, "--out", inlinePath, "--include-bytes"],
+        ["export", "--artifact-id", artifactId, "--out", inlinePath],
         { ...inlineIo, env },
       );
       expect(inlineExit.code).toBe(0);
       const inline = parseStdoutEnvelope(inlineIo.stdoutBuf.value);
-      if (!inline.ok) throw new Error("inline export must succeed");
-      expect(inline.data["bytes"]).toBe(Buffer.from(source).toString("base64"));
+      if (!inline.ok) throw new Error("flag-form export must succeed");
+      expect(readFileSync(inlinePath, "utf8")).toBe(source);
     } finally {
       process.chdir(originalCwd);
     }
@@ -1682,7 +1726,12 @@ describe("cli contract — wire", () => {
     expect(exit.code).toBe(0);
     const env1 = parseStdoutEnvelope(io.stdoutBuf.value);
     expect(env1.ok).toBe(false);
-    if (!env1.ok) expect(env1.error.code).toBe("invalid_request");
+    if (!env1.ok) {
+      expect(env1.error.code).toBe("invalid_request");
+      expect(env1.error.message).toBe(
+        "publish: no source bytes — pass --file <path> or pipe bytes on stdin",
+      );
+    }
   }, 20_000);
 
   test("publish reads piped stdin when --file is omitted", async () => {
@@ -1919,7 +1968,12 @@ describe("cli contract — errors", () => {
     expect(exit.code).toBe(64);
     const env1 = parseStdoutEnvelope(io.stdoutBuf.value);
     expect(env1.ok).toBe(false);
-    if (!env1.ok) expect(env1.error.code).toBe("invalid_request");
+    if (!env1.ok) {
+      expect(env1.error.code).toBe("invalid_request");
+      expect(env1.error.message).toBe(
+        "export requires --artifact-id <id> (positional artifact id is also supported)",
+      );
+    }
   }, 20_000);
 
   test("unknown verb exits with a typed usage error envelope (adapter-safe)", async () => {

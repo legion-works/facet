@@ -110,6 +110,7 @@ const VERB_FLAGS: Readonly<Record<CommandName, readonly FlagDefinition[]>> = {
     { flag: "--pinned", takesValue: true, required: true },
   ],
   export: [
+    { flag: "--artifact-id", takesValue: true },
     { flag: "--revision", takesValue: true },
     { flag: "--format", takesValue: true, values: ["source", "render"] },
     { flag: "--out", takesValue: true },
@@ -242,14 +243,16 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
   }
   const flags = VERB_FLAGS[command];
   const args: Record<string, string | boolean> = {};
+  let positionalArtifactId: string | undefined;
+  let flaggedArtifactId: string | undefined;
   for (let i = 1; i < stripped.length; i += 1) {
     const flag = stripped[i];
     if (flag === undefined) continue;
     if (!flag.startsWith("--")) {
-      if (command !== "export" || args["artifact-id"] !== undefined) {
+      if (command !== "export" || positionalArtifactId !== undefined) {
         return { kind: "usage", message: `Unexpected positional argument: '${flag}'` };
       }
-      args["artifact-id"] = flag;
+      positionalArtifactId = flag;
       continue;
     }
     const def = flags.find((f) => f.flag === flag);
@@ -268,17 +271,37 @@ export function parseArgs(argv: readonly string[]): ParsedCommand {
           details: { flag, allowedValues: def.values.join(", ") },
         };
       }
+      if (command === "export" && flag === "--artifact-id") flaggedArtifactId = value;
       args[flag.slice(2)] = value;
       i += 1;
     } else {
       args[flag.slice(2)] = true;
     }
   }
+  if (command === "export") {
+    if (
+      positionalArtifactId !== undefined &&
+      flaggedArtifactId !== undefined &&
+      flaggedArtifactId !== positionalArtifactId
+    ) {
+      return {
+        kind: "usage",
+        message: "export: --artifact-id and the positional artifact id disagree",
+      };
+    }
+    if (flaggedArtifactId === undefined && positionalArtifactId !== undefined) {
+      args["artifact-id"] = positionalArtifactId;
+    }
+  }
   const missing = flags
     .filter((flag) => flag.required === true && args[flag.flag.slice(2)] === undefined)
     .map((flag) => flag.flag);
   if (command === "export" && args["artifact-id"] === undefined) {
-    missing.push("<artifactId>");
+    return {
+      kind: "usage",
+      message: "export requires --artifact-id <id> (positional artifact id is also supported)",
+      details: { missing: "--artifact-id" },
+    };
   }
   if (missing.length > 0) {
     return {
@@ -318,7 +341,7 @@ export function renderHelp(verb?: CliVerb): string {
   }
   if (verb !== undefined) {
     const commandVerb = COMMAND_TO_VERB[verb];
-    const positional = verb === "export" ? " <artifactId>" : "";
+    const positional = "";
     const flags = VERB_FLAGS[verb]
       .map((flag) => {
         const value = flag.takesValue ? " <value>" : "";
@@ -326,11 +349,11 @@ export function renderHelp(verb?: CliVerb): string {
       })
       .join("\n");
     return [
-      `Usage: facet ${commandVerb}${positional} [--flag value]...`,
+      verb === "export"
+        ? "Usage: facet export --artifact-id <id> [--flag value]..."
+        : `Usage: facet ${commandVerb}${positional} [--flag value]...`,
       "",
-      positional.length > 0 ? "Positionals:" : "",
-      ...(positional.length > 0 ? ["  <artifactId>  artifact identifier to export"] : []),
-      ...(positional.length > 0 ? [""] : []),
+      ...(verb === "export" ? ["The positional artifact id form is also supported.", ""] : []),
       "Flags:",
       flags,
       "",

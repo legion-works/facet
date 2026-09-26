@@ -89,7 +89,7 @@ printf '%s\n' "$PUBLISH" | bun -e 'const x=JSON.parse(await Bun.stdin.text()); i
 REVISION_SHA="$(printf '%s\n' "$PUBLISH" | bun -e 'const x=JSON.parse(await Bun.stdin.text()); console.log(x.data.revision.sha256)')"
 facet read-back --artifact-id "$ARTIFACT_ID" --revision-sha "$REVISION_SHA" --tier visual
 EXPORT_DIR="$(mktemp -d)"
-facet export "$ARTIFACT_ID" --format source --out "$EXPORT_DIR/artifact.svg"
+facet export --artifact-id "$ARTIFACT_ID" --format source --out "$EXPORT_DIR/artifact.svg"
 ```
 
 `doctor` checks the local runtime and browser setup and prints the browser
@@ -153,7 +153,7 @@ REVISION_SHA="$(printf '%s\n' "$PUBLISH" | bun -e 'const x=JSON.parse(await Bun.
 bun ./src/cli/main.ts read-back --artifact-id "$ARTIFACT_ID" --tier 0
 bun ./src/cli/main.ts read-back --artifact-id "$ARTIFACT_ID" --revision-sha "$REVISION_SHA" --tier visual
 EXPORT_DIR="$(mktemp -d)"
-bun ./src/cli/main.ts export "$ARTIFACT_ID" --format source --out "$EXPORT_DIR/artifact.md"
+bun ./src/cli/main.ts export --artifact-id "$ARTIFACT_ID" --format source --out "$EXPORT_DIR/artifact.md"
 ```
 
 This checkout invocation needs no global link. It uses disposable runtime and export directories. The read-back without `--revision-sha` uses the latest revision; pass the SHA returned by publish when reproducibility matters. Tier 0 is browser-free; visual read-back is explicit Tier 1 escalation. Each verb writes one JSON envelope to stdout; `ok` confirms command transport, so inspect `data.verdict` in the publish envelope, including a stored `status: "error"`.

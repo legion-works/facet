@@ -21,7 +21,7 @@ single element carrying `data-facet-renderer-root` so protocol probes can
 scope their observations — the marker is frame-owned, never artifact-owned.
 
 Source export returns the published bytes byte-for-byte; the wrapper is
-frame-only and never reaches storage or export. `export <artifactId>
+frame-only and never reaches storage or export. `export --artifact-id <id>
 --format source` against an HTML revision produces the exact source the
 operator published.
 

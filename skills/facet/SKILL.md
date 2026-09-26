@@ -54,7 +54,7 @@ the tab persists that choice. Tier 1 stays dark for deterministic parity.
 
 ## Export
 
-Use `facet export <artifactId> --format source` for stored source, or
+Use `facet export --artifact-id <id> --format source` for stored source, or
 `--format render` for retained Tier 1 evidence. Exports write local artifact and
 mandatory sidecar paths plus byte count by default. Use `--include-bytes` only
 when an envelope consumer genuinely needs base64 bytes. Render export preserves
