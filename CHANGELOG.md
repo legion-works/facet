@@ -3,6 +3,16 @@
 ## [1.10.5](https://github.com/legion-works/facet/compare/v1.10.4...v1.10.5) (2026-09-26)
 
 
+### Behaviour changes
+
+* Store errors now carry a product message. The raw SQLite text moves to `details.driverMessage`, capped at 200 characters. Codes, HTTP statuses and `retryable` are unchanged, so scripts that matched on driver wording in `error.message` should match on `error.code`.
+* A duplicate publish explains itself: `identical bytes are already stored as revision <sha8>`, or `…as older revision <sha8>; latest revision is <sha8>`, with `details.latestRevisionSha`. `publish --watch` no longer republishes at startup when the file already matches the latest revision.
+* Every result bound to one revision now carries a top-level `data.revisionSha`: publish, read-back, open, export, pin, promote and instantiate. This is additive; `verdict.revisionSha`, `sidecar.revisionSha` and `revisionId` are unchanged.
+* `facet doctor` reports a Bun older than the package's `engines.bun` minimum as a new `warn` status. A warn does not fail the run: `allPassed` stays true and the exit code stays 0.
+* Static TSX components that use hooks now render their initial state. Before, they failed with `tsx_compile_error`.
+* CLI output for HTML and TSX shows structure counts (roots, headings, tables, lists, images, external, errors) instead of the diagram line. Interactive TSX says `not predicted` before a visual check.
+
+
 ### Bug Fixes
 
 * check the minimum Bun version in doctor ([2f4b2d0](https://github.com/legion-works/facet/commit/2f4b2d0a902775f597d1f46cc129a747442e0052)), closes [#33](https://github.com/legion-works/facet/issues/33)
