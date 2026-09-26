@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.10.1](https://github.com/legion-works/facet/compare/v1.10.0...v1.10.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* apply theme changes to the live frame for HTML and TSX ([bd93091](https://github.com/legion-works/facet/commit/bd9309100b56fd16a9aaca15d6bc392306d8f468)), closes [#49](https://github.com/legion-works/facet/issues/49)
+* keep top-level HTML and TSX elements in document flow ([b07008c](https://github.com/legion-works/facet/commit/b07008ccb4a286c7f24b9e84d9c2751385a106d2)), closes [#48](https://github.com/legion-works/facet/issues/48)
+* report artifact_not_found for an unknown artifact on read-back ([3fbde85](https://github.com/legion-works/facet/commit/3fbde85c9a987553eb163815237a0c03e4c331e7))
+
 ## [1.10.0](https://github.com/legion-works/facet/compare/v1.9.0...v1.10.0) (2026-09-25)
 
 
