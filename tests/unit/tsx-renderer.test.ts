@@ -158,6 +158,40 @@ describe("TSX renderer", () => {
     );
   });
 
+  test("interactive TSX ignores resource errors but reports window errors", async () => {
+    const container = freshContainer();
+    let report: ((event: Event) => void) | undefined;
+    const addEventListener = shimWindow.addEventListener.bind(shimWindow);
+    shimWindow.addEventListener = ((type: string, listener: EventListenerOrEventListenerObject) => {
+      if (type === "error") report = listener as (event: Event) => void;
+      addEventListener(type, listener);
+    }) as typeof shimWindow.addEventListener;
+    (tsx as TsxRendererWithTestRuntime).setTsxModuleRuntimeForTests?.({
+      createObjectURL: () => "blob:facet-resource-events-module",
+      importModule: async () => {},
+      revokeObjectURL: () => {},
+    });
+
+    await tsx.renderTsx(
+      { container, nonce: "n-resource-events", theme: "dark" },
+      new TextEncoder().encode("export default {};"),
+      "svg",
+      "interactive",
+    );
+    try {
+      const image = shimDocument.createElement("img");
+      container.appendChild(image);
+      if (report === undefined) throw new Error("interactive runtime error listener missing");
+      report({ target: image } as unknown as Event);
+      expect(container.querySelector("[data-facet-error='true']")).toBeNull();
+
+      report({ target: shimWindow } as unknown as Event);
+      expect(container.querySelectorAll("[data-facet-error='true']")).toHaveLength(1);
+    } finally {
+      shimWindow.addEventListener = addEventListener;
+    }
+  });
+
   test("interactive TSX falls back to the browser module runtime when no test runtime is injected", async () => {
     const container = freshContainer();
     (tsx as TsxRendererWithTestRuntime).setTsxModuleRuntimeForTests?.(undefined);

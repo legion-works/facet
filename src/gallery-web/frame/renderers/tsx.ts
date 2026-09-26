@@ -44,9 +44,13 @@ export async function renderTsx(
   root.setAttribute("data-facet-renderer-root", "true");
   ctx.container.replaceChildren(root);
   const frameWindow = ctx.container.ownerDocument.defaultView;
-  const report = (event: Event): void => appendRuntimeError(ctx.container, event);
-  frameWindow?.addEventListener("error", report, true);
-  frameWindow?.addEventListener("unhandledrejection", report, true);
+  const reportRuntimeError = (event: Event): void => {
+    if (event.target !== frameWindow) return;
+    appendRuntimeError(ctx.container, event);
+  };
+  const reportRejection = (event: Event): void => appendRuntimeError(ctx.container, event);
+  frameWindow?.addEventListener("error", reportRuntimeError, true);
+  frameWindow?.addEventListener("unhandledrejection", reportRejection, true);
   const moduleUrl = tsxModuleRuntime.createObjectURL(
     new Blob([bytes], { type: "text/javascript" }),
   );

@@ -170,7 +170,7 @@ class FakeIframe extends FakeElement {
     };
     addEventListener(type: string, listener: Listener): void;
     removeEventListener(type: string, listener: Listener): void;
-    emit(type: string): void;
+    emit(type: string, event?: Record<string, unknown>): void;
   } = (() => {
     const listeners = new Map<string, Listener[]>();
     return {
@@ -185,8 +185,8 @@ class FakeIframe extends FakeElement {
           (listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
         );
       },
-      emit(type) {
-        for (const listener of listeners.get(type) ?? []) listener({});
+      emit(type, event = {}) {
+        for (const listener of listeners.get(type) ?? []) listener(event);
       },
     };
   })();
@@ -444,11 +444,24 @@ function isIframe(child: FakeElement): child is FakeIframe {
 }
 
 describe("gallery shell startup", () => {
+  test("resource errors do not set the interaction marker but window errors do", async () => {
+    const harness = createRuntime();
+    await startGallery(harness.runtime);
+    const badge = harness.elements.get("facet-verdict")!;
+    const frame = harness.frames[0]!;
+
+    frame.contentWindow.emit("error", { target: {} });
+    expect(badge.dataset["interactionError"]).toBeUndefined();
+
+    frame.contentWindow.emit("error", { target: frame.contentWindow });
+    expect(badge.dataset["interactionError"]).toBe("true");
+  });
+
   test("expiry clears a prior interaction error signal", async () => {
     const harness = createRuntime();
     await startGallery(harness.runtime);
     const badge = harness.elements.get("facet-verdict")!;
-    harness.frames[0]!.contentWindow.emit("error");
+    harness.frames[0]!.contentWindow.emit("error", { target: harness.frames[0]!.contentWindow });
     expect(badge.dataset["interactionError"]).toBe("true");
     harness.emitStreamClose("lease_expired");
     await waitFor(

@@ -1126,7 +1126,10 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       if (badge !== null) badge.dataset.interactionError = "true";
       updateGalleryStatus("displayed · runtime error during interaction");
     };
-    frameWindow.addEventListener("error", markFailure, true);
+    const markScriptFailure = (event: Event): void => {
+      if (event.target === frameWindow) markFailure();
+    };
+    frameWindow.addEventListener("error", markScriptFailure, true);
     frameWindow.addEventListener("unhandledrejection", markFailure, true);
     const frameDocument = (frame.element.raw as HTMLIFrameElement).contentDocument;
     const observer =
@@ -1138,7 +1141,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     if (frameDocument !== null)
       observer?.observe(frameDocument, { childList: true, subtree: true });
     removeInteractionListener = (): void => {
-      frameWindow.removeEventListener("error", markFailure, true);
+      frameWindow.removeEventListener("error", markScriptFailure, true);
       frameWindow.removeEventListener("unhandledrejection", markFailure, true);
       observer?.disconnect();
     };

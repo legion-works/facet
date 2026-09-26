@@ -3,15 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { FacetClient, publishArtifact } from "../../src/cli/client";
+import { FacetClient, publishArtifact, readBack } from "../../src/cli/client";
 import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
+import { createTier1Runner } from "../../src/validation/tier1/runner";
 import { createTier0RunnerForTests } from "../../src/validation/tier0/runner";
 import { artifactWorld, galleryBrowser } from "../helpers/gallery-live";
 
 const source = `import React from "react";
 export default function Interaction() {
-  return <main><button id="safe" onClick={() => { document.body.dataset.safe = "yes"; }}>Safe</button><button id="throw" onClick={() => { throw new Error("ack handler exploded"); }}>Throw</button></main>;
+  return <main><img src="https://example.com/logo.png" alt="remote logo"/><button id="safe" onClick={() => { document.body.dataset.safe = "yes"; }}>Safe</button><button id="throw" onClick={() => { throw new Error("ack handler exploded"); }}>Throw</button></main>;
 }`;
 
 test("gallery signals post-render interaction errors without changing the stored verdict and resets on swaps", async () => {
@@ -25,6 +26,7 @@ test("gallery signals post-render interaction errors without changing the stored
     idleTimeoutMs: 30_000,
     logger: createQuietLogger({ component: "gallery-interaction" }),
     tier0Runner: runner,
+    tier1Runner: createTier1Runner(0),
   });
   const browser = galleryBrowser();
   let target: Awaited<ReturnType<typeof browser.launch>> | undefined;
@@ -36,16 +38,16 @@ test("gallery signals post-render interaction errors without changing the stored
       bytes: new TextEncoder().encode(source).buffer as ArrayBuffer,
       slug: "gallery-interaction",
     });
-    const opened = await client.sendCommand({
-      command: "open",
-      requestId: crypto.randomUUID(),
+    const visual = await readBack(client, {
       artifactId: published.artifactId,
       revisionSha: published.revisionSha,
+      tier: "visual",
     });
-    if (!opened.ok || opened.data.command !== "open") throw new Error("gallery open failed");
+    expect(visual.verdict.status).toBe("partial:external_resources");
+    expect(visual.verdict.observed.externalImageCount).toBe(1);
+    expect(visual.verdict.observed.discriminativeErrors ?? []).toHaveLength(0);
     target = await browser.launch();
     await target.session.send("Page.enable");
-    await target.session.send("Page.navigate", { url: opened.data.frameUrl });
     const shell = async (expression: string): Promise<unknown> => {
       const reply = (await target!.session.send("Runtime.evaluate", {
         expression,
@@ -59,7 +61,51 @@ test("gallery signals post-render interaction errors without changing the stored
       shell(
         `new Promise((resolve, reject) => { const deadline = Date.now() + 7000; const check = () => { if (${predicate}) resolve({status: document.querySelector('#facet-status-line')?.textContent, marker: document.querySelector('#facet-verdict')?.dataset.interactionError ?? null}); else if (Date.now() > deadline) reject(new Error('gallery interaction state timed out: ' + JSON.stringify({status: document.querySelector('#facet-status-line')?.textContent, badge: document.querySelector('#facet-verdict')?.outerHTML, frameError: document.querySelector('iframe')?.contentDocument?.querySelector('[data-facet-error]')?.textContent, frameCount: document.querySelectorAll('iframe').length}))); else setTimeout(check, 25); }; check(); })`,
       );
+
+    const html = await publishArtifact(client, {
+      artifactType: "html",
+      bytes: new TextEncoder().encode(
+        "<main><h1>Remote image</h1><img src='https://example.com/logo.png' alt='remote logo'></main>",
+      ).buffer as ArrayBuffer,
+      slug: "gallery-static-resource-error",
+    });
+    const htmlOpened = await client.sendCommand({
+      command: "open",
+      requestId: crypto.randomUUID(),
+      artifactId: html.artifactId,
+      revisionSha: html.revisionSha,
+    });
+    if (!htmlOpened.ok || htmlOpened.data.command !== "open")
+      throw new Error("static HTML gallery open failed");
+    await target.session.send("Page.navigate", { url: "about:blank" });
+    await target.session.send("Page.navigate", { url: htmlOpened.data.frameUrl });
     await settle("document.querySelector('#facet-status-line')?.textContent === 'displayed'");
+    const htmlSettled = await settle(
+      "document.querySelector('#facet-canvas iframe')?.contentDocument?.querySelector('img')?.complete === true",
+    );
+    expect(htmlSettled).toEqual({ status: "displayed", marker: null });
+    expect(
+      await shell(`(() => {
+        const frame = document.querySelector('#facet-canvas iframe');
+        const doc = frame?.contentDocument;
+        return { heading: doc?.querySelector('h1')?.textContent ?? null, buttons: doc?.querySelectorAll('button').length ?? -1 };
+      })()`),
+    ).toEqual({ heading: "Remote image", buttons: 0 });
+
+    const opened = await client.sendCommand({
+      command: "open",
+      requestId: crypto.randomUUID(),
+      artifactId: published.artifactId,
+      revisionSha: published.revisionSha,
+    });
+    if (!opened.ok || opened.data.command !== "open") throw new Error("gallery open failed");
+    await target.session.send("Page.navigate", { url: "about:blank" });
+    await target.session.send("Page.navigate", { url: opened.data.frameUrl });
+    await settle("document.querySelector('#facet-status-line')?.textContent === 'displayed'");
+    const imageSettled = await settle(
+      "document.querySelector('#facet-canvas iframe')?.contentDocument?.querySelector('img')?.complete === true",
+    );
+    expect(imageSettled).toEqual({ status: "displayed", marker: null });
     const world = await artifactWorld(target);
     await target.session.send("Runtime.evaluate", {
       contextId: world,
@@ -68,6 +114,7 @@ test("gallery signals post-render interaction errors without changing the stored
     expect(
       await shell("document.querySelector('#facet-verdict')?.dataset.interactionError ?? null"),
     ).toBeNull();
+
     await target.session.send("Runtime.evaluate", {
       contextId: world,
       expression: "document.getElementById('throw')?.click()",
@@ -89,7 +136,9 @@ test("gallery signals post-render interaction errors without changing the stored
       role: "status",
       text: "displayed · runtime error during interaction",
     });
-    expect(await shell("document.querySelector('#facet-verdict')?.dataset.status")).toBe("ok");
+    expect(await shell("document.querySelector('#facet-verdict')?.dataset.status")).toBe(
+      "partial:external_resources",
+    );
     await shell(
       "window.__interactionFrameBefore = document.querySelector('#facet-canvas iframe'); true",
     );
