@@ -2,7 +2,7 @@ import { chmodSync } from "node:fs";
 import { dirname } from "node:path";
 import { Database } from "bun:sqlite";
 
-import { FacetStoreError } from "../../shared/errors/store-error";
+import { FacetStoreError, storeDriverMessageDetails } from "../../shared/errors/store-error";
 import { ensureOwnerOnlyDirectory } from "../../shared/util/dir-permissions";
 
 // `FacetStoreError` + `asStoreError` + `StoreErrorCode` live in
@@ -39,10 +39,11 @@ export function openDatabase(paths: DatabasePaths | string): FacetDatabase {
     db.query("PRAGMA quick_check").get();
     hardenDatabaseFiles(databasePath);
   } catch (error) {
+    const driverMessage = error instanceof Error ? error.message : String(error);
     throw new FacetStoreError(
       "database_corrupt",
-      error instanceof Error ? error.message : String(error),
-      { cause: error },
+      `The database file at ${databasePath} can't be read; restore it from a copy or move it aside so Facet can create a new one.`,
+      { cause: error, details: storeDriverMessageDetails(driverMessage) },
     );
   }
   return db;

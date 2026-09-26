@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { openDatabase } from "../../src/service/store/database";
+import { FacetStoreError } from "../../src/shared/errors/store-error";
+import { CURRENT_STORAGE_VERSION } from "../../src/shared/storage-version";
 import { ArtifactRepository } from "../../src/service/store/repository";
 import { runMigrations } from "../../src/service/store/migrations";
 import {
@@ -355,13 +357,23 @@ describe("artifact store", () => {
     seedLegacyTemplate(db, artifact.id, revision.id, `v5-interrupted-${crypto.randomUUID()}`);
     const before = tableCounts(db);
 
-    expect(() =>
+    let migrationError: unknown;
+    try {
       runMigrations(db, {
         beforeRecordVersion: (version) => {
           if (version === 6) throw new Error("simulated v6 interruption");
         },
-      }),
-    ).toThrow("simulated v6 interruption");
+      });
+    } catch (error) {
+      migrationError = error;
+    }
+    expect(migrationError).toBeInstanceOf(FacetStoreError);
+    expect((migrationError as Error).message).toBe(
+      `The database could not be upgraded to storage version ${CURRENT_STORAGE_VERSION}.`,
+    );
+    expect((migrationError as FacetStoreError).details?.driverMessage).toBe(
+      "simulated v6 interruption",
+    );
 
     expect(tableCounts(db)).toEqual(before);
     expect(db.query("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
@@ -377,6 +389,28 @@ describe("artifact store", () => {
     runMigrations(db);
     expect(artifactTypeCheckValues(db)).toEqual([...ARTIFACT_TYPES]);
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  });
+
+  test("reports product text when a migration fails", () => {
+    const { db } = makeV5Store();
+    let caught: unknown;
+    try {
+      runMigrations(db, {
+        beforeRecordVersion: (version) => {
+          if (version === 6) throw new Error("UNIQUE constraint failed: revisions.sha256");
+        },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(FacetStoreError);
+    expect((caught as FacetStoreError).code).toBe("migration_failed");
+    expect((caught as Error).message).toBe(
+      `The database could not be upgraded to storage version ${CURRENT_STORAGE_VERSION}.`,
+    );
+    expect((caught as FacetStoreError).details?.driverMessage).toBe(
+      "UNIQUE constraint failed: revisions.sha256",
+    );
   });
 
   test("round-trips exact bytes and sha256 lookup", () => {

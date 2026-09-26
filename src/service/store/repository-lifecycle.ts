@@ -171,7 +171,10 @@ export function createTemplate(db: Database, input: TemplateInput): Template {
         `Template name already exists: ${input.name}`,
         {
           cause: error,
-          details: { name: input.name },
+          details: {
+            name: input.name,
+            driverMessage: mapped.details?.driverMessage ?? mapped.message.slice(0, 200),
+          },
         },
       );
     }

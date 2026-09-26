@@ -65,7 +65,10 @@ describe("promotion", () => {
     const input = { revisionId: revision.id, name: "shared-name", promotedBy: "operator" };
     repository.promoteRevision(input);
     expect(() => repository.promoteRevision(input)).toThrowError(
-      expect.objectContaining({ code: "template_name_taken", details: { name: "shared-name" } }),
+      expect.objectContaining({
+        code: "template_name_taken",
+        details: expect.objectContaining({ name: "shared-name" }),
+      }),
     );
     expect(
       db.query("SELECT COUNT(*) AS count FROM templates WHERE name = ?").get("shared-name"),
@@ -474,13 +477,25 @@ describe("promotion", () => {
           sourceVerdict: { status: "ok", tier: 0 },
         },
       ]);
+      const secondPublished = await fetch(`${service.url}/api/v1/commands`, {
+        method: "POST",
+        headers: headers(service.installToken),
+        body: JSON.stringify(
+          envelope({
+            command: "publish",
+            artifactId,
+            artifactType: "markdown",
+            bytes: "Ynll",
+          }),
+        ),
+      }).then((res) => res.json());
       const nameTaken = await fetch(`${service.url}/api/v1/commands`, {
         method: "POST",
         headers: headers(promoteToken),
         body: JSON.stringify(
           envelope({
             command: "promote",
-            revisionId,
+            revisionId: secondPublished.data.revision.id,
             name: "stable",
             promotedBy: "operator",
             allowUnverified: true,
@@ -488,10 +503,17 @@ describe("promotion", () => {
         ),
       });
       expect(nameTaken.status).toBe(409);
-      expect((await nameTaken.json()).error).toMatchObject({
+      const nameTakenBody = await nameTaken.json();
+      expect(nameTakenBody.ok).toBe(false);
+      expect(nameTakenBody.error).toMatchObject({
         code: "template_name_taken",
         details: { name: "stable" },
       });
+      expect(nameTakenBody.error.message).toBe("Template name already exists: stable");
+      expect(nameTakenBody.error.details.driverMessage).toEqual(expect.any(String));
+      expect(nameTakenBody.error.message).not.toMatch(
+        /SQLite|SQLITE_|constraint failed|UNIQUE|FOREIGN KEY|database is locked|malformed/i,
+      );
     } finally {
       await service.stop();
     }

@@ -35,6 +35,10 @@ export class FacetStoreError extends FacetError {
   }
 }
 
+export function storeDriverMessageDetails(driverMessage: string): { driverMessage: string } {
+  return { driverMessage: driverMessage.slice(0, 200) };
+}
+
 /**
  * Coerce any thrown value into a typed store error. Recognizes a
  * pre-existing `FacetStoreError`; for a generic `Error` it string-matches
@@ -44,29 +48,50 @@ export class FacetStoreError extends FacetError {
  */
 export function asStoreError(error: unknown): FacetStoreError {
   if (error instanceof FacetStoreError) return error;
-  const message = error instanceof Error ? error.message : String(error);
-  const lower = message.toLowerCase();
+  const driverMessage = error instanceof Error ? error.message : String(error);
+  const lower = driverMessage.toLowerCase();
+  const options = { cause: error, details: storeDriverMessageDetails(driverMessage) };
   if (
     lower.includes("not a database") ||
     lower.includes("malformed") ||
     lower.includes("corrupt")
   ) {
-    return new FacetStoreError("database_corrupt", message, { cause: error });
+    return new FacetStoreError(
+      "database_corrupt",
+      "The database file can't be read; restore it from a copy.",
+      options,
+    );
   }
   if (lower.includes("busy") || lower.includes("locked")) {
-    return new FacetStoreError("database_busy", message, { cause: error });
+    return new FacetStoreError(
+      "database_busy",
+      "The database is busy because another Facet process is writing; retry.",
+      options,
+    );
   }
   if (lower.includes("no space") || lower.includes("enospc") || lower.includes("disk full")) {
-    return new FacetStoreError("disk_full", message, { cause: error });
+    return new FacetStoreError(
+      "disk_full",
+      "No space is left to write the database; free space and retry.",
+      options,
+    );
   }
   if (lower.includes("foreign key")) {
-    return new FacetStoreError("foreign_key", message, { cause: error });
+    return new FacetStoreError("foreign_key", "The referenced object does not exist.", options);
   }
   if (lower.includes("unique constraint")) {
     if (lower.includes("templates.name")) {
-      return new FacetStoreError("template_name_taken", message, { cause: error });
+      return new FacetStoreError(
+        "template_name_taken",
+        "A template with that name exists.",
+        options,
+      );
     }
-    return new FacetStoreError("duplicate_revision", message, { cause: error });
+    return new FacetStoreError(
+      "duplicate_revision",
+      "The same bytes are already stored for this artifact.",
+      options,
+    );
   }
-  return new FacetStoreError("constraint", message, { cause: error });
+  return new FacetStoreError("constraint", "The store rejected the write.", options);
 }

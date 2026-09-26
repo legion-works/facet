@@ -38,6 +38,44 @@ const STORE_CODES_WITH_STATUS_ARM: Array<{ code: StoreErrorCode; status: number 
 ];
 
 describe("asStoreError — known SQLite failure shapes", () => {
+  test.each([
+    [
+      "database_corrupt",
+      "file is not a database",
+      "The database file can't be read; restore it from a copy.",
+    ],
+    [
+      "database_busy",
+      "database is locked",
+      "The database is busy because another Facet process is writing; retry.",
+    ],
+    [
+      "disk_full",
+      "ENOSPC: no space left on device",
+      "No space is left to write the database; free space and retry.",
+    ],
+    ["foreign_key", "FOREIGN KEY constraint failed", "The referenced object does not exist."],
+    [
+      "template_name_taken",
+      "UNIQUE constraint failed: templates.name",
+      "A template with that name exists.",
+    ],
+    [
+      "duplicate_revision",
+      "UNIQUE constraint failed: revisions.sha256",
+      "The same bytes are already stored for this artifact.",
+    ],
+    ["constraint", "constraint failed: mystery", "The store rejected the write."],
+  ] as const)("maps raw driver text to product text for %s", (code, raw, productMessage) => {
+    const error = asStoreError(new Error(raw));
+    expect(error.code).toBe(code);
+    expect(error.message).toBe(productMessage);
+    expect(error.message).not.toMatch(
+      /SQLite|SQLITE_|constraint failed|UNIQUE|FOREIGN KEY|database is locked|malformed/i,
+    );
+    expect(error.details?.driverMessage).toBe(raw);
+  });
+
   test("maps 'not a database' / 'malformed' / 'corrupt' → database_corrupt", () => {
     expect(asStoreError(new Error("file is not a database")).code).toBe("database_corrupt");
     expect(asStoreError(new Error("database disk image is malformed")).code).toBe(
@@ -149,7 +187,7 @@ describe("FacetStoreError → FacetError bridge", () => {
     const mapped = asStoreError(new Error("ENOSPC: no space left on device"));
     const wrapped = FacetError.from(mapped);
     expect(wrapped.code).toBe("disk_full");
-    expect(wrapped.message).toContain("ENOSPC");
+    expect(wrapped.message).toBe("No space is left to write the database; free space and retry.");
   });
 });
 

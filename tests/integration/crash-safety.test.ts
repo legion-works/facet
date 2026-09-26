@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 
-import { openDatabase } from "../../src/service/store/database";
+import { FacetStoreError, openDatabase } from "../../src/service/store/database";
+import { CURRENT_STORAGE_VERSION } from "../../src/shared/storage-version";
 import { runMigrations } from "../../src/service/store/migrations";
 import { ArtifactRepository } from "../../src/service/store/repository";
 import {
@@ -142,8 +143,20 @@ test("corrupt database raises database_corrupt without changing the file", () =>
   const garbage = new Uint8Array([70, 65, 67, 69, 84, 0, 255, 1]);
   writeFileSync(databasePath, garbage, { mode: 0o600 });
   const before = readFileSync(databasePath);
-  expect(() => openDatabase({ databasePath })).toThrowError(
-    expect.objectContaining({ code: "database_corrupt" }),
+  let caught: unknown;
+  try {
+    openDatabase({ databasePath });
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(FacetStoreError);
+  const storeError = caught as FacetStoreError;
+  expect(storeError.code).toBe("database_corrupt");
+  expect(storeError.message).toContain(`The database file at ${databasePath} can't be read`);
+  expect(storeError.message).toContain("restore it from a copy or move it aside");
+  expect(storeError.details?.driverMessage).toEqual(expect.any(String));
+  expect(storeError.message.replace(databasePath, "")).not.toMatch(
+    /SQLite|SQLITE_|constraint failed|UNIQUE|FOREIGN KEY|database is locked|malformed/i,
   );
   expect(readFileSync(databasePath)).toEqual(before);
 });
@@ -153,13 +166,22 @@ test("interrupted migration rolls back its version and recovers on retry", () =>
   const db = openDatabase({ databasePath });
   connections.push(db);
   expect(statSync(databasePath).mode & 0o777).toBe(0o600);
-  expect(() =>
+  let migrationError: unknown;
+  try {
     runMigrations(db, {
       beforeRecordVersion: () => {
         throw new Error("simulated interruption");
       },
-    }),
-  ).toThrow("simulated interruption");
+    });
+  } catch (error) {
+    migrationError = error;
+  }
+  expect((migrationError as Error).message).toBe(
+    `The database could not be upgraded to storage version ${CURRENT_STORAGE_VERSION}.`,
+  );
+  expect((migrationError as FacetStoreError).details?.driverMessage).toContain(
+    "simulated interruption",
+  );
   expect(db.query("SELECT name FROM sqlite_master WHERE name = 'projects'").get()).toBeNull();
 
   runMigrations(db);

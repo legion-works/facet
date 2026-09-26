@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import { asStoreError, FacetStoreError } from "./database";
+import { CURRENT_STORAGE_VERSION } from "../../shared/storage-version";
 export { INITIAL_SCHEMA } from "./schema";
 import {
   INITIAL_SCHEMA,
@@ -172,6 +173,13 @@ export function runMigrations(db: Database, options: MigrationOptions = {}): voi
   } catch (error) {
     const mapped = asStoreError(error);
     if (mapped.code === "database_corrupt" || mapped.code === "database_busy") throw mapped;
-    throw new FacetStoreError("migration_failed", mapped.message, { cause: error });
+    throw new FacetStoreError(
+      "migration_failed",
+      `The database could not be upgraded to storage version ${CURRENT_STORAGE_VERSION}.`,
+      {
+        cause: error,
+        details: { driverMessage: mapped.details?.driverMessage ?? mapped.message.slice(0, 200) },
+      },
+    );
   }
 }
