@@ -77,6 +77,14 @@ WebP; legacy PNG evidence remains readable and exportable. Before static
 capture it emulates `prefers-reduced-motion: reduce` and awaits
 `document.fonts.ready`; these pre-flights keep repeated captures byte-identical.
 
+If resizing the capture viewport makes the artifact grow, Tier 1 restores the
+1280×800 evidence viewport and captures the artifact's scroll area in tiles.
+The tiles form one still WebP image, including for interactive or animated
+artifacts. This avoids changing viewport-sized elements such as `100vh` while
+retaining content below and to the right. Fixed and sticky elements repeat in
+each tile. Content that grows while the tiles are captured gets
+`screenshot_unavailable` instead of an incomplete image.
+
 Tier 1 uses the same artifact-type layout rules as the gallery frame: Mermaid,
 SVG, and chart roots are safely centered on both axes, with oversized content
 remaining reachable by scrolling; Markdown is top-aligned in a horizontally

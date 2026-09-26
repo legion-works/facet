@@ -31,6 +31,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Buffer } from "node:buffer";
+import sharp from "sharp";
 
 import {
   Tier1ResultSchema,
@@ -976,6 +977,114 @@ export async function captureEvidenceScreenshot(
   return captureScreenshotWithRetry(session, { bounds: options.bounds });
 }
 
+async function captureTiledScreenshot(
+  session: VerifierCdpSession,
+  executionContextId: number,
+): Promise<CapturedEvidenceImage> {
+  await configureTier1Viewport(session);
+  await session.send("Runtime.evaluate", {
+    contextId: executionContextId,
+    expression: "new Promise(requestAnimationFrame)",
+    awaitPromise: true,
+  });
+  const source = await measureArtifactCaptureSize(session, executionContextId);
+  const bounds = boundCaptureSize(source);
+  const viewport = (await session.send("Runtime.evaluate", {
+    contextId: executionContextId,
+    returnByValue: true,
+    expression:
+      "(function(){var element=document.getElementById('artifact');" +
+      "if(!element)return null;return {width:element.clientWidth,height:element.clientHeight}})()",
+  })) as { result: { value?: { width: number; height: number } | null } };
+  const visible = viewport.result.value;
+  if (!visible || visible.width <= 0 || visible.height <= 0)
+    throw new Error("artifact tile viewport unavailable");
+  const owner = (await session.send("Runtime.evaluate", {
+    returnByValue: true,
+    expression:
+      "(function(){var frame=document.querySelector('#host-root iframe');" +
+      "if(!frame)return null;var rect=frame.getBoundingClientRect();" +
+      "return {x:rect.left,y:rect.top,width:rect.width,height:rect.height}})()",
+  })) as { result: { value?: { x: number; y: number; width: number; height: number } | null } };
+  const frame = owner.result.value;
+  if (!frame || frame.x < 0 || frame.y < 0)
+    throw new Error("artifact frame capture box unavailable");
+  const tileWidth = Math.min(visible.width, Math.floor(frame.width));
+  const tileHeight = Math.min(visible.height, Math.floor(frame.height));
+  if (tileWidth <= 0 || tileHeight <= 0) throw new Error("artifact tile bounds unavailable");
+  const columns = Math.ceil(source.width / tileWidth);
+  const rows = Math.ceil(source.height / tileHeight);
+  if (columns * rows > 256) throw new Error("artifact requires too many screenshot tiles");
+  const layers: { input: Buffer; left: number; top: number }[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const x = column * tileWidth;
+      const y = row * tileHeight;
+      const scrolled = (await session.send("Runtime.evaluate", {
+        contextId: executionContextId,
+        returnByValue: true,
+        expression:
+          "(function(){var element=document.getElementById('artifact');" +
+          "element.style.scrollBehavior='auto';element.scrollLeft=" +
+          x +
+          ";element.scrollTop=" +
+          y +
+          ";return new Promise(function(resolve){requestAnimationFrame(function(){resolve({left:element.scrollLeft,top:element.scrollTop})})})})()",
+        awaitPromise: true,
+      })) as { result: { value?: { left: number; top: number } } };
+      const offset = scrolled.result.value;
+      if (!offset || offset.left > x || offset.top > y)
+        throw new Error("artifact tile scroll position unavailable");
+      const shot = (await session.send("Page.captureScreenshot", {
+        format: "png",
+        captureBeyondViewport: false,
+        clip: {
+          x: Math.floor(frame.x),
+          y: Math.floor(frame.y),
+          width: tileWidth,
+          height: tileHeight,
+          scale: 1,
+        },
+      })) as { data?: string };
+      if (!shot.data) throw new Error("artifact tile screenshot returned no data");
+      const outputLeft = Math.floor(x * bounds.scale);
+      const outputTop = Math.floor(y * bounds.scale);
+      const outputWidth =
+        Math.min(bounds.width, Math.floor(Math.min(x + tileWidth, source.width) * bounds.scale)) -
+        outputLeft;
+      const outputHeight =
+        Math.min(
+          bounds.height,
+          Math.floor(Math.min(y + tileHeight, source.height) * bounds.scale),
+        ) - outputTop;
+      if (outputWidth <= 0 || outputHeight <= 0) continue;
+      const input = await sharp(Buffer.from(shot.data, "base64"))
+        .extract({
+          left: x - offset.left,
+          top: y - offset.top,
+          width: Math.min(tileWidth, source.width - x),
+          height: Math.min(tileHeight, source.height - y),
+        })
+        .resize(outputWidth, outputHeight, { fit: "fill" })
+        .png()
+        .toBuffer();
+      layers.push({ input, left: outputLeft, top: outputTop });
+    }
+  }
+  const finalSize = await measureArtifactCaptureSize(session, executionContextId);
+  if (finalSize.width > source.width || finalSize.height > source.height)
+    throw new Error("artifact grew during tiled screenshot capture");
+  const bytes = await sharp({
+    create: { width: bounds.width, height: bounds.height, channels: 3, background: "#151823" },
+  })
+    .composite(layers)
+    .webp({ quality: TIER1_SCREENSHOT_WEBP_QUALITY })
+    .toBuffer();
+  if (bytes.byteLength > TIER1_SCREENSHOT_CAP_BYTES)
+    throw new Error("tiled screenshot exceeds encoded-size cap");
+  return { bytes, format: "webp" };
+}
+
 interface ScreenshotRetryOptions {
   readonly attempts?: number;
   readonly timeoutMs?: number;
@@ -1092,15 +1201,19 @@ async function captureEvidence(
       returnByValue: true,
     });
     const finalSize = await measureArtifactCaptureSize(target.session, options.executionContextId);
-    if (finalSize.width > initialSize.width || finalSize.height > initialSize.height)
-      throw new Error("artifact grew after viewport resize");
-    const bounds = boundCaptureSize(finalSize);
-    const captureOptions = { bounds: { bounds, source: finalSize } };
-    const capture = await captureEvidenceScreenshot(target.session, {
-      animated,
-      bounds: captureOptions.bounds,
-      ...(captureScreenshot === undefined ? {} : { captureStatic: captureScreenshot }),
-    });
+    // The host iframe clips beyond its own 800px viewport; a larger iframe would
+    // resize 100vh descendants and never converge. Tiles preserve that viewport.
+    const grew = finalSize.width > initialSize.width || finalSize.height > initialSize.height;
+    const capture = grew
+      ? {
+          screenshot: await captureTiledScreenshot(target.session, options.executionContextId),
+          screenshotError: null,
+        }
+      : await captureEvidenceScreenshot(target.session, {
+          animated,
+          bounds: { bounds: boundCaptureSize(finalSize), source: finalSize },
+          ...(captureScreenshot === undefined ? {} : { captureStatic: captureScreenshot }),
+        });
     screenshotError = capture.screenshotError;
     const screenshot = capture.screenshot;
     if (screenshot !== null) {
