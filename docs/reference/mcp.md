@@ -74,6 +74,14 @@ Set `FACET_HOME` in the host configuration when the adapter must use a non-defau
 
 Exactly one of `sourceText` or `file` is required. The adapter returns `invalid_request` when both or neither are supplied.
 
+Tier 0 means structure was parsed and compiled, not rendered. Request
+`facet_read_back` with `tier: "visual"` before reporting a render. Visual
+evidence covers the first rendered state of an interactive TSX artifact;
+later interaction is not validated and does not change the stored verdict.
+When testing by hand with the MCP Inspector CLI, `--tool-arg key=value` passes
+`\n` literally, so multi-line `sourceText` arrives as one line; pass `file`
+instead.
+
 The MCP surface has six artifact tools. Start a cold-home flow with `facet_create`, then call `facet_publish`, `facet_read_back`, and `facet_export`. Each tool advertises its input schema in `tools/list`; run `facet doctor` through the CLI.
 
 ## Result and error handling

@@ -145,7 +145,7 @@ export function createFacetMcpServer(): Server {
     ),
     facet_publish: defineTool(
       PublishToolSchema,
-      "Publish exactly one sourceText or local file. Check envelope.ok separately from data.verdict.status: stored verdict status error is not a transport failure.",
+      'Publish exactly one sourceText or local file. Check envelope.ok separately from data.verdict.status: a stored verdict status of error is not a transport failure. Tier 0 parses and compiles structure but is not rendered; call facet_read_back with tier: "visual" before reporting a render.',
       async (input) => {
         const source = publishSource(input);
         return invoke(buildFacetArgs("publish", { ...input, ...source }), source);
@@ -153,7 +153,7 @@ export function createFacetMcpServer(): Server {
     ),
     facet_read_back: defineTool(
       ReadBackToolSchema,
-      "Read back the latest or revision-bound stored verdict at Tier 0, Tier 1, or visual. Tier 1 and visual need browser evidence; inspect envelope.ok before verdict status.",
+      "Read back a stored verdict at Tier 0, Tier 1, or visual. Tier 1 and visual need browser evidence from the pinned browser; inspect envelope.ok before verdict status. Visual covers the first rendered state; later interaction is not validated and does not change the stored verdict.",
       async (input) => invoke(buildFacetArgs("read_back", input)),
     ),
     facet_status: defineTool(

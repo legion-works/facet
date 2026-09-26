@@ -139,6 +139,18 @@ describe("facet MCP adapter", () => {
         );
       }
 
+      // Descriptions carry workflow boundaries because MCP clients may only load the tool list.
+      // Presence test: it pins the wording a model reads, not how a model acts on it.
+      const descriptions = Object.fromEntries(
+        tools.tools.map((tool) => [tool.name, tool.description]),
+      );
+      expect(descriptions.facet_publish).toContain("Tier 0");
+      expect(descriptions.facet_publish).toMatch(/not rendered|nothing rendered/i);
+      expect(descriptions.facet_publish).toContain('tier: "visual"');
+      expect(descriptions.facet_publish).toContain("envelope.ok");
+      expect(descriptions.facet_read_back).toContain("interaction");
+      expect(descriptions.facet_read_back).toContain("envelope.ok");
+
       const result = await client.callTool({ name: "facet_status", arguments: { start: true } });
       expect(result.isError).not.toBe(true);
       const envelope = JSON.parse(textContent(result)) as {
