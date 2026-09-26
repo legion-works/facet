@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.10.4](https://github.com/legion-works/facet/compare/v1.10.3...v1.10.4) (2026-09-26)
+
+
+### Bug Fixes
+
+* compare the external image count with the Tier 0 prediction ([fdc0ef8](https://github.com/legion-works/facet/commit/fdc0ef81d2b1b1a3302c278d0251b10029a0b82c)), closes [#53](https://github.com/legion-works/facet/issues/53)
+* enforce the Tier 1 total budget ([0050b67](https://github.com/legion-works/facet/commit/0050b671dffbd64e5e2884bd0c0ffa52a753b01c)), closes [#54](https://github.com/legion-works/facet/issues/54)
+* print doctor fix commands that run on the inspected install ([52fe7d5](https://github.com/legion-works/facet/commit/52fe7d5a9a7ac3c0573a96e67976002aab7f9d00)), closes [#58](https://github.com/legion-works/facet/issues/58)
+
 ## [1.10.3](https://github.com/legion-works/facet/compare/v1.10.2...v1.10.3) (2026-09-26)
 
 
