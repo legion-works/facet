@@ -16,7 +16,7 @@ export default function CapacityReport() {
   const capacityPercent = Math.round((readyWorkers / workerCapacity) * 100);
 
   return (
-    <main className="max-w-2xl p-6 gap-6 flex flex-col bg-legion-paper text-legion-ink">
+    <main className="max-w-2xl mx-auto p-6 gap-6 flex flex-col bg-legion-paper text-legion-ink">
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
           <span className="badge">capacity report</span>

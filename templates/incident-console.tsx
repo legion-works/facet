@@ -44,7 +44,7 @@ export default function IncidentConsole() {
   const criticalCount = incidents.filter((incident) => incident.severity === "critical").length;
 
   return (
-    <main className="max-w-2xl p-6 gap-6 flex flex-col bg-legion-paper text-legion-ink">
+    <main className="max-w-2xl mx-auto p-6 gap-6 flex flex-col bg-legion-paper text-legion-ink">
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-2 items-center">
           <span className="badge">incident console</span>

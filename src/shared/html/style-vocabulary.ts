@@ -28,6 +28,7 @@ export const HTML_TAILWIND_CLASSES = [
   "mt-4",
   "mb-2",
   "mb-4",
+  "mx-auto",
   "w-full",
   "max-w-prose",
   "max-w-2xl",

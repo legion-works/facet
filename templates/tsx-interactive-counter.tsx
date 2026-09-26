@@ -4,7 +4,7 @@ export default function InteractiveCounter() {
   const [count, setCount] = useState(0);
 
   return (
-    <section className="card bg-legion-paper p-6 w-full max-w-prose">
+    <section className="card bg-legion-paper p-6 w-full max-w-prose mx-auto">
       <h1 className="text-2xl font-semibold text-legion-ink">Interactive counter</h1>
       <p className="text-legion-muted mt-2">Button presses: {count}</p>
       <button

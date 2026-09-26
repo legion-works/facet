@@ -2,7 +2,7 @@ import React from "react";
 
 export default function StatusReport() {
   return (
-    <section className="card bg-legion-paper p-6 w-full max-w-prose">
+    <section className="card bg-legion-paper p-6 w-full max-w-prose mx-auto">
       <h1 className="text-2xl font-semibold text-legion-ink">Status report</h1>
       <p className="text-legion-muted mt-2">Verification state for the current release.</p>
       <section className="mt-4">

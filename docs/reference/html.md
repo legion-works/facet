@@ -142,15 +142,15 @@ an included Tailwind utility outside this list can still render.
 
 ### Recommended Tailwind utilities
 
-`block`, `flex`, `grid`, `inline-flex`, `flex-col`, `flex-wrap`, `items-center`, `justify-between`, `justify-center`, `grid-cols-1`, `grid-cols-2`, `grid-cols-3`, `gap-2`, `gap-3`, `gap-4`, `gap-6`, `p-2`, `p-3`, `p-4`, `p-6`, `px-3`, `px-4`, `py-2`, `py-3`, `m-0`, `mt-2`, `mt-4`, `mb-2`, `mb-4`, `w-full`, `max-w-prose`, `max-w-2xl`, `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`, `font-medium`, `font-semibold`, `font-bold`, `leading-relaxed`, `text-left`, `text-center`, `text-right`, `text-legion-ink`, `text-legion-muted`, `text-legion-cyan`, `bg-legion-paper`, `bg-legion-ink`, `bg-legion-cyan`, `border`, `border-2`, `border-legion-line`, `rounded`, `rounded-box`, `overflow-x-auto`, `table`, `table-zebra`.
+`block`, `flex`, `grid`, `inline-flex`, `flex-col`, `flex-wrap`, `items-center`, `justify-between`, `justify-center`, `grid-cols-1`, `grid-cols-2`, `grid-cols-3`, `gap-2`, `gap-3`, `gap-4`, `gap-6`, `p-2`, `p-3`, `p-4`, `p-6`, `px-3`, `px-4`, `py-2`, `py-3`, `m-0`, `mt-2`, `mt-4`, `mb-2`, `mb-4`, `mx-auto`, `w-full`, `max-w-prose`, `max-w-2xl`, `text-xs`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`, `font-medium`, `font-semibold`, `font-bold`, `leading-relaxed`, `text-left`, `text-center`, `text-right`, `text-legion-ink`, `text-legion-muted`, `text-legion-cyan`, `bg-legion-paper`, `bg-legion-ink`, `bg-legion-cyan`, `border`, `border-2`, `border-legion-line`, `rounded`, `rounded-box`, `overflow-x-auto`, `table`, `table-zebra`.
 
-59 recommended utilities.
+60 recommended utilities.
 
 ### Recommended daisyUI components
 
 `alert`, `badge`, `btn`, `card`, `stat`, `table`.
 
-6 recommended components · 64 documented recommendations.
+6 recommended components · 65 documented recommendations.
 
 <!-- VOCABULARY:END -->
 

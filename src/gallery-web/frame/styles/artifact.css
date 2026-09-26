@@ -5256,6 +5256,9 @@
   .mx-16 {
     margin-inline: calc(var(--spacing) * 16);
   }
+  .mx-auto {
+    margin-inline: auto;
+  }
   .my-0 {
     margin-block: 0px;
   }

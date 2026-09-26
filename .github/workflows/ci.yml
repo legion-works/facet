@@ -305,6 +305,7 @@ jobs:
           - gallery-refresh.test.ts
           - gallery-render.test.ts
           - gallery-geometry.test.ts
+          - gallery-top-level-flow.test.ts
           - gallery-mermaid-natural.test.ts
           - gallery-static-tsx.test.ts
           - gallery-title-favicon.test.ts

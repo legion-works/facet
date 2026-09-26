@@ -131,10 +131,8 @@ const CASES: readonly GeometryCase[] = [
     fixture: "fleet-dashboard.html",
     fixtureDir: join(import.meta.dir, "../../templates"),
     assert: (geometry, width) => {
-      // UX-4 centering contract, extended from the mermaid "small-diagram"
-      // case to a native html artifact: fleet-dashboard.html's <main> is a
-      // fixed ~672px (max-w-2xl) column — narrower than the 1920px stage
-      // — so it must sit centered horizontally (equal left/right gutters).
+      // Fleet dashboard owns its max-width centering through the authored
+      // `mx-auto` utility rather than relying on renderer layout.
       // `contentLeft`/`contentRight` (not `rootLeft`/`rootRight`) because
       // the html renderer always mounts a full-width wrapper as
       // `#artifact`'s only child — the fixture's own narrow content is a
