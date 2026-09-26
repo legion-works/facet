@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.10.5](https://github.com/legion-works/facet/compare/v1.10.4...v1.10.5) (2026-09-26)
+
+
+### Behaviour changes
+
+* Store errors now carry a product message. The raw SQLite text moves to `details.driverMessage`, capped at 200 characters. Codes, HTTP statuses and `retryable` are unchanged, so scripts that matched on driver wording in `error.message` should match on `error.code`.
+* A duplicate publish explains itself: `identical bytes are already stored as revision <sha8>`, or `…as older revision <sha8>; latest revision is <sha8>`, with `details.latestRevisionSha`. `publish --watch` no longer republishes at startup when the file already matches the latest revision.
+* Every result bound to one revision now carries a top-level `data.revisionSha`: publish, read-back, open, export, pin, promote and instantiate. This is additive; `verdict.revisionSha`, `sidecar.revisionSha` and `revisionId` are unchanged.
+* `facet doctor` reports a Bun older than the package's `engines.bun` minimum as a new `warn` status. A warn does not fail the run: `allPassed` stays true and the exit code stays 0.
+* Static TSX components that use hooks now render their initial state. Before, they failed with `tsx_compile_error`.
+* CLI output for HTML and TSX shows structure counts (roots, headings, tables, lists, images, external, errors) instead of the diagram line. Interactive TSX says `not predicted` before a visual check.
+
+
+### Bug Fixes
+
+* check the minimum Bun version in doctor ([2f4b2d0](https://github.com/legion-works/facet/commit/2f4b2d0a902775f597d1f46cc129a747442e0052)), closes [#33](https://github.com/legion-works/facet/issues/33)
+* explain a duplicate publish without database text ([e0a965b](https://github.com/legion-works/facet/commit/e0a965b3595699be5383d6e1ec486bdc9c738082)), closes [#32](https://github.com/legion-works/facet/issues/32)
+* put revisionSha at the top of revision-bound results ([3c24745](https://github.com/legion-works/facet/commit/3c2474585dff69d9aafdc2bcf12ef7ecb8887c72)), closes [#34](https://github.com/legion-works/facet/issues/34)
+* render static TSX through React ([890ecaa](https://github.com/legion-works/facet/commit/890ecaa50d36cd5f4f2be61558bbaa8a7ebd46ba)), closes [#60](https://github.com/legion-works/facet/issues/60)
+* show product messages for store errors ([f475f5e](https://github.com/legion-works/facet/commit/f475f5e1c90c6b534e7349c564970f67d308e96c)), closes [#61](https://github.com/legion-works/facet/issues/61)
+* show type-appropriate observed counts in CLI output ([7c90dd4](https://github.com/legion-works/facet/commit/7c90dd44c77d296d98b2c13e95ab98d4adb61ad4)), closes [#35](https://github.com/legion-works/facet/issues/35)
+
 ## [1.10.4](https://github.com/legion-works/facet/compare/v1.10.3...v1.10.4) (2026-09-26)
 
 
