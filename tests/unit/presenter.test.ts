@@ -154,6 +154,13 @@ describe("CLI presenter envelopes", () => {
       probes: [
         { name: "bun", status: "pass", summary: "1.4.0", fixCommand: null, details: {} },
         {
+          name: "bun",
+          status: "warn",
+          summary: "1.3.14 is below the supported minimum 1.4.0 (package engines)",
+          fixCommand: "install Bun 1.4.0",
+          details: {},
+        },
+        {
           name: "database",
           status: "fail",
           summary: "database missing",
@@ -164,6 +171,8 @@ describe("CLI presenter envelopes", () => {
     });
     expect(presentEnvelope(envelope, plain)).toEqual([
       "✓ bun · 1.4.0",
+      "WARN bun · 1.3.14 is below the supported minimum 1.4.0 (package engines)",
+      "  fix       install Bun 1.4.0",
       "✗ database · database missing",
       "  fix       facet status --start",
     ]);

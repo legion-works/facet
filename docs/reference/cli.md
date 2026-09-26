@@ -77,11 +77,13 @@ Every verb accepts `--help`. It prints its positional arguments and flags from t
 same command table used by the parser. Missing required inputs are reported
 together in one typed usage envelope.
 
-`doctor` runs seven read-only probes: the pinned Bun version, headless shell,
+`doctor` runs seven read-only probes: the minimum Bun version, headless shell,
 network namespace support, database and migration version, token permissions,
-evidence-root permissions, and service lock state. Dormant with no lock is
-healthy; missing or stale state fails with a literal repair command. A failed
-probe still emits an `ok: true` envelope and exits 1.
+evidence-root permissions, and service lock state. Probe statuses are `pass`,
+`warn`, or `fail`. Dormant with no lock is healthy; a warning includes a literal
+repair command but does not make `allPassed` false. A failed probe still emits an
+`ok: true` envelope; the CLI exits 1 only when a probe has `fail`, while warnings
+exit 0.
 
 `status --start` takes no value: it starts the local service if needed, then
 returns the normal status envelope. With `--artifact-id`, status includes

@@ -17,7 +17,7 @@ export const DoctorProbeNameSchema = z.enum([
 export const DoctorProbeResultSchema = z
   .object({
     name: DoctorProbeNameSchema,
-    status: z.enum(["pass", "fail"]),
+    status: z.enum(["pass", "warn", "fail"]),
     summary: z.string(),
     fixCommand: z.string().nullable(),
     details: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])),

@@ -251,8 +251,12 @@ export function presentEnvelope(envelope: FacetEnvelope<unknown>, caps: Presente
         fixCommand?: unknown;
       };
       const passed = probe.status === "pass";
+      const warned = probe.status === "warn";
+      const marker = warned
+        ? `WARN ${String(probe.name)}`
+        : `${passed ? "✓" : "✗"} ${String(probe.name)}`;
       lines.push(
-        `${paint(passed ? "green" : "red", `${passed ? "✓" : "✗"} ${String(probe.name)}`)} · ${String(probe.summary)}`,
+        `${paint(warned ? "yellow" : passed ? "green" : "red", marker)} · ${String(probe.summary)}`,
       );
       if (!passed && typeof probe.fixCommand === "string") lines.push(row("fix", probe.fixCommand));
     }

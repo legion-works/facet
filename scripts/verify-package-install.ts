@@ -214,7 +214,7 @@ async function main(): Promise<void> {
     );
     const installShapeFailures = INSTALL_SHAPE_PROBES.map((name) => readyProbes.get(name))
       .filter((probe): probe is Record<string, unknown> => probe !== undefined)
-      .filter((probe) => probe.status !== "pass");
+      .filter((probe) => probe.status === "fail");
     assert(
       installShapeFailures.length === 0,
       `doctor install-shape probe failures: ${formatProbeFailures(installShapeFailures)}`,

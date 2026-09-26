@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import packageJson from "../../package.json" with { type: "json" };
 import { parseArgs, renderHelp } from "../../src/cli/parser";
 import {
   DOCTOR_PROBE_NAMES,
@@ -44,6 +45,93 @@ describe("doctor parser contract", () => {
 });
 
 describe("doctor probe matrix", () => {
+  test("checks Bun against the package minimum using semantic versions", () => {
+    const options = {
+      paths: {
+        database: "/tmp/facet.sqlite",
+        evidence: "/tmp/evidence",
+        token: "/tmp/promote.token",
+        lock: "/tmp/lock",
+        metadata: "/tmp/meta",
+      },
+      shellBinary: "/tmp/chrome",
+      netns: { available: true, reason: null },
+      fs: {
+        exists: () => true,
+        stat: (path: string) => ({ mode: path === "/tmp/evidence" ? 0o100700 : 0o100600 }),
+      },
+      databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
+      lockReader: () => null,
+      pidAlive: () => false,
+      lockStale: () => false,
+    };
+    const cases = [
+      ["1.3.14", "warn"],
+      ["1.4.0", "pass"],
+      ["1.4.2", "pass"],
+      ["1.10.0", "pass"],
+      ["2.0.0", "pass"],
+      ["1.4.0-canary.1", "warn"],
+    ] as const;
+
+    for (const [bunVersion, status] of cases) {
+      const bunProbe = runDoctor({ ...options, bunVersion }).probes.find(
+        (probe) => probe.name === "bun",
+      );
+      expect(bunProbe?.status, bunVersion).toBe(status);
+      expect(bunProbe?.details.expected, bunVersion).toBe(packageJson.engines.bun.slice(2));
+      if (status === "warn") {
+        expect(bunProbe?.fixCommand, bunVersion).toContain(
+          `bun-v${packageJson.engines.bun.slice(2)}`,
+        );
+      }
+      if (bunVersion === "1.3.14") {
+        expect(bunProbe?.summary).toBe(
+          "1.3.14 is below the supported minimum 1.4.0 (package engines)",
+        );
+      }
+    }
+  });
+
+  test("Bun warning passes overall health unless another probe fails", () => {
+    const options = {
+      bunVersion: "1.3.14",
+      paths: {
+        database: "/tmp/facet.sqlite",
+        evidence: "/tmp/evidence",
+        token: "/tmp/promote.token",
+        lock: "/tmp/lock",
+        metadata: "/tmp/meta",
+      },
+      shellBinary: "/tmp/chrome",
+      netns: { available: true, reason: null },
+      fs: {
+        exists: () => true,
+        stat: (path: string) => ({ mode: path === "/tmp/evidence" ? 0o100700 : 0o100600 }),
+      },
+      databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
+      lockReader: () => null,
+      pidAlive: () => false,
+      lockStale: () => false,
+    };
+    const warningOnly = runDoctor(options);
+    expect(warningOnly.probes.find((probe) => probe.name === "bun")?.status).toBe("warn");
+    expect(warningOnly.allPassed).toBe(true);
+    expect(DoctorResultSchema.safeParse(warningOnly).success).toBe(true);
+
+    const warningWithDatabaseFailure = runDoctor({
+      ...options,
+      fs: { ...options.fs, exists: (path: string) => path !== options.paths.database },
+    });
+    expect(warningWithDatabaseFailure.probes.find((probe) => probe.name === "bun")?.status).toBe(
+      "warn",
+    );
+    expect(
+      warningWithDatabaseFailure.probes.find((probe) => probe.name === "database")?.status,
+    ).toBe("fail");
+    expect(warningWithDatabaseFailure.allPassed).toBe(false);
+  });
+
   test("reports all seven probes and fails a missing database without creating it", () => {
     const database = "/tmp/facet-doctor-missing.sqlite";
     const result = runDoctor({

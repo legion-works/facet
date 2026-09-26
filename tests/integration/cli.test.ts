@@ -34,6 +34,8 @@ import { FacetError } from "../../src/shared/errors/facet-error";
 import { ArtifactRepository } from "../../src/service/store/repository";
 import { openDatabase } from "../../src/service/store/database";
 import { runMigrations } from "../../src/service/store/migrations";
+import { runDoctor } from "../../src/cli/commands/doctor";
+import { CURRENT_STORAGE_VERSION } from "../../src/shared/storage-version";
 
 import {
   runCli,
@@ -283,7 +285,61 @@ function normalizeAdapterEnvelope(text: string): unknown {
   return normalizeAdapterValue(JSON.parse(text) as Record<string, unknown>);
 }
 
+function makeDoctorFixture(bunVersion: string, databasePresent = true) {
+  const database = "/tmp/facet-cli-doctor-fixture.sqlite";
+  const evidence = "/tmp/facet-cli-doctor-fixture/evidence";
+  return runDoctor({
+    bunVersion,
+    paths: {
+      database,
+      evidence,
+      token: "/tmp/facet-cli-doctor-fixture/promote.token",
+      lock: "/tmp/facet-cli-doctor-fixture/facet.lock",
+      metadata: "/tmp/facet-cli-doctor-fixture/metadata.json",
+    },
+    shellBinary: "/tmp/chrome-headless-shell",
+    netns: { available: true, reason: null },
+    fs: {
+      exists: (path) => path !== database || databasePresent,
+      stat: (path) => ({ mode: path === evidence ? 0o100700 : 0o100600 }),
+    },
+    databaseReader: () => ({ quickCheck: "ok", version: CURRENT_STORAGE_VERSION }),
+    lockReader: () => null,
+    pidAlive: () => false,
+    lockStale: () => false,
+  });
+}
+
 describe("cli contract — surface", () => {
+  test("doctor warning exits zero and preserves the warning contract", async () => {
+    const io = makeIo();
+    const exit = await runCli(["doctor"], io, {
+      doctor: () => makeDoctorFixture("1.3.14"),
+    });
+
+    expect(exit.code).toBe(0);
+    const parsed = parseStdoutEnvelope(io.stdoutBuf.value);
+    if (!parsed.ok) throw new Error("doctor returned an error envelope");
+    expect(parsed.data.allPassed).toBe(true);
+    const probes = parsed.data.probes as Array<Record<string, unknown>>;
+    expect(probes.find((probe) => probe["name"] === "bun")?.["status"]).toBe("warn");
+  });
+
+  test("doctor warning does not hide a failing probe's nonzero exit", async () => {
+    const io = makeIo();
+    const exit = await runCli(["doctor"], io, {
+      doctor: () => makeDoctorFixture("1.3.14", false),
+    });
+
+    expect(exit.code).toBe(1);
+    const parsed = parseStdoutEnvelope(io.stdoutBuf.value);
+    if (!parsed.ok) throw new Error("doctor returned an error envelope");
+    expect(parsed.data.allPassed).toBe(false);
+    const probes = parsed.data.probes as Array<Record<string, unknown>>;
+    expect(probes.find((probe) => probe["name"] === "bun")?.["status"]).toBe("warn");
+    expect(probes.find((probe) => probe["name"] === "database")?.["status"]).toBe("fail");
+  });
+
   test("export parser accepts positional id and keeps export --format distinct from meta --format", async () => {
     expect(parseArgs(["export", "artifact-1"])).toMatchObject({
       kind: "verb",

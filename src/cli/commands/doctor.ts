@@ -2,6 +2,7 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Database } from "bun:sqlite";
 
+import packageJson from "../../../package.json" with { type: "json" };
 import { computeFacetPaths, type FacetRuntimePaths } from "../../shared/config/paths";
 import { FACET_SCHEMA_VERSION } from "../../shared/contracts/envelope";
 import { CURRENT_STORAGE_VERSION } from "../../shared/storage-version";
@@ -47,7 +48,7 @@ export interface DoctorOptions {
   readonly statusCheck?: (metadata: LockMetadata) => boolean;
 }
 
-const BUN_VERSION = "1.4.0";
+const MINIMUM_BUN_VERSION = packageJson.engines.bun.slice(2);
 const shellFix = "bunx --bun puppeteer browsers install chrome-headless-shell@151.0.7922.77";
 const netnsFix =
   "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 && unshare --map-current-user --user --net -- /bin/true";
@@ -77,7 +78,7 @@ function modeOf(fs: DoctorFs, path: string): number | null {
 
 function probe(
   name: DoctorProbeName,
-  status: "pass" | "fail",
+  status: "pass" | "warn" | "fail",
   summary: string,
   fixCommand: string | null,
   details: Record<string, string | number | boolean | null> = {},
@@ -121,16 +122,19 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
   const restartFix = `${invocationPrefix(options.argv ?? process.argv, options.which ?? Bun.which)} status --start`;
 
   probes.push(
-    bunVersion === BUN_VERSION
-      ? probe("bun", "pass", bunVersion, null, { version: bunVersion, expected: BUN_VERSION })
+    Bun.semver.satisfies(bunVersion, packageJson.engines.bun)
+      ? probe("bun", "pass", bunVersion, null, {
+          version: bunVersion,
+          expected: MINIMUM_BUN_VERSION,
+        })
       : probe(
           "bun",
-          "fail",
-          `${bunVersion}, expected ${BUN_VERSION}`,
-          `curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"`,
+          "warn",
+          `${bunVersion} is below the supported minimum ${MINIMUM_BUN_VERSION} (package engines)`,
+          `curl -fsSL https://bun.sh/install | bash -s "bun-v${MINIMUM_BUN_VERSION}"`,
           {
             version: bunVersion,
-            expected: BUN_VERSION,
+            expected: MINIMUM_BUN_VERSION,
           },
         ),
   );
@@ -265,5 +269,5 @@ export function runDoctor(options: DoctorOptions = {}): DoctorResult {
     );
   }
 
-  return { command: "doctor", allPassed: probes.every((item) => item.status === "pass"), probes };
+  return { command: "doctor", allPassed: probes.every((item) => item.status !== "fail"), probes };
 }

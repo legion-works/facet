@@ -25,7 +25,12 @@ import type { Readable } from "node:stream";
 import { existsSync, readFileSync } from "node:fs";
 
 import { FACET_SCHEMA_VERSION, okEnvelope, type FacetEnvelope } from "../shared/contracts/envelope";
-import type { CommandRequest, CommandResult, CommandName } from "../shared/contracts/commands";
+import type {
+  CommandRequest,
+  CommandResult,
+  CommandName,
+  DoctorResult,
+} from "../shared/contracts/commands";
 import { FacetError } from "../shared/errors/facet-error";
 import { FACET_VERSION } from "../shared/version";
 import { isCompiledEntrypointArg, isCompiledRuntime } from "../shared/build-mode";
@@ -90,6 +95,7 @@ export interface CliTestHooks {
   readonly bypassInflight?: boolean;
   readonly openLauncher?: (url: string) => void | Promise<void>;
   readonly watchSignal?: AbortSignal;
+  readonly doctor?: () => DoctorResult;
 }
 
 export interface CliExit {
@@ -287,11 +293,13 @@ export async function runCli(
   }
 
   if (parsed.kind === "verb" && parsed.verb === "doctor") {
-    const result = runDoctor({
-      paths: computeFacetPaths(
-        io.env.FACET_HOME === undefined ? {} : { facetHome: io.env.FACET_HOME },
-      ),
-    });
+    const result =
+      testHooks.doctor?.() ??
+      runDoctor({
+        paths: computeFacetPaths(
+          io.env.FACET_HOME === undefined ? {} : { facetHome: io.env.FACET_HOME },
+        ),
+      });
     writeEnvelope(io, parsed, {
       schemaVersion: FACET_SCHEMA_VERSION,
       requestId: generateRequestId(),
