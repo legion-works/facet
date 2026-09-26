@@ -1,13 +1,15 @@
 /**
  * Resource caps for the Tier 1 verifier.
  *
- * Each cap is named and exposed so the runner, the harness builder,
- * and the penetration test agree on a single value. A failing cap
- * produces a typed `FacetError` with the matching `tier1_*` code.
+ * Named limits keep the runner, harness builder, and penetration test
+ * aligned. Enforced caps produce typed `FacetError`s with matching
+ * `tier1_*` codes; TIER1_TIMEOUT_MS remains an intended total-budget
+ * target until outer enforcement lands.
  */
 
 /**
- * Wall-clock budget for one Tier 1 verifier invocation. The harness
+ * Intended total budget target for one Tier 1 verifier invocation; it
+ * is not enforced yet. The harness
  * bundles the REAL renderers (mermaid + marked + vega, ~8 MB inline);
  * parse + first render of a 40-node fixture needs real headroom.
  */
@@ -36,13 +38,13 @@ export const TIER1_USER_DATA_DIR_MODE = 0o700;
  */
 export const TIER1_RENDER_BARRIER_MS = 30_000;
 
-/** Keep tiled evidence below the Tier 1 budget after the render and stability windows. */
+/** Keep tiled evidence within the intended total-budget target after render and stability windows. */
 export const TIER1_TILED_CAPTURE_DEADLINE_MS = 15_000;
 
 /**
  * Time between the first interactive TSX observation and its bounded
- * stability re-check. It stays below the headroom after the render barrier so
- * a typed `partial:unstable` verdict remains observable before Tier 1 times out.
+ * stability re-check. It stays below the intended total-budget target after
+ * the render barrier; that outer target is not enforced yet.
  */
 export const TSX_STABILITY_WINDOW_MS = 1_000;
 

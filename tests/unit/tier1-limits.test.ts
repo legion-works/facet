@@ -11,7 +11,7 @@ import {
 } from "../../src/validation/tier1/limits";
 
 describe("Tier 1 budget ordering", () => {
-  test("each outer budget leaves room to observe the inner typed result", () => {
+  test("configured limits and the intended total-budget target stay ordered", () => {
     expect(TIER1_CDP_CALL_WATCHDOG_MS).toBeLessThan(TIER1_RENDER_BARRIER_MS);
     expect(TIER1_RENDER_BARRIER_MS).toBeLessThan(TIER1_TIMEOUT_MS);
     expect(TSX_STABILITY_WINDOW_MS).toBeLessThan(TIER1_TIMEOUT_MS - TIER1_RENDER_BARRIER_MS);
