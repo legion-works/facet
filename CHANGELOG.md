@@ -3,9 +3,14 @@
 ## [1.10.3](https://github.com/legion-works/facet/compare/v1.10.2...v1.10.3) (2026-09-26)
 
 
+### Behaviour changes
+
+* An interactive TSX artifact with a remote image now gets `partial:external_resources` from the visual check. It got `error` (`facet_error`) before, because the image failing to load in the offline visual check was reported as a runtime error.
+
+
 ### Bug Fixes
 
-* do not treat failed resource loads as runtime errors ([7b3cc63](https://github.com/legion-works/facet/commit/7b3cc63218fa07d9c39ab0a2fff29709d864bd36)), closes [#56](https://github.com/legion-works/facet/issues/56)
+* a failed image, script or other resource load is no longer reported as a runtime error: the gallery stops adding `✗ RUNTIME` to HTML, Markdown and TSX artifacts with remote images, and interactive TSX no longer shows "interactive TSX runtime error" for them. Script exceptions and unhandled rejections are still reported ([7b3cc63](https://github.com/legion-works/facet/commit/7b3cc63218fa07d9c39ab0a2fff29709d864bd36)), closes [#56](https://github.com/legion-works/facet/issues/56)
 
 ## [1.10.2](https://github.com/legion-works/facet/compare/v1.10.1...v1.10.2) (2026-09-26)
 
