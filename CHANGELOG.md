@@ -3,11 +3,22 @@
 ## [1.10.1](https://github.com/legion-works/facet/compare/v1.10.0...v1.10.1) (2026-09-26)
 
 
+### Behaviour changes
+
+* HTML and TSX artifacts are no longer centred by the gallery. Top-level elements follow normal document flow, in the gallery and in Tier 1 evidence. A fixed-width layout centres itself with `mx-auto`, which is now in the style vocabulary.
+* `facet read-back` and `facet open` for an artifact that does not exist return `artifact_not_found` (HTTP 404). They returned `revision_not_found` before. An existing artifact with an unknown revision still returns `revision_not_found`.
+
+
 ### Bug Fixes
 
-* apply theme changes to the live frame for HTML and TSX ([bd93091](https://github.com/legion-works/facet/commit/bd9309100b56fd16a9aaca15d6bc392306d8f468)), closes [#49](https://github.com/legion-works/facet/issues/49)
+* apply theme changes to the live frame for HTML and TSX, so interactive state survives a theme switch ([bd93091](https://github.com/legion-works/facet/commit/bd9309100b56fd16a9aaca15d6bc392306d8f468)), closes [#49](https://github.com/legion-works/facet/issues/49)
 * keep top-level HTML and TSX elements in document flow ([b07008c](https://github.com/legion-works/facet/commit/b07008ccb4a286c7f24b9e84d9c2751385a106d2)), closes [#48](https://github.com/legion-works/facet/issues/48)
-* report artifact_not_found for an unknown artifact on read-back ([3fbde85](https://github.com/legion-works/facet/commit/3fbde85c9a987553eb163815237a0c03e4c331e7))
+* report artifact_not_found for an unknown artifact on read-back and open ([3fbde85](https://github.com/legion-works/facet/commit/3fbde85c9a987553eb163815237a0c03e4c331e7))
+
+
+### Documentation
+
+* MCP tool descriptions say that a publish verdict is Tier 0 (parsed and compiled, not rendered), name `facet_read_back` with `tier: "visual"` as the step before reporting a render, and say that a visual verdict covers the first rendered state only ([bd90310](https://github.com/legion-works/facet/commit/bd903105afb42b2c05dc72b65207951ed7b06a7d)), closes [#50](https://github.com/legion-works/facet/issues/50)
 
 ## [1.10.0](https://github.com/legion-works/facet/compare/v1.9.0...v1.10.0) (2026-09-25)
 
