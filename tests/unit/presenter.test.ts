@@ -27,6 +27,100 @@ describe("CLI presenter routing", () => {
 });
 
 describe("CLI presenter envelopes", () => {
+  test("HTML and static TSX output reports structural observed counts", () => {
+    const verdict = {
+      ...validReadBackResult().verdict,
+      observed: { ...validReadBackResult().verdict.observed, html: HTML_STRUCTURE_COUNTS },
+    };
+    const lines = presentEnvelope(
+      okEnvelope("request-1", { command: "readBack", renderer: "tsx", verdict }),
+      plain,
+    );
+
+    expect(lines).toContain(
+      "  observed  roots 1 · headings 0 · tables 0 · lists 0 · images 1 · external 1 · errors 0",
+    );
+  });
+
+  test("HTML observed counts include a nonzero canvas count", () => {
+    const verdict = {
+      ...validReadBackResult().verdict,
+      observed: {
+        ...validReadBackResult().verdict.observed,
+        html: { ...HTML_STRUCTURE_COUNTS, canvasCount: 1 },
+      },
+    };
+    const lines = presentEnvelope(
+      okEnvelope("request-1", { command: "readBack", renderer: "html", verdict }),
+      plain,
+    );
+
+    expect(lines).toContain(
+      "  observed  roots 1 · headings 0 · tables 0 · lists 0 · images 1 · canvas 1 · external 1 · errors 0",
+    );
+  });
+
+  test("HTML observed counts omit a zero canvas count", () => {
+    const verdict = {
+      ...validReadBackResult().verdict,
+      observed: { ...validReadBackResult().verdict.observed, html: HTML_STRUCTURE_COUNTS },
+    };
+    const lines = presentEnvelope(
+      okEnvelope("request-1", { command: "readBack", renderer: "html", verdict }),
+      plain,
+    );
+    const observed = lines.find((line) => line.startsWith("  observed"));
+
+    expect(observed).toBe(
+      "  observed  roots 1 · headings 0 · tables 0 · lists 0 · images 1 · external 1 · errors 0",
+    );
+    expect(observed).not.toContain("canvas");
+  });
+
+  test("interactive TSX Tier 1 errors without HTML counts say not observed", () => {
+    const verdict = {
+      ...validReadBackResult().verdict,
+      status: "error" as const,
+      execution: "interactive" as const,
+    };
+    const lines = presentEnvelope(
+      okEnvelope("request-1", { command: "readBack", renderer: "tsx", verdict }),
+      plain,
+    );
+
+    expect(lines).toContain("  observed  not observed for interactive TSX · errors 0");
+  });
+
+  test("interactive TSX Tier 0 says structural counts were not predicted", () => {
+    const verdict = {
+      ...validReadBackResult().verdict,
+      tier: 0 as const,
+      execution: "interactive" as const,
+    };
+    const lines = presentEnvelope(
+      okEnvelope("request-1", { command: "readBack", renderer: "tsx", verdict }),
+      plain,
+    );
+
+    expect(lines).toContain("  observed  not predicted for interactive TSX · errors 0");
+  });
+
+  test("interactive TSX visual output reports structural observed counts", () => {
+    const verdict = {
+      ...validReadBackResult().verdict,
+      execution: "interactive" as const,
+      observed: { ...validReadBackResult().verdict.observed, html: HTML_STRUCTURE_COUNTS },
+    };
+    const lines = presentEnvelope(
+      okEnvelope("request-1", { command: "readBack", renderer: "tsx", verdict }),
+      plain,
+    );
+
+    expect(lines).toContain(
+      "  observed  roots 1 · headings 0 · tables 0 · lists 0 · images 1 · external 1 · errors 0",
+    );
+  });
+
   test("Tier 0 TSX ok says compiled and supplies the exact visual read-back command", () => {
     const verdict = {
       ...validReadBackResult().verdict,

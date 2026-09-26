@@ -153,7 +153,11 @@ concat, and repeat children; author sizing is not replaced.
 The canonical observed fields include `rendererRootSvgCount`, `graphCount`,
 `mermaidNodeCount`, `visibleSvgCount`, `opaqueRegionCount`, `viewBoxes`,
 `errorCount`, and `discriminativeErrors`. `opaqueRegionCount` counts DOM
-regions whose contents are not structurally observable.
+regions whose contents are not structurally observable. This fixed observed
+shape is carried by every artifact type; diagram counters are zero for types
+without diagrams. HTML and static TSX report structure through `observed.html`.
+Interactive TSX adds those counts after a visual check; Tier 0 does not predict
+its interactive structure.
 
 Renderer literals are `svg` and `canvas`. The `canvas` renderer is chart-only:
 a canvas chart expects `rendererRootSvgCount = 0` and `opaqueRegionCount = 1`;

@@ -93,9 +93,9 @@ It returns `data.frameUrl` and `data.launched`; `--no-launch` leaves the URL
 available without invoking the desktop launcher, and a launcher failure reports
 `launched: false`.
 
-`publish --renderer` selects the renderer persisted with the revision. It
-defaults to `svg`; `canvas` is valid only for chart artifacts. An invalid
-renderer value is a usage error and exits 64.
+`renderer` is stored on every revision and defaults to `svg`. It selects the
+drawing mode only for chart artifacts; `canvas` is valid only for charts. An
+invalid renderer value is a usage error and exits 64.
 
 For charts, Facet defaults unspecified views to 640×360 through
 `config.view`. These defaults apply only when the spec has no `autosize`, no

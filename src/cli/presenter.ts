@@ -121,15 +121,18 @@ function verdictLines(verdict: Verdict, caps: PresenterCaps): string[] {
     `${verdict.artifactId} ${paint("dim", "@")} ${paint("cyan", sha8(verdict.revisionSha))}`,
   ].join(paint("dim", " · "));
   const o = verdict.observed;
+  const observedSummary =
+    o.html !== undefined
+      ? `roots ${o.html.rendererRootCount} · headings ${o.html.headingCount} · tables ${o.html.tableCount} · lists ${o.html.listCount} · images ${o.html.imageCount}${o.html.canvasCount > 0 ? ` · canvas ${o.html.canvasCount}` : ""} · external ${o.html.externalImageCount} · errors ${o.errorCount}`
+      : verdict.execution === "interactive"
+        ? `${verdict.tier === 0 ? "not predicted" : "not observed"} for interactive TSX · errors ${o.errorCount}`
+        : `svg ${o.rendererRootSvgCount} · graphs ${o.graphCount} · nodes ${o.mermaidNodeCount} · errors ${o.errorCount}`;
   const lines = [
     ...(verdict.insecure === undefined
       ? []
       : [`INSECURE L${verdict.insecure.level} — ${verdict.insecure.reason}`]),
     head,
-    row(
-      "observed",
-      `svg ${o.rendererRootSvgCount} · graphs ${o.graphCount} · nodes ${o.mermaidNodeCount} · errors ${o.errorCount}`,
-    ),
+    row("observed", observedSummary),
     ...(verdict.tier === 0 && verdict.status === "ok"
       ? [
           "  structure checked · rendering not verified",
