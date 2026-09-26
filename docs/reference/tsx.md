@@ -14,7 +14,8 @@ facet publish --artifact-id <id> --type tsx --execution interactive --file templ
 
 Static TSX compiles to HTML in Tier 0, then uses the existing HTML prediction
 and Tier 1 comparison pipeline. It can earn the same predict-and-compare claim
-as an HTML artifact.
+as an HTML artifact. Hooks render their initial state; effects and event handlers
+do not run in static output.
 
 ## Interactive mode
 

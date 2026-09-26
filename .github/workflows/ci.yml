@@ -338,6 +338,7 @@ jobs:
           - tsx-runtime-egress.test.ts
           - tsx-screenshot-evidence.test.ts
           - tsx-static.test.ts
+          - tsx-static-hooks.test.ts
           - tier1-tsx-style-parity.test.ts
           - tier1-whole-artifact-webp.test.ts
           - tier1-viewport-sized-evidence.test.ts

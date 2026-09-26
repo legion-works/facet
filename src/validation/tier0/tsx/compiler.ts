@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 
 import { FacetError } from "../../../shared/errors/facet-error";
 import type { TsxExecutionMode } from "../../../shared/contracts/validation";
+import { createElement, type ComponentType } from "react";
 import { tsxAllowlistResolverPlugin } from "./allowlist-resolver";
 import { validateTsxAst } from "./ast-policy";
 
@@ -104,6 +105,7 @@ async function compileTsxAtWorkRoot(
       splitting: false,
       sourcemap: "none",
       naming: "artifact.js",
+      external: input.execution === "static" ? ["react"] : [],
       plugins: [tsxAllowlistResolverPlugin()],
       throw: false,
     });
@@ -127,12 +129,12 @@ async function compileTsxAtWorkRoot(
     }
 
     const moduleUrl = `${Bun.pathToFileURL(output).href}?sha=${bundleSha256}`;
-    const module = (await import(moduleUrl)) as { default?: unknown };
+    const module = (await import(moduleUrl)) as { default?: ComponentType };
     const renderToStaticMarkup = (await import("react-dom/server")).renderToStaticMarkup;
     if (typeof module.default !== "function") {
       throw new Error("compiled TSX module has no default component export");
     }
-    const html = renderToStaticMarkup(module.default({}));
+    const html = renderToStaticMarkup(createElement(module.default, {}));
     const htmlBytes = new TextEncoder().encode(html);
     if (htmlBytes.byteLength > TSX_COMPILED_OUTPUT_CAP_BYTES) {
       throw new FacetError("tsx_compile_output_cap", "TSX HTML output exceeded the byte cap", {

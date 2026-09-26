@@ -10,6 +10,10 @@ const STATIC_SOURCE = readFileSync(
   resolve(import.meta.dir, "../fixtures/tsx/static-source.tsx"),
   "utf8",
 );
+const STATIC_HOOKS_SOURCE = readFileSync(
+  resolve(import.meta.dir, "../fixtures/tsx/static-hooks.tsx"),
+  "utf8",
+);
 const INTERACTIVE_SOURCE = readFileSync(
   resolve(import.meta.dir, "../fixtures/tsx/interactive-source.tsx"),
   "utf8",
@@ -32,6 +36,42 @@ describe("TSX compiler", () => {
     expect(result.bytes.byteLength).toBeGreaterThan(0);
     expect(result.html).toContain("<p");
     expect(result.sha256).toBe(createHash("sha256").update(result.bytes).digest("hex"));
+  });
+
+  test("renders static hook initial state without running effects", async () => {
+    const result = await compileTsx({
+      source: `import { useEffect, useMemo, useReducer } from "react";
+export default function App(){
+  const [count] = useReducer((state: number, step: number) => state + step, 0);
+  const label = useMemo(() => "Clicked " + count, [count]);
+  useEffect(() => { document.title = "effect ran"; }, []);
+  return <main><h1>Counter</h1><p>{label}</p></main>;
+}`,
+      execution: "static",
+    });
+
+    expect(result.html).toContain("<h1>Counter</h1>");
+    expect(result.html).toContain("Clicked 0");
+    expect(result.html).not.toContain("effect ran");
+  });
+
+  test("renders a useState counter's initial text in static HTML", async () => {
+    const result = await compileTsx({ source: STATIC_HOOKS_SOURCE, execution: "static" });
+
+    expect(result.html).toContain("<h1>Counter</h1>");
+    expect(result.html).toContain("<button>Clicked 0</button>");
+  });
+
+  test("preserves a component's own static render error", async () => {
+    await expect(
+      compileTsx({
+        source: `export default function App(){ throw new Error("component render failed"); }`,
+        execution: "static",
+      }),
+    ).rejects.toMatchObject({
+      code: "tsx_compile_error",
+      details: { message: "component render failed" },
+    });
   });
 
   test("rejects denied AST capabilities before writing compiled output", async () => {
