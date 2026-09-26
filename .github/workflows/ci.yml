@@ -422,6 +422,17 @@ jobs:
           path: test-results/gallery-geometry/**
           if-no-files-found: warn
           retention-days: 14
+      # v4.6.2 — ea165f8d65b6e75b540449e92b4886f43607fa02
+      # The viewport-sized evidence gate samples fixed pixel rows; upload the
+      # stored screenshots so a runner-only failure can be read from the image.
+      - name: upload tier1 viewport-sized evidence
+        if: always() && matrix.test == 'tier1-viewport-sized-evidence.test.ts'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tier1-viewport-sized-evidence
+          path: test-results/tier1-viewport-sized/**
+          if-no-files-found: warn
+          retention-days: 14
 
   coverage:
     needs: [unit, integration, acceptance-tier1]

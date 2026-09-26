@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -22,6 +22,15 @@ async function publishSource(source: string, artifactType: "html" | "tsx", slug:
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+// CI uploads this directory for this leg, so a pixel failure on a runner can be
+// inspected instead of guessed at.
+const EVIDENCE_DIR = join(process.cwd(), "test-results", "tier1-viewport-sized");
+
+function keepEvidence(path: string, label: string) {
+  mkdirSync(EVIDENCE_DIR, { recursive: true });
+  copyFileSync(path, join(EVIDENCE_DIR, `${label}.webp`));
 }
 
 function expectColor(actual: number[], expected: number[]) {
@@ -57,6 +66,7 @@ test("HTML viewport-height hero and following paragraph both appear in evidence"
   expect(published.tier1Status).toBe("ok");
   expect(published.tier1ScreenshotError).toBeNull();
   expect(published.tier1ScreenshotPath).not.toBeNull();
+  keepEvidence(published.tier1ScreenshotPath!, "html-viewport-height");
   await expectFullViewportImage(published.tier1ScreenshotPath!, [251, 44, 55], [0, 166, 62]);
 }, 90_000);
 
@@ -69,6 +79,7 @@ test("interactive TSX viewport-height hero retains a still image including follo
   expect(published.tier1Status).toBe("ok");
   expect(published.tier1ScreenshotError).toBeNull();
   expect(published.tier1ScreenshotPath).not.toBeNull();
+  keepEvidence(published.tier1ScreenshotPath!, "tsx-interactive-viewport-height");
   await expectFullViewportImage(published.tier1ScreenshotPath!, [213, 50, 34], [34, 185, 122]);
 }, 90_000);
 
@@ -92,6 +103,7 @@ test("viewport-height content extending beyond 1280px retains its right edge", a
   expect(published.tier1Status).toBe("ok");
   expect(published.tier1ScreenshotError).toBeNull();
   expect(published.tier1ScreenshotPath).not.toBeNull();
+  keepEvidence(published.tier1ScreenshotPath!, "tsx-wide-viewport-height");
   const { data, info } = await sharp(readFileSync(published.tier1ScreenshotPath!))
     .raw()
     .toBuffer({ resolveWithObject: true });
