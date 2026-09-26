@@ -75,6 +75,8 @@ import {
   TIER1_SCREENSHOT_MAX_PIXELS,
   TIER1_SCREENSHOT_WEBP_QUALITY,
   TIER1_TILED_CAPTURE_DEADLINE_MS,
+  TIER1_TEARDOWN_TIMEOUT_MS,
+  TIER1_TIMEOUT_MS,
   TIER1_VIEWPORT_HEIGHT,
   TIER1_VIEWPORT_WIDTH,
   TSX_STABILITY_WINDOW_MS,
@@ -154,6 +156,7 @@ type ScreenshotCapture = (
 export interface Tier1RunnerTestHooks {
   readonly captureScreenshot?: ScreenshotCapture;
   readonly createBrowser?: () => Pick<PuppeteerTier1Browser, "launch">;
+  readonly totalBudgetMs?: number;
 }
 
 export function createTier1RunnerForTests(
@@ -192,16 +195,28 @@ async function runTier1WithHooks(
   level: InsecureLevel,
 ): Promise<Tier1Result> {
   const startedAt = Date.now();
+  const deadline = startedAt + (hooks.totalBudgetMs ?? TIER1_TIMEOUT_MS);
+  const budgetMs = hooks.totalBudgetMs ?? TIER1_TIMEOUT_MS;
   traceTier1("run:start", startedAt);
   let lastWedge: Tier1TransportWedgeError | undefined;
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (Date.now() >= deadline) {
+      throw new FacetError("tier1_timeout", `Tier 1 total budget of ${budgetMs}ms exceeded`, {
+        retryable: false,
+      });
+    }
     try {
       traceTier1(`attempt:${attempt + 1}:start`, startedAt);
-      const result = await runTier1Attempt(input, startedAt, hooks, level);
+      const result = await runTier1Attempt(input, startedAt, deadline, budgetMs, hooks, level);
       traceTier1(`attempt:${attempt + 1}:complete`, startedAt, `status=${result.status}`);
       return result;
     } catch (error) {
       if (error instanceof Tier1TransportWedgeError) {
+        if (Date.now() >= deadline) {
+          throw new FacetError("tier1_timeout", `Tier 1 total budget of ${budgetMs}ms exceeded`, {
+            retryable: false,
+          });
+        }
         traceTier1(`attempt:${attempt + 1}:transport-wedge`, startedAt, error.message);
         lastWedge = error;
         continue;
@@ -222,7 +237,9 @@ async function runTier1WithHooks(
 
 async function runTier1Attempt(
   input: Tier1Input,
-  startedAt = Date.now(),
+  startedAt: number,
+  deadline: number,
+  budgetMs: number,
   hooks: Tier1RunnerTestHooks = {},
   level: InsecureLevel = 0,
 ): Promise<Tier1Result> {
@@ -236,6 +253,7 @@ async function runTier1Attempt(
   let hostHtmlPath: string | undefined;
   const hostDir = mkdtempSync(join(tmpdir(), "facet-tier1-hostdir-"));
   let wedged = false;
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   // Per-run evidence directory under the XDG-state evidence root
   // (mode 0700). The dispatcher wires the parent's evidenceRoot in;
   // when omitted the runner falls back to the canonical path so
@@ -253,163 +271,185 @@ async function runTier1Attempt(
   const observationPath = join(runEvidenceDir, "protocol-observation.json");
 
   try {
-    const browser =
-      hooks.createBrowser?.() ??
-      new PuppeteerTier1Browser({
-        launcher: resolveLauncher(level, { version: input.launcherVersion }),
+    const body = async (): Promise<Tier1Result> => {
+      const browser =
+        hooks.createBrowser?.() ??
+        new PuppeteerTier1Browser({
+          launcher: resolveLauncher(level, { version: input.launcherVersion }),
+        });
+      traceTier1("launch:start", startedAt);
+      target = await browser.launch();
+      traceTier1("launch:complete", startedAt, `pid=${target.pid}`);
+      runtimeExceptions = new RuntimeExceptionCollector(target.session);
+      // Snapshot the OS start time NOW so the wedge teardown can confirm
+      // the pid still belongs to this browser before signaling it (a
+      // dead browser's pid can be reused by an unrelated process).
+      targetStartTime = target.startTime;
+      hostHtmlPath = join(hostDir, "host.html");
+      traceTier1("host-page:start", startedAt);
+      const { html } = await buildHostPage(
+        input.source,
+        "render",
+        hostDir,
+        input.artifactType,
+        input.renderer,
+        input.execution ?? "static",
+      );
+      traceTier1("host-page:complete", startedAt);
+      writeFileSync(hostHtmlPath, html, "utf8");
+      traceTier1("cdp:enable:start", startedAt);
+      await target.session.send("Runtime.enable");
+      await target.session.send("Page.enable");
+      traceTier1("cdp:enable:complete", startedAt);
+      await configureTier1Viewport(target.session);
+      traceTier1("viewport:configured", startedAt);
+      traceTier1("navigate:start", startedAt);
+      await target.session.send("Page.navigate", { url: `file://${hostHtmlPath}` });
+      traceTier1("navigate:complete", startedAt);
+      // Wait for the host page to settle.
+      await waitForBootReady(target, TIER1_RENDER_BARRIER_MS);
+      traceTier1("boot-ready:complete", startedAt);
+
+      traceTier1("frame-resolve:start", startedAt);
+      const childFrame = await resolveSrcdocChildFrame(target.session);
+      traceTier1("frame-resolve:complete", startedAt);
+      const interactiveTsx = input.artifactType === "tsx" && input.execution === "interactive";
+      const staticIsolated = interactiveTsx
+        ? null
+        : await createIsolatedWorld(target.session, childFrame.frameId);
+
+      // Inject the artifact via the parent page world's transfer (the
+      // parent page has the ingress port; the iframe receives it via
+      // postMessage handshake).
+      traceTier1("deliver:start", startedAt);
+      await target.session.send("Runtime.evaluate", {
+        expression:
+          "(function(){" +
+          "var host=window.__facetHostArtifact;" +
+          "if(!host){return 'no-host-artifact';}" +
+          "host.ingress.postMessage({bytes:host.bytes,mode:host.mode,artifactType:host.artifactType,renderer:host.renderer,execution:host.execution});" +
+          "return 'delivered';" +
+          "})()",
+        returnByValue: true,
       });
-    traceTier1("launch:start", startedAt);
-    target = await browser.launch();
-    traceTier1("launch:complete", startedAt, `pid=${target.pid}`);
-    runtimeExceptions = new RuntimeExceptionCollector(target.session);
-    // Snapshot the OS start time NOW so the wedge teardown can confirm
-    // the pid still belongs to this browser before signaling it (a
-    // dead browser's pid can be reused by an unrelated process).
-    targetStartTime = target.startTime;
-    hostHtmlPath = join(hostDir, "host.html");
-    traceTier1("host-page:start", startedAt);
-    const { html } = await buildHostPage(
-      input.source,
-      "render",
-      hostDir,
-      input.artifactType,
-      input.renderer,
-      input.execution ?? "static",
-    );
-    traceTier1("host-page:complete", startedAt);
-    writeFileSync(hostHtmlPath, html, "utf8");
-    traceTier1("cdp:enable:start", startedAt);
-    await target.session.send("Runtime.enable");
-    await target.session.send("Page.enable");
-    traceTier1("cdp:enable:complete", startedAt);
-    await configureTier1Viewport(target.session);
-    traceTier1("viewport:configured", startedAt);
-    traceTier1("navigate:start", startedAt);
-    await target.session.send("Page.navigate", { url: `file://${hostHtmlPath}` });
-    traceTier1("navigate:complete", startedAt);
-    // Wait for the host page to settle.
-    await waitForBootReady(target, TIER1_RENDER_BARRIER_MS);
-    traceTier1("boot-ready:complete", startedAt);
+      traceTier1("deliver:complete", startedAt);
 
-    traceTier1("frame-resolve:start", startedAt);
-    const childFrame = await resolveSrcdocChildFrame(target.session);
-    traceTier1("frame-resolve:complete", startedAt);
-    const interactiveTsx = input.artifactType === "tsx" && input.execution === "interactive";
-    const staticIsolated = interactiveTsx
-      ? null
-      : await createIsolatedWorld(target.session, childFrame.frameId);
+      traceTier1("render-complete:wait", startedAt);
+      const shim = await waitForRenderComplete(target, TIER1_RENDER_BARRIER_MS);
+      traceTier1("render-complete:complete", startedAt, `received=${shim.renderComplete}`);
 
-    // Inject the artifact via the parent page world's transfer (the
-    // parent page has the ingress port; the iframe receives it via
-    // postMessage handshake).
-    traceTier1("deliver:start", startedAt);
-    await target.session.send("Runtime.evaluate", {
-      expression:
-        "(function(){" +
-        "var host=window.__facetHostArtifact;" +
-        "if(!host){return 'no-host-artifact';}" +
-        "host.ingress.postMessage({bytes:host.bytes,mode:host.mode,artifactType:host.artifactType,renderer:host.renderer,execution:host.execution});" +
-        "return 'delivered';" +
-        "})()",
-      returnByValue: true,
-    });
-    traceTier1("deliver:complete", startedAt);
+      const artifactFrame = interactiveTsx
+        ? await resolveNestedArtifactFrame(target.session, childFrame)
+        : childFrame;
+      const isolated =
+        staticIsolated ?? (await createIsolatedWorld(target.session, artifactFrame.frameId));
+      const firstObservation = await observeArtifact(
+        target.session,
+        artifactFrame,
+        isolated.executionContextId,
+        interactiveTsx ? runtimeExceptions!.errorsForFrame(artifactFrame.frameId) : [],
+        input.artifactType === "tsx" || input.artifactType === "markdown",
+      );
+      const secondObservation = interactiveTsx
+        ? await waitForStabilityObservation(
+            target.session,
+            artifactFrame,
+            isolated.executionContextId,
+            () => runtimeExceptions!.errorsForFrame(artifactFrame.frameId),
+            true,
+          )
+        : firstObservation;
+      const protocolObservation = secondObservation.protocol;
+      const isolatedObservation = secondObservation.isolated;
+      const channelDivergence =
+        interactiveTsx && observationsDiverge(firstObservation, secondObservation);
 
-    traceTier1("render-complete:wait", startedAt);
-    const shim = await waitForRenderComplete(target, TIER1_RENDER_BARRIER_MS);
-    traceTier1("render-complete:complete", startedAt, `received=${shim.renderComplete}`);
-
-    const artifactFrame = interactiveTsx
-      ? await resolveNestedArtifactFrame(target.session, childFrame)
-      : childFrame;
-    const isolated =
-      staticIsolated ?? (await createIsolatedWorld(target.session, artifactFrame.frameId));
-    const firstObservation = await observeArtifact(
-      target.session,
-      artifactFrame,
-      isolated.executionContextId,
-      interactiveTsx ? runtimeExceptions!.errorsForFrame(artifactFrame.frameId) : [],
-      input.artifactType === "tsx" || input.artifactType === "markdown",
-    );
-    const secondObservation = interactiveTsx
-      ? await waitForStabilityObservation(
-          target.session,
-          artifactFrame,
-          isolated.executionContextId,
-          () => runtimeExceptions!.errorsForFrame(artifactFrame.frameId),
-          true,
-        )
-      : firstObservation;
-    const protocolObservation = secondObservation.protocol;
-    const isolatedObservation = secondObservation.isolated;
-    const channelDivergence =
-      interactiveTsx && observationsDiverge(firstObservation, secondObservation);
-
-    const status = deriveVerdict(
-      input.lexical,
-      protocolObservation,
-      isolatedObservation,
-      interactiveTsx ? null : shim.pageShim,
-      {
-        bootReady: shim.bootReady,
-        renderComplete: shim.renderComplete,
-        interactive: interactiveTsx,
-        tsx: input.artifactType === "tsx",
-        markdown: input.artifactType === "markdown",
-        channelDivergence,
-        structureChanged:
-          interactiveTsx && countsDiffer(firstObservation.protocol, secondObservation.protocol),
-      },
-    );
-    traceTier1("verdict:complete", startedAt, `status=${status}`);
-
-    // Capture follows derivation so a transport-only failure cannot rewrite the render verdict.
-    const captured = await captureEvidence(
-      target,
-      {
-        input,
-        screenshotDir: runEvidenceDir,
-        consolePath,
-        observationPath,
-        firstProtocolObservation: firstObservation.protocol,
+      const status = deriveVerdict(
+        input.lexical,
         protocolObservation,
-        pageShim: shim.pageShim,
-        executionContextId: isolated.executionContextId,
-      },
-      hooks.captureScreenshot,
-    );
-    traceTier1("evidence:complete", startedAt);
+        isolatedObservation,
+        interactiveTsx ? null : shim.pageShim,
+        {
+          bootReady: shim.bootReady,
+          renderComplete: shim.renderComplete,
+          interactive: interactiveTsx,
+          tsx: input.artifactType === "tsx",
+          markdown: input.artifactType === "markdown",
+          channelDivergence,
+          structureChanged:
+            interactiveTsx && countsDiffer(firstObservation.protocol, secondObservation.protocol),
+        },
+      );
+      traceTier1("verdict:complete", startedAt, `status=${status}`);
 
-    const observed = protocolObservation;
-    const result: Tier1Result = Tier1ResultSchema.parse({
-      tier: 1,
-      status,
-      artifactId: "tier1-runner",
-      revisionSha: input.revisionSha,
-      expected: input.lexical,
-      observed: {
-        rendererRootSvgCount: observed.rendererRootSvgCount,
-        graphCount: observed.graphCount,
-        mermaidNodeCount: observed.mermaidNodeCount,
-        visibleSvgCount: observed.visibleSvgCount,
-        viewBoxes: observed.viewBoxes,
-        errorCount: observed.errorCount,
-        opaqueRegionCount: observed.opaqueRegionCount,
-        externalImageCount: observed.externalImageCount,
-        ...(observed.emptyRendererRoot === undefined
+      // Capture follows derivation so a transport-only failure cannot rewrite the render verdict.
+      const captured = await captureEvidence(
+        target,
+        {
+          input,
+          screenshotDir: runEvidenceDir,
+          consolePath,
+          observationPath,
+          firstProtocolObservation: firstObservation.protocol,
+          protocolObservation,
+          pageShim: shim.pageShim,
+          executionContextId: isolated.executionContextId,
+        },
+        hooks.captureScreenshot,
+      );
+      traceTier1("evidence:complete", startedAt);
+
+      const observed = protocolObservation;
+      const result: Tier1Result = Tier1ResultSchema.parse({
+        tier: 1,
+        status,
+        artifactId: "tier1-runner",
+        revisionSha: input.revisionSha,
+        expected: input.lexical,
+        observed: {
+          rendererRootSvgCount: observed.rendererRootSvgCount,
+          graphCount: observed.graphCount,
+          mermaidNodeCount: observed.mermaidNodeCount,
+          visibleSvgCount: observed.visibleSvgCount,
+          viewBoxes: observed.viewBoxes,
+          errorCount: observed.errorCount,
+          opaqueRegionCount: observed.opaqueRegionCount,
+          externalImageCount: observed.externalImageCount,
+          ...(observed.emptyRendererRoot === undefined
+            ? {}
+            : { emptyRendererRoot: observed.emptyRendererRoot }),
+          ...(observed.html === undefined ? {} : { html: observed.html }),
+          discriminativeErrors: observed.discriminativeErrors,
+        },
+        screenshotPath: captured.screenshotPath,
+        ...(captured.screenshotFormat === null
           ? {}
-          : { emptyRendererRoot: observed.emptyRendererRoot }),
-        ...(observed.html === undefined ? {} : { html: observed.html }),
-        discriminativeErrors: observed.discriminativeErrors,
-      },
-      screenshotPath: captured.screenshotPath,
-      ...(captured.screenshotFormat === null
-        ? {}
-        : { screenshotFormat: captured.screenshotFormat }),
-      consolePath: captured.consolePath,
-      ...(captured.screenshotError !== null ? { screenshotError: captured.screenshotError } : {}),
-    });
-    return result;
+          : { screenshotFormat: captured.screenshotFormat }),
+        consolePath: captured.consolePath,
+        ...(captured.screenshotError !== null ? { screenshotError: captured.screenshotError } : {}),
+      });
+      if (Date.now() >= deadline) {
+        wedged = true;
+        throw new FacetError("tier1_timeout", `Tier 1 total budget of ${budgetMs}ms exceeded`, {
+          retryable: false,
+        });
+      }
+      return result;
+    };
+    return await Promise.race([
+      body(),
+      new Promise<never>((_resolve, reject) => {
+        const expire = () => {
+          wedged = true;
+          reject(
+            new FacetError("tier1_timeout", `Tier 1 total budget of ${budgetMs}ms exceeded`, {
+              retryable: false,
+            }),
+          );
+        };
+        deadlineTimer = setTimeout(expire, Math.max(0, deadline - Date.now()));
+      }),
+    ]);
   } catch (error) {
     if (error instanceof FacetError) throw error;
     if (error instanceof Tier1TransportWedgeError || isTransportClosedError(error)) {
@@ -432,6 +472,7 @@ async function runTier1Attempt(
     }
     throw new FacetError("tier1_protocol_error", message, { retryable: false, cause: error });
   } finally {
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
     runtimeExceptions?.close();
     if (target !== undefined) {
       if (wedged && target.pid > 0 && readPidStartTimeTicks(target.pid) === targetStartTime) {
@@ -447,7 +488,7 @@ async function runTier1Attempt(
       }
       await Promise.race([
         target.close().catch(() => {}),
-        new Promise<void>((resolve) => setTimeout(resolve, 3_000)),
+        new Promise<void>((resolve) => setTimeout(resolve, TIER1_TEARDOWN_TIMEOUT_MS)),
       ]);
     }
     if (hostHtmlPath !== undefined) {

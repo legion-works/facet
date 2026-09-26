@@ -6,19 +6,22 @@ import {
   TIER1_CDP_CALL_WATCHDOG_MS,
   TIER1_RENDER_BARRIER_MS,
   TIER1_TILED_CAPTURE_DEADLINE_MS,
+  TIER1_TEARDOWN_TIMEOUT_MS,
   TIER1_TIMEOUT_MS,
   TSX_STABILITY_WINDOW_MS,
 } from "../../src/validation/tier1/limits";
 
 describe("Tier 1 budget ordering", () => {
-  test("configured limits and the intended total-budget target stay ordered", () => {
+  test("enforced total budget plus teardown fits inside the client timeout", () => {
     expect(TIER1_CDP_CALL_WATCHDOG_MS).toBeLessThan(TIER1_RENDER_BARRIER_MS);
     expect(TIER1_RENDER_BARRIER_MS).toBeLessThan(TIER1_TIMEOUT_MS);
     expect(TSX_STABILITY_WINDOW_MS).toBeLessThan(TIER1_TIMEOUT_MS - TIER1_RENDER_BARRIER_MS);
     expect(
       TIER1_RENDER_BARRIER_MS + TSX_STABILITY_WINDOW_MS + TIER1_TILED_CAPTURE_DEADLINE_MS,
     ).toBeLessThan(TIER1_TIMEOUT_MS);
-    expect(TIER1_TIMEOUT_MS).toBeLessThan(FACET_CLIENT_COMMAND_TIMEOUT_MS);
+    expect(TIER1_TIMEOUT_MS + TIER1_TEARDOWN_TIMEOUT_MS).toBeLessThan(
+      FACET_CLIENT_COMMAND_TIMEOUT_MS,
+    );
     expect(FACET_CLIENT_COMMAND_TIMEOUT_MS).toBeLessThan(ACCEPTANCE_TEST_BUDGET_MS);
   });
 });

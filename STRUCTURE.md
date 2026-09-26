@@ -9,7 +9,9 @@ Recent opaque-content additions: `src/service/store/schema.ts` exports
 after the existing v2 fragment. `src/shared/config/limits.ts` and
 `src/validation/tier1/limits.ts` expose the pinned browser and screenshot
 capture caps, including `TIER1_SCREENSHOT_CAPTURE_TIMEOUT_MS` and
-`TIER1_SCREENSHOT_CAPTURE_ATTEMPTS`, and `TIER1_TILED_CAPTURE_DEADLINE_MS`. `src/validation/tier1/runner.ts` exports
+`TIER1_SCREENSHOT_CAPTURE_ATTEMPTS`, and `TIER1_TILED_CAPTURE_DEADLINE_MS`.
+`TIER1_TIMEOUT_MS` covers the full run and `TIER1_TEARDOWN_TIMEOUT_MS` bounds
+browser close after expiry. `src/validation/tier1/runner.ts` exports
 `createTier1RunnerForTests`, `Tier1RunnerTestHooks`, and the screenshot retry
 helpers. `src/shared/contracts/validation.ts` owns `ScreenshotErrorSchema`,
 `partial:opaque_content`, and `opaqueRegionCount`; `artifact-types.ts` lists

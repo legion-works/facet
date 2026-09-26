@@ -3,17 +3,18 @@
  *
  * Named limits keep the runner, harness builder, and penetration test
  * aligned. Enforced caps produce typed `FacetError`s with matching
- * `tier1_*` codes; TIER1_TIMEOUT_MS remains an intended total-budget
- * target until outer enforcement lands.
+ * `tier1_*` codes; the outer timeout includes evidence capture.
  */
 
 /**
- * Intended total budget target for one Tier 1 verifier invocation; it
- * is not enforced yet. The harness
+ * Total budget for one Tier 1 verifier invocation. The harness
  * bundles the REAL renderers (mermaid + marked + vega, ~8 MB inline);
  * parse + first render of a 40-node fixture needs real headroom.
  */
 export const TIER1_TIMEOUT_MS = 60_000;
+
+/** Maximum wait for browser close after a total-budget expiry. */
+export const TIER1_TEARDOWN_TIMEOUT_MS = 3_000;
 
 /**
  * Path to the pinned `chrome-headless-shell` distribution. The release
@@ -38,13 +39,12 @@ export const TIER1_USER_DATA_DIR_MODE = 0o700;
  */
 export const TIER1_RENDER_BARRIER_MS = 30_000;
 
-/** Keep tiled evidence within the intended total-budget target after render and stability windows. */
+/** Keep tiled evidence within the total budget after render and stability windows. */
 export const TIER1_TILED_CAPTURE_DEADLINE_MS = 15_000;
 
 /**
  * Time between the first interactive TSX observation and its bounded
- * stability re-check. It stays below the intended total-budget target after
- * the render barrier; that outer target is not enforced yet.
+ * stability re-check. It stays below the total budget after the render barrier.
  */
 export const TSX_STABILITY_WINDOW_MS = 1_000;
 

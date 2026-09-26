@@ -69,6 +69,12 @@ The evidence root is the XDG state path `paths.evidence` (or the
 mode 0700 — the canonical secret-bearing layout matches the DB file
 permissions.
 
+The Tier 1 run, including evidence capture, has a 60 s total deadline.
+On expiry the verifier kills the browser before bounded teardown (3 s)
+and returns a typed `tier1_timeout` error rather than a `timeout` render
+status. The total and teardown budgets fit inside the CLI's 75 s client
+timeout.
+
 Tier 1 capture happens AFTER the verdict is derived so the
 `partial:layout_unverified`, `partial:opaque_content`, `partial:external_resources`, `partial:unstable`, and `partial:empty_render` screenshot mandates are honored. The runner
 measures the whole artifact, bounds each axis at 4096 pixels and the total at
