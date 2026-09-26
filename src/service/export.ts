@@ -173,6 +173,7 @@ export function exportStoredSource(input: {
     requestId: input.requestId,
     format,
     bytes: Buffer.from(revision.source).toString("base64"),
+    revisionSha: revision.sha256,
     sidecar: buildExportSidecar({
       artifactId: artifact.id,
       slug: artifact.slug,
@@ -203,6 +204,7 @@ export function exportStoredRender(input: {
     requestId: input.requestId,
     format: "render",
     bytes: Buffer.from(evidence.bytes).toString("base64"),
+    revisionSha: revision.sha256,
     sidecar: buildExportSidecar({
       artifactId: artifact.id,
       slug: artifact.slug,

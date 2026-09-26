@@ -359,6 +359,7 @@ describe("read-back revision binding", () => {
               command: "readBack",
               requestId: "response-request",
               renderer: "svg",
+              revisionSha,
               verdict: {
                 status: "error",
                 tier: 0,
@@ -415,6 +416,7 @@ describe("read-back revision binding", () => {
               command: "readBack",
               requestId: "response-request",
               renderer: "svg",
+              revisionSha,
               verdict: {
                 status: "partial:external_resources",
                 tier: 1,
@@ -486,6 +488,7 @@ describe("read-back revision binding", () => {
               command: "readBack",
               requestId: "legacy-request",
               renderer: "svg",
+              revisionSha: sha,
               verdict: {
                 status: "ok",
                 tier: 0,

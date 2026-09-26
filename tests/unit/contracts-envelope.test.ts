@@ -373,6 +373,7 @@ describe("HTML validation observables", () => {
         command: "readBack",
         requestId: REQUEST_ID,
         renderer: "svg",
+        revisionSha: "a".repeat(64),
         verdict: tier1,
       }).verdict.observed.html,
     ).toEqual(HTML_COUNTS);
@@ -427,6 +428,7 @@ describe("HTML validation observables", () => {
       requestId: REQUEST_ID,
       command: "readBack" as const,
       renderer: "svg" as const,
+      revisionSha: "b".repeat(64),
       verdict: verdictBaseline,
     };
     const exportSidecarBaseline = {
@@ -600,13 +602,13 @@ describe("HTML validation observables", () => {
     // field to a schema and watching the test pass. Do not let that
     // pattern back in.
     const FROZEN_PUBLISH_RESULT =
-      '{"requestId":"req-1","command":"publish","revision":{"id":"rev-1","artifactId":"art-1","revisionNumber":1,"parentRevisionId":null,"artifactType":"markdown","renderer":"svg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","note":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"},"verdict":{"status":"ok","tier":0,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}},"tier1Verdict":null}';
+      '{"requestId":"req-1","command":"publish","revision":{"id":"rev-1","artifactId":"art-1","revisionNumber":1,"parentRevisionId":null,"artifactType":"markdown","renderer":"svg","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","note":null,"pinned":false,"createdAt":"2026-08-12T00:00:00.000Z"},"revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","verdict":{"status":"ok","tier":0,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}},"tier1Verdict":null}';
     const FROZEN_TIER0 =
       '{"status":"ok","tier":0,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0},"expected":{"rendererRootSvgCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0}}';
     const FROZEN_TIER1 =
       '{"status":"ok","tier":1,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0},"expected":{"rendererRootSvgCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0},"screenshotPath":null,"consolePath":null}';
     const FROZEN_READ_BACK =
-      '{"requestId":"req-1","command":"readBack","renderer":"svg","verdict":{"status":"ok","tier":1,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}}}';
+      '{"requestId":"req-1","command":"readBack","renderer":"svg","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","verdict":{"status":"ok","tier":1,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}}}';
     const FROZEN_EXPORT_SIDECAR =
       '{"artifactId":"art-1","slug":"markdown-artifact","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifactType":"markdown","renderer":"svg","verdict":{"status":"ok","tier":1,"artifactId":"art-1","revisionSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed":{"rendererRootSvgCount":1,"graphCount":1,"mermaidNodeCount":2,"visibleSvgCount":1,"opaqueRegionCount":0,"externalImageCount":0,"errorCount":0}},"format":"source","exportedAt":"2026-08-12T00:00:00.000Z"}';
     const FROZEN_REVISION_COMMITTED =
@@ -667,6 +669,7 @@ describe("HTML validation observables", () => {
         pinned: false,
         createdAt: NOW,
       },
+      revisionSha: SHA,
       verdict: publishVerdictBaseline,
       tier1Verdict: null,
     };
@@ -674,6 +677,7 @@ describe("HTML validation observables", () => {
       command: "readBack" as const,
       requestId: "req-1",
       renderer: "svg" as const,
+      revisionSha: SHA,
       verdict: verdictBaseline,
     };
     const exportSidecarBaseline = {

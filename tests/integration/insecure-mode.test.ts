@@ -323,6 +323,7 @@ describe("insecure dispatcher semantics", () => {
         requestId: result.requestId,
         command: "publish" as const,
         revision: result.revision,
+        revisionSha: result.revisionSha,
         verdict: result.verdict,
       };
       expect(JSON.stringify(result)).toBe(JSON.stringify(baseline));

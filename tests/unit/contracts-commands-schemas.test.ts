@@ -88,6 +88,17 @@ describe("command round-trips", () => {
     expect(PublishResultSchema.parse(validPublishResult())).toEqual(validPublishResult());
   });
 
+  test("publish and read-back result aliases must match their verdict SHA", () => {
+    expect(
+      CommandResultSchema.safeParse({ ...validPublishResult(), revisionSha: "b".repeat(64) })
+        .success,
+    ).toBe(false);
+    expect(
+      CommandResultSchema.safeParse({ ...validReadBackResult(), revisionSha: "b".repeat(64) })
+        .success,
+    ).toBe(false);
+  });
+
   test("publish request defaults renderer to svg and accepts canvas", () => {
     const request = validPublishRequest();
     const { renderer: _renderer, ...withoutRenderer } = request;
@@ -212,6 +223,13 @@ describe("command round-trips", () => {
     expect(ExportRequestSchema.parse(validExportRequest())).toEqual(validExportRequest());
     expect(ExportResultSchema.parse(validExportResult())).toEqual(validExportResult());
     expect(ExportResultSchema.parse(validRenderExportResult())).toEqual(validRenderExportResult());
+  });
+
+  test("export result SHA must match its sidecar SHA", () => {
+    const result = validExportResult();
+    expect(CommandResultSchema.safeParse({ ...result, revisionSha: "b".repeat(64) }).success).toBe(
+      false,
+    );
   });
 
   test("render export sidecars require renderFormat and source export sidecars omit it", () => {

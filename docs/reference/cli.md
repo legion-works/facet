@@ -68,6 +68,15 @@ For file input, use the same publish request with `--file report.md` instead of
 the piped `--file -` form above. The read-back and render-export steps are still
 required before exporting Tier 1 evidence.
 
+For `publish`, `read-back`, `open`, `export`, `pin`, `promote`, and
+`instantiate`, `data.revisionSha` is the canonical identity of the revision
+bound to that result. Publish and read-back retain the compatible
+`data.verdict.revisionSha`; export retains `data.sidecar.revisionSha`; these
+fields equal `data.revisionSha`. Promote retains `data.template.revisionId`,
+instantiate retains its source `data.template.revisionId`, and pin retains
+`data.revisionId`. `status` continues to expose `data.latestRevisionSha`, while
+`templates` continues to expose `revisionSha` on each template entry.
+
 The publish envelope carries the stored Tier 0 verdict, including when its
 `status` is `error`; callers must inspect `data.verdict` before treating the
 publication as usable.

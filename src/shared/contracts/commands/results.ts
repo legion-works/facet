@@ -48,13 +48,14 @@ export type CreateResult = z.infer<typeof CreateResultSchema>;
 export const PublishResultSchema = BaseResultSchema.extend({
   command: z.literal("publish"),
   revision: RevisionEnvelopeSchema,
+  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   verdict: VerdictSchema,
   /**
    * Deprecated compatibility field. Publish is browser-free; visual
    * read-back owns Tier 1 verification.
    */
   tier1Verdict: Tier1ResultSchema.nullable().optional(),
-});
+}).strict();
 export type PublishResult = z.infer<typeof PublishResultSchema>;
 
 export const ListResultSchema = BaseResultSchema.extend({
@@ -92,8 +93,9 @@ export type TemplatesResult = z.infer<typeof TemplatesResultSchema>;
 export const ReadBackResultSchema = BaseResultSchema.extend({
   command: z.literal("readBack"),
   renderer: RendererSchema,
+  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   verdict: VerdictSchema,
-});
+}).strict();
 export type ReadBackResult = z.infer<typeof ReadBackResultSchema>;
 
 export const StatusResultSchema = BaseResultSchema.extend({
@@ -147,22 +149,25 @@ export type OpenResult = z.infer<typeof OpenResultSchema>;
 
 export const PromoteResultSchema = BaseResultSchema.extend({
   command: z.literal("promote"),
+  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   template: TemplateEnvelopeSchema,
-});
+}).strict();
 export type PromoteResult = z.infer<typeof PromoteResultSchema>;
 
 export const InstantiateResultSchema = BaseResultSchema.extend({
   command: z.literal("instantiate"),
   artifact: ArtifactEnvelopeSchema,
+  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   template: TemplateEnvelopeSchema,
-});
+}).strict();
 export type InstantiateResult = z.infer<typeof InstantiateResultSchema>;
 
 export const PinResultSchema = BaseResultSchema.extend({
   command: z.literal("pin"),
   revisionId: z.string().min(1),
+  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   pinned: z.boolean(),
-});
+}).strict();
 export type PinResult = z.infer<typeof PinResultSchema>;
 
 export const ExportSidecarSchema = z
@@ -214,6 +219,7 @@ export const ExportResultSchema = BaseResultSchema.extend({
   command: z.literal("export"),
   format: ExportFormatSchema,
   bytes: z.string().refine(isBase64, "Invalid base64"),
+  revisionSha: z.string().regex(/^[a-f0-9]{64}$/),
   sidecar: ExportSidecarSchema,
-});
+}).strict();
 export type ExportResult = z.infer<typeof ExportResultSchema>;

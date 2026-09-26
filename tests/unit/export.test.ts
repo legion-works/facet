@@ -79,6 +79,7 @@ function validExportResultFor(
     requestId: "request-1",
     format: "source",
     bytes: Buffer.from([0, 1, 2, 255]).toString("base64"),
+    revisionSha: "a".repeat(64),
     sidecar: {
       artifactId: "artifact-1",
       slug,

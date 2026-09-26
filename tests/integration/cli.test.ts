@@ -1133,6 +1133,110 @@ describe("cli contract — wire", () => {
     }
   }, 30_000);
 
+  test("revision-bound CLI results expose one canonical revision SHA", async () => {
+    const { env, home } = makeEnv("revision-sha-alias");
+    const promoteToken = "revision-sha-promote-token";
+    mkdirSync(join(home, "secrets"), { recursive: true });
+    writeFileSync(join(home, "secrets", "promote.token"), promoteToken, { mode: 0o600 });
+    const createIo = makeIo();
+    await runCli(
+      ["create", "--project-id", "p", "--slug", "revision-sha", "--title", "Revision SHA"],
+      {
+        ...createIo,
+        env,
+      },
+    );
+    const created = parseStdoutEnvelope(createIo.stdoutBuf.value);
+    if (!created.ok) throw new Error("create must succeed");
+    const artifactId = (created.data["artifact"] as { id: string }).id;
+    const publishIo = makeIo("revision identity");
+    await runCli(["publish", "--artifact-id", artifactId, "--type", "markdown", "--file", "-"], {
+      ...publishIo,
+      env,
+    });
+    const published = parseStdoutEnvelope(publishIo.stdoutBuf.value);
+    if (!published.ok) throw new Error("publish must succeed");
+    const sha = (published.data["revision"] as { sha256: string }).sha256;
+    expect(published.data["revisionSha"]).toBe(sha);
+    expect((published.data["verdict"] as { revisionSha: string }).revisionSha).toBe(sha);
+
+    const readIo = makeIo();
+    await runCli(["read-back", "--artifact-id", artifactId, "--revision-sha", sha, "--tier", "0"], {
+      ...readIo,
+      env,
+    });
+    const readBack = parseStdoutEnvelope(readIo.stdoutBuf.value);
+    if (!readBack.ok) throw new Error("read-back must succeed");
+    expect(readBack.data["revisionSha"]).toBe(sha);
+    expect((readBack.data["verdict"] as { revisionSha: string }).revisionSha).toBe(sha);
+
+    const openIo = makeIo();
+    await runCli(["open", "--artifact-id", artifactId, "--no-launch"], { ...openIo, env });
+    const opened = parseStdoutEnvelope(openIo.stdoutBuf.value);
+    if (!opened.ok) throw new Error("open must succeed");
+    expect(opened.data["revisionSha"]).toBe(sha);
+
+    const exportPath = join(scratchRoot, "revision-sha.md");
+    const exportIo = makeIo();
+    await runCli(["export", artifactId, "--format", "source", "--out", exportPath], {
+      ...exportIo,
+      env,
+    });
+    const exported = parseStdoutEnvelope(exportIo.stdoutBuf.value);
+    if (!exported.ok) throw new Error("export must succeed");
+    expect(exported.data["revisionSha"]).toBe(sha);
+    expect((exported.data["sidecar"] as { revisionSha: string }).revisionSha).toBe(sha);
+
+    const revisionId = (published.data["revision"] as { id: string }).id;
+    const pinIo = makeIo();
+    await runCli(["pin", "--revision-id", revisionId, "--pinned", "true"], {
+      ...pinIo,
+      env,
+    });
+    const pinned = parseStdoutEnvelope(pinIo.stdoutBuf.value);
+    if (!pinned.ok) throw new Error("pin must succeed");
+    expect(pinned.data["revisionSha"]).toBe(sha);
+
+    const promoteIo = makeIo();
+    await runCli(
+      [
+        "promote",
+        "--revision-id",
+        revisionId,
+        "--name",
+        "revision-sha-template",
+        "--promoted-by",
+        "operator",
+        "--allow-unverified",
+      ],
+      { ...promoteIo, env },
+    );
+    const promoted = parseStdoutEnvelope(promoteIo.stdoutBuf.value);
+    if (!promoted.ok) throw new Error(`promote must succeed: ${JSON.stringify(promoted.error)}`);
+    expect(promoted.data["revisionSha"]).toBe(sha);
+    expect((promoted.data["template"] as { revisionId: string }).revisionId).toBe(revisionId);
+
+    const instantiateIo = makeIo();
+    await runCli(
+      ["instantiate", "--name", "revision-sha-template", "--new-slug", "revision-sha-copy"],
+      { ...instantiateIo, env },
+    );
+    const instantiated = parseStdoutEnvelope(instantiateIo.stdoutBuf.value);
+    if (!instantiated.ok) throw new Error("instantiate must succeed");
+    const instantiatedArtifactId = (instantiated.data["artifact"] as { id: string }).id;
+    expect(instantiated.data["revisionSha"]).toBe(sha);
+    expect((instantiated.data["template"] as { revisionId: string }).revisionId).toBe(revisionId);
+
+    const instantiatedStatusIo = makeIo();
+    await runCli(["status", "--artifact-id", instantiatedArtifactId], {
+      ...instantiatedStatusIo,
+      env,
+    });
+    const instantiatedStatus = parseStdoutEnvelope(instantiatedStatusIo.stdoutBuf.value);
+    if (!instantiatedStatus.ok) throw new Error("instantiated artifact status must succeed");
+    expect(instantiatedStatus.data["latestRevisionSha"]).toBe(instantiated.data["revisionSha"]);
+  }, 30_000);
+
   test("render export reads seeded Tier 1 screenshot bytes and defaults to .png", async () => {
     const { env, home } = makeEnv("render-export");
     const screenshot = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 11, 12, 13]);

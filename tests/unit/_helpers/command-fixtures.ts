@@ -88,6 +88,7 @@ export function validPublishResult() {
     command: "publish" as const,
     requestId: REQUEST_ID,
     revision: REVISION,
+    revisionSha: REVISION.sha256,
     verdict: validReadBackResult().verdict,
     tier1Verdict: null,
   };
@@ -112,6 +113,7 @@ export function validReadBackResult() {
     command: "readBack" as const,
     requestId: REQUEST_ID,
     renderer: "svg" as const,
+    revisionSha: "a".repeat(64),
     verdict: {
       status: "ok" as const,
       tier: 1 as const,
@@ -173,7 +175,12 @@ export function validPromoteRequest() {
   };
 }
 export function validPromoteResult() {
-  return { command: "promote" as const, requestId: REQUEST_ID, template: TEMPLATE };
+  return {
+    command: "promote" as const,
+    requestId: REQUEST_ID,
+    revisionSha: "a".repeat(64),
+    template: TEMPLATE,
+  };
 }
 export function validInstantiateRequest() {
   return {
@@ -188,6 +195,7 @@ export function validInstantiateResult() {
     command: "instantiate" as const,
     requestId: REQUEST_ID,
     artifact: { ...ARTIFACT, id: "art-2", slug: "instantiated-artifact", title: "stable" },
+    revisionSha: "a".repeat(64),
     template: TEMPLATE,
   };
 }
@@ -195,7 +203,13 @@ export function validPinRequest() {
   return { command: "pin" as const, requestId: REQUEST_ID, revisionId: "rev-1", pinned: true };
 }
 export function validPinResult() {
-  return { command: "pin" as const, requestId: REQUEST_ID, revisionId: "rev-1", pinned: true };
+  return {
+    command: "pin" as const,
+    requestId: REQUEST_ID,
+    revisionId: "rev-1",
+    revisionSha: "a".repeat(64),
+    pinned: true,
+  };
 }
 
 export function validExportRequest() {
@@ -213,6 +227,7 @@ export function validExportResult() {
     requestId: REQUEST_ID,
     format: "source" as const,
     bytes: "aGk=",
+    revisionSha: "a".repeat(64),
     sidecar: {
       artifactId: "art-1",
       slug: "my-artifact",

@@ -113,19 +113,31 @@ export const CommandRequestSchema = z.discriminatedUnion("command", [
 ]);
 export type CommandRequest = z.infer<typeof CommandRequestSchema>;
 
-export const CommandResultSchema = z.discriminatedUnion("command", [
-  CreateResultSchema,
-  PublishResultSchema,
-  ListResultSchema,
-  TemplatesResultSchema,
-  ReadBackResultSchema,
-  StatusResultSchema,
-  OpenResultSchema,
-  PromoteResultSchema,
-  InstantiateResultSchema,
-  PinResultSchema,
-  ExportResultSchema,
-]);
+export const CommandResultSchema = z
+  .discriminatedUnion("command", [
+    CreateResultSchema,
+    PublishResultSchema,
+    ListResultSchema,
+    TemplatesResultSchema,
+    ReadBackResultSchema,
+    StatusResultSchema,
+    OpenResultSchema,
+    PromoteResultSchema,
+    InstantiateResultSchema,
+    PinResultSchema,
+    ExportResultSchema,
+  ])
+  .superRefine((result, context) => {
+    if (
+      (result.command === "publish" || result.command === "readBack") &&
+      result.revisionSha !== result.verdict.revisionSha
+    ) {
+      context.addIssue({ code: "custom", message: "revisionSha must match verdict.revisionSha" });
+    }
+    if (result.command === "export" && result.revisionSha !== result.sidecar.revisionSha) {
+      context.addIssue({ code: "custom", message: "revisionSha must match sidecar.revisionSha" });
+    }
+  });
 export type CommandResult = z.infer<typeof CommandResultSchema>;
 
 // Re-export Artifact/Revision/Template so callers can `import { Artifact, Revision, Template } from "..."/commands`.

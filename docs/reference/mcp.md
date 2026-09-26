@@ -88,6 +88,10 @@ The MCP surface has six artifact tools. Start a cold-home flow with `facet_creat
 
 Every tool returns one text content item containing the complete versioned Facet envelope. `ok: true` means the CLI command completed at the transport boundary. For publish and read-back, inspect `data.verdict.status` separately: a stored verdict can be `error` even when the envelope is successful.
 
+Publish, read-back, and open results expose their selected revision at
+`data.revisionSha`. Publish and read-back retain the compatible
+`data.verdict.revisionSha` field with the same value.
+
 Typed Facet failures return that same envelope with `isError: true`. The JSON body preserves `error.code`, `error.message`, `error.retryable`, and `error.details`. The adapter converts malformed CLI stdout and subprocess failures into typed `invalid_envelope` errors instead of throwing raw process text through MCP.
 
 For `output_unwritable`, `error.details.out` is the absolute path whose write

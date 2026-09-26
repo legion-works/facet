@@ -450,6 +450,7 @@ export async function dispatch(
           command: "publish",
           requestId,
           revision: envelope,
+          revisionSha: revision.sha256,
           verdict,
         };
       }
@@ -496,6 +497,7 @@ export async function dispatch(
         command: "publish",
         requestId,
         revision: envelope,
+        revisionSha: revision.sha256,
         verdict: enriched,
       };
     }
@@ -585,7 +587,13 @@ export async function dispatch(
       // use it too.
       const verdict = verdictFromStoredRun(revision, runs[0]!);
       traceTier1Transport(`readback:build-complete status=${verdict.status}`);
-      return { command: "readBack", requestId, renderer: revision.renderer, verdict };
+      return {
+        command: "readBack",
+        requestId,
+        renderer: revision.renderer,
+        revisionSha: revision.sha256,
+        verdict,
+      };
     }
     case "status": {
       const counts =
@@ -666,7 +674,14 @@ export async function dispatch(
           : {}),
         ...(command.description !== undefined ? { description: command.description } : {}),
       });
-      return { command: "promote", requestId, template };
+      const revision = deps.repository.getRevisionById(template.revisionId);
+      if (revision === null) {
+        throw new FacetError("revision_not_found", "Template revision not found", {
+          retryable: false,
+          details: { revisionId: template.revisionId },
+        });
+      }
+      return { command: "promote", requestId, revisionSha: revision.sha256, template };
     }
     case "instantiate": {
       const template = deps.repository.findTemplateByName(command.name);
@@ -692,7 +707,7 @@ export async function dispatch(
           details: { revisionId: template.revisionId },
         });
       }
-      deps.repository.publishRevision({
+      const revision = deps.repository.publishRevision({
         artifactId: artifact.id,
         artifactType: source.artifactType,
         renderer: source.renderer,
@@ -706,6 +721,7 @@ export async function dispatch(
         command: "instantiate",
         requestId,
         artifact: mapArtifact(artifact),
+        revisionSha: revision.sha256,
         template,
       };
     }
@@ -722,6 +738,7 @@ export async function dispatch(
         command: "pin",
         requestId,
         revisionId: command.revisionId,
+        revisionSha: revision.sha256,
         pinned: command.pinned,
       };
     }
