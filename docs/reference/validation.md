@@ -25,6 +25,22 @@ Every other layer is bound to it through `VerdictSchema.status`.
 | `probe_only`                 | Both the page-shim and the isolated-world channel are missing; only the protocol channel is usable.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `insecure:unvalidated`       | Level 3 intentionally skipped validation. The artifact is not represented as validated.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
+### External image count
+
+`externalImageCount` counts every external `https:` image reference: an
+`<img>` `src`, each `https:` candidate in an `<img>` or `<source>` `srcset`,
+and Markdown images. Tier 0 predicts it from the source and Tier 1 counts
+it in the rendered document with the same definition:
+`countExternalHttpsImageReferences` in `src/shared/html/policy.ts`, built on
+`isExternalHttpsImageSource`, which Markdown image links use directly. The
+verifier does not model which `srcset` candidate a browser would pick.
+
+The Tier 1 count is compared with the prediction like the other counts. A
+mismatch is an `error` (row 4 below) rather than a silent
+`partial:layout_unverified` or `ok`. Interactive TSX makes no prediction,
+because its runtime code can create images, so its comparison is skipped.
+The observed count still drives `partial:external_resources`.
+
 A `partial:*` verdict is a verdict the verifier could not finalize, NOT
 a degraded `ok`. The screenshot is mandatory FOR `partial:` so a human
 or a re-verifier can see what the verifier saw — it is not a thing
