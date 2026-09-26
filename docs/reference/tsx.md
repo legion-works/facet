@@ -77,6 +77,8 @@ appears as a gallery signal in an `aria-live="polite"` status region. It does
 not rewrite the immutable verdict. It clears on revision swap. Switching the
 theme keeps the frame mounted, including interactive component state and any
 runtime error signal already displayed.
+A resource that fails to load, such as a remote image when there is no network
+or an unreachable URL, does not trigger this runtime-error signal.
 
 Revision source remains immutable. Compilation creates derived bytes recorded at
 the run's `compiled_path`; TSX source export writes the original `.tsx` bytes.

@@ -52,6 +52,8 @@ Runtime errors after a gallery artifact's initial render appear in a status
 region announced through `aria-live="polite"`. The signal does not alter the
 stored verdict and clears when the revision changes or the gallery theme
 changes.
+A resource that fails to load, such as a remote image when there is no network
+or an unreachable URL, does not trigger this runtime-error signal.
 
 New render evidence is WebP; legacy evidence remains PNG. File-mode export
 writes the artifact and sidecar and reports their paths and sizes. Use

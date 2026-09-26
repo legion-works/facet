@@ -29,6 +29,7 @@ import {
   usesArtifactStylesheet,
   type FrameAttributes,
 } from "./frame-html";
+import { isFrameScriptError } from "./frame-error-filter";
 import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
 import type { VerdictObserved } from "../shared/contracts/validation";
@@ -1127,7 +1128,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
       updateGalleryStatus("displayed · runtime error during interaction");
     };
     const markScriptFailure = (event: Event): void => {
-      if (event.target === frameWindow) markFailure();
+      if (isFrameScriptError(event, frameWindow)) markFailure();
     };
     frameWindow.addEventListener("error", markScriptFailure, true);
     frameWindow.addEventListener("unhandledrejection", markFailure, true);

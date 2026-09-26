@@ -1,5 +1,6 @@
 import type { TsxExecutionMode } from "../../../shared/tsx/execution";
 import type { Renderer } from "../../../shared/contracts/renderers";
+import { isFrameScriptError } from "../../frame-error-filter";
 import { renderHtml } from "./html";
 import { appendRenderError, RENDER_ERROR_ATTRIBUTE, type RenderContext } from "./registry";
 
@@ -45,7 +46,7 @@ export async function renderTsx(
   ctx.container.replaceChildren(root);
   const frameWindow = ctx.container.ownerDocument.defaultView;
   const reportRuntimeError = (event: Event): void => {
-    if (event.target !== frameWindow) return;
+    if (!isFrameScriptError(event, frameWindow!)) return;
     appendRuntimeError(ctx.container, event);
   };
   const reportRejection = (event: Event): void => appendRuntimeError(ctx.container, event);
