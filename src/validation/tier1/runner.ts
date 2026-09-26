@@ -980,6 +980,7 @@ export async function captureEvidenceScreenshot(
 async function captureTiledScreenshot(
   session: VerifierCdpSession,
   executionContextId: number,
+  options: { readonly tileTimeoutMs?: number; readonly tileAttempts?: number } = {},
 ): Promise<CapturedEvidenceImage> {
   await configureTier1Viewport(session);
   await session.send("Runtime.evaluate", {
@@ -1009,8 +1010,8 @@ async function captureTiledScreenshot(
   const frame = owner.result.value;
   if (!frame || frame.x < 0 || frame.y < 0)
     throw new Error("artifact frame capture box unavailable");
-  const tileWidth = Math.min(visible.width, Math.floor(frame.width));
-  const tileHeight = Math.min(visible.height, Math.floor(frame.height));
+  const tileWidth = Math.min(Math.max(1, Math.floor(visible.width)), Math.floor(frame.width));
+  const tileHeight = Math.min(Math.max(1, Math.floor(visible.height)), Math.floor(frame.height));
   if (tileWidth <= 0 || tileHeight <= 0) throw new Error("artifact tile bounds unavailable");
   const columns = Math.ceil(source.width / tileWidth);
   const rows = Math.ceil(source.height / tileHeight);
@@ -1035,18 +1036,26 @@ async function captureTiledScreenshot(
       const offset = scrolled.result.value;
       if (!offset || offset.left > x || offset.top > y)
         throw new Error("artifact tile scroll position unavailable");
-      const shot = (await session.send("Page.captureScreenshot", {
-        format: "png",
-        captureBeyondViewport: false,
-        clip: {
-          x: Math.floor(frame.x),
-          y: Math.floor(frame.y),
-          width: tileWidth,
-          height: tileHeight,
-          scale: 1,
+      const tile = await captureScreenshotWithRetry(session, {
+        attempts: options.tileAttempts ?? TIER1_SCREENSHOT_CAPTURE_ATTEMPTS,
+        timeoutMs: options.tileTimeoutMs ?? TIER1_SCREENSHOT_CAPTURE_TIMEOUT_MS,
+        capture: async (cdpSession) => {
+          const shot = (await cdpSession.send("Page.captureScreenshot", {
+            format: "png",
+            captureBeyondViewport: false,
+            clip: {
+              x: Math.floor(frame.x),
+              y: Math.floor(frame.y),
+              width: tileWidth,
+              height: tileHeight,
+              scale: 1,
+            },
+          })) as { data?: string };
+          return shot.data ? { bytes: Buffer.from(shot.data, "base64"), format: "png" } : null;
         },
-      })) as { data?: string };
-      if (!shot.data) throw new Error("artifact tile screenshot returned no data");
+      });
+      if (tile.screenshot === null)
+        throw new Error(`tiled screenshot capture failed: ${tile.screenshotError?.message}`);
       const outputLeft = Math.floor(x * bounds.scale);
       const outputTop = Math.floor(y * bounds.scale);
       const outputWidth =
@@ -1058,7 +1067,7 @@ async function captureTiledScreenshot(
           Math.floor(Math.min(y + tileHeight, source.height) * bounds.scale),
         ) - outputTop;
       if (outputWidth <= 0 || outputHeight <= 0) continue;
-      const input = await sharp(Buffer.from(shot.data, "base64"))
+      const input = await sharp(tile.screenshot.bytes)
         .extract({
           left: x - offset.left,
           top: y - offset.top,
@@ -1072,6 +1081,11 @@ async function captureTiledScreenshot(
     }
   }
   const finalSize = await measureArtifactCaptureSize(session, executionContextId);
+  await session.send("Runtime.evaluate", {
+    contextId: executionContextId,
+    expression:
+      "(function(){var element=document.getElementById('artifact');element.scrollLeft=0;element.scrollTop=0})()",
+  });
   if (finalSize.width > source.width || finalSize.height > source.height)
     throw new Error("artifact grew during tiled screenshot capture");
   const bytes = await sharp({
@@ -1083,6 +1097,27 @@ async function captureTiledScreenshot(
   if (bytes.byteLength > TIER1_SCREENSHOT_CAP_BYTES)
     throw new Error("tiled screenshot exceeds encoded-size cap");
   return { bytes, format: "webp" };
+}
+
+export async function captureTiledEvidenceScreenshot(
+  session: VerifierCdpSession,
+  executionContextId: number,
+  options: { readonly tileTimeoutMs?: number; readonly tileAttempts?: number } = {},
+): Promise<{
+  readonly screenshot: CapturedEvidenceImage | null;
+  readonly screenshotError: ScreenshotError | null;
+}> {
+  try {
+    return {
+      screenshot: await captureTiledScreenshot(session, executionContextId, options),
+      screenshotError: null,
+    };
+  } catch (error) {
+    return {
+      screenshot: null,
+      screenshotError: { code: "screenshot_unavailable", message: screenshotFailureMessage(error) },
+    };
+  }
 }
 
 interface ScreenshotRetryOptions {
@@ -1205,10 +1240,7 @@ async function captureEvidence(
     // resize 100vh descendants and never converge. Tiles preserve that viewport.
     const grew = finalSize.width > initialSize.width || finalSize.height > initialSize.height;
     const capture = grew
-      ? {
-          screenshot: await captureTiledScreenshot(target.session, options.executionContextId),
-          screenshotError: null,
-        }
+      ? await captureTiledEvidenceScreenshot(target.session, options.executionContextId)
       : await captureEvidenceScreenshot(target.session, {
           animated,
           bounds: { bounds: boundCaptureSize(finalSize), source: finalSize },
