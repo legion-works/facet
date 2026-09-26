@@ -52,9 +52,12 @@ async function expectFullViewportImage(path: string, heroColor: number[], footer
   expect(metadata.pages ?? 1).toBe(1);
   expect(info.width).toBeGreaterThanOrEqual(1280);
   expect(info.height).toBeGreaterThanOrEqual(800 + 48);
-  expectColor(pixel(100, 400), heroColor);
-  expectColor(pixel(100, 790), heroColor);
-  expectColor(pixel(100, 830), footerColor);
+  // Sample right of the fixtures' left-aligned text: host fonts differ in width,
+  // and a runner font once put a glyph under a column-100 sample.
+  const column = 1200;
+  expectColor(pixel(column, 400), heroColor);
+  expectColor(pixel(column, 790), heroColor);
+  expectColor(pixel(column, 830), footerColor);
 }
 
 test("HTML viewport-height hero and following paragraph both appear in evidence", async () => {
