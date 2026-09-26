@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.2](https://github.com/legion-works/facet/compare/v1.10.1...v1.10.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* bound the tiled evidence capture ([4d13a47](https://github.com/legion-works/facet/commit/4d13a47d2c33906d6bdc559fd9e3f6e5999462f2)), closes [#47](https://github.com/legion-works/facet/issues/47)
+* cap the tiled evidence capture inside the Tier 1 budget ([60daa8d](https://github.com/legion-works/facet/commit/60daa8de65a1ed397f8888ee465f6be7b40737cc)), closes [#47](https://github.com/legion-works/facet/issues/47)
+* capture evidence for viewport-sized layouts at the evidence viewport ([9c6e2d8](https://github.com/legion-works/facet/commit/9c6e2d8b982ecb2d865f38d621696805333f3efa)), closes [#47](https://github.com/legion-works/facet/issues/47)
+* pass visual read-back for Markdown with no diagrams ([3047efd](https://github.com/legion-works/facet/commit/3047efd4540894369f12774152639081ba66c71f)), closes [#51](https://github.com/legion-works/facet/issues/51) [#53](https://github.com/legion-works/facet/issues/53)
+
 ## [1.10.1](https://github.com/legion-works/facet/compare/v1.10.0...v1.10.1) (2026-09-26)
 
 
