@@ -29,6 +29,7 @@
 import { Lexer, type Token, type Tokens } from "marked";
 
 import type { DiscriminativeError, VerdictObserved } from "../../shared/contracts/validation";
+import { isExternalHttpsImageSource } from "../../shared/html/policy";
 import { countMermaidNodeDeclarations } from "../../shared/util/mermaid-nodes";
 import { parseMermaidText } from "./mermaid";
 
@@ -56,17 +57,6 @@ interface MarkdownCounts {
   hasOnHandler: boolean;
   hasExternalRef: boolean;
   mermaidBodies: string[];
-}
-
-function isExternalHttpsUrl(value: string): boolean {
-  // The URL constructor canonicalizes the protocol; malformed URLs
-  // (e.g. `https://[`) return false here rather than throwing, so the
-  // token walk surfaces a typed zero instead of crashing Tier 0.
-  try {
-    return new URL(value.trim()).protocol.toLowerCase() === "https:";
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -122,7 +112,7 @@ function walkTokens(tokens: Token[], counts: MarkdownCounts): void {
       if (/\b(?:href|src)\s*=\s*["']https?:/i.test(raw)) counts.hasExternalRef = true;
     } else if (token.type === "image") {
       const image = token as Tokens.Image;
-      if (isExternalHttpsUrl(image.href ?? "")) counts.externalImageCount += 1;
+      if (isExternalHttpsImageSource(image.href)) counts.externalImageCount += 1;
     }
     // Recurse every container Marked actually emits with children.
     const recurseTokens = (sub: Token[] | undefined): void => {

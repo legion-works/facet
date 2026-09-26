@@ -24,6 +24,12 @@ test("Markdown read-back distinguishes non-empty prose from empty renderer roots
         empty: false,
       },
       {
+        name: "http-external",
+        content: "![external](http://example.test/image.png)",
+        expected: "ok",
+        empty: false,
+      },
+      {
         name: "mermaid",
         content: "```mermaid\nflowchart TD\n  A --> B\n```",
         expected: "ok",

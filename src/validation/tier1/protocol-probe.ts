@@ -20,7 +20,7 @@
  */
 
 import type { HtmlStructureCounts, ProtocolObservation } from "../../shared/contracts/validation";
-import { HTML_STRUCTURAL_GROUPS } from "../../shared/html/policy";
+import { HTML_STRUCTURAL_GROUPS, isExternalHttpsImageSource } from "../../shared/html/policy";
 
 import type { VerifierCdpSession } from "./browser-process";
 import type { ResolvedChildFrame } from "./frame-target";
@@ -206,7 +206,7 @@ function countSnapshotExternalImages(snapshot: SnapshotResponse, documentIndex: 
     ).toLowerCase();
     if (
       (HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name) &&
-      isExternalHttps(attributeValue(snapshot, document, nodeIndex, "src"))
+      isExternalHttpsImageSource(attributeValue(snapshot, document, nodeIndex, "src"))
     ) {
       count += 1;
     }
@@ -225,15 +225,6 @@ function isDescendantOf(
     parent = document.nodes.parentIndex[parent] ?? -1;
   }
   return false;
-}
-
-function isExternalHttps(value: string | undefined): boolean {
-  if (value === undefined) return false;
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 export function countSnapshotHtml(
@@ -266,7 +257,7 @@ export function countSnapshotHtml(
     if ((HTML_STRUCTURAL_GROUPS.lists as readonly string[]).includes(name)) counts.listCount += 1;
     if ((HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)) {
       counts.imageCount += 1;
-      if (isExternalHttps(attributeValue(snapshot, document, nodeIndex, "src"))) {
+      if (isExternalHttpsImageSource(attributeValue(snapshot, document, nodeIndex, "src"))) {
         counts.externalImageCount += 1;
       }
     }
@@ -539,7 +530,7 @@ export async function probeProtocolGetDocument(
       (withinMarkedRoot || contentRoot) &&
       (HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)
     ) {
-      if (isExternalHttps(findAttr("src"))) externalImageCount += 1;
+      if (isExternalHttpsImageSource(findAttr("src"))) externalImageCount += 1;
     }
     if (withinHtmlRoot && html !== undefined) {
       if ((HTML_STRUCTURAL_GROUPS.headings as readonly string[]).includes(name))
@@ -548,7 +539,7 @@ export async function probeProtocolGetDocument(
       if ((HTML_STRUCTURAL_GROUPS.lists as readonly string[]).includes(name)) html.listCount += 1;
       if ((HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)) {
         html.imageCount += 1;
-        if (isExternalHttps(findAttr("src"))) html.externalImageCount += 1;
+        if (isExternalHttpsImageSource(findAttr("src"))) html.externalImageCount += 1;
       }
       if ((HTML_STRUCTURAL_GROUPS.canvases as readonly string[]).includes(name))
         html.canvasCount += 1;

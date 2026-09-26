@@ -19,7 +19,7 @@
  */
 
 import type { ProtocolObservation } from "../../shared/contracts/validation";
-import { HTML_STRUCTURAL_GROUPS } from "../../shared/html/policy";
+import { HTML_STRUCTURAL_GROUPS, isExternalHttpsImageSource } from "../../shared/html/policy";
 
 import type { VerifierCdpSession } from "./browser-process";
 
@@ -32,6 +32,7 @@ export async function probeIsolatedCounts(
     const selectors = Object.fromEntries(
       Object.entries(HTML_STRUCTURAL_GROUPS).map(([group, names]) => [group, names.join(",")]),
     );
+    const externalHttpsImageSource = isExternalHttpsImageSource.toString();
     const result = (await session.send("Runtime.evaluate", {
       contextId: executionContextId,
       returnByValue: true,
@@ -53,13 +54,14 @@ export async function probeIsolatedCounts(
         "  var htmlRoots = contentRoots.filter(function(root){ return root.getAttribute('data-facet-renderer-kind') !== 'markdown'; });",
         "  var graphRoots = svgRoots.filter(function(root){ return root.getAttribute('data-facet-renderer-graph') === 'true'; });",
         `  var observeContent = ${JSON.stringify(observeContent)};`,
+        `  var isExternalHttpsImageSource = (${externalHttpsImageSource});`,
         "  var emptyRendererRoot = observeContent && contentRoots.length === 1 ? Array.prototype.every.call(contentRoots[0].childNodes, function(node){ return node.nodeType !== 1 && (node.nodeType !== 3 || !node.textContent.trim()); }) : undefined;",
         `  var selectors = ${JSON.stringify(selectors)};`,
         "  var html = htmlRoots.length === 0 ? null : {rendererRootCount:htmlRoots.length,headingCount:0,tableCount:0,listCount:0,imageCount:0,canvasCount:0,externalImageCount:0};",
         "  var externalImageCount = 0;",
         "  for (var c = 0; c < contentRoots.length; c++) {",
         "    var contentImages = Array.prototype.slice.call(contentRoots[c].querySelectorAll(selectors.images));",
-        "    externalImageCount += contentImages.filter(function(image){ try { return new URL(image.getAttribute('src') || '').protocol === 'https:'; } catch (_) { return false; } }).length;",
+        "    externalImageCount += contentImages.filter(function(image){ return isExternalHttpsImageSource(image.getAttribute('src')); }).length;",
         "  }",
         "  for (var h = 0; h < htmlRoots.length; h++) {",
         "    var htmlRoot = htmlRoots[h];",
@@ -68,7 +70,7 @@ export async function probeIsolatedCounts(
         "    html.listCount += htmlRoot.querySelectorAll(selectors.lists).length;",
         "    var images = Array.prototype.slice.call(htmlRoot.querySelectorAll(selectors.images));",
         "    html.imageCount += images.length;",
-        "    var rootExternal = images.filter(function(image){ try { return new URL(image.getAttribute('src') || '').protocol === 'https:'; } catch (_) { return false; } }).length;",
+        "    var rootExternal = images.filter(function(image){ return isExternalHttpsImageSource(image.getAttribute('src')); }).length;",
         "    html.externalImageCount += rootExternal;",
         "    html.canvasCount += htmlRoot.querySelectorAll(selectors.canvases).length;",
         "  }",

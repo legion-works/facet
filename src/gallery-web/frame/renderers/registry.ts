@@ -1,6 +1,6 @@
 import type { ArtifactType } from "../../../shared/contracts/artifact-types";
 import { isRenderer, type Renderer as RendererKind } from "../../../shared/contracts/renderers";
-import { HTML_STRUCTURAL_GROUPS } from "../../../shared/html/policy";
+import { HTML_STRUCTURAL_GROUPS, isExternalHttpsImageSource } from "../../../shared/html/policy";
 import type { VerdictObserved } from "../../../shared/contracts/validation";
 import type { ObservedCountKey } from "../../../shared/contracts/observed-counts";
 import { isTsxExecutionMode, type TsxExecutionMode } from "../../../shared/tsx/execution";
@@ -173,13 +173,9 @@ export function countPageShim(): PageShimCounts {
     ).length;
     const images = safeSelectorElementsWithin(root, HTML_STRUCTURAL_GROUPS.images.join(","));
     html!.imageCount += images.length;
-    html!.externalImageCount += images.filter((image) => {
-      try {
-        return new URL(image.getAttribute("src") ?? "").protocol === "https:";
-      } catch {
-        return false;
-      }
-    }).length;
+    html!.externalImageCount += images.filter((image) =>
+      isExternalHttpsImageSource(image.getAttribute("src")),
+    ).length;
     html!.canvasCount += safeSelectorElementsWithin(
       root,
       HTML_STRUCTURAL_GROUPS.canvases.join(","),
@@ -198,13 +194,9 @@ export function countPageShim(): PageShimCounts {
   const externalImageCount = contentRoots.reduce(
     (count, root) =>
       count +
-      safeSelectorElementsWithin(root, HTML_STRUCTURAL_GROUPS.images.join(",")).filter((image) => {
-        try {
-          return new URL(image.getAttribute("src") ?? "").protocol === "https:";
-        } catch {
-          return false;
-        }
-      }).length,
+      safeSelectorElementsWithin(root, HTML_STRUCTURAL_GROUPS.images.join(",")).filter((image) =>
+        isExternalHttpsImageSource(image.getAttribute("src")),
+      ).length,
     0,
   );
   return {

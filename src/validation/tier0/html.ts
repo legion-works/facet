@@ -10,6 +10,7 @@ import {
   isHtmlInlineStyleAttribute,
   isHtmlUrlAttributeName,
   isHtmlUrlBearingAttribute,
+  isExternalHttpsImageSource,
 } from "../../shared/html/policy";
 
 export interface HtmlParseOk {
@@ -131,14 +132,6 @@ function templateContent(node: unknown): unknown | null {
   return isRecord(node) && isRecord(node.content) ? node.content : null;
 }
 
-function isHttpsUrl(value: string): boolean {
-  try {
-    return new URL(value.trim()).protocol.toLowerCase() === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function isWhitespace(character: string): boolean {
   return (
     character === " " ||
@@ -190,7 +183,11 @@ function validateUrl(
       );
       continue;
     }
-    if (countStructure && (tagName === "img" || tagName === "source") && isHttpsUrl(candidate)) {
+    if (
+      countStructure &&
+      (tagName === "img" || tagName === "source") &&
+      isExternalHttpsImageSource(candidate)
+    ) {
       counts.externalImageCount += 1;
     }
   }

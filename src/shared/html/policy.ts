@@ -61,6 +61,15 @@ export function isHtmlInlineStyleAttribute(name: string): boolean {
   return name.toLowerCase() === "style";
 }
 
+export function isExternalHttpsImageSource(src: string | null | undefined): boolean {
+  if (typeof src !== "string") return false;
+  try {
+    return new URL(src).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function isAllowedHtmlUrl(
   elementName: string,
   attributeName: string,
