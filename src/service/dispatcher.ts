@@ -526,6 +526,12 @@ export async function dispatch(
           ? deps.repository.getLatestRevision(command.artifactId)
           : deps.repository.getRevisionBySha(command.artifactId, command.revisionSha);
       if (revision === null) {
+        if (deps.repository.getArtifactById(command.artifactId) === null) {
+          throw new FacetError("artifact_not_found", "Artifact not found", {
+            retryable: false,
+            details: { artifactId: command.artifactId },
+          });
+        }
         throw new FacetError("revision_not_found", "Revision not found", {
           retryable: false,
           details: {
@@ -614,6 +620,12 @@ export async function dispatch(
           ? deps.repository.getLatestRevision(command.artifactId)
           : deps.repository.getRevisionBySha(command.artifactId, command.revisionSha);
       if (revision === null) {
+        if (deps.repository.getArtifactById(command.artifactId) === null) {
+          throw new FacetError("artifact_not_found", "Artifact not found", {
+            retryable: false,
+            details: { artifactId: command.artifactId },
+          });
+        }
         throw new FacetError("revision_not_found", "Revision not found", {
           retryable: false,
           details: {

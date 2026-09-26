@@ -125,7 +125,7 @@ errors and next actions:
 | code                   | next action                                                                                                    |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `artifact_not_found`   | Check the artifact ID and list the project.                                                                    |
-| `revision_not_found`   | Omit the SHA for latest read-back or use an existing SHA.                                                      |
+| `revision_not_found`   | Check that the artifact has a revision; omit the SHA for latest or use an existing SHA.                        |
 | `duplicate_revision`   | Reuse `error.details.revisionSha`; no new revision was stored.                                                 |
 | `output_unwritable`    | Fix the output directory, permissions, or rename target.                                                       |
 | `evidence_unavailable` | Run Tier 1 again or inspect retention and evidence paths.                                                      |

@@ -579,6 +579,36 @@ describe("read-back revision binding", () => {
     }
   });
 
+  test("unknown artifact returns artifact_not_found while an existing artifact keeps revision_not_found", async () => {
+    const env = await startEnv();
+    try {
+      const missing = await envelopeRequest(env, {
+        command: "readBack",
+        artifactId: "missing-artifact",
+        tier: 0,
+      });
+      const missingEnvelope = FacetEnvelopeSchema.parse(JSON.parse(await missing.text()));
+      if (missingEnvelope.ok) throw new Error("expected missing artifact error");
+      expect(missingEnvelope.error).toMatchObject({
+        code: "artifact_not_found",
+        details: { artifactId: "missing-artifact" },
+      });
+
+      const artifactId = await createArtifact(env, "empty-revisions");
+      const unknownSha = await envelopeRequest(env, {
+        command: "readBack",
+        artifactId,
+        revisionSha: "c".repeat(64),
+        tier: 0,
+      });
+      const shaEnvelope = FacetEnvelopeSchema.parse(JSON.parse(await unknownSha.text()));
+      if (shaEnvelope.ok) throw new Error("expected unknown revision error");
+      expect(shaEnvelope.error.code).toBe("revision_not_found");
+    } finally {
+      await env.cleanup();
+    }
+  });
+
   test("read-back binding for tier 1 — verdict is bound to the (artifactId, revisionSha) the parent committed", async () => {
     const env = await startEnv({ tier1Runner: placeholderIdentityTier1Runner });
     try {

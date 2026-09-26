@@ -93,7 +93,7 @@ non-whitespace text; the verdict requires a screenshot.
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
 | `invalid_request`        | Correct the command flags, artifact type, or source bytes, then retry.                                           |
 | `artifact_not_found`     | List or create the artifact, then use its returned ID.                                                           |
-| `revision_not_found`     | Omit the SHA for latest, or replace it with a returned revision SHA.                                             |
+| `revision_not_found`     | Check that the artifact has a revision; omit the SHA for latest, or replace it with a returned revision SHA.     |
 | `duplicate_revision`     | Use `error.details.revisionSha` as the existing revision SHA; do not republish identical bytes.                  |
 | `evidence_unavailable`   | Request Tier 1 evidence for that revision before a render export, or export source instead.                      |
 | `output_unwritable`      | Choose a writable `--out` path, resolve collisions, or use `--force` deliberately.                               |

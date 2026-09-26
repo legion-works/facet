@@ -144,7 +144,11 @@ describe("tier 2 display open", () => {
           data: { requestId, ...data },
         }),
       });
-      return (await response.json()) as { ok: boolean; data: Record<string, unknown> };
+      return (await response.json()) as {
+        ok: boolean;
+        data?: Record<string, unknown>;
+        error?: { code: string };
+      };
     };
     try {
       const created = await command({
@@ -153,20 +157,35 @@ describe("tier 2 display open", () => {
         slug: "open",
         title: "Open",
       });
+      if (created.data === undefined) throw new Error("create response has no data");
       const artifactId = (created.data.artifact as { id: string }).id;
+      const missingArtifact = await command({ command: "open", artifactId: "missing-artifact" });
+      expect(missingArtifact).toMatchObject({
+        ok: false,
+        error: { code: "artifact_not_found", details: { artifactId: "missing-artifact" } },
+      });
       const published = await command({
         command: "publish",
         artifactId,
         artifactType: "markdown",
         bytes: Buffer.from("# display\n").toString("base64"),
       });
+      if (published.data === undefined) throw new Error("publish response has no data");
       const revisionSha = (published.data.revision as { sha256: string }).sha256;
+      const unknownRevision = await command({
+        command: "open",
+        artifactId,
+        revisionSha: "d".repeat(64),
+      });
+      expect(unknownRevision.error?.code).toBe("revision_not_found");
       const opened = await command({ command: "open", artifactId, revisionSha });
+      if (opened.data === undefined) throw new Error("open response has no data");
       const frameUrl = opened.data.frameUrl as string;
       expect(new URL(frameUrl).hostname).toBe("127.0.0.1");
       expect(frameUrl).not.toContain(service.installToken);
       const latest = await command({ command: "open", artifactId });
       expect(latest.ok).toBe(true);
+      if (latest.data === undefined) throw new Error("latest open response has no data");
       expect(latest.data.revisionSha).toBe(revisionSha);
       const handoff = await consumeBootstrapHandoff({ location: frameUrl });
       expect(handoff.headers.get("x-gallery-lease")).toBe(handoff.lease.leaseId);
