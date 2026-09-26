@@ -10,7 +10,8 @@ import {
   isHtmlInlineStyleAttribute,
   isHtmlUrlAttributeName,
   isHtmlUrlBearingAttribute,
-  isExternalHttpsImageSource,
+  countExternalHttpsImageReferences,
+  srcsetCandidates,
 } from "../../shared/html/policy";
 
 export interface HtmlParseOk {
@@ -132,35 +133,6 @@ function templateContent(node: unknown): unknown | null {
   return isRecord(node) && isRecord(node.content) ? node.content : null;
 }
 
-function isWhitespace(character: string): boolean {
-  return (
-    character === " " ||
-    character === "\t" ||
-    character === "\n" ||
-    character === "\r" ||
-    character === "\f"
-  );
-}
-
-function srcsetCandidates(value: string): readonly string[] {
-  const candidates: string[] = [];
-  let index = 0;
-  while (index < value.length) {
-    while (index < value.length && (value[index] === "," || isWhitespace(value[index]!)))
-      index += 1;
-    if (index >= value.length) break;
-    const start = index;
-    while (index < value.length && !isWhitespace(value[index]!)) index += 1;
-    let candidate = value.slice(start, index);
-    while (candidate.endsWith(",")) candidate = candidate.slice(0, -1);
-    if (candidate.length > 0) candidates.push(candidate);
-    while (index < value.length && isWhitespace(value[index]!)) index += 1;
-    while (index < value.length && value[index] !== ",") index += 1;
-    if (value[index] === ",") index += 1;
-  }
-  return candidates;
-}
-
 function addError(errors: DiscriminativeError[], code: string, message: string): void {
   errors.push({ code, message });
 }
@@ -169,9 +141,7 @@ function validateUrl(
   tagName: string,
   attributeName: string,
   value: string,
-  counts: HtmlStructureCounts,
   errors: DiscriminativeError[],
-  countStructure: boolean,
 ): void {
   const candidates = attributeName === "srcset" ? srcsetCandidates(value) : [value];
   for (const candidate of candidates) {
@@ -181,14 +151,6 @@ function validateUrl(
         "html_denied_url_scheme",
         `HTML <${tagName}> ${attributeName} contains a denied URL: ${candidate}`,
       );
-      continue;
-    }
-    if (
-      countStructure &&
-      (tagName === "img" || tagName === "source") &&
-      isExternalHttpsImageSource(candidate)
-    ) {
-      counts.externalImageCount += 1;
     }
   }
 }
@@ -241,7 +203,7 @@ function walk(root: unknown, counts: HtmlStructureCounts, errors: Discriminative
           continue;
         }
         if (isHtmlUrlBearingAttribute(tagName, name)) {
-          validateUrl(tagName, name, attribute.value, counts, errors, current.countStructure);
+          validateUrl(tagName, name, attribute.value, errors);
           continue;
         }
         if (isHtmlUrlAttributeName(name)) {
@@ -251,6 +213,13 @@ function walk(root: unknown, counts: HtmlStructureCounts, errors: Discriminative
             `HTML <${tagName}> ${name} is not an allowed URL-bearing attribute`,
           );
         }
+      }
+      if (current.countStructure) {
+        counts.externalImageCount += countExternalHttpsImageReferences({
+          element: tagName,
+          src: attrs.find((attr) => attr.name === "src")?.value,
+          srcset: attrs.find((attr) => attr.name === "srcset")?.value,
+        });
       }
       if (tagName === "template") {
         const content = templateContent(current.node);

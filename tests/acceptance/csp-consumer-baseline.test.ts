@@ -11,6 +11,8 @@ import {
   readBackFixtureRaw,
   readStoredRenderRunsForTests,
 } from "../helpers/facet-testkit";
+import { parseHtml } from "../../src/validation/tier0/html";
+import { parseMarkdown } from "../../src/validation/tier0/markdown";
 
 const fixture = (name: string): string => `${import.meta.dir}/../fixtures/${name}`;
 
@@ -250,6 +252,14 @@ test("existing artifact consumers keep their projected payload under the unchang
       `${consumer.key} run rows have no compiled path`,
     ).toBe(true);
     rows[consumer.key] = projectConsumer(projectToAcceptanceVerdict(raw));
+    const bytes = new Uint8Array(await Bun.file(fixture(consumer.fixture)).arrayBuffer());
+    const predicted =
+      consumer.artifactType === "html"
+        ? parseHtml(bytes).html.externalImageCount
+        : consumer.artifactType === "markdown"
+          ? (await parseMarkdown(bytes)).observed.externalImageCount
+          : 0;
+    expect(raw.verdict.observed.externalImageCount, consumer.key).toBe(predicted);
   }
   for (const [type, row] of Object.entries(rows)) {
     expect(row.execution, type).toBeUndefined();

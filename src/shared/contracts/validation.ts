@@ -115,7 +115,8 @@ export const LexicalCountersSchema = z.object({
   mermaidNodeCount: z.number().int().nonnegative().nullable(),
   visibleSvgCount: z.number().int().nonnegative(),
   opaqueRegionCount: z.number().int().nonnegative(),
-  externalImageCount: z.number().int().nonnegative(),
+  // Interactive TSX has no static image prediction; absence skips the Tier 1 comparison.
+  externalImageCount: z.number().int().nonnegative().optional(),
   html: HtmlStructureCountsSchema.optional(),
 });
 export type LexicalCounters = z.infer<typeof LexicalCountersSchema>;

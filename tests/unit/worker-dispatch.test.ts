@@ -62,6 +62,8 @@ describe("runParser", () => {
     expect(result.status).toBe("ok");
     expect(result.execution).toBe("interactive");
     expect(result.compiled?.bytesBase64.length).toBeGreaterThan(0);
+    expect(result.expected).not.toHaveProperty("externalImageCount");
+    expect(result.observed.externalImageCount).toBe(0);
   });
 
   test("routes static TSX through HTML parsing", async () => {

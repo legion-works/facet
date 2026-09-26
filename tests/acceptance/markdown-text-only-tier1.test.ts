@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { publishFixture, readBackFixture } from "../helpers/facet-testkit";
+import { parseMarkdown } from "../../src/validation/tier0/markdown";
 
 test("Markdown read-back distinguishes non-empty prose from empty renderer roots", async () => {
   const directory = await mkdtemp(join(tmpdir(), "facet-markdown-tier1-"));
@@ -58,6 +59,10 @@ test("Markdown read-back distinguishes non-empty prose from empty renderer roots
         tier: 1,
         productionTier0: true,
       });
+      const predicted = await parseMarkdown(new TextEncoder().encode(item.content));
+      expect(verdict.observed.externalImageCount, item.name).toBe(
+        predicted.observed.externalImageCount,
+      );
       expect(verdict.observed.externalImageCount).toBe(item.name === "external" ? 1 : 0);
       expect(verdict.observed.emptyRendererRoot).toBe(item.empty);
       expect(verdict.observed.html).toBeUndefined();

@@ -70,6 +70,105 @@ export function isExternalHttpsImageSource(src: string | null | undefined): bool
   }
 }
 
+/** URL candidates from the HTML Standard's srcset splitting and descriptor parsing algorithm. */
+export function srcsetCandidates(input: string): string[] {
+  const candidates: string[] = [];
+  let position = 0;
+  const whitespace = /[ \t\n\r\f]/;
+  while (position < input.length) {
+    while (
+      position < input.length &&
+      (whitespace.test(input[position]!) || input[position] === ",")
+    )
+      position += 1;
+    if (position >= input.length) break;
+    const start = position;
+    while (position < input.length && !whitespace.test(input[position]!)) position += 1;
+    let url = input.slice(start, position);
+    const descriptors: string[] = [];
+    if (url.endsWith(",")) {
+      url = url.replace(/,+$/, "");
+    } else {
+      while (position < input.length && whitespace.test(input[position]!)) position += 1;
+      let descriptor = "";
+      let state: "descriptor" | "parens" | "after" = "descriptor";
+      while (position < input.length) {
+        const character = input[position++]!;
+        if (state === "parens") {
+          descriptor += character;
+          if (character === ")") state = "descriptor";
+        } else if (state === "after") {
+          if (!whitespace.test(character)) {
+            position -= 1;
+            state = "descriptor";
+          }
+        } else if (character === ",") {
+          if (descriptor) descriptors.push(descriptor);
+          descriptor = "";
+          break;
+        } else if (whitespace.test(character)) {
+          if (descriptor) descriptors.push(descriptor);
+          descriptor = "";
+          state = "after";
+        } else {
+          descriptor += character;
+          if (character === "(") state = "parens";
+        }
+      }
+      if (descriptor && position >= input.length) descriptors.push(descriptor);
+    }
+    let width = false;
+    let density = false;
+    let futureHeight = false;
+    let valid = url.length > 0;
+    for (const descriptor of descriptors) {
+      if (
+        /^[0-9]+w$/.test(descriptor) &&
+        Number(descriptor.slice(0, -1)) > 0 &&
+        !width &&
+        !density
+      ) {
+        width = true;
+      } else if (
+        /^(?:\+|-)?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?x$/.test(descriptor) &&
+        !width &&
+        !density &&
+        !futureHeight &&
+        Number(descriptor.slice(0, -1)) >= 0
+      ) {
+        density = true;
+      } else if (
+        /^[0-9]+h$/.test(descriptor) &&
+        Number(descriptor.slice(0, -1)) > 0 &&
+        !futureHeight &&
+        !density
+      ) {
+        futureHeight = true;
+      } else {
+        valid = false;
+      }
+    }
+    if (futureHeight && !width) valid = false;
+    if (valid) candidates.push(url);
+  }
+  return candidates;
+}
+
+export function countExternalHttpsImageReferences(input: {
+  element: string;
+  src?: string | null | undefined;
+  srcset?: string | null | undefined;
+}): number {
+  if (input.element !== "img" && input.element !== "source") return 0;
+  let count = input.element === "img" && isExternalHttpsImageSource(input.src) ? 1 : 0;
+  if (input.srcset !== null && input.srcset !== undefined) {
+    for (const candidate of srcsetCandidates(input.srcset)) {
+      if (isExternalHttpsImageSource(candidate)) count += 1;
+    }
+  }
+  return count;
+}
+
 export function isAllowedHtmlUrl(
   elementName: string,
   attributeName: string,

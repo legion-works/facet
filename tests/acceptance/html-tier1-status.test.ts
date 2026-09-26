@@ -55,6 +55,17 @@ test("real HTML pipeline derives the complete structural status matrix", async (
   expect(external.verdict.observed.html?.externalImageCount).toBe(1);
   expect(external.published.tier1ScreenshotPath).not.toBeNull();
 
+  for (const name of ["image-srcset.html", "picture-source.html"]) {
+    const candidate = await publishHtml(
+      `html-differential/${name}`,
+      `html-matrix-${name}`,
+      "deterministic",
+    );
+    expect(candidate.verdict.status, name).toBe("partial:external_resources");
+    expect(candidate.verdict.observed.externalImageCount, name).toBe(1);
+    expect(candidate.verdict.observed.html?.externalImageCount, name).toBe(1);
+  }
+
   const malformed = await publishHtml(
     "html-malformed-data-image.html",
     "html-matrix-malformed-data",

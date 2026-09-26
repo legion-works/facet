@@ -103,9 +103,11 @@ export async function runParser(input: WorkerInput): Promise<Tier0WorkerResult> 
           },
         };
         if (input.execution === "interactive") {
+          const { externalImageCount: _unpredicted, ...lexicalWithoutImagePrediction } =
+            base.expected;
           return {
             ...common,
-            expected: { ...base.expected },
+            expected: lexicalWithoutImagePrediction,
             observed: {
               rendererRootSvgCount: 0,
               graphCount: 0,

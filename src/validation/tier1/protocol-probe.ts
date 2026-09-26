@@ -20,7 +20,10 @@
  */
 
 import type { HtmlStructureCounts, ProtocolObservation } from "../../shared/contracts/validation";
-import { HTML_STRUCTURAL_GROUPS, isExternalHttpsImageSource } from "../../shared/html/policy";
+import {
+  HTML_STRUCTURAL_GROUPS,
+  countExternalHttpsImageReferences,
+} from "../../shared/html/policy";
 
 import type { VerifierCdpSession } from "./browser-process";
 import type { ResolvedChildFrame } from "./frame-target";
@@ -204,12 +207,11 @@ function countSnapshotExternalImages(snapshot: SnapshotResponse, documentIndex: 
       snapshot.strings,
       document.nodes.nodeName[nodeIndex] ?? 0,
     ).toLowerCase();
-    if (
-      (HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name) &&
-      isExternalHttpsImageSource(attributeValue(snapshot, document, nodeIndex, "src"))
-    ) {
-      count += 1;
-    }
+    count += countExternalHttpsImageReferences({
+      element: name,
+      src: attributeValue(snapshot, document, nodeIndex, "src"),
+      srcset: attributeValue(snapshot, document, nodeIndex, "srcset"),
+    });
   }
   return count;
 }
@@ -257,10 +259,12 @@ export function countSnapshotHtml(
     if ((HTML_STRUCTURAL_GROUPS.lists as readonly string[]).includes(name)) counts.listCount += 1;
     if ((HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)) {
       counts.imageCount += 1;
-      if (isExternalHttpsImageSource(attributeValue(snapshot, document, nodeIndex, "src"))) {
-        counts.externalImageCount += 1;
-      }
     }
+    counts.externalImageCount += countExternalHttpsImageReferences({
+      element: name,
+      src: attributeValue(snapshot, document, nodeIndex, "src"),
+      srcset: attributeValue(snapshot, document, nodeIndex, "srcset"),
+    });
     if ((HTML_STRUCTURAL_GROUPS.canvases as readonly string[]).includes(name))
       counts.canvasCount += 1;
   }
@@ -526,12 +530,12 @@ export async function probeProtocolGetDocument(
     // covers the entire child-frame document so smuggled canvases stay visible.
     // getContext() would create a context and make the observation self-fulfilling.
     if (name === "canvas") opaqueRegionCount += 1;
-    if (
-      (withinMarkedRoot || contentRoot) &&
-      (HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)
-    ) {
-      if (isExternalHttpsImageSource(findAttr("src"))) externalImageCount += 1;
-    }
+    if (withinMarkedRoot || contentRoot)
+      externalImageCount += countExternalHttpsImageReferences({
+        element: name,
+        src: findAttr("src"),
+        srcset: findAttr("srcset"),
+      });
     if (withinHtmlRoot && html !== undefined) {
       if ((HTML_STRUCTURAL_GROUPS.headings as readonly string[]).includes(name))
         html.headingCount += 1;
@@ -539,8 +543,12 @@ export async function probeProtocolGetDocument(
       if ((HTML_STRUCTURAL_GROUPS.lists as readonly string[]).includes(name)) html.listCount += 1;
       if ((HTML_STRUCTURAL_GROUPS.images as readonly string[]).includes(name)) {
         html.imageCount += 1;
-        if (isExternalHttpsImageSource(findAttr("src"))) html.externalImageCount += 1;
       }
+      html.externalImageCount += countExternalHttpsImageReferences({
+        element: name,
+        src: findAttr("src"),
+        srcset: findAttr("srcset"),
+      });
       if ((HTML_STRUCTURAL_GROUPS.canvases as readonly string[]).includes(name))
         html.canvasCount += 1;
     }

@@ -159,8 +159,8 @@ export function deriveVerdict(
   if (protocolObservation.opaqueRegionCount > 0) return "partial:opaque_content";
   // `externalImageCount` is the type-agnostic counter — markdown surfaces
   // it from native `![](https://…)` token walks, HTML surfaces it from
-  // image elements, every other type carries 0 because their Tier 0
-  // policies already reject external references. Reading it at the top
+  // image and source candidates (including static TSX output); other types
+  // carry 0 or leave the prediction absent. Reading it at the top
   // level keeps the verdict from depending on the HTML-shaped subfield.
   if (protocolObservation.externalImageCount > 0) {
     return "partial:external_resources";
@@ -226,6 +226,11 @@ export function countsDiffer(left: CountsLike, right: CountsLike): boolean {
 function matchesExpected(expected: LexicalCounters, protocol: ProtocolObservation): boolean {
   if (expected.rendererRootSvgCount !== protocol.rendererRootSvgCount) return false;
   if (expected.mermaidNodeCount !== null && expected.mermaidNodeCount !== protocol.mermaidNodeCount)
+    return false;
+  if (
+    expected.externalImageCount !== undefined &&
+    expected.externalImageCount !== protocol.externalImageCount
+  )
     return false;
   if (expected.html !== undefined && htmlCountsDiffer(expected.html, protocol.html)) return false;
   // opaqueRegionCount is not compared here: expected > 0 / observed 0 returns

@@ -176,6 +176,34 @@ describe("deriveVerdict — happy path", () => {
       ),
     ).toBe("ok");
   });
+  test("predicted HTTPS image missing from Tier 1 is an error before layout", () => {
+    const predicted = lex({
+      rendererRootSvgCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      externalImageCount: 1,
+    });
+    const missing = protocol({
+      rendererRootSvgCount: 0,
+      graphCount: 0,
+      mermaidNodeCount: 0,
+      visibleSvgCount: 0,
+      viewBoxes: [],
+      emptyRendererRoot: true,
+    });
+    expect(
+      deriveVerdict(predicted, missing, missing, shim(missing), lifecycle({ markdown: true })),
+    ).toBe("error");
+  });
+
+  test("an absent HTTPS image prediction does not compare against zero", () => {
+    const expected = { ...lex() } as Partial<LexicalCounters>;
+    delete expected.externalImageCount;
+    const observed = protocol({ externalImageCount: 1 });
+    expect(
+      deriveVerdict(expected as LexicalCounters, observed, observed, shim(observed), lifecycle()),
+    ).toBe("partial:external_resources");
+  });
 });
 
 describe("deriveVerdict — TSX empty renderer root", () => {

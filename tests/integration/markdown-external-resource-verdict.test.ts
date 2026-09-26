@@ -62,7 +62,7 @@ interface MdEnv {
 // equivalent.
 function markdownTier1Runner(): Tier1Runner {
   return async (input: Tier1Input): Promise<Tier1Result> => {
-    const externalImageCount = input.lexical.externalImageCount;
+    const externalImageCount = input.lexical.externalImageCount ?? 0;
     const protocolObservation = {
       rendererRootSvgCount: 0,
       graphCount: 0,

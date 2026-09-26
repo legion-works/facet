@@ -55,7 +55,7 @@ export const stubTier0Runner = async (input: Tier0Input): Promise<Tier0Result> =
     revisionSha: input.revisionSha,
     expected: {
       ...input.lexical,
-      externalImageCount: input.lexical.externalImageCount,
+      externalImageCount: input.lexical.externalImageCount ?? 0,
     },
     observed: {
       rendererRootSvgCount: input.lexical.rendererRootSvgCount,
@@ -63,7 +63,7 @@ export const stubTier0Runner = async (input: Tier0Input): Promise<Tier0Result> =
       mermaidNodeCount: input.lexical.mermaidNodeCount ?? 0,
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
-      externalImageCount: input.lexical.externalImageCount,
+      externalImageCount: input.lexical.externalImageCount ?? 0,
       errorCount: 0,
     },
   };
@@ -85,7 +85,7 @@ export const errorTier0Runner = async (input: Tier0Input): Promise<Tier0Result> 
       mermaidNodeCount: 0,
       visibleSvgCount: 0,
       opaqueRegionCount: 0,
-      externalImageCount: input.lexical.externalImageCount,
+      externalImageCount: input.lexical.externalImageCount ?? 0,
       errorCount: 1,
       discriminativeErrors: [
         {

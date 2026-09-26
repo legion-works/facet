@@ -68,6 +68,7 @@ interface CorpusRow {
   readonly fixture: string;
   readonly family: RecoveryFamily;
   readonly expected: "accept" | "reject";
+  readonly expectedExternalImageCount?: number;
   readonly proof: (root: Parse5Node) => void;
 }
 
@@ -380,6 +381,28 @@ const TRIGGER_PROOFS: Record<string, (root: Parse5Node) => void> = {
     );
     expect(withAttr).toBeDefined();
   },
+  "image-srcset.html": (root) => {
+    expect(
+      findAllElements(root, "img")[0]?.attrs.some((attribute) => attribute.name === "srcset"),
+    ).toBe(true);
+  },
+  "picture-source.html": (root) => {
+    expect(findAllElements(root, "picture")).toHaveLength(1);
+    expect(
+      findAllElements(root, "source")[0]?.attrs.some((attribute) => attribute.name === "srcset"),
+    ).toBe(true);
+  },
+  "noscript-external-image.html": (root) => {
+    const noscript = findAllElements(root, "noscript")[0];
+    expect(noscript).toBeDefined();
+    expect(findAllElements(noscript, "img")).toHaveLength(1);
+  },
+  "image-srcset-trailing-comma.html": (root) => {
+    const image = findAllElements(root, "img")[0];
+    expect(image?.attrs.find((attribute) => attribute.name === "srcset")?.value).toBe(
+      "https://cdn.example/candidate.png 1x,",
+    );
+  },
 };
 
 /**
@@ -505,6 +528,32 @@ const NEGATIVE_DOCUMENTS: readonly NegativeDocument[] = [
 ];
 
 const CORPUS: readonly CorpusRow[] = [
+  {
+    fixture: "noscript-external-image.html",
+    family: "noscript-scripting",
+    expected: "accept",
+    expectedExternalImageCount: 1,
+    proof: TRIGGER_PROOFS["noscript-external-image.html"]!,
+  },
+  {
+    fixture: "image-srcset-trailing-comma.html",
+    family: "well-formed",
+    expected: "accept",
+    expectedExternalImageCount: 1,
+    proof: TRIGGER_PROOFS["image-srcset-trailing-comma.html"]!,
+  },
+  {
+    fixture: "image-srcset.html",
+    family: "well-formed",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["image-srcset.html"]!,
+  },
+  {
+    fixture: "picture-source.html",
+    family: "well-formed",
+    expected: "accept",
+    proof: TRIGGER_PROOFS["picture-source.html"]!,
+  },
   {
     fixture: "basic-document.html",
     family: "well-formed",
@@ -807,6 +856,11 @@ for (const row of CORPUS) {
           .join(",")}`,
       );
     }
+    if (row.expectedExternalImageCount !== undefined) {
+      expect(parseResult.html.externalImageCount, `${row.fixture} Tier 0 HTTPS image count`).toBe(
+        row.expectedExternalImageCount,
+      );
+    }
     // The trigger proof walks the parse5 tree directly. If the named
     // family does NOT fire, this throws — so a fixture that does not
     // exercise its recovery makes its "agree" row decoration.
@@ -830,6 +884,14 @@ for (const row of CORPUS) {
     // surfaces it.
     const observation = await probeProtocolSnapshot(target.session, frame);
     const observed = observation.html;
+    if (row.expectedExternalImageCount !== undefined) {
+      expect(observation.externalImageCount, `${row.fixture} Tier 1 HTTPS image count`).toBe(
+        row.expectedExternalImageCount,
+      );
+    }
+    expect(observation.externalImageCount, `${row.fixture} external image count`).toBe(
+      parseResult.html.externalImageCount,
+    );
     if (observed === undefined) {
       measurements.push({
         fixture: row.fixture,

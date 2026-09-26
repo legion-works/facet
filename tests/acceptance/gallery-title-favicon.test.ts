@@ -27,7 +27,7 @@ function changingTier0Runner(): Tier0Runner {
         mermaidNodeCount: 0,
         visibleSvgCount: 0,
         opaqueRegionCount: 0,
-        externalImageCount: input.lexical.externalImageCount,
+        externalImageCount: input.lexical.externalImageCount ?? 0,
         errorCount: 0,
       },
     };
