@@ -90,11 +90,27 @@ test("gallery signals post-render interaction errors without changing the stored
       text: "displayed · runtime error during interaction",
     });
     expect(await shell("document.querySelector('#facet-verdict')?.dataset.status")).toBe("ok");
-    await shell("document.getElementById('facet-theme-toggle')?.click()");
-    const clearedTheme = await settle(
-      "document.querySelector('#facet-verdict')?.dataset.interactionError !== 'true' && document.querySelector('#facet-theme-toggle')?.dataset.themeMode === 'dark' && document.querySelector('#facet-canvas iframe')?.getAttribute('src')?.includes('theme=dark')",
+    await shell(
+      "window.__interactionFrameBefore = document.querySelector('#facet-canvas iframe'); true",
     );
-    expect(clearedTheme).toEqual({ status: "displayed", marker: null });
+    const frameSrcBefore = await shell("window.__interactionFrameBefore.getAttribute('src')");
+    await shell("document.getElementById('facet-theme-toggle')?.click()");
+    const themed = await settle(
+      "document.querySelector('#facet-theme-toggle')?.dataset.themeMode === 'dark' && document.querySelector('#facet-canvas iframe')?.contentDocument?.documentElement.dataset.theme === 'night'",
+    );
+    // The interaction error remains real while the frame that threw is still displayed.
+    expect(
+      await shell(
+        "document.querySelector('#facet-canvas iframe') === window.__interactionFrameBefore",
+      ),
+    ).toBe(true);
+    expect(await shell("document.querySelector('#facet-canvas iframe')?.getAttribute('src')")).toBe(
+      frameSrcBefore,
+    );
+    expect(themed).toEqual({
+      status: "displayed · runtime error during interaction",
+      marker: "true",
+    });
     const revised = await client.sendCommand({
       command: "publish",
       requestId: crypto.randomUUID(),

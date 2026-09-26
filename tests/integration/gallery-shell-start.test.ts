@@ -162,8 +162,12 @@ interface FakeFrameConfig {
 class FakeIframe extends FakeElement {
   autoLoadOnAppend = true;
   readonly receivedPayloads: unknown[] = [];
+  readonly receivedThemes: string[] = [];
   readonly contentWindow: {
-    __facetFrame?: { readonly render?: (payload: unknown) => Promise<unknown> };
+    __facetFrame?: {
+      readonly render?: (payload: unknown) => Promise<unknown>;
+      setTheme?: (theme: string) => void;
+    };
     addEventListener(type: string, listener: Listener): void;
     removeEventListener(type: string, listener: Listener): void;
     emit(type: string): void;
@@ -190,6 +194,8 @@ class FakeIframe extends FakeElement {
   install(config: FakeFrameConfig): void {
     if (config.autoLoad === false) this.autoLoadOnAppend = false;
     installFakeFrameApi(this, config);
+    // oxlint-disable-next-line no-underscore-dangle
+    this.contentWindow.__facetFrame!.setTheme = (theme) => this.receivedThemes.push(theme);
   }
 }
 
@@ -215,6 +221,7 @@ interface GalleryHarness {
 }
 
 interface RuntimeOptions {
+  readonly artifactType?: "markdown" | "html" | "tsx";
   readonly bootstrapStatus?: number;
   readonly sourceStatus?: number;
   readonly evidenceStatus?: number;
@@ -352,7 +359,7 @@ function createRuntime(
         slug: "source-artifact",
         title:
           revisionSha === "a".repeat(64) ? "Initial title" : `Title ${revisionSha.slice(0, 8)}`,
-        artifactType: "markdown",
+        artifactType: options.artifactType ?? "markdown",
         source: `# ${revisionSha.slice(0, 8)}`,
         verdict:
           revisionSha === "a".repeat(64) || verdict === null
@@ -1302,6 +1309,37 @@ describe("gallery shell startup", () => {
     expect(new URL(current.getAttribute("src")!).searchParams.get("theme")).toBe("dark");
     const payload = current.receivedPayloads[0] as { bytes: Uint8Array };
     expect(new TextDecoder().decode(payload.bytes)).toContain(revisionSha.slice(0, 8));
+  });
+
+  test("an HTML theme intent queued during a revision swap applies to the new frame without replacing it", async () => {
+    const harness = createRuntime("native", null, undefined, { artifactType: "html" });
+    await startGallery(harness.runtime);
+    let releaseRevisionRender: (() => void) | null = null;
+    harness.pendingFrameConfigs.push({
+      viewMode: "native",
+      observed: harness.defaultObserved,
+      render: () =>
+        new Promise((resolve) => {
+          releaseRevisionRender = () =>
+            resolve(makeFakeRenderResult("native", harness.defaultObserved));
+        }),
+    });
+    const revisionSha = "d4".padEnd(64, "d");
+    harness.emitCommitted({ revisionSha, revisionNumber: 2 });
+    await waitFor(() => releaseRevisionRender !== null);
+    harness.elements.get("facet-theme-toggle")!.click();
+    releaseRevisionRender!();
+    await waitFor(() => harness.frames[1]!.receivedThemes.includes("dark"));
+
+    const visible = harness.elements.get("facet-canvas")!.children.filter(isIframe);
+    expect(visible).toEqual([harness.frames[1]!]);
+    expect(harness.frames).toHaveLength(2);
+    expect(harness.frames[0]!.receivedThemes).toEqual([]);
+    expect(harness.frames[1]!.receivedThemes).toEqual(["dark"]);
+    expect((harness.frames[1]!.receivedPayloads[0] as { theme: string }).theme).toBe("light");
+    expect(JSON.parse(harness.sessionStorage.getItem("facet:gallery-session") ?? "{}").theme).toBe(
+      "dark",
+    );
   });
 
   test("a later revision preserves a pending theme intent from an in-flight revision", async () => {

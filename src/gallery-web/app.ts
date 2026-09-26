@@ -376,6 +376,7 @@ export interface CreatedArtifactFrame {
     payload: FrameRenderPayload,
     timeoutMs: number,
   ) => Promise<FrameRenderResultHandle>;
+  readonly setTheme: (theme: ResolvedGalleryTheme) => void;
   /** Handle from the last successful render (null before the first). */
   readonly renderResult: FrameRenderResultHandle | null;
 }
@@ -487,6 +488,14 @@ export function createArtifactFrame(options: CreateArtifactFrameOptions): Create
       };
       renderResult = handle;
       return handle;
+    },
+    setTheme(theme) {
+      // oxlint-disable-next-line no-underscore-dangle
+      const api = raw.contentWindow?.__facetFrame;
+      if (api === null || api === undefined || typeof api.setTheme !== "function") {
+        throw new Error("frame theme API unavailable");
+      }
+      api.setTheme(theme);
     },
     get renderResult(): FrameRenderResultHandle | null {
       return renderResult;
@@ -1309,6 +1318,11 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     const canCommit = (): boolean =>
       themeGeneration === generation && nextMode === requestedThemeMode;
     if (!canCommit()) return;
+    if (source.artifactType === "html" || source.artifactType === "tsx") {
+      current.setTheme(nextResolvedTheme);
+      commitTheme(nextMode, nextResolvedTheme);
+      return;
+    }
     const next = createArtifactFrame({
       artifactType: source.artifactType,
       renderer: source.renderer,

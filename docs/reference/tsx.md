@@ -74,7 +74,9 @@ has no host port or service capability.
 The TSX verifier loads the vendored `artifact.css` used by the gallery frame.
 A runtime error after initial render, such as one thrown by a click handler,
 appears as a gallery signal in an `aria-live="polite"` status region. It does
-not rewrite the immutable verdict and clears on revision swap or theme change.
+not rewrite the immutable verdict. It clears on revision swap. Switching the
+theme keeps the frame mounted, including interactive component state and any
+runtime error signal already displayed.
 
 Revision source remains immutable. Compilation creates derived bytes recorded at
 the run's `compiled_path`; TSX source export writes the original `.tsx` bytes.

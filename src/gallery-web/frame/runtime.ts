@@ -1,5 +1,5 @@
 import { isTsxExecutionMode, type TsxExecutionMode } from "../../shared/tsx/execution";
-import { isResolvedGalleryTheme } from "../theme";
+import { galleryDataTheme, isResolvedGalleryTheme, type ResolvedGalleryTheme } from "../theme";
 
 import { validateRenderer } from "./renderer-validation";
 import {
@@ -80,6 +80,7 @@ interface DiagramRegionGestures {
 
 export interface GalleryFrameApi {
   render(payload: FrameRenderPayload): Promise<RenderResult>;
+  setTheme(theme: ResolvedGalleryTheme): void;
 }
 
 declare global {
@@ -410,6 +411,11 @@ export function installGalleryFrameApi(registry: RendererRegistry): void {
   };
 
   const api: GalleryFrameApi = {
+    setTheme(theme) {
+      if (!isResolvedGalleryTheme(theme))
+        throw new FacetRenderError("frame theme is invalid", "invalid_request");
+      document.documentElement.dataset.theme = galleryDataTheme(theme);
+    },
     async render(payload: FrameRenderPayload): Promise<RenderResult> {
       if (rendered) throw new FacetRenderError("frame already rendered", "invalid_request");
       const validated = validatePayload(payload);
