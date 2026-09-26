@@ -78,6 +78,7 @@ body {
   padding-inline: max(16px, calc((100% - 92ch) / 2));
 }
 
+/* These selectors match usesArtifactStylesheet in frame-html.ts; CSS cannot import it. */
 #artifact[data-facet-artifact-type="html"],
 #artifact[data-facet-artifact-type="tsx"] {
   display: flex;

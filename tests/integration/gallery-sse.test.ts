@@ -39,6 +39,8 @@ import { startFacetService } from "../../src/service/server";
 import { createQuietLogger } from "../../src/shared/logging/logger";
 import { stubTier0Runner } from "../helpers/stub-tier0-runner";
 import { installFakeFrameApi, makeFakeRenderResult } from "../helpers/fake-frame";
+import { ARTIFACT_TYPES } from "../../src/shared/contracts/artifact-types";
+import * as frameHtml from "../../src/gallery-web/frame-html";
 
 const RUNTIME_URL = "/gallery/frame/runtime/markdown.js";
 
@@ -115,6 +117,21 @@ describe("gallery shell — verdict status styling", () => {
 });
 
 describe("gallery shell — frame document generation", () => {
+  test("the canonical artifact stylesheet predicate matches the generated frame documents", () => {
+    expect(typeof frameHtml.usesArtifactStylesheet).toBe("function");
+    expect(ARTIFACT_TYPES.filter(frameHtml.usesArtifactStylesheet)).toEqual(["html", "tsx"]);
+    for (const artifactType of ARTIFACT_TYPES) {
+      const document = buildFrameDocument({
+        artifactType,
+        runtimeUrl: RUNTIME_URL,
+        theme: "light",
+      });
+      expect(document.includes('href="/gallery/frame/artifact.css"')).toBe(
+        frameHtml.usesArtifactStylesheet(artifactType),
+      );
+    }
+  });
+
   test("document contains external styles, artifact mount, and no CSP meta", () => {
     const document = buildFrameDocument({
       artifactType: "markdown",

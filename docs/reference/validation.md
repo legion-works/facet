@@ -80,8 +80,8 @@ capture it emulates `prefers-reduced-motion: reduce` and awaits
 Tier 1 uses the same artifact-type layout rules as the gallery frame: Mermaid,
 SVG, and chart roots are safely centered on both axes, with oversized content
 remaining reachable by scrolling; Markdown is top-aligned in a horizontally
-centered column capped at about 92ch; HTML and TSX are top-aligned while their
-renderer roots are safely centered across the stage. The renderer-parity gate
+centered column capped at about 92ch; HTML and TSX use top-aligned document
+flow, where a fixed-width layout can center itself with `mx-auto`. The renderer-parity gate
 compares both the gallery and verifier renderer-module sets and CSS/stylesheet
 sets.
 

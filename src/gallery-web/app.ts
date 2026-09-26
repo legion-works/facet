@@ -23,7 +23,12 @@
  * surfaces an error badge.
  */
 
-import { assertLoopbackHostname, buildFrameAttributes, type FrameAttributes } from "./frame-html";
+import {
+  assertLoopbackHostname,
+  buildFrameAttributes,
+  usesArtifactStylesheet,
+  type FrameAttributes,
+} from "./frame-html";
 import { planSwap, type SwapPlanStep } from "./swap";
 import { connectRevisionStream } from "./sse-client";
 import type { VerdictObserved } from "../shared/contracts/validation";
@@ -1318,7 +1323,7 @@ export async function startGallery(runtime = browserGalleryRuntime()): Promise<v
     const canCommit = (): boolean =>
       themeGeneration === generation && nextMode === requestedThemeMode;
     if (!canCommit()) return;
-    if (source.artifactType === "html" || source.artifactType === "tsx") {
+    if (usesArtifactStylesheet(source.artifactType)) {
       current.setTheme(nextResolvedTheme);
       commitTheme(nextMode, nextResolvedTheme);
       return;

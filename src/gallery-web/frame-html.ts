@@ -31,6 +31,10 @@ export function buildFrameAttributes(src = "/gallery/frame"): FrameAttributes {
   };
 }
 
+export function usesArtifactStylesheet(artifactType: string): boolean {
+  return artifactType === "html" || artifactType === "tsx";
+}
+
 export function buildFrameDocument(options: {
   artifactType: string;
   runtimeUrl: string;
@@ -45,7 +49,7 @@ export function buildFrameDocument(options: {
   return (
     `<!doctype html><html data-theme="${galleryDataTheme(theme)}"><head>` +
     `<meta charset="utf-8"><link rel="stylesheet" href="/gallery/frame/frame.css">` +
-    (artifactType === "html" || artifactType === "tsx"
+    (usesArtifactStylesheet(artifactType)
       ? `<link rel="stylesheet" href="/gallery/frame/artifact.css">`
       : "") +
     "</head><body>" +
