@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.10.4](https://github.com/legion-works/facet/compare/v1.10.3...v1.10.4) (2026-09-26)
+
+
+### Behaviour changes
+
+* The visual check compares its external image count with the Tier 0 prediction. When they disagree, the verdict is `error`; before, the disagreement passed silently as `partial:layout_unverified` or `ok`. Interactive TSX makes no prediction and is not compared.
+* Images referenced through `srcset` (on `<img>` or `<picture><source>`) are now counted at Tier 1, so HTML that loads an `https:` image only that way gets `partial:external_resources` instead of `ok`.
+* A visual check that has not finished after 60 seconds, evidence capture included, now fails with `tier1_timeout`. The browser is stopped and cleaned up within 3 seconds, so the CLI gets the typed error before its own 75-second timeout.
+
+
+### Bug Fixes
+
+* compare the external image count with the Tier 0 prediction, using one shared counter with a standard `srcset` parser for Tier 0 and every Tier 1 channel ([fdc0ef8](https://github.com/legion-works/facet/commit/fdc0ef81d2b1b1a3302c278d0251b10029a0b82c)), refs [#53](https://github.com/legion-works/facet/issues/53)
+* enforce the Tier 1 total budget ([0050b67](https://github.com/legion-works/facet/commit/0050b671dffbd64e5e2884bd0c0ffa52a753b01c)), closes [#54](https://github.com/legion-works/facet/issues/54)
+* `facet doctor` fix commands run as printed: a missing evidence root suggests `facet status --start`, permission fixes use absolute paths and only the files that need them, and `facet …` is printed only when the `facet` on `PATH` is the install being inspected ([52fe7d5](https://github.com/legion-works/facet/commit/52fe7d5a9a7ac3c0573a96e67976002aab7f9d00)), closes [#58](https://github.com/legion-works/facet/issues/58)
+
 ## [1.10.3](https://github.com/legion-works/facet/compare/v1.10.2...v1.10.3) (2026-09-26)
 
 
